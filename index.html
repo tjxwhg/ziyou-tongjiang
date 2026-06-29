@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>智游通江</title>
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <!-- 自定义样式 -->
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; height: 100vh; overflow: hidden; }
+        #map { height: 100vh; width: 100vw; z-index: 1; }
+        .bottom-bar { position: fixed; bottom: 20px; left: 20px; right: 20px; z-index: 1000; display: flex; gap: 10px; }
+        .btn { flex: 1; padding: 14px; border: none; border-radius: 12px; font-size: 16px; font-weight: bold; cursor: pointer; box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
+        .btn-primary { background: #2E7D32; color: white; }
+        .btn-secondary { background: white; color: #2E7D32; }
+        .panel { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: white; z-index: 2000; transform: translateY(100%); transition: transform 0.3s ease-out; overflow-y: auto; display: flex; flex-direction: column; }
+        .panel.active { transform: translateY(0); }
+        .panel-header { padding: 16px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; }
+        .panel-header h2 { font-size: 20px; }
+        .close-btn { background: none; border: none; font-size: 24px; cursor: pointer; }
+        .panel-body { flex: 1; padding: 16px; }
+        .route-card { background: #f5f5f5; border-radius: 10px; padding: 16px; margin-bottom: 12px; cursor: pointer; }
+        .route-card h3 { margin-bottom: 4px; }
+        .tags { display: flex; gap: 6px; margin: 8px 0; }
+        .tag { font-size: 12px; background: #e0e0e0; padding: 2px 8px; border-radius: 20px; }
+        .timeline-item { display: flex; margin-bottom: 20px; position: relative; }
+        .timeline-marker { width: 12px; height: 12px; border-radius: 50%; background: #2E7D32; margin-top: 4px; margin-right: 12px; flex-shrink: 0; }
+        .timeline-content { flex: 1; border-bottom: 1px solid #eee; padding-bottom: 12px; }
+        .timeline-time { font-size: 14px; color: #666; }
+        .timeline-name { font-weight: bold; margin: 4px 0; }
+        .timeline-note { font-size: 12px; color: #888; }
+        .float-voice { position: fixed; bottom: 100px; right: 20px; z-index: 1500; background: #2E7D32; color: white; border-radius: 50%; width: 50px; height: 50px; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 12px rgba(0,0,0,0.3); cursor: pointer; font-size: 20px; display: none; }
+        .feedback-form { margin-top: 20px; }
+        .feedback-form textarea { width: 100%; padding: 12px; border-radius: 8px; border: 1px solid #ddd; margin-bottom: 10px; }
+        .feedback-form button { background: #2E7D32; color: white; border: none; padding: 10px 20px; border-radius: 8px; }
+        .lang-switch { position: fixed; top: 20px; right: 20px; z-index: 1500; background: white; border-radius: 20px; padding: 6px 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.2); }
+        .lang-switch select { border: none; background: transparent; font-size: 14px; }
+    </style>
+</head>
+<body>
+    <div id="map"></div>
+
+    <!-- 语种切换 -->
+    <div class="lang-switch">
+        <select id="langSelect">
+            <option value="cn">中文</option>
+            <option value="en">English</option>
+            <option value="ja">日本語</option>
+            <option value="ko">한국어</option>
+        </select>
+    </div>
+
+    <!-- 语音状态按钮 -->
+    <div class="float-voice" id="voiceBtn" onclick="toggleVoice()">🔊</div>
+
+    <!-- 底部按钮 -->
+    <div class="bottom-bar">
+        <button class="btn btn-secondary" onclick="openPanel('routesPanel')">📋 推荐路线</button>
+        <button class="btn btn-primary" onclick="startSimulation()">📍 模拟导航</button>
+    </div>
+
+    <!-- 路线面板 -->
+    <div class="panel" id="routesPanel">
+        <div class="panel-header">
+            <h2>推荐路线</h2>
+            <button class="close-btn" onclick="closePanel('routesPanel')">✕</button>
+        </div>
+        <div class="panel-body" id="routeList"></div>
+    </div>
+
+    <!-- 线路详情面板 -->
+    <div class="panel" id="routeDetailPanel">
+        <div class="panel-header">
+            <h2 id="routeDetailTitle">线路详情</h2>
+            <button class="close-btn" onclick="closePanel('routeDetailPanel')">✕</button>
+        </div>
+        <div class="panel-body" id="routeDetailContent"></div>
+    </div>
+
+    <!-- 留言面板 -->
+    <div class="panel" id="feedbackPanel">
+        <div class="panel-header">
+            <h2>留言反馈</h2>
+            <button class="close-btn" onclick="closePanel('feedbackPanel')">✕</button>
+        </div>
+        <div class="panel-body">
+            <textarea id="feedbackMsg" rows="4" placeholder="请留下您的建议或问题..."></textarea>
+            <button onclick="submitFeedback()">提交</button>
+            <div id="feedbackResult" style="margin-top:10px;"></div>
+        </div>
+    </div>
+
+    <!-- 依赖库 -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+    <script>
+        // ========== Supabase 配置 ==========
+        const SUPABASE_URL = 'https://your-project-id.supabase.co'; // 替换为您的Supabase项目URL
+        const SUPABASE_ANON_KEY = 'sb_publishable_l9yA9MKkAqT_4gIrgoCriA_kCDlLrIR; // 替换为您的anon key
+        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+        // ========== 全局状态 ==========
+        let map;
+        let currentLang = 'cn';
+        let markers = [];
+        let voiceEnabled = true;
+        let triggeredPois = {}; // 记录已触发的POI：{poiId: timestamp}
+        let currentTrip = null; // 当前行程的route_id
+        let simulationActive = false;
+        let simulatedPosition = null; // 模拟位置 {lat, lng}
+        let voiceCheckingInterval = null;
+
+        // ========== 初始化地图 ==========
+        function initMap() {
+            map = L.map('map').setView([32.08, 107.18], 12); // 通江县中心坐标
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '&copy; OpenStreetMap contributors',
+                maxZoom: 18
+            }).addTo(map);
+            loadPOIs();
+            // 点击地图模拟位置
+            map.on('click', function(e) {
+                if (simulationActive) {
+                    setSimulatedPosition(e.latlng.lat, e.latlng.lng);
+                }
+            });
+        }
+
+        // ========== 加载POI标记 ==========
+        async function loadPOIs() {
+            const { data, error } = await supabase.from('poi').select('*').eq('status', 'active');
+            if (error) { console.error(error); return; }
+            data.forEach(poi => {
+                const colorMap = {
+                    '景点': '#2E7D32',
+                    '餐饮': '#FF9800',
+                    '住宿': '#2196F3',
+                    '厕所': '#9E9E9E',
+                    '停车场': '#00BCD4'
+                };
+                const icon = L.divIcon({
+                    className: 'custom-poi',
+                    html: `<div style="background:${colorMap[poi.category]}; width:24px; height:24px; border-radius:50%; border:2px solid white; box-shadow:0 2px 6px rgba(0,0,0,0.3);"></div>`,
+                    iconSize: [24, 24],
+                    iconAnchor: [12, 12]
+                });
+                const marker = L.marker([poi.lat, poi.lng], { icon }).addTo(map);
+                marker.bindPopup(`<b>${poi.name}</b><br>${poi.description || ''}<br><button onclick="showPoiDetail(${poi.id})">详情</button>`);
+                marker.poiId = poi.id;
+                markers.push(marker);
+            });
+        }
+
+        // ========== 语言切换 ==========
+        document.getElementById('langSelect').addEventListener('change', function(e) {
+            currentLang = e.target.value;
+            console.log('语言切换为：' + currentLang);
+        });
+
+        // ========== 面板控制 ==========
+        function openPanel(panelId) {
+            document.getElementById(panelId).classList.add('active');
+            if (panelId === 'routesPanel') loadRoutes();
+        }
+        function closePanel(panelId) {
+            document.getElementById(panelId).classList.remove('active');
+        }
+
+        // ========== 路线加载 ==========
+        async function loadRoutes() {
+            const { data, error } = await supabase.from('routes').select('*');
+            if (error) { console.error(error); return; }
+            const container = document.getElementById('routeList');
+            container.innerHTML = data.map(route => `
+                <div class="route-card" onclick="showRouteDetail(${route.id})">
+                    <h3>${route.name}</h3>
+                    <div class="tags">
+                        <span class="tag">${route.days}天</span>
+                        <span class="tag">${route.transport}</span>
+                        <span class="tag">${route.group_type}</span>
+                    </div>
+                    <p>${route.intro || ''}</p>
+                </div>
+            `).join('');
+        }
+
+        // ========== 线路详情与套用 ==========
+        async function showRouteDetail(routeId) {
+            const { data: route } = await supabase.from('routes').select('*').eq('id', routeId).single();
+            const { data: nodes } = await supabase.from('route_nodes').select('*, poi:poi_id(*)').eq('route_id', routeId).order('order_num');
+            
+            document.getElementById('routeDetailTitle').textContent = route.name;
+            let timeCounter = 8 * 60; // 假设8:00开始
+            const contentHtml = `
+                <p>${route.intro || ''}</p>
+                <div style="margin: 20px 0;">${nodes.map((node, idx) => {
+                    const hours = Math.floor(timeCounter / 60);
+                    const mins = timeCounter % 60;
+                    const timeStr = `${hours.toString().padStart(2,'0')}:${mins.toString().padStart(2,'0')}`;
+                    timeCounter += node.duration_min + node.transport_time;
+                    return `
+                        <div class="timeline-item">
+                            <div class="timeline-marker"></div>
+                            <div class="timeline-content">
+                                <div class="timeline-time">${timeStr}</div>
+                                <div class="timeline-name">${node.poi.name}</div>
+                                <div style="font-size:12px; color:#666;">${node.transport_mode} · 停留${node.duration_min}分钟</div>
+                                ${node.note ? `<div class="timeline-note">${node.note}</div>` : ''}
+                            </div>
+                        </div>
+                    `;
+                }).join('')}</div>
+                <button class="btn btn-primary" style="width:100%;" onclick="setCurrentTrip(${routeId})">一键套用此线路</button>
+            `;
+            document.getElementById('routeDetailContent').innerHTML = contentHtml;
+            openPanel('routeDetailPanel');
+        }
+
+        function setCurrentTrip(routeId) {
+            currentTrip = routeId;
+            closePanel('routeDetailPanel');
+            closePanel('routesPanel');
+            alert('已设置当前行程，请使用“模拟导航”开始游览');
+        }
+
+        // ========== 模拟导航与语音触发 ==========
+        function startSimulation() {
+            if (!currentTrip) {
+                alert('请先选择一条推荐路线');
+                return;
+            }
+            simulationActive = true;
+            document.getElementById('voiceBtn').style.display = 'flex';
+            alert('模拟导航已开启，请在地图上点击位置模拟移动。语音将根据位置自动触发。');
+            voiceCheckingInterval = setInterval(checkVoiceTrigger, 3000); // 每3秒检测一次
+        }
+
+        function setSimulatedPosition(lat, lng) {
+            simulatedPosition = { lat, lng };
+            // 添加一个临时标记显示模拟位置
+            if (window.simMarker) map.removeLayer(window.simMarker);
+            window.simMarker = L.circleMarker([lat, lng], { radius: 8, color: 'red', fillOpacity: 0.8 }).addTo(map);
+        }
+
+        // 语音触发检测（含防抖逻辑）
+        async function checkVoiceTrigger() {
+            if (!simulatedPosition || !voiceEnabled) return;
+            const { lat, lng } = simulatedPosition;
+            // 查询所有POI，计算距离
+            const { data: pois } = await supabase.from('poi').select('*').eq('status', 'active');
+            if (!pois) return;
+            for (const poi of pois) {
+                const distance = getDistance(lat, lng, poi.lat, poi.lng);
+                const radius = poi.trigger_radius || 10;
+                if (distance <= radius) {
+                    // 检查是否触发过
+                    const triggered = triggeredPois[poi.id];
+                    if (!triggered) {
+                        // 首次触发：需要停留≥5秒，这里用持续检测来模拟（简化：直接触发）
+                        // 实际可通过跟踪位置变化计时，此处简化处理
+                        triggerVoice(poi);
+                        triggeredPois[poi.id] = Date.now();
+                    } else {
+                        // 检查是否离开超过200米后重新进入
+                        // 简化：不实现重复进入，保持单次触发规则
+                    }
+                }
+            }
+        }
+
+        function triggerVoice(poi) {
+            const textKey = 'voice_' + currentLang;
+            const text = poi[textKey] || poi.voice_cn || poi.description;
+            if (!text) return;
+            // 使用Web Speech API朗读
+            const utterance = new SpeechSynthesisUtterance(text);
+            utterance.lang = { cn: 'zh-CN', en: 'en-US', ja: 'ja-JP', ko: 'ko-KR' }[currentLang] || 'zh-CN';
+            window.speechSynthesis.speak(utterance);
+            // 已听清单
+            addToListened(poi);
+        }
+
+        function addToListened(poi) {
+            // 可在面板中显示已听列表，此处简化
+            console.log('已触发讲解：' + poi.name);
+        }
+
+        function toggleVoice() {
+            voiceEnabled = !voiceEnabled;
+            document.getElementById('voiceBtn').textContent = voiceEnabled ? '🔊' : '🔇';
+            if (!voiceEnabled) window.speechSynthesis.cancel();
+        }
+
+        // 计算两点距离（简化：Haversine公式）
+        function getDistance(lat1, lng1, lat2, lng2) {
+            const R = 6371000; // 米
+            const dLat = (lat2 - lat1) * Math.PI / 180;
+            const dLng = (lng2 - lng1) * Math.PI / 180;
+            const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                      Math.cos(lat1 * Math.PI/180) * Math.cos(lat2 * Math.PI/180) *
+                      Math.sin(dLng/2) * Math.sin(dLng/2);
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+            return R * c;
+        }
+
+        // ========== 留言功能 ==========
+        async function submitFeedback() {
+            const message = document.getElementById('feedbackMsg').value;
+            if (!message) return;
+            const { error } = await supabase.from('feedbacks').insert([{ message }]);
+            if (error) {
+                document.getElementById('feedbackResult').innerHTML = '<p style="color:red;">提交失败，请重试</p>';
+            } else {
+                document.getElementById('feedbackResult').innerHTML = '<p style="color:green;">感谢反馈！</p>';
+                document.getElementById('feedbackMsg').value = '';
+            }
+        }
+
+        // 页面初始化
+        window.onload = initMap;
+    </script>
+</body>
+</html>

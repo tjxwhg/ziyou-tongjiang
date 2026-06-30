@@ -17,11 +17,12 @@
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script>
         // ========== 替换为你的真实信息 ==========
-        const SUPABASE_URL = 'https://aermnnksvhezfykxefla.supabase.co';
-        const SUPABASE_ANON_KEY = 'sb_publishable_l9yA9MKkAqT_4gIrgoCriA_kCDlLrIR';
+        const SUPABASE_URL = 'https://aermnnksvhezfykxefla.supabase.co';   // 改为你的
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.xxxx'; // 改为你的
         // =========================================
 
-        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        // 用 sb 代替 supabase，彻底避免重复声明
+        const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
         async function init() {
             const map = L.map('map').setView([32.08, 107.18], 12);
@@ -30,8 +31,7 @@
                 maxZoom: 18
             }).addTo(map);
 
-            // 从 Supabase 加载 POI
-            const { data, error } = await supabase.from('ztj_poi').select('*').eq('status', 'active');
+            const { data, error } = await sb.from('ztj_poi').select('*').eq('status', 'active');
             if (error) {
                 console.error('Supabase 查询错误：', error);
                 return;

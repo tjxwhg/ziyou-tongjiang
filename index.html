@@ -3,240 +3,56 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>智游通江</title>
+    <title>智游通江-验证</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; height: 100vh; overflow: hidden; }
-        #map { height: 100vh; width: 100vw; z-index: 1; }
-        .bottom-bar { position: fixed; bottom: 20px; left: 20px; right: 20px; z-index: 1000; display: flex; gap: 10px; }
-        .btn { flex: 1; padding: 14px; border: none; border-radius: 12px; font-size: 16px; font-weight: bold; cursor: pointer; box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
-        .btn-primary { background: #2E7D32; color: white; }
-        .btn-secondary { background: white; color: #2E7D32; }
-        .panel { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: white; z-index: 2000; transform: translateY(100%); transition: transform 0.3s ease-out; overflow-y: auto; display: flex; flex-direction: column; }
-        .panel.active { transform: translateY(0); }
-        .panel-header { padding: 16px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; }
-        .panel-header h2 { font-size: 20px; }
-        .close-btn { background: none; border: none; font-size: 24px; cursor: pointer; }
-        .panel-body { flex: 1; padding: 16px; }
-        .route-card { background: #f5f5f5; border-radius: 10px; padding: 16px; margin-bottom: 12px; cursor: pointer; }
-        .route-card h3 { margin-bottom: 4px; }
-        .tags { display: flex; gap: 6px; margin: 8px 0; flex-wrap: wrap; }
-        .tag { font-size: 12px; background: #e0e0e0; padding: 2px 8px; border-radius: 20px; }
-        .timeline-item { display: flex; margin-bottom: 20px; position: relative; }
-        .timeline-marker { width: 12px; height: 12px; border-radius: 50%; background: #2E7D32; margin-top: 4px; margin-right: 12px; flex-shrink: 0; }
-        .timeline-content { flex: 1; border-bottom: 1px solid #eee; padding-bottom: 12px; }
-        .timeline-time { font-size: 14px; color: #666; }
-        .timeline-name { font-weight: bold; margin: 4px 0; }
-        .timeline-note { font-size: 12px; color: #888; }
-        .float-voice { position: fixed; bottom: 100px; right: 20px; z-index: 1500; background: #2E7D32; color: white; border-radius: 50%; width: 50px; height: 50px; display: none; align-items: center; justify-content: center; box-shadow: 0 4px 12px rgba(0,0,0,0.3); cursor: pointer; font-size: 20px; }
-        .lang-switch { position: fixed; top: 20px; right: 20px; z-index: 1500; background: white; border-radius: 20px; padding: 6px 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.2); }
-        .lang-switch select { border: none; background: transparent; font-size: 14px; }
-        .feedback-btn { position: fixed; top: 20px; right: 120px; z-index: 1500; background: white; border-radius: 20px; padding: 6px 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.2); border: none; cursor: pointer; }
+        body { margin: 0; height: 100vh; }
+        #map { height: 100%; }
     </style>
 </head>
 <body>
     <div id="map"></div>
 
-    <div class="lang-switch">
-        <select id="langSelect">
-            <option value="cn">中文</option>
-            <option value="en">English</option>
-            <option value="ja">日本語</option>
-            <option value="ko">한국어</option>
-        </select>
-    </div>
-    <button class="feedback-btn" onclick="openPanel('feedbackPanel')">💬 留言</button>
-
-    <div class="float-voice" id="voiceBtn" onclick="toggleVoice()">🔊</div>
-
-    <div class="bottom-bar">
-        <button class="btn btn-secondary" onclick="openPanel('routesPanel')">📋 推荐路线</button>
-        <button class="btn btn-primary" id="navBtn" onclick="startSimulation()">📍 模拟导航</button>
-    </div>
-
-    <div class="panel" id="routesPanel">
-        <div class="panel-header"><h2>推荐路线</h2><button class="close-btn" onclick="closePanel('routesPanel')">✕</button></div>
-        <div class="panel-body" id="routeList"></div>
-    </div>
-
-    <div class="panel" id="routeDetailPanel">
-        <div class="panel-header"><h2 id="routeDetailTitle">线路详情</h2><button class="close-btn" onclick="closePanel('routeDetailPanel')">✕</button></div>
-        <div class="panel-body" id="routeDetailContent"></div>
-    </div>
-
-    <div class="panel" id="feedbackPanel">
-        <div class="panel-header"><h2>留言反馈</h2><button class="close-btn" onclick="closePanel('feedbackPanel')">✕</button></div>
-        <div class="panel-body">
-            <textarea id="feedbackMsg" rows="4" placeholder="请留下您的建议或问题..." style="width:100%; padding:12px; border-radius:8px; border:1px solid #ddd;"></textarea>
-            <button onclick="submitFeedback()" style="background:#2E7D32; color:white; border:none; padding:10px 20px; border-radius:8px; margin-top:10px;">提交</button>
-            <div id="feedbackResult" style="margin-top:10px;"></div>
-        </div>
-    </div>
-
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-
     <script>
-        // ========== 请替换以下两行为你的真实信息 ==========
+        // ========== 替换为你的真实信息 ==========
         const SUPABASE_URL = 'https://aermnnksvhezfykxefla.supabase.co';
         const SUPABASE_ANON_KEY = 'sb_publishable_l9yA9MKkAqT_4gIrgoCriA_kCDlLrIR';
-        // ========== 替换结束 ==========
+        // =========================================
 
         const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-        let map;
-        let currentLang = 'cn';
-        let voiceEnabled = true;
-        let triggeredPois = {};
-        let currentTrip = null;
-        let simulationActive = false;
-        let simulatedPosition = null;
-        let voiceCheckingInterval = null;
-
-        function initMap() {
-            map = L.map('map').setView([32.08, 107.18], 12);
+        async function init() {
+            const map = L.map('map').setView([32.08, 107.18], 12);
             L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
                 attribution: '&copy; OpenStreetMap contributors',
                 maxZoom: 18
             }).addTo(map);
-            loadPOIs();
-            map.on('click', function(e) {
-                if (simulationActive) setSimulatedPosition(e.latlng.lat, e.latlng.lng);
-            });
-        }
 
-        async function loadPOIs() {
+            // 从 Supabase 加载 POI
             const { data, error } = await supabase.from('ztj_poi').select('*').eq('status', 'active');
-            if (error) return console.error(error);
+            if (error) {
+                console.error('Supabase 查询错误：', error);
+                return;
+            }
             data.forEach(poi => {
-                const colorMap = { '景点':'#2E7D32', '餐饮':'#FF9800', '住宿':'#2196F3', '厕所':'#9E9E9E', '停车场':'#00BCD4' };
+                const color = poi.category === '景点' ? '#2E7D32' :
+                              poi.category === '餐饮' ? '#FF9800' :
+                              poi.category === '住宿' ? '#2196F3' :
+                              poi.category === '厕所' ? '#9E9E9E' : '#00BCD4';
                 const icon = L.divIcon({
                     className: 'custom-poi',
-                    html: '<div style="background:' + colorMap[poi.category] + '; width:24px; height:24px; border-radius:50%; border:2px solid white; box-shadow:0 2px 6px rgba(0,0,0,0.3);"></div>',
-                    iconSize: [24,24], iconAnchor: [12,12]
+                    html: '<div style="background:' + color + '; width:24px; height:24px; border-radius:50%; border:2px solid white; box-shadow:0 2px 6px rgba(0,0,0,0.3);"></div>',
+                    iconSize: [24, 24],
+                    iconAnchor: [12, 12]
                 });
-                const marker = L.marker([poi.lat, poi.lng], { icon }).addTo(map);
-                marker.bindPopup('<b>' + poi.name + '</b><br>' + (poi.description||'') + '<br><button style="margin-top:4px;">详情</button>');
-                marker.poiId = poi.id;
+                L.marker([poi.lat, poi.lng], { icon }).addTo(map)
+                    .bindPopup('<b>' + poi.name + '</b><br>' + (poi.description || ''));
             });
         }
 
-        document.getElementById('langSelect').addEventListener('change', function(e) { currentLang = e.target.value; });
-
-        function openPanel(panelId) {
-            document.getElementById(panelId).classList.add('active');
-            if (panelId === 'routesPanel') loadRoutes();
-        }
-        function closePanel(panelId) { document.getElementById(panelId).classList.remove('active'); }
-
-        async function loadRoutes() {
-            const { data, error } = await supabase.from('ztj_routes').select('*');
-            if (error) return console.error(error);
-            let html = '';
-            data.forEach(route => {
-                html += '<div class="route-card" onclick="showRouteDetail(' + route.id + ')">'
-                    + '<h3>' + route.name + '</h3>'
-                    + '<div class="tags"><span class="tag">' + route.days + '天</span><span class="tag">' + route.transport + '</span><span class="tag">' + route.group_type + '</span></div>'
-                    + '<p>' + (route.intro||'') + '</p></div>';
-            });
-            document.getElementById('routeList').innerHTML = html;
-        }
-
-        async function showRouteDetail(routeId) {
-            const { data: route } = await supabase.from('ztj_routes').select('*').eq('id', routeId).single();
-            const { data: nodes } = await supabase.from('ztj_route_nodes').select('*, poi:poi_id(*)').eq('route_id', routeId).order('order_num');
-            document.getElementById('routeDetailTitle').textContent = route.name;
-            let timeCounter = 8 * 60;
-            let html = '<p>' + (route.intro||'') + '</p><div style="margin:20px 0;">';
-            nodes.forEach(node => {
-                let h = Math.floor(timeCounter / 60), m = timeCounter % 60;
-                let timeStr = ('0' + h).slice(-2) + ':' + ('0' + m).slice(-2);
-                timeCounter += node.duration_min + node.transport_time;
-                html += '<div class="timeline-item"><div class="timeline-marker"></div><div class="timeline-content">'
-                    + '<div class="timeline-time">' + timeStr + '</div><div class="timeline-name">' + (node.poi ? node.poi.name : '未知') + '</div>'
-                    + '<div style="font-size:12px;color:#666;">' + node.transport_mode + ' · 停留' + node.duration_min + '分钟</div>'
-                    + (node.note ? '<div class="timeline-note">' + node.note + '</div>' : '')
-                    + '</div></div>';
-            });
-            html += '</div><button class="btn btn-primary" style="width:100%;" onclick="setCurrentTrip(' + routeId + ')">一键套用此线路</button>';
-            document.getElementById('routeDetailContent').innerHTML = html;
-            openPanel('routeDetailPanel');
-        }
-
-        function setCurrentTrip(routeId) {
-            currentTrip = routeId;
-            closePanel('routeDetailPanel');
-            closePanel('routesPanel');
-            alert('已设置当前行程，请点击“模拟导航”开始游览');
-        }
-
-        function startSimulation() {
-            if (!currentTrip) { alert('请先选择一条推荐路线'); return; }
-            simulationActive = true;
-            document.getElementById('voiceBtn').style.display = 'flex';
-            document.getElementById('navBtn').textContent = '📍 导航中...';
-            alert('模拟导航已开启，请在地图上点击位置模拟移动。语音将自动触发。');
-            if (voiceCheckingInterval) clearInterval(voiceCheckingInterval);
-            voiceCheckingInterval = setInterval(checkVoiceTrigger, 3000);
-        }
-
-        function setSimulatedPosition(lat, lng) {
-            simulatedPosition = { lat: lat, lng: lng };
-            if (window.simMarker) map.removeLayer(window.simMarker);
-            window.simMarker = L.circleMarker([lat, lng], { radius: 8, color: 'red', fillOpacity: 0.8 }).addTo(map);
-        }
-
-        async function checkVoiceTrigger() {
-            if (!simulatedPosition || !voiceEnabled) return;
-            const { data: pois } = await supabase.from('ztj_poi').select('*').eq('status', 'active');
-            if (!pois) return;
-            for (let i = 0; i < pois.length; i++) {
-                let poi = pois[i];
-                let dist = getDistance(simulatedPosition.lat, simulatedPosition.lng, poi.lat, poi.lng);
-                if (dist <= (poi.trigger_radius || 10)) {
-                    if (!triggeredPois[poi.id]) {
-                        triggerVoice(poi);
-                        triggeredPois[poi.id] = Date.now();
-                    }
-                }
-            }
-        }
-
-        function triggerVoice(poi) {
-            let textKey = 'voice_' + currentLang;
-            let text = poi[textKey] || poi.voice_cn || poi.description;
-            if (!text) return;
-            let utterance = new SpeechSynthesisUtterance(text);
-            let langMap = { cn: 'zh-CN', en: 'en-US', ja: 'ja-JP', ko: 'ko-KR' };
-            utterance.lang = langMap[currentLang] || 'zh-CN';
-            window.speechSynthesis.speak(utterance);
-        }
-
-        function toggleVoice() {
-            voiceEnabled = !voiceEnabled;
-            document.getElementById('voiceBtn').textContent = voiceEnabled ? '🔊' : '🔇';
-            if (!voiceEnabled) window.speechSynthesis.cancel();
-        }
-
-        function getDistance(lat1, lng1, lat2, lng2) {
-            const R = 6371000;
-            const dLat = (lat2 - lat1) * Math.PI / 180;
-            const dLng = (lng2 - lng1) * Math.PI / 180;
-            const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLng / 2) * Math.sin(dLng / 2);
-            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-            return R * c;
-        }
-
-        async function submitFeedback() {
-            const msg = document.getElementById('feedbackMsg').value;
-            if (!msg) return;
-            const { error } = await supabase.from('ztj_feedbacks').insert([{ message: msg }]);
-            document.getElementById('feedbackResult').innerHTML = error ? '<p style="color:red;">提交失败</p>' : '<p style="color:green;">感谢反馈！</p>';
-            if (!error) document.getElementById('feedbackMsg').value = '';
-        }
-
-        window.onload = initMap;
+        window.onload = init;
     </script>
 </body>
 </html>

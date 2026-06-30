@@ -96,16 +96,18 @@
 
         // 初始化地图
         function initMap() {
-            map = L.map('map').setView([32.08, 107.18], 12);
-            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                attribution: '&copy; OpenStreetMap contributors',
-                maxZoom: 18
-            }).addTo(map);
-            loadPOIs();
-            map.on('click', function(e) {
-                if (simulationActive) setSimulatedPosition(e.latlng.lat, e.latlng.lng);
-            });
-        }
+    map = L.map('map').setView([32.08, 107.18], 12);
+    // 使用高德地图瓦片（国内稳定，免费）
+    L.tileLayer('https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}', {
+        subdomains: ['1','2','3','4'],
+        attribution: '&copy; 高德地图',
+        maxZoom: 18
+    }).addTo(map);
+    loadPOIs();
+    map.on('click', function(e) {
+        if (simulationActive) setSimulatedPosition(e.latlng.lat, e.latlng.lng);
+    });
+}
 
         // 加载POI标记
         async function loadPOIs() {

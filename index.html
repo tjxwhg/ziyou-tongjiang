@@ -2,8 +2,8 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>智游通江-验证</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>智游通江-测试</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
         body { margin: 0; height: 100vh; }
@@ -12,46 +12,33 @@
 </head>
 <body>
     <div id="map"></div>
-
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script>
-        // ========== 替换为你的真实信息 ==========
-        const SUPABASE_URL = 'https://aermnnksvhezfykxefla.supabase.co';   // 改为你的
-        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFlcm1ubmtzdmhlemZ5a3hlZmxhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIwNzQ4ODEsImV4cCI6MjA5NzY1MDg4MX0.c2Wemu90PiezEaXn2Hv3tBL-D5YFXYTVxei14CI-Rvk'; // 改为你的
-        // =========================================
+        // 请替换为你的真实信息
+        const SUPABASE_URL = 'https://aermnnksvhezfykxefla.supabase.co';
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFlcm1ubmtzdmhlemZ5a3hlZmxhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIwNzQ4ODEsImV4cCI6MjA5NzY1MDg4MX0.c2Wemu90PiezEaXn2Hv3tBL-D5YFXYTVxei14CI-Rvk'; // 从官方示例复制到这里
 
-        // 用 sb 代替 supabase，彻底避免重复声明
         const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
         async function init() {
             const map = L.map('map').setView([32.08, 107.18], 12);
             L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                attribution: '&copy; OpenStreetMap contributors',
                 maxZoom: 18
             }).addTo(map);
 
             const { data, error } = await sb.from('ztj_poi').select('*').eq('status', 'active');
             if (error) {
-                console.error('Supabase 查询错误：', error);
+                console.error('错误：', error);
                 return;
             }
             data.forEach(poi => {
-                const color = poi.category === '景点' ? '#2E7D32' :
-                              poi.category === '餐饮' ? '#FF9800' :
-                              poi.category === '住宿' ? '#2196F3' :
-                              poi.category === '厕所' ? '#9E9E9E' : '#00BCD4';
-                const icon = L.divIcon({
-                    className: 'custom-poi',
-                    html: '<div style="background:' + color + '; width:24px; height:24px; border-radius:50%; border:2px solid white; box-shadow:0 2px 6px rgba(0,0,0,0.3);"></div>',
-                    iconSize: [24, 24],
-                    iconAnchor: [12, 12]
-                });
-                L.marker([poi.lat, poi.lng], { icon }).addTo(map)
+                const color = poi.category === '景点' ? '#2E7D32' : '#2196F3';
+                L.circleMarker([poi.lat, poi.lng], { radius: 10, color: color, fillOpacity: 0.8 })
+                    .addTo(map)
                     .bindPopup('<b>' + poi.name + '</b><br>' + (poi.description || ''));
             });
         }
-
         window.onload = init;
     </script>
 </body>

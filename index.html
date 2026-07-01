@@ -6,258 +6,285 @@
     <title>智游通江</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; height: 100vh; overflow: hidden; }
-        #map { height: 100vh; width: 100vw; z-index: 1; }
-        .bottom-bar { position: fixed; bottom: 20px; left: 20px; right: 20px; z-index: 1000; display: flex; gap: 10px; }
-        .btn { flex: 1; padding: 14px; border: none; border-radius: 12px; font-size: 16px; font-weight: bold; cursor: pointer; box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
-        .btn-primary { background: #2E7D32; color: white; }
-        .btn-secondary { background: white; color: #2E7D32; }
-        .panel { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: white; z-index: 2000; transform: translateY(100%); transition: transform 0.3s ease-out; overflow-y: auto; display: flex; flex-direction: column; }
-        .panel.active { transform: translateY(0); }
-        .panel-header { padding: 16px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; }
-        .panel-header h2 { font-size: 20px; }
-        .close-btn { background: none; border: none; font-size: 24px; cursor: pointer; }
-        .panel-body { flex: 1; padding: 16px; }
-        .route-card { background: #f5f5f5; border-radius: 10px; padding: 16px; margin-bottom: 12px; cursor: pointer; }
-        .route-card h3 { margin-bottom: 4px; }
-        .tags { display: flex; gap: 6px; margin: 8px 0; flex-wrap: wrap; }
-        .tag { font-size: 12px; background: #e0e0e0; padding: 2px 8px; border-radius: 20px; }
-        .timeline-item { display: flex; margin-bottom: 20px; position: relative; }
-        .timeline-marker { width: 12px; height: 12px; border-radius: 50%; background: #2E7D32; margin-top: 4px; margin-right: 12px; flex-shrink: 0; }
-        .timeline-content { flex: 1; border-bottom: 1px solid #eee; padding-bottom: 12px; }
-        .timeline-time { font-size: 14px; color: #666; }
-        .timeline-name { font-weight: bold; margin: 4px 0; }
-        .timeline-note { font-size: 12px; color: #888; }
-        .float-voice { position: fixed; bottom: 100px; right: 20px; z-index: 1500; background: #2E7D32; color: white; border-radius: 50%; width: 50px; height: 50px; display: none; align-items: center; justify-content: center; box-shadow: 0 4px 12px rgba(0,0,0,0.3); cursor: pointer; font-size: 20px; }
-        .lang-switch { position: fixed; top: 20px; right: 20px; z-index: 1500; background: white; border-radius: 20px; padding: 6px 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.2); }
-        .lang-switch select { border: none; background: transparent; font-size: 14px; }
-        .feedback-btn { position: fixed; top: 20px; right: 120px; z-index: 1500; background: white; border-radius: 20px; padding: 6px 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.2); border: none; cursor: pointer; }
+        * { margin:0; padding:0; box-sizing:border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; height:100vh; overflow:hidden; }
+        #map { height:100vh; width:100vw; z-index:1; }
+        .lang-switch { position:fixed; top:20px; right:20px; z-index:1500; background:white; border-radius:20px; padding:6px 12px; box-shadow:0 2px 8px rgba(0,0,0,0.2); }
+        .lang-switch select { border:none; background:transparent; font-size:14px; }
+        .feedback-btn { position:fixed; top:20px; right:120px; z-index:1500; background:white; border-radius:20px; padding:6px 12px; box-shadow:0 2px 8px rgba(0,0,0,0.2); border:none; cursor:pointer; }
+        .category-bar { position:fixed; top:70px; left:10px; right:10px; z-index:1500; display:flex; gap:8px; overflow-x:auto; padding:8px; background:rgba(255,255,255,0.95); border-radius:12px; box-shadow:0 2px 8px rgba(0,0,0,0.2); transition: transform 0.3s; }
+        .category-bar.hidden-bar { transform: translateY(-120px); }
+        .category-btn { flex-shrink:0; padding:6px 14px; border-radius:20px; border:1px solid #ddd; background:white; font-size:13px; cursor:pointer; white-space:nowrap; }
+        .category-btn.active { background:#2E7D32; color:white; border-color:#2E7D32; }
+        .float-voice { position:fixed; bottom:100px; right:20px; z-index:1500; background:#2E7D32; color:white; border-radius:50%; width:50px; height:50px; display:none; align-items:center; justify-content:center; box-shadow:0 4px 12px rgba(0,0,0,0.3); cursor:pointer; font-size:20px; }
+        .bottom-bar { position:fixed; bottom:20px; left:20px; right:20px; z-index:1000; display:flex; gap:10px; }
+        .btn { flex:1; padding:14px; border:none; border-radius:12px; font-size:16px; font-weight:bold; cursor:pointer; box-shadow:0 4px 12px rgba(0,0,0,0.15); }
+        .btn-primary { background:#2E7D32; color:white; }
+        .btn-secondary { background:white; color:#2E7D32; }
+        .nearby-btn { position:fixed; bottom:90px; right:20px; z-index:1500; background:white; border-radius:50%; width:50px; height:50px; display:flex; align-items:center; justify-content:center; box-shadow:0 4px 12px rgba(0,0,0,0.3); cursor:pointer; font-size:20px; }
+        .panel { position:fixed; top:0; left:0; right:0; bottom:0; background:white; z-index:2000; transform:translateY(100%); transition:transform 0.3s; overflow-y:auto; display:flex; flex-direction:column; }
+        .panel.active { transform:translateY(0); }
+        .panel-header { padding:16px; border-bottom:1px solid #eee; display:flex; justify-content:space-between; align-items:center; }
+        .panel-header h2 { font-size:20px; }
+        .close-btn { background:none; border:none; font-size:24px; cursor:pointer; }
+        .panel-body { flex:1; padding:16px; }
+        .route-card { background:#f5f5f5; border-radius:10px; padding:16px; margin-bottom:12px; cursor:pointer; }
+        .route-card h3 { margin-bottom:4px; }
+        .tags { display:flex; gap:6px; margin:8px 0; flex-wrap:wrap; }
+        .tag { font-size:12px; background:#e0e0e0; padding:2px 8px; border-radius:20px; }
+        .timeline-item { display:flex; margin-bottom:20px; }
+        .timeline-marker { width:12px; height:12px; border-radius:50%; background:#2E7D32; margin-top:4px; margin-right:12px; flex-shrink:0; }
+        .timeline-content { flex:1; border-bottom:1px solid #eee; padding-bottom:12px; }
+        .timeline-time { font-size:14px; color:#666; }
+        .timeline-name { font-weight:bold; margin:4px 0; }
+        .nearby-item { display:flex; justify-content:space-between; align-items:center; padding:12px 0; border-bottom:1px solid #f0f0f0; }
+        .nearby-info { flex:1; }
+        .nearby-distance { color:#666; font-size:13px; }
     </style>
 </head>
 <body>
-    <div id="map"></div>
+<div id="map"></div>
 
-    <div class="lang-switch">
-        <select id="langSelect">
-            <option value="cn">中文</option>
-            <option value="en">English</option>
-            <option value="ja">日本語</option>
-            <option value="ko">한국어</option>
-        </select>
-    </div>
-    <button class="feedback-btn" onclick="openPanel('feedbackPanel')">💬 留言</button>
+<div class="lang-switch">
+    <select id="langSelect">
+        <option value="cn">中文</option>
+        <option value="en">English</option>
+        <option value="ja">日本語</option>
+        <option value="ko">한국어</option>
+    </select>
+</div>
+<button class="feedback-btn" onclick="openPanel('feedbackPanel')">💬 留言</button>
 
-    <div class="float-voice" id="voiceBtn" onclick="toggleVoice()">🔊</div>
+<div class="category-bar" id="categoryBar">
+    <button class="category-btn active" onclick="filterPOI('全部')">📍全部</button>
+    <button class="category-btn" onclick="filterPOI('景点')">🏞️景点</button>
+    <button class="category-btn" onclick="filterPOI('餐饮')">🍽️餐饮</button>
+    <button class="category-btn" onclick="filterPOI('住宿')">🛏️住宿</button>
+    <button class="category-btn" onclick="filterPOI('厕所')">🚻厕所</button>
+    <button class="category-btn" onclick="filterPOI('停车场')">🚗停车</button>
+</div>
 
-    <div class="bottom-bar">
-        <button class="btn btn-secondary" onclick="openPanel('routesPanel')">📋 推荐路线</button>
-        <button class="btn btn-primary" id="navBtn" onclick="startSimulation()">📍 模拟导航</button>
-    </div>
+<div class="float-voice" id="voiceBtn" onclick="toggleVoice()">🔊</div>
+<div class="nearby-btn" onclick="openPanel('nearbyPanel')">🔍</div>
 
-    <div class="panel" id="routesPanel">
-        <div class="panel-header"><h2>推荐路线</h2><button class="close-btn" onclick="closePanel('routesPanel')">✕</button></div>
-        <div class="panel-body" id="routeList"></div>
-    </div>
+<div class="bottom-bar">
+    <button class="btn btn-secondary" onclick="openPanel('routesPanel')">📋 推荐路线</button>
+    <button class="btn btn-primary" id="navBtn" onclick="startSimulation()">📍 模拟导航</button>
+</div>
 
-    <div class="panel" id="routeDetailPanel">
-        <div class="panel-header"><h2 id="routeDetailTitle">线路详情</h2><button class="close-btn" onclick="closePanel('routeDetailPanel')">✕</button></div>
-        <div class="panel-body" id="routeDetailContent"></div>
-    </div>
-
-    <div class="panel" id="feedbackPanel">
-        <div class="panel-header"><h2>留言反馈</h2><button class="close-btn" onclick="closePanel('feedbackPanel')">✕</button></div>
-        <div class="panel-body">
-            <textarea id="feedbackMsg" rows="4" placeholder="请留下您的建议或问题..." style="width:100%; padding:12px; border-radius:8px; border:1px solid #ddd;"></textarea>
-            <button onclick="submitFeedback()" style="background:#2E7D32; color:white; border:none; padding:10px 20px; border-radius:8px; margin-top:10px;">提交</button>
-            <div id="feedbackResult" style="margin-top:10px;"></div>
+<!-- 附近面板 -->
+<div class="panel" id="nearbyPanel">
+    <div class="panel-header"><h2>附近服务</h2><button class="close-btn" onclick="closePanel('nearbyPanel')">✕</button></div>
+    <div class="panel-body">
+        <div style="display:flex; gap:8px; margin-bottom:15px; overflow-x:auto;" id="nearbyCategoryBar">
+            <button class="category-btn active" onclick="nearbyFilter('全部')">全部</button>
+            <button class="category-btn" onclick="nearbyFilter('景点')">景点</button>
+            <button class="category-btn" onclick="nearbyFilter('餐饮')">餐饮</button>
+            <button class="category-btn" onclick="nearbyFilter('住宿')">住宿</button>
+            <button class="category-btn" onclick="nearbyFilter('厕所')">厕所</button>
+            <button class="category-btn" onclick="nearbyFilter('停车场')">停车场</button>
         </div>
+        <div id="nearbyList"></div>
     </div>
+</div>
 
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<!-- 路线面板 -->
+<div class="panel" id="routesPanel">
+    <div class="panel-header"><h2>推荐路线</h2><button class="close-btn" onclick="closePanel('routesPanel')">✕</button></div>
+    <div class="panel-body" id="routeList"></div>
+</div>
 
-    <script>
-        // ========== 请替换为你的真实信息 ==========
-        const SUPABASE_URL = 'https://aermnnksvhezfykxefla.supabase.co';    // 👈 改为你的
-        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFlcm1ubmtzdmhlemZ5a3hlZmxhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIwNzQ4ODEsImV4cCI6MjA5NzY1MDg4MX0.c2Wemu90PiezEaXn2Hv3tBL-D5YFXYTVxei14CI-Rvk'; // 👈 改为你的
-        // =========================================
+<!-- 路线详情面板 -->
+<div class="panel" id="routeDetailPanel">
+    <div class="panel-header"><h2 id="routeDetailTitle">线路详情</h2><button class="close-btn" onclick="closePanel('routeDetailPanel')">✕</button></div>
+    <div class="panel-body" id="routeDetailContent"></div>
+</div>
 
-        const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+<!-- 留言面板 -->
+<div class="panel" id="feedbackPanel">
+    <div class="panel-header"><h2>留言反馈</h2><button class="close-btn" onclick="closePanel('feedbackPanel')">✕</button></div>
+    <div class="panel-body">
+        <textarea id="feedbackMsg" rows="4" placeholder="请留下您的建议或问题..." style="width:100%; padding:12px; border-radius:8px; border:1px solid #ddd;"></textarea>
+        <button onclick="submitFeedback()" style="background:#2E7D32; color:white; border:none; padding:10px 20px; border-radius:8px; margin-top:10px;">提交</button>
+        <div id="feedbackResult" style="margin-top:10px;"></div>
+    </div>
+</div>
 
-        let map;
-        let currentLang = 'cn';
-        let voiceEnabled = true;
-        let triggeredPois = {};
-        let currentTrip = null;
-        let simulationActive = false;
-        let simulatedPosition = null;
-        let voiceCheckingInterval = null;
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+    const SUPABASE_URL = 'https://aermnnksvhezfykxefla.supabase.co';
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.xxxx'; // 替换
+    const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-        // 初始化地图
-        function initMap() {
-    map = L.map('map').setView([32.08, 107.18], 12);
-    // 使用高德地图瓦片（国内稳定，免费）
-    L.tileLayer('https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}', {
-        subdomains: ['1','2','3','4'],
-        attribution: '&copy; 高德地图',
-        maxZoom: 18
-    }).addTo(map);
-    loadPOIs();
-    map.on('click', function(e) {
-        if (simulationActive) setSimulatedPosition(e.latlng.lat, e.latlng.lng);
-    });
-}
+    let map, currentLang='cn', voiceEnabled=true, triggeredPois={}, currentTrip=null;
+    let simulationActive=false, simulatedPosition=null, voiceCheckingInterval=null;
+    let allPois=[], activeCategory='全部';
+    let hideTimer;
 
-        // 加载POI标记
-        async function loadPOIs() {
-            const { data, error } = await sb.from('ztj_poi').select('*').eq('status', 'active');
-            if (error) return console.error(error);
-            const colorMap = { '景点':'#2E7D32', '餐饮':'#FF9800', '住宿':'#2196F3', '厕所':'#9E9E9E', '停车场':'#00BCD4' };
-            data.forEach(poi => {
-                const icon = L.divIcon({
-                    className: 'custom-poi',
-                    html: '<div style="background:' + colorMap[poi.category] + '; width:24px; height:24px; border-radius:50%; border:2px solid white; box-shadow:0 2px 6px rgba(0,0,0,0.3);"></div>',
-                    iconSize: [24, 24],
-                    iconAnchor: [12, 12]
-                });
-                L.marker([poi.lat, poi.lng], { icon }).addTo(map)
-                    .bindPopup('<b>' + poi.name + '</b><br>' + (poi.description || ''));
+    function initMap(){
+        map = L.map('map').setView([32.08,107.18],12);
+        L.tileLayer('https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}',{
+            subdomains:['1','2','3','4'], attribution:'', maxZoom:18
+        }).addTo(map);
+        loadAllPOIs();
+        map.on('click',function(e){ if(simulationActive) setSimulatedPosition(e.latlng.lat,e.latlng.lng); });
+        // 分类栏自动隐藏
+        document.getElementById('categoryBar').addEventListener('mouseenter',()=>clearTimeout(hideTimer));
+        document.getElementById('categoryBar').addEventListener('mouseleave',startHideTimer);
+        startHideTimer();
+    }
+
+    function startHideTimer(){
+        clearTimeout(hideTimer);
+        hideTimer = setTimeout(()=>{
+            document.getElementById('categoryBar').classList.add('hidden-bar');
+        },5000);
+    }
+
+    async function loadAllPOIs(){
+        const { data } = await sb.from('ztj_poi').select('*').eq('status','active');
+        allPois = data || [];
+        renderPOIs(allPois);
+    }
+
+    function renderPOIs(pois){
+        map.eachLayer(layer => { if(layer instanceof L.Marker) map.removeLayer(layer); });
+        const colorMap = {'景点':'#2E7D32','餐饮':'#FF9800','住宿':'#2196F3','厕所':'#9E9E9E','停车场':'#00BCD4'};
+        pois.forEach(poi=>{
+            const icon = L.divIcon({
+                className:'custom-poi',
+                html:`<div style="background:${colorMap[poi.category]}; width:24px; height:24px; border-radius:50%; border:2px solid white; box-shadow:0 2px 6px rgba(0,0,0,0.3);"></div>`,
+                iconSize:[24,24], iconAnchor:[12,12]
             });
-        }
-
-        // 语言切换
-        document.getElementById('langSelect').addEventListener('change', function(e) {
-            currentLang = e.target.value;
+            L.marker([poi.lat,poi.lng],{icon}).addTo(map)
+              .bindPopup(`<b>${poi.name}</b><br>${poi.description||''}`);
         });
+    }
 
-        // 面板控制
-        function openPanel(panelId) {
-            document.getElementById(panelId).classList.add('active');
-            if (panelId === 'routesPanel') loadRoutes();
-        }
-        function closePanel(panelId) {
-            document.getElementById(panelId).classList.remove('active');
-        }
+    function filterPOI(cat){
+        activeCategory = cat;
+        document.querySelectorAll('#categoryBar .category-btn').forEach(b=>b.classList.remove('active'));
+        event.target.classList.add('active');
+        if(cat==='全部') renderPOIs(allPois);
+        else renderPOIs(allPois.filter(p=>p.category===cat));
+        startHideTimer();
+    }
 
-        // 加载路线列表
-        async function loadRoutes() {
-            const { data, error } = await sb.from('ztj_routes').select('*');
-            if (error) return console.error(error);
-            let html = '';
-            data.forEach(route => {
-                html += '<div class="route-card" onclick="showRouteDetail(' + route.id + ')">'
-                    + '<h3>' + route.name + '</h3>'
-                    + '<div class="tags"><span class="tag">' + route.days + '天</span><span class="tag">' + route.transport + '</span><span class="tag">' + route.group_type + '</span></div>'
-                    + '<p>' + (route.intro || '') + '</p></div>';
-            });
-            document.getElementById('routeList').innerHTML = html;
-        }
+    function nearbyFilter(cat){
+        document.querySelectorAll('#nearbyCategoryBar .category-btn').forEach(b=>b.classList.remove('active'));
+        event.target.classList.add('active');
+        const ref = simulatedPosition || {lat:32.08,lng:107.18};
+        let list = allPois;
+        if(cat!=='全部') list = list.filter(p=>p.category===cat);
+        list = list.map(p=>({...p, distance: getDistance(ref.lat,ref.lng,p.lat,p.lng)})).sort((a,b)=>a.distance-b.distance);
+        renderNearbyList(list);
+    }
 
-        // 显示线路详情
-        async function showRouteDetail(routeId) {
-            const { data: route } = await sb.from('ztj_routes').select('*').eq('id', routeId).single();
-            const { data: nodes } = await sb.from('ztj_route_nodes').select('*, poi:poi_id(*)').eq('route_id', routeId).order('order_num');
-            document.getElementById('routeDetailTitle').textContent = route.name;
-            let timeCounter = 8 * 60; // 8:00 开始
-            let html = '<p>' + (route.intro || '') + '</p><div style="margin:20px 0;">';
-            nodes.forEach(node => {
-                let h = Math.floor(timeCounter / 60), m = timeCounter % 60;
-                let timeStr = ('0' + h).slice(-2) + ':' + ('0' + m).slice(-2);
-                timeCounter += node.duration_min + node.transport_time;
-                html += '<div class="timeline-item"><div class="timeline-marker"></div><div class="timeline-content">'
-                    + '<div class="timeline-time">' + timeStr + '</div>'
-                    + '<div class="timeline-name">' + (node.poi ? node.poi.name : '未知') + '</div>'
-                    + '<div style="font-size:12px;color:#666;">' + node.transport_mode + ' · 停留' + node.duration_min + '分钟</div>'
-                    + (node.note ? '<div class="timeline-note">' + node.note + '</div>' : '')
-                    + '</div></div>';
-            });
-            html += '</div><button class="btn btn-primary" style="width:100%;" onclick="setCurrentTrip(' + routeId + ')">一键套用此线路</button>';
-            document.getElementById('routeDetailContent').innerHTML = html;
-            openPanel('routeDetailPanel');
-        }
+    function renderNearbyList(list){
+        const html = list.map(p=>`
+            <div class="nearby-item">
+                <div class="nearby-info"><b>${p.name}</b> (${p.category})<br><span class="nearby-distance">${(p.distance/1000).toFixed(1)} km</span></div>
+                <button onclick="window.open('https://uri.amap.com/marker?position=${p.lng},${p.lat}&name=${p.name}','_blank')" style="background:#2E7D32; color:white; border:none; padding:6px 12px; border-radius:6px;">导航</button>
+            </div>
+        `).join('');
+        document.getElementById('nearbyList').innerHTML = html;
+    }
 
-        // 套用行程
-        function setCurrentTrip(routeId) {
-            currentTrip = routeId;
-            closePanel('routeDetailPanel');
-            closePanel('routesPanel');
-            alert('已设置当前行程，请点击“模拟导航”开始游览');
-        }
+    function openPanel(id){
+        document.getElementById(id).classList.add('active');
+        if(id==='routesPanel') loadRoutes();
+        if(id==='nearbyPanel') nearbyFilter('全部');
+    }
+    function closePanel(id){ document.getElementById(id).classList.remove('active'); }
 
-        // 开始模拟导航
-        function startSimulation() {
-            if (!currentTrip) { alert('请先选择一条推荐路线'); return; }
-            simulationActive = true;
-            document.getElementById('voiceBtn').style.display = 'flex';
-            document.getElementById('navBtn').textContent = '📍 导航中...';
-            alert('模拟导航已开启，请在地图上点击位置模拟移动。语音将自动触发。');
-            if (voiceCheckingInterval) clearInterval(voiceCheckingInterval);
-            voiceCheckingInterval = setInterval(checkVoiceTrigger, 3000);
-        }
+    async function loadRoutes(){
+        const { data } = await sb.from('ztj_routes').select('*');
+        document.getElementById('routeList').innerHTML = data.map(r=>`
+            <div class="route-card" onclick="showRouteDetail(${r.id})">
+                <h3>${r.name}</h3><div class="tags"><span class="tag">${r.days}天</span><span class="tag">${r.transport}</span></div><p>${r.intro||''}</p>
+            </div>`).join('');
+    }
 
-        // 设置模拟位置
-        function setSimulatedPosition(lat, lng) {
-            simulatedPosition = { lat: lat, lng: lng };
-            if (window.simMarker) map.removeLayer(window.simMarker);
-            window.simMarker = L.circleMarker([lat, lng], { radius: 8, color: 'red', fillOpacity: 0.8 }).addTo(map);
-        }
+    async function showRouteDetail(id){
+        const { data:route } = await sb.from('ztj_routes').select('*').eq('id',id).single();
+        const { data:nodes } = await sb.from('ztj_route_nodes').select('*, poi:poi_id(*)').eq('route_id',id).order('order_num');
+        let t=8*60, html='';
+        nodes.forEach(n=>{
+            let h=Math.floor(t/60), m=t%60;
+            html+=`<div class="timeline-item"><div class="timeline-marker"></div><div class="timeline-content">
+                <div class="timeline-time">${('0'+h).slice(-2)}:${('0'+m).slice(-2)}</div>
+                <div class="timeline-name">${n.poi?.name||'未知'}</div>
+                <div style="font-size:12px;color:#666;">${n.transport_mode} · 停留${n.duration_min}分钟</div></div></div>`;
+            t+=n.duration_min+n.transport_time;
+        });
+        document.getElementById('routeDetailTitle').textContent=route.name;
+        document.getElementById('routeDetailContent').innerHTML=`<p>${route.intro||''}</p><div style="margin:20px 0;">${html}</div>
+        <button class="btn btn-primary" style="width:100%" onclick="setCurrentTrip(${id})">一键套用此线路</button>`;
+        openPanel('routeDetailPanel');
+    }
 
-        // 检测语音触发（防重复）
-        async function checkVoiceTrigger() {
-            if (!simulatedPosition || !voiceEnabled) return;
-            const { data: pois } = await sb.from('ztj_poi').select('*').eq('status', 'active');
-            if (!pois) return;
-            for (let i = 0; i < pois.length; i++) {
-                let poi = pois[i];
-                let dist = getDistance(simulatedPosition.lat, simulatedPosition.lng, poi.lat, poi.lng);
-                if (dist <= (poi.trigger_radius || 10)) {
-                    if (!triggeredPois[poi.id]) {
-                        triggerVoice(poi);
-                        triggeredPois[poi.id] = Date.now();
-                    }
-                }
+    function setCurrentTrip(id){ currentTrip=id; closePanel('routeDetailPanel'); closePanel('routesPanel'); alert('已设置行程，点击模拟导航开始'); }
+
+    function startSimulation(){
+        if(!currentTrip){ alert('请先选择路线'); return; }
+        simulationActive=true;
+        document.getElementById('voiceBtn').style.display='flex';
+        document.getElementById('navBtn').textContent='📍 导航中...';
+        alert('模拟导航已开启，请点击地图模拟移动');
+        if(voiceCheckingInterval) clearInterval(voiceCheckingInterval);
+        voiceCheckingInterval=setInterval(checkVoiceTrigger,3000);
+    }
+
+    function setSimulatedPosition(lat,lng){
+        simulatedPosition={lat,lng};
+        if(window.simMarker) map.removeLayer(window.simMarker);
+        window.simMarker=L.circleMarker([lat,lng],{radius:8,color:'red',fillOpacity:0.8}).addTo(map);
+    }
+
+    async function checkVoiceTrigger(){
+        if(!simulatedPosition||!voiceEnabled) return;
+        const { data:pois } = await sb.from('ztj_poi').select('*').eq('status','active');
+        if(!pois) return;
+        pois.forEach(poi=>{
+            const dist=getDistance(simulatedPosition.lat,simulatedPosition.lng,poi.lat,poi.lng);
+            if(dist<=(poi.trigger_radius||10) && !triggeredPois[poi.id]){
+                triggerVoice(poi);
+                triggeredPois[poi.id]=Date.now();
             }
-        }
+        });
+    }
 
-        // 播放语音
-        function triggerVoice(poi) {
-            let textKey = 'voice_' + currentLang;
-            let text = poi[textKey] || poi.voice_cn || poi.description;
-            if (!text) return;
-            let utterance = new SpeechSynthesisUtterance(text);
-            let langMap = { cn: 'zh-CN', en: 'en-US', ja: 'ja-JP', ko: 'ko-KR' };
-            utterance.lang = langMap[currentLang] || 'zh-CN';
-            window.speechSynthesis.speak(utterance);
-        }
+    function triggerVoice(poi){
+        const text=poi['voice_'+currentLang]||poi.voice_cn||poi.description;
+        if(!text) return;
+        const u=new SpeechSynthesisUtterance(text);
+        u.lang={cn:'zh-CN',en:'en-US',ja:'ja-JP',ko:'ko-KR'}[currentLang]||'zh-CN';
+        speechSynthesis.speak(u);
+    }
 
-        // 语音开关
-        function toggleVoice() {
-            voiceEnabled = !voiceEnabled;
-            document.getElementById('voiceBtn').textContent = voiceEnabled ? '🔊' : '🔇';
-            if (!voiceEnabled) window.speechSynthesis.cancel();
-        }
+    function toggleVoice(){
+        voiceEnabled=!voiceEnabled;
+        document.getElementById('voiceBtn').textContent=voiceEnabled?'🔊':'🔇';
+        if(!voiceEnabled) speechSynthesis.cancel();
+    }
 
-        // 计算距离（Haversine公式）
-        function getDistance(lat1, lng1, lat2, lng2) {
-            const R = 6371000;
-            const dLat = (lat2 - lat1) * Math.PI / 180;
-            const dLng = (lng2 - lng1) * Math.PI / 180;
-            const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLng / 2) * Math.sin(dLng / 2);
-            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-            return R * c;
-        }
+    function getDistance(lat1,lng1,lat2,lng2){
+        const R=6371000, dLat=(lat2-lat1)*Math.PI/180, dLng=(lng2-lng1)*Math.PI/180;
+        const a=Math.sin(dLat/2)**2+Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLng/2)**2;
+        return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+    }
 
-        // 提交留言
-        async function submitFeedback() {
-            const msg = document.getElementById('feedbackMsg').value;
-            if (!msg) return;
-            const { error } = await sb.from('ztj_feedbacks').insert([{ message: msg }]);
-            document.getElementById('feedbackResult').innerHTML = error ? '<p style="color:red;">提交失败</p>' : '<p style="color:green;">感谢反馈！</p>';
-            if (!error) document.getElementById('feedbackMsg').value = '';
-        }
+    async function submitFeedback(){
+        const msg=document.getElementById('feedbackMsg').value;
+        if(!msg) return;
+        const {error}=await sb.from('ztj_feedbacks').insert([{message:msg}]);
+        document.getElementById('feedbackResult').innerHTML=error?'<p style="color:red">提交失败</p>':'<p style="color:green">感谢反馈！</p>';
+        if(!error) document.getElementById('feedbackMsg').value='';
+    }
 
-        window.onload = initMap;
-    </script>
+    document.getElementById('langSelect').addEventListener('change',e=>currentLang=e.target.value);
+    window.onload=initMap;
+</script>
 </body>
 </html>

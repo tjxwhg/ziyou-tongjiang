@@ -35,7 +35,6 @@
         .poi-group-list { padding:0 14px; }
         .poi-group-list .card { margin:6px 0; }
         .more-btn { text-align:center; padding:8px; color:#2e7d32; cursor:pointer; }
-        /* 序号输入框 */
         .sort-input { width:60px; margin-right:6px; }
     </style>
 </head>
@@ -66,7 +65,9 @@
                 <h3 id="poi-form-title">新增POI</h3>
                 <input type="hidden" id="poi-id">
                 <div class="form-group"><label>名称 *</label><input id="poi-name"></div>
-                <div class="form-group"><label>类别 *</label><select id="poi-category"><option>景点</option><option>餐饮</option><option>住宿</option><option>厕所</option><option>停车场</option></select></div>
+                <div class="form-group"><label>类别 *</label><select id="poi-category">
+                    <option>景点</option><option>文化场馆</option><option>餐饮</option><option>住宿</option><option>停车场</option><option>厕所</option><option>交通枢纽</option><option>公共服务</option><option>购物</option>
+                </select></div>
                 <div class="form-group"><label>排序序号</label><input id="poi-sort" type="number" value="0" step="1"></div>
                 <div class="form-group"><label>纬度 *</label><input id="poi-lat" type="number" step="any"></div>
                 <div class="form-group"><label>经度 *</label><input id="poi-lng" type="number" step="any"></div>
@@ -181,10 +182,15 @@
     }
 
     // ==================== POI 分组管理（带手动排序） ====================
+    const poiCategories = ['景点', '文化场馆', '餐饮', '住宿', '停车场', '厕所', '交通枢纽', '公共服务', '购物'];
+    const poiColors = {
+        '景点':'#2E7D32', '文化场馆':'#9C27B0', '餐饮':'#FF9800', '住宿':'#2196F3',
+        '停车场':'#00BCD4', '厕所':'#9E9E9E', '交通枢纽':'#795548', '公共服务':'#607D8B', '购物':'#E91E63'
+    };
+
     async function loadPoiList() {
         const { data } = await sb.from('ztj_poi').select('*').order('sort_order', { ascending: true }).order('id');
         if (!data) return;
-        const categoriesOrder = ['景点', '餐饮', '住宿', '厕所', '停车场'];
         const grouped = {};
         data.forEach(p => {
             if (!grouped[p.category]) grouped[p.category] = [];
@@ -192,7 +198,7 @@
         });
         let html = '';
         let catIndex = 1;
-        categoriesOrder.forEach(cat => {
+        poiCategories.forEach(cat => {
             if (!grouped[cat] || grouped[cat].length === 0) return;
             const list = grouped[cat];
             const groupId = `poi-group-${catIndex}`;
@@ -226,7 +232,7 @@
     async function updatePoiSort(poiId, newValue) {
         const val = parseInt(newValue) || 0;
         await sb.from('ztj_poi').update({ sort_order: val }).eq('id', poiId);
-        loadPoiList(); // 刷新列表以重新编号
+        loadPoiList();
     }
 
     function toggleGroup(id) {
@@ -236,7 +242,6 @@
         if (arrow) arrow.textContent = el.classList.contains('hidden') ? '▶' : '▼';
     }
 
-    // POI 增删改
     function showPoiForm(editMode=false) { document.getElementById('poi-form').classList.remove('hidden'); document.getElementById('poi-form-title').textContent = editMode?'编辑POI':'新增POI'; }
     function hidePoiForm() { document.getElementById('poi-form').classList.add('hidden'); clearPoiForm(); }
     function clearPoiForm() {

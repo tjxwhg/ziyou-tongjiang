@@ -150,7 +150,8 @@
         const account = document.getElementById('account').value.trim();
         const password = document.getElementById('password').value;
         if (!account || !password) return;
-        const email = account.includes('@') ? account : account + '@tongjiang.local';
+        // 修改邮箱后缀为合法域名
+        const email = account.includes('@') ? account : account + '@zhiyoutongjiang.cn';
         const { error } = await sb.auth.signInWithPassword({ email, password });
         if (error) {
             document.getElementById('login-msg').innerHTML = `<p class="error-msg">登录失败：${error.message}</p>`;
@@ -386,17 +387,14 @@
         nodesToSave[idx][field] = value;
     }
 
-    // 按 POI 排序重排节点
     async function autoReorderNodes() {
         if (nodesToSave.length === 0) return;
-        // 获取所有POI的最新排序值
         const poiIds = nodesToSave.map(n => n.poi_id).filter(id => id);
         if (poiIds.length === 0) { alert('没有有效 POI，无法排序'); return; }
         const { data: pois } = await sb.from('ztj_poi').select('id,sort_order').in('id', poiIds);
         if (!pois) return;
         const sortMap = {};
         pois.forEach(p => sortMap[p.id] = p.sort_order || 0);
-        // 更新节点中的 poi_sort，并重新排列
         nodesToSave.forEach(n => { n.poi_sort = sortMap[n.poi_id] || 0; });
         nodesToSave.sort((a, b) => (a.poi_sort - b.poi_sort) || (a.poi_id - b.poi_id));
         renderNodes();
@@ -474,7 +472,8 @@
         const displayName = prompt('请输入商户实际名称:'); if(!displayName) return;
         const password = prompt('请输入初始密码:'); if(!password) return;
         const poiId = prompt('请输入绑定的POI ID:'); if(!poiId) return;
-        const email = accountId + '@tongjiang.local';
+        // 修改邮箱后缀
+        const email = accountId + '@zhiyoutongjiang.cn';
         const { data: authData, error: authError } = await sb.auth.signUp({ email, password });
         if (authError) { alert('创建用户失败：'+authError.message); return; }
         if (authData.user) {

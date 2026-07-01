@@ -40,7 +40,6 @@
         .nearby-item { display:flex; justify-content:space-between; align-items:center; padding:12px 0; border-bottom:1px solid #f0f0f0; }
         .nearby-info { flex:1; }
         .nearby-distance { color:#666; font-size:13px; }
-        /* 商户详情卡片 */
         .merchant-detail { padding:10px; }
         .stars { font-size:16px; color:#f39c12; }
         .service-item { display:flex; align-items:center; gap:8px; margin:8px 0; }
@@ -134,6 +133,7 @@
     let map, currentLang='cn', voiceEnabled=true, triggeredPois={}, currentTrip=null;
     let simulationActive=false, simulatedPosition=null, voiceCheckingInterval=null;
     let allPois=[], activeCategory='全部', currentMerchant=null;
+    let currentRoutePolyline = null; // 路线折线
     let hideTimer;
 
     function initMap(){
@@ -143,7 +143,6 @@
         }).addTo(map);
         loadAllPOIs();
         map.on('click', function(e){ if(simulationActive) setSimulatedPosition(e.latlng.lat, e.latlng.lng); });
-
         document.getElementById('categoryBar').addEventListener('mouseenter', ()=>clearTimeout(hideTimer));
         document.getElementById('categoryBar').addEventListener('mouseleave', startHideTimer);
         startHideTimer();
@@ -162,8 +161,8 @@
 
     function renderPOIs(pois){
         map.eachLayer(layer => { if(layer instanceof L.Marker || layer instanceof L.CircleMarker) map.removeLayer(layer); });
-        // 移除模拟标记后重新添加
         if(window.simMarker) window.simMarker.addTo(map);
+        if(currentRoutePolyline) currentRoutePolyline.addTo(map);
         const colorMap = {'景点':'#2E7D32','餐饮':'#FF9800','住宿':'#2196F3','厕所':'#9E9E9E','停车场':'#00BCD4'};
         pois.forEach(poi=>{
             const icon = L.divIcon({
@@ -177,14 +176,12 @@
     }
 
     async function showPoiDetail(poi) {
-        // 查询商户信息
         const { data: merchant } = await sb.from('ztj_merchants').select('*').eq('poi_id', poi.id).maybeSingle();
         if (merchant) {
             currentMerchant = merchant;
             renderMerchantDetail(poi, merchant);
             openPanel('merchantDetailPanel');
         } else {
-            // 普通POI显示简要信息
             const popup = L.popup().setLatLng([poi.lat, poi.lng]).setContent(`<b>${poi.name}</b><br>${poi.description||''}`);
             popup.openOn(map);
         }
@@ -273,7 +270,6 @@
     }
     function closePanel(id){ document.getElementById(id).classList.remove('active'); }
 
-    // 附近面板
     async function loadNearbyPanel(){
         const ref = simulatedPosition || {lat:32.08,lng:107.18};
         const cats = ['全部','景点','餐饮','住宿','厕所','停车场'];
@@ -298,7 +294,6 @@
         `).join('');
     }
 
-    // 路线相关
     async function loadRoutes(){
         const { data } = await sb.from('ztj_routes').select('*');
         document.getElementById('routeList').innerHTML = data.map(r=>`
@@ -324,14 +319,30 @@
         openPanel('routeDetailPanel');
     }
 
-    function setCurrentTrip(id){ currentTrip=id; closePanel('routeDetailPanel'); closePanel('routesPanel'); alert('已设置行程，点击模拟导航开始'); }
+    function setCurrentTrip(routeId) {
+        if (currentRoutePolyline) { map.removeLayer(currentRoutePolyline); currentRoutePolyline = null; }
+        currentTrip = routeId;
+        closePanel('routeDetailPanel');
+        closePanel('routesPanel');
+        alert('已设置行程，点击模拟导航开始');
+    }
 
-    function startSimulation(){
+    async function startSimulation(){
         if(!currentTrip){ alert('请先选择路线'); return; }
         simulationActive=true;
         document.getElementById('voiceBtn').style.display='flex';
         document.getElementById('navBtn').textContent='📍 导航中...';
-        alert('模拟导航已开启，请点击地图移动');
+
+        // 绘制路线折线
+        const { data: nodes } = await sb.from('ztj_route_nodes').select('poi_id, order_num, poi:poi_id(lat, lng)').eq('route_id', currentTrip).order('order_num');
+        if (nodes && nodes.length > 0) {
+            const latlngs = nodes.map(n => [n.poi.lat, n.poi.lng]);
+            if (currentRoutePolyline) map.removeLayer(currentRoutePolyline);
+            currentRoutePolyline = L.polyline(latlngs, { color: '#FF5722', weight: 4, opacity: 0.8 }).addTo(map);
+            map.fitBounds(currentRoutePolyline.getBounds().pad(0.1));
+        }
+
+        alert('模拟导航已开启，请在地图上点击移动');
         if(voiceCheckingInterval) clearInterval(voiceCheckingInterval);
         voiceCheckingInterval=setInterval(checkVoiceTrigger,3000);
     }

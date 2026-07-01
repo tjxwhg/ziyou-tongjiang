@@ -35,6 +35,8 @@
         .poi-group-list { padding:0 14px; }
         .poi-group-list .card { margin:6px 0; }
         .more-btn { text-align:center; padding:8px; color:#2e7d32; cursor:pointer; }
+        /* 序号输入框 */
+        .sort-input { width:60px; margin-right:6px; }
     </style>
 </head>
 <body>
@@ -65,6 +67,7 @@
                 <input type="hidden" id="poi-id">
                 <div class="form-group"><label>名称 *</label><input id="poi-name"></div>
                 <div class="form-group"><label>类别 *</label><select id="poi-category"><option>景点</option><option>餐饮</option><option>住宿</option><option>厕所</option><option>停车场</option></select></div>
+                <div class="form-group"><label>排序序号</label><input id="poi-sort" type="number" value="0" step="1"></div>
                 <div class="form-group"><label>纬度 *</label><input id="poi-lat" type="number" step="any"></div>
                 <div class="form-group"><label>经度 *</label><input id="poi-lng" type="number" step="any"></div>
                 <div class="form-group"><label>简介</label><textarea id="poi-desc" rows="2"></textarea></div>
@@ -177,9 +180,9 @@
         else if (tab==='merchants') loadMerchantList();
     }
 
-    // ==================== POI 分组管理 ====================
+    // ==================== POI 分组管理（带手动排序） ====================
     async function loadPoiList() {
-        const { data } = await sb.from('ztj_poi').select('*').order('category');
+        const { data } = await sb.from('ztj_poi').select('*').order('sort_order', { ascending: true }).order('id');
         if (!data) return;
         const categoriesOrder = ['景点', '餐饮', '住宿', '厕所', '停车场'];
         const grouped = {};
@@ -202,7 +205,11 @@
                     ${list.map((p, idx) => {
                         const serial = `${catIndex}-${idx+1}`;
                         return `<div class="card card-row">
-                            <span><b>${serial}</b> ${p.name} (${p.lat},${p.lng})</span>
+                            <span>
+                                <input type="number" class="sort-input" value="${p.sort_order || 0}"
+                                       onchange="updatePoiSort(${p.id}, this.value)" title="修改排序序号">
+                                <b>${serial}</b> ${p.name} (${p.lat},${p.lng})
+                            </span>
                             <div>
                                 <button class="btn btn-default" onclick="editPoi(${p.id})">编辑</button>
                                 <button class="btn btn-danger" onclick="deletePoi(${p.id})">删除</button>
@@ -214,6 +221,12 @@
             catIndex++;
         });
         document.getElementById('poi-list').innerHTML = html || '<p>暂无POI</p>';
+    }
+
+    async function updatePoiSort(poiId, newValue) {
+        const val = parseInt(newValue) || 0;
+        await sb.from('ztj_poi').update({ sort_order: val }).eq('id', poiId);
+        loadPoiList(); // 刷新列表以重新编号
     }
 
     function toggleGroup(id) {
@@ -228,14 +241,16 @@
     function hidePoiForm() { document.getElementById('poi-form').classList.add('hidden'); clearPoiForm(); }
     function clearPoiForm() {
         document.getElementById('poi-id').value=''; document.getElementById('poi-name').value=''; document.getElementById('poi-category').value='景点';
-        document.getElementById('poi-lat').value=''; document.getElementById('poi-lng').value=''; document.getElementById('poi-desc').value='';
-        document.getElementById('poi-voice-cn').value=''; document.getElementById('poi-voice-en').value=''; document.getElementById('poi-radius').value='5';
+        document.getElementById('poi-sort').value='0'; document.getElementById('poi-lat').value=''; document.getElementById('poi-lng').value='';
+        document.getElementById('poi-desc').value=''; document.getElementById('poi-voice-cn').value=''; document.getElementById('poi-voice-en').value='';
+        document.getElementById('poi-radius').value='5';
     }
     async function editPoi(id) {
         const { data } = await sb.from('ztj_poi').select('*').eq('id',id).single();
         document.getElementById('poi-id').value=data.id; document.getElementById('poi-name').value=data.name;
-        document.getElementById('poi-category').value=data.category; document.getElementById('poi-lat').value=data.lat;
-        document.getElementById('poi-lng').value=data.lng; document.getElementById('poi-desc').value=data.description||'';
+        document.getElementById('poi-category').value=data.category; document.getElementById('poi-sort').value=data.sort_order || 0;
+        document.getElementById('poi-lat').value=data.lat; document.getElementById('poi-lng').value=data.lng;
+        document.getElementById('poi-desc').value=data.description||'';
         document.getElementById('poi-voice-cn').value=data.voice_cn||''; document.getElementById('poi-voice-en').value=data.voice_en||'';
         document.getElementById('poi-radius').value=data.trigger_radius||5;
         showPoiForm(true);
@@ -244,10 +259,16 @@
         const id=document.getElementById('poi-id').value; const name=document.getElementById('poi-name').value.trim();
         const lat=parseFloat(document.getElementById('poi-lat').value); const lng=parseFloat(document.getElementById('poi-lng').value);
         if(!name||isNaN(lat)||isNaN(lng)){alert('名称、纬度、经度必填');return;}
-        const payload={name,category:document.getElementById('poi-category').value,lat,lng,
+        const payload={
+            name,
+            category:document.getElementById('poi-category').value,
+            sort_order: parseInt(document.getElementById('poi-sort').value) || 0,
+            lat, lng,
             description:document.getElementById('poi-desc').value,
-            voice_cn:document.getElementById('poi-voice-cn').value, voice_en:document.getElementById('poi-voice-en').value,
-            trigger_radius:parseInt(document.getElementById('poi-radius').value)||5};
+            voice_cn:document.getElementById('poi-voice-cn').value,
+            voice_en:document.getElementById('poi-voice-en').value,
+            trigger_radius:parseInt(document.getElementById('poi-radius').value)||5
+        };
         if(id) await sb.from('ztj_poi').update(payload).eq('id',id);
         else await sb.from('ztj_poi').insert([payload]);
         hidePoiForm(); loadPoiList();

@@ -36,7 +36,6 @@
         .poi-group-list .card { margin:6px 0; transition: all 0.2s; }
         .more-btn { text-align:center; padding:8px; color:#2e7d32; cursor:pointer; }
         .sort-input { width:60px; margin-right:6px; }
-        /* 内联编辑面板 */
         .inline-edit { background:#fff; border:1px solid #2e7d32; border-radius:8px; padding:12px; margin-top:8px; transition: max-height 0.3s ease; }
         .inline-edit.hidden { display:none; }
     </style>
@@ -64,7 +63,6 @@
         </div>
         <div id="tab-poi">
             <button class="btn btn-primary" onclick="showNewPoiForm()">+ 新增POI</button>
-            <!-- 新增POI的专用表单（顶部弹出） -->
             <div id="new-poi-form" class="card hidden" style="margin-top:14px;">
                 <h3>新增POI</h3>
                 <div class="form-group"><label>名称 *</label><input id="new-poi-name"></div>
@@ -184,14 +182,12 @@
         else if (tab==='merchants') loadMerchantList();
     }
 
-    // ==================== POI 管理（内联编辑） ====================
     const poiCategories = ['景点', '文化场馆', '餐饮', '住宿', '停车场', '厕所', '交通枢纽', '公共服务', '购物'];
     const poiColors = {
         '景点':'#2E7D32', '文化场馆':'#9C27B0', '餐饮':'#FF9800', '住宿':'#2196F3',
         '停车场':'#00BCD4', '厕所':'#9E9E9E', '交通枢纽':'#795548', '公共服务':'#607D8B', '购物':'#E91E63'
     };
 
-    // 新增POI表单
     function showNewPoiForm() { document.getElementById('new-poi-form').classList.remove('hidden'); }
     function hideNewPoiForm() {
         document.getElementById('new-poi-form').classList.add('hidden');
@@ -228,7 +224,6 @@
         loadPoiList();
     }
 
-    // 加载POI分组列表
     async function loadPoiList() {
         const { data } = await sb.from('ztj_poi').select('*').order('sort_order', { ascending: true }).order('id');
         if (!data) return;
@@ -242,6 +237,8 @@
         poiCategories.forEach(cat => {
             if (!grouped[cat] || grouped[cat].length === 0) return;
             const list = grouped[cat];
+            // 确保组内按 sort_order 排序（修复排序问题）
+            list.sort((a, b) => (a.sort_order - b.sort_order) || (a.id - b.id));
             const groupId = `poi-group-${catIndex}`;
             html += `<div class="poi-group">
                 <div class="poi-group-title" onclick="toggleGroup('${groupId}')">
@@ -264,7 +261,6 @@
                                     <button class="btn btn-danger" onclick="deletePoi(${p.id})">删除</button>
                                 </div>
                             </div>
-                            <!-- 内联编辑区域 -->
                             <div id="${editFormId}" class="inline-edit hidden">
                                 <div class="form-group"><label>名称</label><input id="edit-name-${p.id}" value="${p.name}"></div>
                                 <div class="form-group"><label>类别</label><select id="edit-category-${p.id}">
@@ -289,11 +285,9 @@
         document.getElementById('poi-list').innerHTML = html || '<p>暂无POI</p>';
     }
 
-    // 切换内联编辑显示
     function toggleEditForm(formId, poiId) {
         const form = document.getElementById(formId);
         if (form.classList.contains('hidden')) {
-            // 打开前，确保其他所有编辑框关闭
             document.querySelectorAll('.inline-edit').forEach(el => el.classList.add('hidden'));
             form.classList.remove('hidden');
         } else {
@@ -301,7 +295,6 @@
         }
     }
 
-    // 保存内联编辑
     async function saveInlineEdit(poiId) {
         const name = document.getElementById(`edit-name-${poiId}`).value.trim();
         const lat = parseFloat(document.getElementById(`edit-lat-${poiId}`).value);
@@ -318,7 +311,7 @@
             trigger_radius: parseInt(document.getElementById(`edit-radius-${poiId}`).value) || 5
         };
         await sb.from('ztj_poi').update(payload).eq('id', poiId);
-        loadPoiList(); // 刷新列表，自动收起所有编辑框
+        loadPoiList();
     }
 
     async function updatePoiSort(poiId, newValue) {
@@ -336,7 +329,7 @@
 
     async function deletePoi(id) { if(confirm('删除POI？')){ await sb.from('ztj_poi').delete().eq('id',id); loadPoiList(); } }
 
-    // ==================== 路线管理（含出发地） ====================
+    // ==================== 路线管理 ====================
     async function loadRouteList() {
         const { data } = await sb.from('ztj_routes').select('*').order('id');
         document.getElementById('route-list').innerHTML = data.map(r => `
@@ -403,7 +396,7 @@
     }
     async function replyFeedback(id) { const reply=document.getElementById('reply-'+id).value; await sb.from('ztj_feedbacks').update({reply}).eq('id',id); alert('已保存'); loadFeedbackList(); }
 
-    // ==================== 商户管理（超管） ====================
+    // ==================== 商户管理 ====================
     async function loadMerchantList() {
         const { data } = await sb.from('ztj_merchants').select('*, poi:poi_id(name)');
         document.getElementById('merchant-list').innerHTML = data.map(m => `

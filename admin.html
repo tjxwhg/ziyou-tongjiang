@@ -16,7 +16,7 @@
         .form-group { margin-bottom:12px; }
         .form-group label { display:block; margin-bottom:4px; font-weight:500; font-size:14px; }
         .form-group input, .form-group select, .form-group textarea { width:100%; padding:8px 12px; border:1px solid #ccc; border-radius:6px; font-size:14px; }
-        .btn { padding:8px 16px; border:none; border-radius:6px; cursor:pointer; font-weight:500; font-size:14px; }
+        .btn { padding:8px 16px; border:none; border-radius:6px; cursor:pointer; font-weight:500; font-size:14px; margin-right:4px; }
         .btn-primary { background:#2e7d32; color:white; }
         .btn-danger { background:#c62828; color:white; }
         .btn-default { background:#e0e0e0; color:#333; }
@@ -38,6 +38,8 @@
         .sort-input { width:60px; margin-right:6px; }
         .inline-edit { background:#fff; border:1px solid #2e7d32; border-radius:8px; padding:12px; margin-top:8px; transition: max-height 0.3s ease; }
         .inline-edit.hidden { display:none; }
+        .node-item { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+        .node-move { display:flex; gap:4px; }
     </style>
 </head>
 <body>
@@ -96,7 +98,10 @@
                 <hr style="margin:14px 0;">
                 <h4>路线节点</h4>
                 <div id="node-list"></div>
-                <button class="btn btn-primary" onclick="addNode()">+ 添加节点</button>
+                <div style="margin-top:12px; display:flex; gap:8px;">
+                    <button class="btn btn-primary" onclick="addNode()">+ 添加节点</button>
+                    <button class="btn btn-default" onclick="autoReorderNodes()">按 POI 排序重排</button>
+                </div>
                 <div style="margin-top:20px; text-align:right;">
                     <button class="btn btn-primary" onclick="saveRoute()" style="margin-left:10px;">保存路线</button>
                     <button class="btn btn-default" onclick="hideRouteForm()">取消</button>
@@ -188,6 +193,7 @@
         '停车场':'#00BCD4', '厕所':'#9E9E9E', '交通枢纽':'#795548', '公共服务':'#607D8B', '购物':'#E91E63'
     };
 
+    // ==================== POI 管理 ====================
     function showNewPoiForm() { document.getElementById('new-poi-form').classList.remove('hidden'); }
     function hideNewPoiForm() {
         document.getElementById('new-poi-form').classList.add('hidden');
@@ -237,7 +243,6 @@
         poiCategories.forEach(cat => {
             if (!grouped[cat] || grouped[cat].length === 0) return;
             const list = grouped[cat];
-            // 确保组内按 sort_order 排序（修复排序问题）
             list.sort((a, b) => (a.sort_order - b.sort_order) || (a.id - b.id));
             const groupId = `poi-group-${catIndex}`;
             html += `<div class="poi-group">
@@ -329,7 +334,7 @@
 
     async function deletePoi(id) { if(confirm('删除POI？')){ await sb.from('ztj_poi').delete().eq('id',id); loadPoiList(); } }
 
-    // ==================== 路线管理 ====================
+    // ==================== 路线管理（增强排序） ====================
     async function loadRouteList() {
         const { data } = await sb.from('ztj_routes').select('*').order('id');
         document.getElementById('route-list').innerHTML = data.map(r => `
@@ -350,26 +355,78 @@
         document.getElementById('route-days').value=route.days; document.getElementById('route-transport').value=route.transport;
         document.getElementById('route-group').value=route.group_type; document.getElementById('route-start').value=route.start_point||'';
         document.getElementById('route-intro').value=route.intro||'';
-        const { data: nodes } = await sb.from('ztj_route_nodes').select('*, poi:poi_id(id,name)').eq('route_id',id).order('order_num');
-        nodesToSave = nodes.map(n=>({ id:n.id, poi_id:n.poi_id, duration_min:n.duration_min, transport_mode:n.transport_mode, transport_time:n.transport_time, note:n.note||'' }));
-        renderNodes(); showRouteForm(true);
+        const { data: nodes } = await sb.from('ztj_route_nodes').select('*, poi:poi_id(id,name,sort_order)').eq('route_id',id).order('order_num');
+        nodesToSave = nodes.map(n => ({
+            id: n.id,
+            poi_id: n.poi_id,
+            poi_name: n.poi?.name || '未知',
+            poi_sort: n.poi?.sort_order || 0,
+            duration_min: n.duration_min,
+            transport_mode: n.transport_mode,
+            transport_time: n.transport_time,
+            note: n.note || ''
+        }));
+        renderNodes();
+        showRouteForm(true);
     }
-    function addNode() { nodesToSave.push({ id:null, poi_id:'', duration_min:60, transport_mode:'步行', transport_time:0, note:'' }); renderNodes(); }
+    function addNode() {
+        nodesToSave.push({ id:null, poi_id:'', poi_name:'', poi_sort:0, duration_min:60, transport_mode:'步行', transport_time:0, note:'' });
+        renderNodes();
+    }
     function removeNode(idx) { nodesToSave.splice(idx,1); renderNodes(); }
-    function updateNodeField(idx,field,value) { nodesToSave[idx][field]=value; }
-    function renderNodes() {
-        document.getElementById('node-list').innerHTML = nodesToSave.map((n,i) => `
-            <div class="card">
-                <div class="form-group"><label>POI ID</label><input type="number" value="${n.poi_id}" onchange="updateNodeField(${i},'poi_id',parseInt(this.value))"></div>
-                <div class="form-group"><label>停留(分钟)</label><input type="number" value="${n.duration_min}" onchange="updateNodeField(${i},'duration_min',parseInt(this.value))"></div>
-                <div class="form-group"><label>交通方式</label><select onchange="updateNodeField(${i},'transport_mode',this.value)">
-                    <option ${n.transport_mode==='步行'?'selected':''}>步行</option><option ${n.transport_mode==='自驾'?'selected':''}>自驾</option>
-                    <option ${n.transport_mode==='大巴'?'selected':''}>大巴</option><option ${n.transport_mode==='公交'?'selected':''}>公交</option></select></div>
-                <div class="form-group"><label>交通耗时</label><input type="number" value="${n.transport_time}" onchange="updateNodeField(${i},'transport_time',parseInt(this.value))"></div>
-                <div class="form-group"><label>备注</label><input value="${n.note}" onchange="updateNodeField(${i},'note',this.value)"></div>
-                <button class="btn btn-danger" onclick="removeNode(${i})">删除节点</button>
-            </div>`).join('');
+    function moveNode(idx, direction) {
+        if (idx === 0 && direction === -1) return;
+        if (idx === nodesToSave.length-1 && direction === 1) return;
+        const temp = nodesToSave[idx];
+        nodesToSave[idx] = nodesToSave[idx + direction];
+        nodesToSave[idx + direction] = temp;
+        renderNodes();
     }
+    function updateNodeField(idx, field, value) {
+        nodesToSave[idx][field] = value;
+    }
+
+    // 按 POI 排序重排节点
+    async function autoReorderNodes() {
+        if (nodesToSave.length === 0) return;
+        // 获取所有POI的最新排序值
+        const poiIds = nodesToSave.map(n => n.poi_id).filter(id => id);
+        if (poiIds.length === 0) { alert('没有有效 POI，无法排序'); return; }
+        const { data: pois } = await sb.from('ztj_poi').select('id,sort_order').in('id', poiIds);
+        if (!pois) return;
+        const sortMap = {};
+        pois.forEach(p => sortMap[p.id] = p.sort_order || 0);
+        // 更新节点中的 poi_sort，并重新排列
+        nodesToSave.forEach(n => { n.poi_sort = sortMap[n.poi_id] || 0; });
+        nodesToSave.sort((a, b) => (a.poi_sort - b.poi_sort) || (a.poi_id - b.poi_id));
+        renderNodes();
+    }
+
+    function renderNodes() {
+        document.getElementById('node-list').innerHTML = nodesToSave.map((n, i) => `
+            <div class="card node-item">
+                <div style="flex:1;">
+                    <div class="form-group"><label>POI ID</label><input type="number" value="${n.poi_id}" onchange="updateNodeField(${i},'poi_id',parseInt(this.value))"></div>
+                    <div style="font-size:12px; color:#666;">当前 POI 排序：${n.poi_sort || 0} (${n.poi_name})</div>
+                    <div class="form-group"><label>停留(分钟)</label><input type="number" value="${n.duration_min}" onchange="updateNodeField(${i},'duration_min',parseInt(this.value))"></div>
+                    <div class="form-group"><label>交通方式</label><select onchange="updateNodeField(${i},'transport_mode',this.value)">
+                        <option ${n.transport_mode==='步行'?'selected':''}>步行</option>
+                        <option ${n.transport_mode==='自驾'?'selected':''}>自驾</option>
+                        <option ${n.transport_mode==='大巴'?'selected':''}>大巴</option>
+                        <option ${n.transport_mode==='公交'?'selected':''}>公交</option>
+                    </select></div>
+                    <div class="form-group"><label>交通耗时</label><input type="number" value="${n.transport_time}" onchange="updateNodeField(${i},'transport_time',parseInt(this.value))"></div>
+                    <div class="form-group"><label>备注</label><input value="${n.note}" onchange="updateNodeField(${i},'note',this.value)"></div>
+                </div>
+                <div class="node-move">
+                    <button class="btn btn-default" onclick="moveNode(${i}, -1)" ${i===0?'disabled':''}>上移</button>
+                    <button class="btn btn-default" onclick="moveNode(${i}, 1)" ${i===nodesToSave.length-1?'disabled':''}>下移</button>
+                    <button class="btn btn-danger" onclick="removeNode(${i})">删除</button>
+                </div>
+            </div>
+        `).join('');
+    }
+
     async function saveRoute() {
         const id=document.getElementById('route-id').value; const name=document.getElementById('route-name').value.trim();
         if(!name){alert('路线名称必填');return;} const days=parseInt(document.getElementById('route-days').value)||1;
@@ -379,7 +436,11 @@
         if(id) await sb.from('ztj_routes').update({name,days,transport,group_type:group,intro,start_point:start}).eq('id',id);
         else { const { data } = await sb.from('ztj_routes').insert([{name,days,transport,group_type:group,intro,start_point:start}]).select(); routeId=data[0].id; }
         await sb.from('ztj_route_nodes').delete().eq('route_id',routeId);
-        const payload = nodesToSave.map((n,i)=>({route_id:routeId, order_num:i+1, poi_id:n.poi_id, duration_min:n.duration_min, transport_mode:n.transport_mode, transport_time:n.transport_time, note:n.note}));
+        const payload = nodesToSave.map((n,i)=>({
+            route_id:routeId, order_num:i+1, poi_id:n.poi_id,
+            duration_min:n.duration_min, transport_mode:n.transport_mode,
+            transport_time:n.transport_time, note:n.note
+        }));
         if(payload.length) await sb.from('ztj_route_nodes').insert(payload);
         hideRouteForm(); loadRouteList();
     }

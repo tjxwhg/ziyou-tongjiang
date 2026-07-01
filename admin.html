@@ -7,7 +7,7 @@
     <style>
         * { margin:0; padding:0; box-sizing:border-box; }
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background:#f5f5f5; }
-        .header { background:#2E7D32; color:white; padding:12px 20px; display:flex; justify-content:space-between; }
+        .header { background:#2E7D32; color:white; padding:12px 20px; display:flex; justify-content:space-between; align-items:center; }
         .header button { background:white; color:#2E7D32; border:none; padding:8px 16px; border-radius:6px; font-weight:bold; cursor:pointer; }
         .container { max-width:900px; margin:20px auto; background:white; padding:20px; border-radius:10px; }
         .tab { display:flex; gap:10px; margin-bottom:20px; border-bottom:2px solid #eee; }
@@ -24,12 +24,13 @@
         .card-row { display:flex; justify-content:space-between; align-items:center; }
         .hidden { display:none; }
         #login-page { max-width:400px; margin:100px auto; }
+        .error-msg { color:#d32f2f; margin-top:5px; }
     </style>
 </head>
 <body>
 <div id="login-page" class="container">
     <h2 style="text-align:center">🔐 管理后台登录</h2>
-    <div class="form-group"><input type="email" id="email" placeholder="邮箱"></div>
+    <div class="form-group"><input type="email" id="email" placeholder="管理员邮箱"></div>
     <div class="form-group"><input type="password" id="password" placeholder="密码"></div>
     <button class="btn btn-primary" style="width:100%" onclick="login()">登录</button>
     <div id="login-msg" style="margin-top:10px;"></div>
@@ -44,14 +45,60 @@
             <button onclick="switchTab('feedbacks')">💬留言</button>
             <button onclick="switchTab('merchants')">🏪商户</button>
         </div>
-        <div id="tab-poi"><!-- 同之前POI管理 --></div>
-        <div id="tab-routes" class="hidden"><!-- 同之前路线管理 --></div>
-        <div id="tab-feedbacks" class="hidden"><!-- 同之前留言管理 --></div>
+        <!-- POI管理 -->
+        <div id="tab-poi">
+            <button class="btn btn-primary" onclick="showPoiForm()">+ 新增POI</button>
+            <div id="poi-form" class="card hidden" style="margin-top:15px;">
+                <h3 id="poi-form-title">新增POI</h3>
+                <input type="hidden" id="poi-id">
+                <div class="form-group"><label>名称 *</label><input id="poi-name"></div>
+                <div class="form-group"><label>类别 *</label><select id="poi-category"><option>景点</option><option>餐饮</option><option>住宿</option><option>厕所</option><option>停车场</option></select></div>
+                <div class="form-group"><label>纬度 *</label><input id="poi-lat" type="number" step="any"></div>
+                <div class="form-group"><label>经度 *</label><input id="poi-lng" type="number" step="any"></div>
+                <div class="form-group"><label>简介</label><textarea id="poi-desc" rows="2"></textarea></div>
+                <div class="form-group"><label>中文讲解词</label><textarea id="poi-voice-cn" rows="2"></textarea></div>
+                <div class="form-group"><label>英文讲解词</label><textarea id="poi-voice-en" rows="2"></textarea></div>
+                <div class="form-group"><label>触发半径(米)</label><input id="poi-radius" type="number" value="5"></div>
+                <button class="btn btn-primary" onclick="savePoi()">保存</button>
+                <button class="btn btn-default" onclick="hidePoiForm()">取消</button>
+            </div>
+            <div id="poi-list" style="margin-top:20px;"></div>
+        </div>
+
+        <!-- 路线管理 -->
+        <div id="tab-routes" class="hidden">
+            <button class="btn btn-primary" onclick="showRouteForm()">+ 新增路线</button>
+            <div id="route-form" class="card hidden" style="margin-top:15px;">
+                <h3 id="route-form-title">新增路线</h3>
+                <input type="hidden" id="route-id">
+                <div class="form-group"><label>路线名称 *</label><input id="route-name"></div>
+                <div class="form-group"><label>天数</label><input id="route-days" type="number" value="1"></div>
+                <div class="form-group"><label>交通方式</label><input id="route-transport" placeholder="如 大巴,自驾"></div>
+                <div class="form-group"><label>适用群体</label><input id="route-group" placeholder="如 团体,亲子"></div>
+                <div class="form-group"><label>简介</label><textarea id="route-intro" rows="2"></textarea></div>
+                <button class="btn btn-primary" onclick="saveRoute()">保存路线信息</button>
+                <button class="btn btn-default" onclick="hideRouteForm()">取消</button>
+                <hr style="margin:15px 0;">
+                <h4>路线节点</h4>
+                <div id="node-list"></div>
+                <button class="btn btn-primary" onclick="addNode()">+ 添加节点</button>
+            </div>
+            <div id="route-list" style="margin-top:20px;"></div>
+        </div>
+
+        <!-- 留言管理 -->
+        <div id="tab-feedbacks" class="hidden">
+            <div id="feedback-list"></div>
+        </div>
+
+        <!-- 商户管理 -->
         <div id="tab-merchants" class="hidden">
             <button class="btn btn-primary" onclick="showAddMerchant()">+ 新增商户</button>
             <div id="merchant-list" style="margin-top:20px;"></div>
         </div>
     </div>
+
+    <!-- 商户自助视图 -->
     <div class="container hidden" id="merchant-self-view">
         <h3>我的店铺管理</h3>
         <div id="merchant-self-content"></div>
@@ -60,71 +107,357 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
+    // ========== 请替换为你的 Supabase 信息 ==========
     const SUPABASE_URL = 'https://aermnnksvhezfykxefla.supabase.co';
     const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFlcm1ubmtzdmhlemZ5a3hlZmxhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIwNzQ4ODEsImV4cCI6MjA5NzY1MDg4MX0.c2Wemu90PiezEaXn2Hv3tBL-D5YFXYTVxei14CI-Rvk'; // 替换
+    // =================================================
     const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-    let isSuperAdmin = false;
     let currentUser = null;
+    let isSuperAdmin = false;
+    let nodesToSave = []; // 路线节点临时存储
 
-    async function login(){
-        const email=document.getElementById('email').value, pw=document.getElementById('password').value;
-        const {error,data}=await sb.auth.signInWithPassword({email,password:pw});
-        if(error){ document.getElementById('login-msg').innerHTML=`<p style="color:red">${error.message}</p>`; return; }
-        currentUser = data.user;
-        // 检查是否为商户（在 ztj_merchants 表中有记录）
-        const { data:merchant } = await sb.from('ztj_merchants').select('*').eq('id',currentUser.id).single();
-        if(merchant){
-            isSuperAdmin=false;
+    // ========== 登录状态持久化 ==========
+    async function checkSession() {
+        const { data: { session } } = await sb.auth.getSession();
+        if (session) {
+            currentUser = session.user;
+            await loadAdminView();
+        }
+    }
+
+    // 监听登录状态变化（自动保持）
+    sb.auth.onAuthStateChange((event, session) => {
+        if (session) {
+            currentUser = session.user;
+            loadAdminView();
+        } else {
+            // 退出时显示登录页
+            document.getElementById('login-page').classList.remove('hidden');
+            document.getElementById('admin-page').classList.add('hidden');
+        }
+    });
+
+    async function loadAdminView() {
+        document.getElementById('login-page').classList.add('hidden');
+        document.getElementById('admin-page').classList.remove('hidden');
+        // 判断超管 or 商户
+        const { data: merchant, error } = await sb.from('ztj_merchants').select('*').eq('id', currentUser.id).maybeSingle();
+        if (error) {
+            console.error('查询商户出错：', error);
+            isSuperAdmin = true;
+        } else if (merchant) {
+            isSuperAdmin = false;
             document.getElementById('super-admin-view').classList.add('hidden');
             document.getElementById('merchant-self-view').classList.remove('hidden');
             loadMerchantSelf(merchant);
         } else {
-            isSuperAdmin=true;
+            isSuperAdmin = true;
             document.getElementById('super-admin-view').classList.remove('hidden');
             document.getElementById('merchant-self-view').classList.add('hidden');
             loadPoiList();
         }
-        document.getElementById('login-page').classList.add('hidden');
-        document.getElementById('admin-page').classList.remove('hidden');
     }
 
-    async function logout(){ await sb.auth.signOut(); location.reload(); }
+    // ========== 登录/退出 ==========
+    async function login() {
+        const email = document.getElementById('email').value;
+        const password = document.getElementById('password').value;
+        const { error } = await sb.auth.signInWithPassword({ email, password });
+        const msgDiv = document.getElementById('login-msg');
+        if (error) {
+            msgDiv.innerHTML = `<p class="error-msg">登录失败：${error.message}</p>`;
+        } else {
+            // 登录成功后，onAuthStateChange 会自动触发，无需手动调用 loadAdminView
+        }
+    }
 
-    // 超管功能：商户管理
-    async function loadMerchantList(){
+    async function logout() {
+        await sb.auth.signOut();
+    }
+
+    // ========== Tab 切换 ==========
+    function switchTab(tabName) {
+        document.querySelectorAll('#super-admin-view .tab button').forEach(btn => btn.classList.remove('active'));
+        event.target.classList.add('active');
+        document.getElementById('tab-poi').classList.add('hidden');
+        document.getElementById('tab-routes').classList.add('hidden');
+        document.getElementById('tab-feedbacks').classList.add('hidden');
+        document.getElementById('tab-merchants').classList.add('hidden');
+        document.getElementById('tab-' + tabName).classList.remove('hidden');
+        if (tabName === 'poi') loadPoiList();
+        else if (tabName === 'routes') loadRouteList();
+        else if (tabName === 'feedbacks') loadFeedbackList();
+        else if (tabName === 'merchants') loadMerchantList();
+    }
+
+    // ========== POI 管理 ==========
+    async function loadPoiList() {
+        const { data } = await sb.from('ztj_poi').select('*').order('id');
+        document.getElementById('poi-list').innerHTML = data.map(poi => `
+            <div class="card">
+                <div class="card-row">
+                    <div><b>${poi.name}</b> (${poi.category})</div>
+                    <div>
+                        <button class="btn btn-default" onclick="editPoi(${poi.id})">编辑</button>
+                        <button class="btn btn-danger" onclick="deletePoi(${poi.id})">删除</button>
+                    </div>
+                </div>
+            </div>
+        `).join('');
+    }
+
+    function showPoiForm(editMode = false) {
+        document.getElementById('poi-form').classList.remove('hidden');
+        document.getElementById('poi-form-title').textContent = editMode ? '编辑POI' : '新增POI';
+    }
+    function hidePoiForm() {
+        document.getElementById('poi-form').classList.add('hidden');
+        clearPoiForm();
+    }
+    function clearPoiForm() {
+        document.getElementById('poi-id').value = '';
+        document.getElementById('poi-name').value = '';
+        document.getElementById('poi-category').value = '景点';
+        document.getElementById('poi-lat').value = '';
+        document.getElementById('poi-lng').value = '';
+        document.getElementById('poi-desc').value = '';
+        document.getElementById('poi-voice-cn').value = '';
+        document.getElementById('poi-voice-en').value = '';
+        document.getElementById('poi-radius').value = '5';
+    }
+
+    async function editPoi(id) {
+        const { data } = await sb.from('ztj_poi').select('*').eq('id', id).single();
+        document.getElementById('poi-id').value = data.id;
+        document.getElementById('poi-name').value = data.name;
+        document.getElementById('poi-category').value = data.category;
+        document.getElementById('poi-lat').value = data.lat;
+        document.getElementById('poi-lng').value = data.lng;
+        document.getElementById('poi-desc').value = data.description || '';
+        document.getElementById('poi-voice-cn').value = data.voice_cn || '';
+        document.getElementById('poi-voice-en').value = data.voice_en || '';
+        document.getElementById('poi-radius').value = data.trigger_radius || 5;
+        showPoiForm(true);
+    }
+
+    async function savePoi() {
+        const id = document.getElementById('poi-id').value;
+        const name = document.getElementById('poi-name').value.trim();
+        const lat = parseFloat(document.getElementById('poi-lat').value);
+        const lng = parseFloat(document.getElementById('poi-lng').value);
+        if (!name || isNaN(lat) || isNaN(lng)) { alert('名称、纬度、经度为必填'); return; }
+        const payload = {
+            name,
+            category: document.getElementById('poi-category').value,
+            lat, lng,
+            description: document.getElementById('poi-desc').value,
+            voice_cn: document.getElementById('poi-voice-cn').value,
+            voice_en: document.getElementById('poi-voice-en').value,
+            trigger_radius: parseInt(document.getElementById('poi-radius').value) || 5
+        };
+        if (id) {
+            await sb.from('ztj_poi').update(payload).eq('id', id);
+        } else {
+            await sb.from('ztj_poi').insert([payload]);
+        }
+        hidePoiForm();
+        loadPoiList();
+    }
+
+    async function deletePoi(id) {
+        if (!confirm('确定删除此POI吗？')) return;
+        await sb.from('ztj_poi').delete().eq('id', id);
+        loadPoiList();
+    }
+
+    // ========== 路线管理 ==========
+    async function loadRouteList() {
+        const { data } = await sb.from('ztj_routes').select('*').order('id');
+        document.getElementById('route-list').innerHTML = data.map(route => `
+            <div class="card">
+                <div class="card-row">
+                    <div><b>${route.name}</b> (${route.days}天)</div>
+                    <div>
+                        <button class="btn btn-default" onclick="editRoute(${route.id})">编辑</button>
+                        <button class="btn btn-danger" onclick="deleteRoute(${route.id})">删除</button>
+                    </div>
+                </div>
+            </div>
+        `).join('');
+    }
+
+    function showRouteForm(editMode = false) {
+        document.getElementById('route-form').classList.remove('hidden');
+        document.getElementById('route-form-title').textContent = editMode ? '编辑路线' : '新增路线';
+    }
+    function hideRouteForm() {
+        document.getElementById('route-form').classList.add('hidden');
+        clearRouteForm();
+    }
+    function clearRouteForm() {
+        document.getElementById('route-id').value = '';
+        document.getElementById('route-name').value = '';
+        document.getElementById('route-days').value = '1';
+        document.getElementById('route-transport').value = '';
+        document.getElementById('route-group').value = '';
+        document.getElementById('route-intro').value = '';
+        nodesToSave = [];
+        document.getElementById('node-list').innerHTML = '';
+    }
+
+    async function editRoute(id) {
+        const { data: route } = await sb.from('ztj_routes').select('*').eq('id', id).single();
+        document.getElementById('route-id').value = route.id;
+        document.getElementById('route-name').value = route.name;
+        document.getElementById('route-days').value = route.days;
+        document.getElementById('route-transport').value = route.transport;
+        document.getElementById('route-group').value = route.group_type;
+        document.getElementById('route-intro').value = route.intro || '';
+
+        const { data: nodes } = await sb.from('ztj_route_nodes').select('*, poi:poi_id(id, name)').eq('route_id', id).order('order_num');
+        nodesToSave = nodes.map(node => ({
+            id: node.id,
+            poi_id: node.poi_id,
+            duration_min: node.duration_min,
+            transport_mode: node.transport_mode,
+            transport_time: node.transport_time,
+            note: node.note || ''
+        }));
+        renderNodes();
+        showRouteForm(true);
+    }
+
+    function addNode() {
+        nodesToSave.push({ id: null, poi_id: '', duration_min: 60, transport_mode: '步行', transport_time: 0, note: '' });
+        renderNodes();
+    }
+    function removeNode(index) {
+        nodesToSave.splice(index, 1);
+        renderNodes();
+    }
+    function updateNodeField(index, field, value) {
+        nodesToSave[index][field] = value;
+    }
+    function renderNodes() {
+        const container = document.getElementById('node-list');
+        container.innerHTML = nodesToSave.map((node, idx) => `
+            <div class="card">
+                <div class="form-group"><label>POI ID</label><input type="number" value="${node.poi_id}" onchange="updateNodeField(${idx}, 'poi_id', parseInt(this.value))"></div>
+                <div class="form-group"><label>停留时间(分钟)</label><input type="number" value="${node.duration_min}" onchange="updateNodeField(${idx}, 'duration_min', parseInt(this.value))"></div>
+                <div class="form-group"><label>交通方式</label><select onchange="updateNodeField(${idx}, 'transport_mode', this.value)">
+                    <option ${node.transport_mode==='步行'?'selected':''}>步行</option>
+                    <option ${node.transport_mode==='自驾'?'selected':''}>自驾</option>
+                    <option ${node.transport_mode==='大巴'?'selected':''}>大巴</option>
+                    <option ${node.transport_mode==='公交'?'selected':''}>公交</option>
+                </select></div>
+                <div class="form-group"><label>交通耗时(分钟)</label><input type="number" value="${node.transport_time}" onchange="updateNodeField(${idx}, 'transport_time', parseInt(this.value))"></div>
+                <div class="form-group"><label>备注</label><input value="${node.note}" onchange="updateNodeField(${idx}, 'note', this.value)"></div>
+                <button class="btn btn-danger" onclick="removeNode(${idx})">删除此节点</button>
+            </div>
+        `).join('');
+    }
+
+    async function saveRoute() {
+        const id = document.getElementById('route-id').value;
+        const name = document.getElementById('route-name').value.trim();
+        if (!name) { alert('路线名称必填'); return; }
+        const days = parseInt(document.getElementById('route-days').value) || 1;
+        const transport = document.getElementById('route-transport').value;
+        const group = document.getElementById('route-group').value;
+        const intro = document.getElementById('route-intro').value;
+
+        let routeId = id;
+        if (id) {
+            await sb.from('ztj_routes').update({ name, days, transport, group_type: group, intro }).eq('id', id);
+        } else {
+            const { data } = await sb.from('ztj_routes').insert([{ name, days, transport, group_type: group, intro }]).select();
+            routeId = data[0].id;
+        }
+
+        // 更新节点
+        await sb.from('ztj_route_nodes').delete().eq('route_id', routeId);
+        const nodesPayload = nodesToSave.map((node, idx) => ({
+            route_id: routeId,
+            order_num: idx + 1,
+            poi_id: node.poi_id,
+            duration_min: node.duration_min,
+            transport_mode: node.transport_mode,
+            transport_time: node.transport_time,
+            note: node.note
+        }));
+        if (nodesPayload.length > 0) {
+            await sb.from('ztj_route_nodes').insert(nodesPayload);
+        }
+        hideRouteForm();
+        loadRouteList();
+    }
+
+    async function deleteRoute(id) {
+        if (!confirm('确定删除此路线吗？')) return;
+        await sb.from('ztj_route_nodes').delete().eq('route_id', id);
+        await sb.from('ztj_routes').delete().eq('id', id);
+        loadRouteList();
+    }
+
+    // ========== 留言管理 ==========
+    async function loadFeedbackList() {
+        const { data } = await sb.from('ztj_feedbacks').select('*').order('created_at', { ascending: false });
+        document.getElementById('feedback-list').innerHTML = data.map(fb => `
+            <div class="card">
+                <p><b>留言：</b>${fb.message}</p>
+                <p><b>时间：</b>${new Date(fb.created_at).toLocaleString()}</p>
+                <p><b>回复：</b>${fb.reply || '<span style="color:#999;">未回复</span>'}</p>
+                <textarea id="reply-${fb.id}" rows="2" placeholder="输入回复...">${fb.reply || ''}</textarea>
+                <button class="btn btn-primary" onclick="replyFeedback(${fb.id})">保存回复</button>
+            </div>
+        `).join('');
+    }
+
+    async function replyFeedback(fbId) {
+        const reply = document.getElementById('reply-' + fbId).value;
+        await sb.from('ztj_feedbacks').update({ reply }).eq('id', fbId);
+        alert('回复已保存');
+        loadFeedbackList();
+    }
+
+    // ========== 商户管理（超管） ==========
+    async function loadMerchantList() {
         const { data } = await sb.from('ztj_merchants').select('*, poi:poi_id(name)');
-        document.getElementById('merchant-list').innerHTML = data.map(m=>`
+        document.getElementById('merchant-list').innerHTML = data.map(m => `
             <div class="card"><div class="card-row">
-                <div><b>${m.business_name||'未命名'}</b> (绑定POI: ${m.poi?.name||'无'})</div>
+                <div><b>${m.business_name || '未命名'}</b> (绑定: ${m.poi?.name || '无'})</div>
                 <div><button class="btn btn-danger" onclick="deleteMerchant('${m.id}')">删除</button></div>
             </div></div>`).join('');
     }
 
-    function showAddMerchant(){
-        const email=prompt('请输入商户登录邮箱：');
-        const pw=prompt('请输入初始密码：');
-        const poiId=prompt('请输入绑定的POI ID：');
-        if(email&&pw&&poiId){
-            sb.auth.signUp({email,password:pw}).then(async ({data})=>{
-                if(data.user){
-                    await sb.from('ztj_merchants').insert([{id:data.user.id, poi_id:parseInt(poiId)}]);
-                    loadMerchantList();
-                }
-            });
-        }
+    function showAddMerchant() {
+        const email = prompt('请输入商户登录邮箱：');
+        if (!email) return;
+        const pw = prompt('请输入初始密码：');
+        if (!pw) return;
+        const poiId = prompt('请输入绑定的POI ID：');
+        if (!poiId) return;
+        sb.auth.signUp({ email, password: pw }).then(async ({ data, error }) => {
+            if (error) { alert('创建失败：' + error.message); return; }
+            if (data.user) {
+                await sb.from('ztj_merchants').insert([{ id: data.user.id, poi_id: parseInt(poiId) }]);
+                alert('商户创建成功');
+                loadMerchantList();
+            }
+        });
     }
 
-    async function deleteMerchant(id){
-        if(!confirm('确定删除该商户吗？')) return;
-        await sb.from('ztj_merchants').delete().eq('id',id);
-        await sb.auth.admin.deleteUser(id); // 需要 service_role 权限，此处简化，可仅删除记录
+    async function deleteMerchant(id) {
+        if (!confirm('确定删除该商户吗？')) return;
+        await sb.from('ztj_merchants').delete().eq('id', id);
+        // 同时删除对应的 auth 用户（需要 service_role 权限，暂略，可手动在 Auth 中删除）
         loadMerchantList();
     }
 
-    // 商户自助管理
-    async function loadMerchantSelf(merchant){
-        const { data:poi } = await sb.from('ztj_poi').select('*').eq('id',merchant.poi_id).single();
+    // ========== 商户自助管理 ==========
+    async function loadMerchantSelf(merchant) {
+        const { data: poi } = await sb.from('ztj_poi').select('*').eq('id', merchant.poi_id).single();
         document.getElementById('merchant-self-content').innerHTML = `
             <div class="card">
                 <h4>${poi.name}</h4>
@@ -133,29 +466,27 @@
                     <option ${merchant.status==='closed'?'selected':''}>closed</option>
                     <option ${merchant.status==='busy'?'selected':''}>busy</option>
                 </select></div>
-                <div class="form-group"><label>手动房态总数</label><input id="self-room-total" type="number" value="${merchant.manual_room_total||''}"></div>
-                <div class="form-group"><label>可用房间</label><input id="self-room-avail" type="number" value="${merchant.manual_room_available||''}"></div>
-                <div class="form-group"><label>收款二维码URL</label><input id="self-qr" value="${merchant.payment_qr||''}"></div>
+                <div class="form-group"><label>手动房态总数</label><input id="self-room-total" type="number" value="${merchant.manual_room_total || ''}"></div>
+                <div class="form-group"><label>可用房间</label><input id="self-room-avail" type="number" value="${merchant.manual_room_available || ''}"></div>
+                <div class="form-group"><label>收款二维码URL</label><input id="self-qr" value="${merchant.payment_qr || ''}"></div>
                 <button class="btn btn-primary" onclick="saveMerchantSelf()">保存</button>
             </div>
         `;
     }
 
-    async function saveMerchantSelf(){
-        const status=document.getElementById('self-status').value;
-        const total=document.getElementById('self-room-total').value;
-        const avail=document.getElementById('self-room-avail').value;
-        const qr=document.getElementById('self-qr').value;
+    async function saveMerchantSelf() {
+        const status = document.getElementById('self-status').value;
+        const total = parseInt(document.getElementById('self-room-total').value) || 0;
+        const avail = parseInt(document.getElementById('self-room-avail').value) || 0;
+        const qr = document.getElementById('self-qr').value;
         await sb.from('ztj_merchants').update({
-            status, manual_room_total:parseInt(total)||0, manual_room_available:parseInt(avail)||0, payment_qr:qr
-        }).eq('id',currentUser.id);
+            status, manual_room_total: total, manual_room_available: avail, payment_qr: qr
+        }).eq('id', currentUser.id);
         alert('保存成功');
     }
 
-    // 其余Tab功能（POI、路线、留言）保留之前实现，此处省略以保持简洁，实际部署时需包含完整版
-    function switchTab(tab){ /* ... */ }
-    async function loadPoiList(){ /* ... */ }
-    // 完整版请将之前 admin.html 中的 POI/路线/留言管理代码整合到此处
+    // 页面初始化时检查会话
+    window.onload = checkSession;
 </script>
 </body>
 </html>

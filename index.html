@@ -67,10 +67,14 @@
 <div class="category-bar" id="categoryBar">
     <button class="category-btn active" onclick="filterPOI('全部')">📍全部</button>
     <button class="category-btn" onclick="filterPOI('景点')">🏞️景点</button>
+    <button class="category-btn" onclick="filterPOI('文化场馆')">🏛️文化</button>
     <button class="category-btn" onclick="filterPOI('餐饮')">🍽️餐饮</button>
     <button class="category-btn" onclick="filterPOI('住宿')">🛏️住宿</button>
-    <button class="category-btn" onclick="filterPOI('厕所')">🚻厕所</button>
     <button class="category-btn" onclick="filterPOI('停车场')">🚗停车</button>
+    <button class="category-btn" onclick="filterPOI('厕所')">🚻厕所</button>
+    <button class="category-btn" onclick="filterPOI('交通枢纽')">🚉交通</button>
+    <button class="category-btn" onclick="filterPOI('公共服务')">ℹ️服务</button>
+    <button class="category-btn" onclick="filterPOI('购物')">🛍️购物</button>
 </div>
 
 <div class="float-voice" id="voiceBtn" onclick="toggleVoice()">🔊</div>
@@ -81,7 +85,6 @@
     <button class="btn btn-primary" id="navBtn" onclick="startSimulation()">📍 模拟导航</button>
 </div>
 
-<!-- 附近服务面板 -->
 <div class="panel" id="nearbyPanel">
     <div class="panel-header"><h2>附近服务</h2><button class="close-btn" onclick="closePanel('nearbyPanel')">✕</button></div>
     <div class="panel-body">
@@ -90,19 +93,16 @@
     </div>
 </div>
 
-<!-- 路线面板 -->
 <div class="panel" id="routesPanel">
     <div class="panel-header"><h2>推荐路线</h2><button class="close-btn" onclick="closePanel('routesPanel')">✕</button></div>
     <div class="panel-body" id="routeList"></div>
 </div>
 
-<!-- 路线详情面板 -->
 <div class="panel" id="routeDetailPanel">
     <div class="panel-header"><h2 id="routeDetailTitle">线路详情</h2><button class="close-btn" onclick="closePanel('routeDetailPanel')">✕</button></div>
     <div class="panel-body" id="routeDetailContent"></div>
 </div>
 
-<!-- 留言面板 -->
 <div class="panel" id="feedbackPanel">
     <div class="panel-header"><h2>留言反馈</h2><button class="close-btn" onclick="closePanel('feedbackPanel')">✕</button></div>
     <div class="panel-body">
@@ -112,13 +112,11 @@
     </div>
 </div>
 
-<!-- 商户详情面板 -->
 <div class="panel" id="merchantDetailPanel">
     <div class="panel-header"><h2 id="merchantDetailTitle">商户详情</h2><button class="close-btn" onclick="closePanel('merchantDetailPanel')">✕</button></div>
     <div class="panel-body" id="merchantDetailContent"></div>
 </div>
 
-<!-- 支付二维码面板 -->
 <div class="panel" id="payPanel">
     <div class="panel-header"><h2>扫码支付</h2><button class="close-btn" onclick="closePanel('payPanel')">✕</button></div>
     <div class="panel-body" id="payContent"></div>
@@ -133,8 +131,14 @@
     let map, currentLang='cn', voiceEnabled=true, triggeredPois={}, currentTrip=null;
     let simulationActive=false, simulatedPosition=null, voiceCheckingInterval=null;
     let allPois=[], activeCategory='全部', currentMerchant=null;
-    let currentRoutePolyline = null; // 路线折线
+    let currentRoutePolyline = null;
     let hideTimer;
+
+    const poiCategories = ['景点', '文化场馆', '餐饮', '住宿', '停车场', '厕所', '交通枢纽', '公共服务', '购物'];
+    const poiColors = {
+        '景点':'#2E7D32', '文化场馆':'#9C27B0', '餐饮':'#FF9800', '住宿':'#2196F3',
+        '停车场':'#00BCD4', '厕所':'#9E9E9E', '交通枢纽':'#795548', '公共服务':'#607D8B', '购物':'#E91E63'
+    };
 
     function initMap(){
         map = L.map('map').setView([32.08,107.18],12);
@@ -163,11 +167,11 @@
         map.eachLayer(layer => { if(layer instanceof L.Marker || layer instanceof L.CircleMarker) map.removeLayer(layer); });
         if(window.simMarker) window.simMarker.addTo(map);
         if(currentRoutePolyline) currentRoutePolyline.addTo(map);
-        const colorMap = {'景点':'#2E7D32','餐饮':'#FF9800','住宿':'#2196F3','厕所':'#9E9E9E','停车场':'#00BCD4'};
         pois.forEach(poi=>{
+            const color = poiColors[poi.category] || '#999';
             const icon = L.divIcon({
                 className:'custom-poi',
-                html:`<div style="background:${colorMap[poi.category]}; width:24px; height:24px; border-radius:50%; border:2px solid white; box-shadow:0 2px 6px rgba(0,0,0,0.3);"></div>`,
+                html:`<div style="background:${color}; width:24px; height:24px; border-radius:50%; border:2px solid white; box-shadow:0 2px 6px rgba(0,0,0,0.3);"></div>`,
                 iconSize:[24,24], iconAnchor:[12,12]
             });
             const marker = L.marker([poi.lat,poi.lng], {icon}).addTo(map);
@@ -272,10 +276,9 @@
 
     async function loadNearbyPanel(){
         const ref = simulatedPosition || {lat:32.08,lng:107.18};
-        const cats = ['全部','景点','餐饮','住宿','厕所','停车场'];
         let html = '';
-        cats.forEach(cat => html += `<button class="category-btn" onclick="nearbyFilter('${cat}')">${cat}</button>`);
-        document.getElementById('nearbyCategoryBar').innerHTML = html;
+        poiCategories.forEach(cat => html += `<button class="category-btn" onclick="nearbyFilter('${cat}')">${cat}</button>`);
+        document.getElementById('nearbyCategoryBar').innerHTML = '<button class="category-btn active" onclick="nearbyFilter(\'全部\')">全部</button>' + html;
         nearbyFilter('全部');
     }
 
@@ -333,7 +336,6 @@
         document.getElementById('voiceBtn').style.display='flex';
         document.getElementById('navBtn').textContent='📍 导航中...';
 
-        // 绘制路线折线
         const { data: nodes } = await sb.from('ztj_route_nodes').select('poi_id, order_num, poi:poi_id(lat, lng)').eq('route_id', currentTrip).order('order_num');
         if (nodes && nodes.length > 0) {
             const latlngs = nodes.map(n => [n.poi.lat, n.poi.lng]);

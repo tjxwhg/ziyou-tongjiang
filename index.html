@@ -40,6 +40,16 @@
         .nearby-item { display:flex; justify-content:space-between; align-items:center; padding:12px 0; border-bottom:1px solid #f0f0f0; }
         .nearby-info { flex:1; }
         .nearby-distance { color:#666; font-size:13px; }
+        /* 商户详情卡片 */
+        .merchant-detail { padding:10px; }
+        .stars { font-size:16px; color:#f39c12; }
+        .service-item { display:flex; align-items:center; gap:8px; margin:8px 0; }
+        .service-item img { width:50px; height:50px; object-fit:cover; border-radius:6px; }
+        .total-box { margin:12px 0; font-size:18px; font-weight:bold; }
+        .pay-btns { display:flex; gap:8px; margin-top:8px; }
+        .pay-btns button { padding:6px 14px; border:1px solid #2E7D32; background:white; color:#2E7D32; border-radius:20px; }
+        .pay-btns button.active { background:#2E7D32; color:white; }
+        .qr-img { max-width:200px; margin-top:10px; }
     </style>
 </head>
 <body>
@@ -72,18 +82,11 @@
     <button class="btn btn-primary" id="navBtn" onclick="startSimulation()">📍 模拟导航</button>
 </div>
 
-<!-- 附近面板 -->
+<!-- 附近服务面板 -->
 <div class="panel" id="nearbyPanel">
     <div class="panel-header"><h2>附近服务</h2><button class="close-btn" onclick="closePanel('nearbyPanel')">✕</button></div>
     <div class="panel-body">
-        <div style="display:flex; gap:8px; margin-bottom:15px; overflow-x:auto;" id="nearbyCategoryBar">
-            <button class="category-btn active" onclick="nearbyFilter('全部')">全部</button>
-            <button class="category-btn" onclick="nearbyFilter('景点')">景点</button>
-            <button class="category-btn" onclick="nearbyFilter('餐饮')">餐饮</button>
-            <button class="category-btn" onclick="nearbyFilter('住宿')">住宿</button>
-            <button class="category-btn" onclick="nearbyFilter('厕所')">厕所</button>
-            <button class="category-btn" onclick="nearbyFilter('停车场')">停车场</button>
-        </div>
+        <div style="display:flex; gap:8px; margin-bottom:15px; overflow-x:auto;" id="nearbyCategoryBar"></div>
         <div id="nearbyList"></div>
     </div>
 </div>
@@ -110,16 +113,27 @@
     </div>
 </div>
 
+<!-- 商户详情面板 -->
+<div class="panel" id="merchantDetailPanel">
+    <div class="panel-header"><h2 id="merchantDetailTitle">商户详情</h2><button class="close-btn" onclick="closePanel('merchantDetailPanel')">✕</button></div>
+    <div class="panel-body" id="merchantDetailContent"></div>
+</div>
+
+<!-- 支付二维码面板 -->
+<div class="panel" id="payPanel">
+    <div class="panel-header"><h2>扫码支付</h2><button class="close-btn" onclick="closePanel('payPanel')">✕</button></div>
+    <div class="panel-body" id="payContent"></div>
+</div>
+
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="config.js"></script>
 <script>
-    const SUPABASE_URL = 'https://aermnnksvhezfykxefla.supabase.co';
-    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFlcm1ubmtzdmhlemZ5a3hlZmxhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIwNzQ4ODEsImV4cCI6MjA5NzY1MDg4MX0.c2Wemu90PiezEaXn2Hv3tBL-D5YFXYTVxei14CI-Rvk'; // 替换
     const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
     let map, currentLang='cn', voiceEnabled=true, triggeredPois={}, currentTrip=null;
     let simulationActive=false, simulatedPosition=null, voiceCheckingInterval=null;
-    let allPois=[], activeCategory='全部';
+    let allPois=[], activeCategory='全部', currentMerchant=null;
     let hideTimer;
 
     function initMap(){
@@ -128,18 +142,16 @@
             subdomains:['1','2','3','4'], attribution:'', maxZoom:18
         }).addTo(map);
         loadAllPOIs();
-        map.on('click',function(e){ if(simulationActive) setSimulatedPosition(e.latlng.lat,e.latlng.lng); });
-        // 分类栏自动隐藏
-        document.getElementById('categoryBar').addEventListener('mouseenter',()=>clearTimeout(hideTimer));
-        document.getElementById('categoryBar').addEventListener('mouseleave',startHideTimer);
+        map.on('click', function(e){ if(simulationActive) setSimulatedPosition(e.latlng.lat, e.latlng.lng); });
+
+        document.getElementById('categoryBar').addEventListener('mouseenter', ()=>clearTimeout(hideTimer));
+        document.getElementById('categoryBar').addEventListener('mouseleave', startHideTimer);
         startHideTimer();
     }
 
     function startHideTimer(){
         clearTimeout(hideTimer);
-        hideTimer = setTimeout(()=>{
-            document.getElementById('categoryBar').classList.add('hidden-bar');
-        },5000);
+        hideTimer = setTimeout(()=> document.getElementById('categoryBar').classList.add('hidden-bar'), 5000);
     }
 
     async function loadAllPOIs(){
@@ -149,7 +161,9 @@
     }
 
     function renderPOIs(pois){
-        map.eachLayer(layer => { if(layer instanceof L.Marker) map.removeLayer(layer); });
+        map.eachLayer(layer => { if(layer instanceof L.Marker || layer instanceof L.CircleMarker) map.removeLayer(layer); });
+        // 移除模拟标记后重新添加
+        if(window.simMarker) window.simMarker.addTo(map);
         const colorMap = {'景点':'#2E7D32','餐饮':'#FF9800','住宿':'#2196F3','厕所':'#9E9E9E','停车场':'#00BCD4'};
         pois.forEach(poi=>{
             const icon = L.divIcon({
@@ -157,9 +171,89 @@
                 html:`<div style="background:${colorMap[poi.category]}; width:24px; height:24px; border-radius:50%; border:2px solid white; box-shadow:0 2px 6px rgba(0,0,0,0.3);"></div>`,
                 iconSize:[24,24], iconAnchor:[12,12]
             });
-            L.marker([poi.lat,poi.lng],{icon}).addTo(map)
-              .bindPopup(`<b>${poi.name}</b><br>${poi.description||''}`);
+            const marker = L.marker([poi.lat,poi.lng], {icon}).addTo(map);
+            marker.on('click', () => showPoiDetail(poi));
         });
+    }
+
+    async function showPoiDetail(poi) {
+        // 查询商户信息
+        const { data: merchant } = await sb.from('ztj_merchants').select('*').eq('poi_id', poi.id).maybeSingle();
+        if (merchant) {
+            currentMerchant = merchant;
+            renderMerchantDetail(poi, merchant);
+            openPanel('merchantDetailPanel');
+        } else {
+            // 普通POI显示简要信息
+            const popup = L.popup().setLatLng([poi.lat, poi.lng]).setContent(`<b>${poi.name}</b><br>${poi.description||''}`);
+            popup.openOn(map);
+        }
+    }
+
+    function renderMerchantDetail(poi, merchant) {
+        document.getElementById('merchantDetailTitle').textContent = poi.name;
+        const stars = [];
+        if (merchant.star_facility) stars.push(`设施：${'⭐'.repeat(merchant.star_facility)}`);
+        if (merchant.star_service) stars.push(`服务：${'⭐'.repeat(merchant.star_service)}`);
+        const starsHtml = stars.length ? `<div class="stars">${stars.join(' ')}</div>` : '';
+
+        const services = merchant.service_data || [];
+        let servicesHtml = '';
+        services.forEach((s, idx) => {
+            servicesHtml += `
+                <div class="service-item">
+                    <input type="checkbox" id="svc-${idx}" data-price="${s.price}" onchange="updateTotal()">
+                    ${s.image ? `<img src="${s.image}" alt="${s.name}">` : ''}
+                    <span>${s.name} - ¥${s.price}</span>
+                    ${s.intro ? `<small>${s.intro}</small>` : ''}
+                </div>`;
+        });
+        const totalHtml = `<div class="total-box">合计：<span id="merchantTotal">0</span> 元</div>`;
+        const payBtn = `<button class="btn btn-primary" onclick="showPayment()" style="width:100%;">去支付</button>`;
+        document.getElementById('merchantDetailContent').innerHTML = `
+            <div class="merchant-detail">
+                ${starsHtml}
+                <p>${poi.description||''}</p>
+                <h4>商品/服务</h4>
+                ${servicesHtml}
+                ${totalHtml}
+                ${payBtn}
+            </div>`;
+    }
+
+    function updateTotal() {
+        const checks = document.querySelectorAll('#merchantDetailContent input[type=checkbox]');
+        let total = 0;
+        checks.forEach(cb => { if(cb.checked) total += parseFloat(cb.dataset.price); });
+        document.getElementById('merchantTotal').textContent = total.toFixed(2);
+    }
+
+    function showPayment() {
+        const total = parseFloat(document.getElementById('merchantTotal').textContent);
+        if (total === 0) { alert('请先选择商品'); return; }
+        if (!currentMerchant || !currentMerchant.payment_methods || currentMerchant.payment_methods.length === 0) {
+            alert('该商户暂未设置支付方式'); return;
+        }
+        const methods = currentMerchant.payment_methods;
+        let btnsHtml = '';
+        methods.forEach((m, idx) => {
+            btnsHtml += `<button class="${idx===0?'active':''}" onclick="switchPayMethod(${idx})">${m.label||'方式'+ (idx+1)}</button>`;
+        });
+        const qrHtml = methods[0]?.qr ? `<img src="${methods[0].qr}" class="qr-img" id="payQrImg">` : '<p>无二维码</p>';
+        document.getElementById('payContent').innerHTML = `
+            <h3>请支付 ¥${total.toFixed(2)}</h3>
+            <div class="pay-btns">${btnsHtml}</div>
+            ${qrHtml}`;
+        window._payMethods = methods;
+        openPanel('payPanel');
+    }
+
+    function switchPayMethod(idx) {
+        document.querySelectorAll('.pay-btns button').forEach((btn,i) => btn.classList.toggle('active', i===idx));
+        const qrImg = document.getElementById('payQrImg');
+        if (qrImg && window._payMethods[idx]) {
+            qrImg.src = window._payMethods[idx].qr || '';
+        }
     }
 
     function filterPOI(cat){
@@ -171,6 +265,24 @@
         startHideTimer();
     }
 
+    function openPanel(id){
+        document.getElementById(id).classList.add('active');
+        if(id==='routesPanel') loadRoutes();
+        if(id==='nearbyPanel') loadNearbyPanel();
+        if(id==='merchantDetailPanel') updateTotal();
+    }
+    function closePanel(id){ document.getElementById(id).classList.remove('active'); }
+
+    // 附近面板
+    async function loadNearbyPanel(){
+        const ref = simulatedPosition || {lat:32.08,lng:107.18};
+        const cats = ['全部','景点','餐饮','住宿','厕所','停车场'];
+        let html = '';
+        cats.forEach(cat => html += `<button class="category-btn" onclick="nearbyFilter('${cat}')">${cat}</button>`);
+        document.getElementById('nearbyCategoryBar').innerHTML = html;
+        nearbyFilter('全部');
+    }
+
     function nearbyFilter(cat){
         document.querySelectorAll('#nearbyCategoryBar .category-btn').forEach(b=>b.classList.remove('active'));
         event.target.classList.add('active');
@@ -178,32 +290,20 @@
         let list = allPois;
         if(cat!=='全部') list = list.filter(p=>p.category===cat);
         list = list.map(p=>({...p, distance: getDistance(ref.lat,ref.lng,p.lat,p.lng)})).sort((a,b)=>a.distance-b.distance);
-        renderNearbyList(list);
-    }
-
-    function renderNearbyList(list){
-        const html = list.map(p=>`
+        document.getElementById('nearbyList').innerHTML = list.map(p=>`
             <div class="nearby-item">
                 <div class="nearby-info"><b>${p.name}</b> (${p.category})<br><span class="nearby-distance">${(p.distance/1000).toFixed(1)} km</span></div>
                 <button onclick="window.open('https://uri.amap.com/marker?position=${p.lng},${p.lat}&name=${p.name}','_blank')" style="background:#2E7D32; color:white; border:none; padding:6px 12px; border-radius:6px;">导航</button>
             </div>
         `).join('');
-        document.getElementById('nearbyList').innerHTML = html;
     }
 
-    function openPanel(id){
-        document.getElementById(id).classList.add('active');
-        if(id==='routesPanel') loadRoutes();
-        if(id==='nearbyPanel') nearbyFilter('全部');
-    }
-    function closePanel(id){ document.getElementById(id).classList.remove('active'); }
-
+    // 路线相关
     async function loadRoutes(){
         const { data } = await sb.from('ztj_routes').select('*');
         document.getElementById('routeList').innerHTML = data.map(r=>`
-            <div class="route-card" onclick="showRouteDetail(${r.id})">
-                <h3>${r.name}</h3><div class="tags"><span class="tag">${r.days}天</span><span class="tag">${r.transport}</span></div><p>${r.intro||''}</p>
-            </div>`).join('');
+            <div class="route-card" onclick="showRouteDetail(${r.id})"><h3>${r.name}</h3>
+            <div class="tags"><span class="tag">${r.days}天</span><span class="tag">${r.transport}</span></div><p>${r.intro||''}</p></div>`).join('');
     }
 
     async function showRouteDetail(id){
@@ -231,7 +331,7 @@
         simulationActive=true;
         document.getElementById('voiceBtn').style.display='flex';
         document.getElementById('navBtn').textContent='📍 导航中...';
-        alert('模拟导航已开启，请点击地图模拟移动');
+        alert('模拟导航已开启，请点击地图移动');
         if(voiceCheckingInterval) clearInterval(voiceCheckingInterval);
         voiceCheckingInterval=setInterval(checkVoiceTrigger,3000);
     }

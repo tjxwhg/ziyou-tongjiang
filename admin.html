@@ -13,7 +13,7 @@
         .tab { display:flex; gap:6px; margin-bottom:20px; border-bottom:2px solid #e0e0e0; }
         .tab button { padding:10px 20px; border:none; background:none; font-size:16px; cursor:pointer; border-bottom:2px solid transparent; margin-bottom:-2px; }
         .tab button.active { border-bottom-color:#2e7d32; color:#2e7d32; font-weight:bold; }
-        .form-group { margin-bottom:14px; }
+        .form-group { margin-bottom:12px; }
         .form-group label { display:block; margin-bottom:4px; font-weight:500; font-size:14px; }
         .form-group input, .form-group select, .form-group textarea { width:100%; padding:8px 12px; border:1px solid #ccc; border-radius:6px; font-size:14px; }
         .btn { padding:8px 16px; border:none; border-radius:6px; cursor:pointer; font-weight:500; font-size:14px; }
@@ -33,9 +33,12 @@
         .poi-group { margin-bottom:15px; border:1px solid #ddd; border-radius:8px; overflow:hidden; }
         .poi-group-title { background:#f5f5f5; padding:10px 14px; font-weight:bold; cursor:pointer; display:flex; justify-content:space-between; }
         .poi-group-list { padding:0 14px; }
-        .poi-group-list .card { margin:6px 0; }
+        .poi-group-list .card { margin:6px 0; transition: all 0.2s; }
         .more-btn { text-align:center; padding:8px; color:#2e7d32; cursor:pointer; }
         .sort-input { width:60px; margin-right:6px; }
+        /* 内联编辑面板 */
+        .inline-edit { background:#fff; border:1px solid #2e7d32; border-radius:8px; padding:12px; margin-top:8px; transition: max-height 0.3s ease; }
+        .inline-edit.hidden { display:none; }
     </style>
 </head>
 <body>
@@ -60,23 +63,23 @@
             <button onclick="switchTab('merchants')">🏪商户</button>
         </div>
         <div id="tab-poi">
-            <button class="btn btn-primary" onclick="showPoiForm()">+ 新增POI</button>
-            <div id="poi-form" class="card hidden" style="margin-top:14px;">
-                <h3 id="poi-form-title">新增POI</h3>
-                <input type="hidden" id="poi-id">
-                <div class="form-group"><label>名称 *</label><input id="poi-name"></div>
-                <div class="form-group"><label>类别 *</label><select id="poi-category">
+            <button class="btn btn-primary" onclick="showNewPoiForm()">+ 新增POI</button>
+            <!-- 新增POI的专用表单（顶部弹出） -->
+            <div id="new-poi-form" class="card hidden" style="margin-top:14px;">
+                <h3>新增POI</h3>
+                <div class="form-group"><label>名称 *</label><input id="new-poi-name"></div>
+                <div class="form-group"><label>类别 *</label><select id="new-poi-category">
                     <option>景点</option><option>文化场馆</option><option>餐饮</option><option>住宿</option><option>停车场</option><option>厕所</option><option>交通枢纽</option><option>公共服务</option><option>购物</option>
                 </select></div>
-                <div class="form-group"><label>排序序号</label><input id="poi-sort" type="number" value="0" step="1"></div>
-                <div class="form-group"><label>纬度 *</label><input id="poi-lat" type="number" step="any"></div>
-                <div class="form-group"><label>经度 *</label><input id="poi-lng" type="number" step="any"></div>
-                <div class="form-group"><label>简介</label><textarea id="poi-desc" rows="2"></textarea></div>
-                <div class="form-group"><label>中文讲解词</label><textarea id="poi-voice-cn" rows="2"></textarea></div>
-                <div class="form-group"><label>英文讲解词</label><textarea id="poi-voice-en" rows="2"></textarea></div>
-                <div class="form-group"><label>触发半径(米)</label><input id="poi-radius" type="number" value="5"></div>
-                <button class="btn btn-primary" onclick="savePoi()">保存</button>
-                <button class="btn btn-default" onclick="hidePoiForm()">取消</button>
+                <div class="form-group"><label>排序序号</label><input id="new-poi-sort" type="number" value="0" step="1"></div>
+                <div class="form-group"><label>纬度 *</label><input id="new-poi-lat" type="number" step="any"></div>
+                <div class="form-group"><label>经度 *</label><input id="new-poi-lng" type="number" step="any"></div>
+                <div class="form-group"><label>简介</label><textarea id="new-poi-desc" rows="2"></textarea></div>
+                <div class="form-group"><label>中文讲解词</label><textarea id="new-poi-voice-cn" rows="2"></textarea></div>
+                <div class="form-group"><label>英文讲解词</label><textarea id="new-poi-voice-en" rows="2"></textarea></div>
+                <div class="form-group"><label>触发半径(米)</label><input id="new-poi-radius" type="number" value="5"></div>
+                <button class="btn btn-primary" onclick="saveNewPoi()">保存</button>
+                <button class="btn btn-default" onclick="hideNewPoiForm()">取消</button>
             </div>
             <div id="poi-list" style="margin-top:20px;"></div>
         </div>
@@ -181,13 +184,51 @@
         else if (tab==='merchants') loadMerchantList();
     }
 
-    // ==================== POI 分组管理（带手动排序） ====================
+    // ==================== POI 管理（内联编辑） ====================
     const poiCategories = ['景点', '文化场馆', '餐饮', '住宿', '停车场', '厕所', '交通枢纽', '公共服务', '购物'];
     const poiColors = {
         '景点':'#2E7D32', '文化场馆':'#9C27B0', '餐饮':'#FF9800', '住宿':'#2196F3',
         '停车场':'#00BCD4', '厕所':'#9E9E9E', '交通枢纽':'#795548', '公共服务':'#607D8B', '购物':'#E91E63'
     };
 
+    // 新增POI表单
+    function showNewPoiForm() { document.getElementById('new-poi-form').classList.remove('hidden'); }
+    function hideNewPoiForm() {
+        document.getElementById('new-poi-form').classList.add('hidden');
+        clearNewPoiForm();
+    }
+    function clearNewPoiForm() {
+        document.getElementById('new-poi-name').value='';
+        document.getElementById('new-poi-category').value='景点';
+        document.getElementById('new-poi-sort').value='0';
+        document.getElementById('new-poi-lat').value='';
+        document.getElementById('new-poi-lng').value='';
+        document.getElementById('new-poi-desc').value='';
+        document.getElementById('new-poi-voice-cn').value='';
+        document.getElementById('new-poi-voice-en').value='';
+        document.getElementById('new-poi-radius').value='5';
+    }
+    async function saveNewPoi() {
+        const name = document.getElementById('new-poi-name').value.trim();
+        const lat = parseFloat(document.getElementById('new-poi-lat').value);
+        const lng = parseFloat(document.getElementById('new-poi-lng').value);
+        if(!name || isNaN(lat) || isNaN(lng)) { alert('名称、纬度、经度必填'); return; }
+        const payload = {
+            name,
+            category: document.getElementById('new-poi-category').value,
+            sort_order: parseInt(document.getElementById('new-poi-sort').value) || 0,
+            lat, lng,
+            description: document.getElementById('new-poi-desc').value,
+            voice_cn: document.getElementById('new-poi-voice-cn').value,
+            voice_en: document.getElementById('new-poi-voice-en').value,
+            trigger_radius: parseInt(document.getElementById('new-poi-radius').value) || 5
+        };
+        await sb.from('ztj_poi').insert([payload]);
+        hideNewPoiForm();
+        loadPoiList();
+    }
+
+    // 加载POI分组列表
     async function loadPoiList() {
         const { data } = await sb.from('ztj_poi').select('*').order('sort_order', { ascending: true }).order('id');
         if (!data) return;
@@ -210,15 +251,34 @@
                 <div class="poi-group-list" id="${groupId}">
                     ${list.map((p, idx) => {
                         const serial = `${catIndex}-${idx+1}`;
-                        return `<div class="card card-row">
-                            <span>
-                                <input type="number" class="sort-input" value="${p.sort_order || 0}"
-                                       onchange="updatePoiSort(${p.id}, this.value)" title="修改排序序号">
-                                <b>${serial}</b> ${p.name} (${p.lat},${p.lng})
-                            </span>
-                            <div>
-                                <button class="btn btn-default" onclick="editPoi(${p.id})">编辑</button>
-                                <button class="btn btn-danger" onclick="deletePoi(${p.id})">删除</button>
+                        const editFormId = `edit-${p.id}`;
+                        return `<div class="card">
+                            <div class="card-row">
+                                <span>
+                                    <input type="number" class="sort-input" value="${p.sort_order || 0}"
+                                           onchange="updatePoiSort(${p.id}, this.value)" title="修改排序序号">
+                                    <b>${serial}</b> ${p.name} (${p.lat},${p.lng})
+                                </span>
+                                <div>
+                                    <button class="btn btn-default" onclick="toggleEditForm('${editFormId}', ${p.id})">编辑</button>
+                                    <button class="btn btn-danger" onclick="deletePoi(${p.id})">删除</button>
+                                </div>
+                            </div>
+                            <!-- 内联编辑区域 -->
+                            <div id="${editFormId}" class="inline-edit hidden">
+                                <div class="form-group"><label>名称</label><input id="edit-name-${p.id}" value="${p.name}"></div>
+                                <div class="form-group"><label>类别</label><select id="edit-category-${p.id}">
+                                    ${poiCategories.map(c => `<option ${p.category===c?'selected':''}>${c}</option>`).join('')}
+                                </select></div>
+                                <div class="form-group"><label>排序</label><input type="number" id="edit-sort-${p.id}" value="${p.sort_order || 0}"></div>
+                                <div class="form-group"><label>纬度</label><input type="number" step="any" id="edit-lat-${p.id}" value="${p.lat}"></div>
+                                <div class="form-group"><label>经度</label><input type="number" step="any" id="edit-lng-${p.id}" value="${p.lng}"></div>
+                                <div class="form-group"><label>简介</label><textarea id="edit-desc-${p.id}" rows="2">${p.description||''}</textarea></div>
+                                <div class="form-group"><label>中文讲解词</label><textarea id="edit-voice-cn-${p.id}" rows="2">${p.voice_cn||''}</textarea></div>
+                                <div class="form-group"><label>英文讲解词</label><textarea id="edit-voice-en-${p.id}" rows="2">${p.voice_en||''}</textarea></div>
+                                <div class="form-group"><label>触发半径(米)</label><input type="number" id="edit-radius-${p.id}" value="${p.trigger_radius||5}"></div>
+                                <button class="btn btn-primary" onclick="saveInlineEdit(${p.id})">保存</button>
+                                <button class="btn btn-default" onclick="toggleEditForm('${editFormId}', ${p.id})">取消</button>
                             </div>
                         </div>`;
                     }).join('')}
@@ -227,6 +287,38 @@
             catIndex++;
         });
         document.getElementById('poi-list').innerHTML = html || '<p>暂无POI</p>';
+    }
+
+    // 切换内联编辑显示
+    function toggleEditForm(formId, poiId) {
+        const form = document.getElementById(formId);
+        if (form.classList.contains('hidden')) {
+            // 打开前，确保其他所有编辑框关闭
+            document.querySelectorAll('.inline-edit').forEach(el => el.classList.add('hidden'));
+            form.classList.remove('hidden');
+        } else {
+            form.classList.add('hidden');
+        }
+    }
+
+    // 保存内联编辑
+    async function saveInlineEdit(poiId) {
+        const name = document.getElementById(`edit-name-${poiId}`).value.trim();
+        const lat = parseFloat(document.getElementById(`edit-lat-${poiId}`).value);
+        const lng = parseFloat(document.getElementById(`edit-lng-${poiId}`).value);
+        if (!name || isNaN(lat) || isNaN(lng)) { alert('名称、纬度、经度必填'); return; }
+        const payload = {
+            name,
+            category: document.getElementById(`edit-category-${poiId}`).value,
+            sort_order: parseInt(document.getElementById(`edit-sort-${poiId}`).value) || 0,
+            lat, lng,
+            description: document.getElementById(`edit-desc-${poiId}`).value,
+            voice_cn: document.getElementById(`edit-voice-cn-${poiId}`).value,
+            voice_en: document.getElementById(`edit-voice-en-${poiId}`).value,
+            trigger_radius: parseInt(document.getElementById(`edit-radius-${poiId}`).value) || 5
+        };
+        await sb.from('ztj_poi').update(payload).eq('id', poiId);
+        loadPoiList(); // 刷新列表，自动收起所有编辑框
     }
 
     async function updatePoiSort(poiId, newValue) {
@@ -242,42 +334,6 @@
         if (arrow) arrow.textContent = el.classList.contains('hidden') ? '▶' : '▼';
     }
 
-    function showPoiForm(editMode=false) { document.getElementById('poi-form').classList.remove('hidden'); document.getElementById('poi-form-title').textContent = editMode?'编辑POI':'新增POI'; }
-    function hidePoiForm() { document.getElementById('poi-form').classList.add('hidden'); clearPoiForm(); }
-    function clearPoiForm() {
-        document.getElementById('poi-id').value=''; document.getElementById('poi-name').value=''; document.getElementById('poi-category').value='景点';
-        document.getElementById('poi-sort').value='0'; document.getElementById('poi-lat').value=''; document.getElementById('poi-lng').value='';
-        document.getElementById('poi-desc').value=''; document.getElementById('poi-voice-cn').value=''; document.getElementById('poi-voice-en').value='';
-        document.getElementById('poi-radius').value='5';
-    }
-    async function editPoi(id) {
-        const { data } = await sb.from('ztj_poi').select('*').eq('id',id).single();
-        document.getElementById('poi-id').value=data.id; document.getElementById('poi-name').value=data.name;
-        document.getElementById('poi-category').value=data.category; document.getElementById('poi-sort').value=data.sort_order || 0;
-        document.getElementById('poi-lat').value=data.lat; document.getElementById('poi-lng').value=data.lng;
-        document.getElementById('poi-desc').value=data.description||'';
-        document.getElementById('poi-voice-cn').value=data.voice_cn||''; document.getElementById('poi-voice-en').value=data.voice_en||'';
-        document.getElementById('poi-radius').value=data.trigger_radius||5;
-        showPoiForm(true);
-    }
-    async function savePoi() {
-        const id=document.getElementById('poi-id').value; const name=document.getElementById('poi-name').value.trim();
-        const lat=parseFloat(document.getElementById('poi-lat').value); const lng=parseFloat(document.getElementById('poi-lng').value);
-        if(!name||isNaN(lat)||isNaN(lng)){alert('名称、纬度、经度必填');return;}
-        const payload={
-            name,
-            category:document.getElementById('poi-category').value,
-            sort_order: parseInt(document.getElementById('poi-sort').value) || 0,
-            lat, lng,
-            description:document.getElementById('poi-desc').value,
-            voice_cn:document.getElementById('poi-voice-cn').value,
-            voice_en:document.getElementById('poi-voice-en').value,
-            trigger_radius:parseInt(document.getElementById('poi-radius').value)||5
-        };
-        if(id) await sb.from('ztj_poi').update(payload).eq('id',id);
-        else await sb.from('ztj_poi').insert([payload]);
-        hidePoiForm(); loadPoiList();
-    }
     async function deletePoi(id) { if(confirm('删除POI？')){ await sb.from('ztj_poi').delete().eq('id',id); loadPoiList(); } }
 
     // ==================== 路线管理（含出发地） ====================

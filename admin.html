@@ -29,7 +29,7 @@
         .error-msg { color:#c62828; margin-top:8px; }
         .star-input { display:flex; align-items:center; gap:6px; }
         .star-input input { width:60px; }
-        .upload-preview { width:80px; height:80px; object-fit:cover; border:1px solid #ccc; border-radius:6px; margin-top:4px; }
+        .upload-preview { width:200px; height:150px; object-fit:cover; border:1px solid #ccc; border-radius:6px; margin-top:4px; }
         .poi-group { margin-bottom:15px; border:1px solid #ddd; border-radius:8px; overflow:hidden; }
         .poi-group-title { background:#f5f5f5; padding:10px 14px; font-weight:bold; cursor:pointer; display:flex; justify-content:space-between; }
         .poi-group-list { padding:0 14px; }
@@ -40,6 +40,15 @@
         .inline-edit.hidden { display:none; }
         .node-item { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
         .node-move { display:flex; gap:4px; }
+        /* 商户分类/商品样式 */
+        .category-block { margin-bottom:20px; border-left:4px solid #2e7d32; padding-left:14px; }
+        .cat-header { font-size:18px; font-weight:bold; margin-bottom:10px; cursor:pointer; display:flex; justify-content:space-between; align-items:center; }
+        .item-card { background:white; border:1px solid #eee; border-radius:8px; padding:12px; margin-bottom:10px; }
+        .item-row { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; }
+        .item-detail { display:flex; flex-wrap:wrap; gap:10px; margin-top:10px; }
+        .status-badge { padding:2px 8px; border-radius:12px; font-size:12px; }
+        .status-active { background:#e8f5e9; color:#2e7d32; }
+        .status-inactive { background:#ffebee; color:#c62828; }
     </style>
 </head>
 <body>
@@ -188,12 +197,8 @@
     }
 
     const poiCategories = ['景点', '文化场馆', '餐饮', '住宿', '停车场', '厕所', '交通枢纽', '公共服务', '购物'];
-    const poiColors = {
-        '景点':'#2E7D32', '文化场馆':'#9C27B0', '餐饮':'#FF9800', '住宿':'#2196F3',
-        '停车场':'#00BCD4', '厕所':'#9E9E9E', '交通枢纽':'#795548', '公共服务':'#607D8B', '购物':'#E91E63'
-    };
 
-    // POI 管理（省略内部实现，与之前版本完全一致）
+    // ==================== POI 管理 ====================
     function showNewPoiForm() { document.getElementById('new-poi-form').classList.remove('hidden'); }
     function hideNewPoiForm() { document.getElementById('new-poi-form').classList.add('hidden'); clearNewPoiForm(); }
     function clearNewPoiForm() {
@@ -300,7 +305,7 @@
     function toggleGroup(id) { const el = document.getElementById(id); if (el) el.classList.toggle('hidden'); const arrow = document.getElementById(id+'-arrow'); if (arrow) arrow.textContent = el.classList.contains('hidden') ? '▶' : '▼'; }
     async function deletePoi(id) { if(confirm('删除POI？')){ await sb.from('ztj_poi').delete().eq('id',id); loadPoiList(); } }
 
-    // 路线管理（同之前，略，但此处保留完整逻辑）
+    // ==================== 路线管理 ====================
     async function loadRouteList() {
         const { data } = await sb.from('ztj_routes').select('*').order('id');
         document.getElementById('route-list').innerHTML = data.map(r => `<div class="card"><div class="card-row"><div><b>${r.name}</b> (${r.days}天)</div><div><button class="btn btn-default" onclick="editRoute(${r.id})">编辑</button><button class="btn btn-danger" onclick="deleteRoute(${r.id})">删除</button></div></div></div>`).join('');
@@ -367,7 +372,7 @@
     }
     async function deleteRoute(id) { if(confirm('删除路线？')){ await sb.from('ztj_route_nodes').delete().eq('route_id',id); await sb.from('ztj_routes').delete().eq('id',id); loadRouteList(); } }
 
-    // 留言管理
+    // ==================== 留言管理 ====================
     async function loadFeedbackList() {
         const { data } = await sb.from('ztj_feedbacks').select('*').order('created_at',{ascending:false});
         document.getElementById('feedback-list').innerHTML = data.map(f => `
@@ -378,7 +383,7 @@
     }
     async function replyFeedback(id) { const reply=document.getElementById('reply-'+id).value; await sb.from('ztj_feedbacks').update({reply}).eq('id',id); alert('已保存'); loadFeedbackList(); }
 
-    // 商户管理（超管，已修改）
+    // ==================== 商户管理（超管） ====================
     async function loadMerchantList() {
         const { data } = await sb.from('ztj_merchants').select('*, poi:poi_id(name)');
         document.getElementById('merchant-list').innerHTML = data.map(m => `
@@ -391,7 +396,6 @@
     }
     async function updateStar(id,field,val) { const v=parseInt(val)||0; await sb.from('ztj_merchants').update({[field]:v}).eq('id',id); }
 
-    // 修改后的 showAddMerchant：手动输入 UUID 绑定
     async function showAddMerchant() {
         const accountId = prompt('请输入商户账号ID (如 st003):'); if(!accountId) return;
         const displayName = prompt('请输入商户实际名称:'); if(!displayName) return;
@@ -404,48 +408,178 @@
             display_name: displayName,
             poi_id: parseInt(poiId)
         }]);
-        if (error) {
-            alert('绑定失败：' + error.message);
-            return;
-        }
+        if (error) { alert('绑定失败：' + error.message); return; }
         alert(`商户 ${accountId} 绑定成功，用户 UUID：${userId}`);
         loadMerchantList();
     }
 
     async function deleteMerchant(id) { if(confirm('删除商户？')){ await sb.from('ztj_merchants').delete().eq('id',id); loadMerchantList(); } }
 
-    // 商户自助管理（保持不变）
+    // ==================== 商户自助管理（分类-商品模式） ====================
     async function renderMerchantSelf() {
         const m = merchantSelfData;
         const { data: poi } = await sb.from('ztj_poi').select('*').eq('id',m.poi_id).single();
         document.getElementById('merchant-self-content').innerHTML = `
-            <div class="card"><h3>${poi.name} (账号: ${m.account_id})</h3>
-            <div class="form-group"><label>营业状态</label><select id="self-status"><option ${m.status==='open'?'selected':''}>open</option><option ${m.status==='closed'?'selected':''}>closed</option><option ${m.status==='busy'?'selected':''}>busy</option></select></div>
-            <div class="form-group"><label>房态总数</label><input type="number" id="self-room-total" value="${m.manual_room_total||''}"></div>
-            <div class="form-group"><label>可用房间</label><input type="number" id="self-room-avail" value="${m.manual_room_available||''}"></div>
-            <h4>服务/商品</h4><div id="service-items"></div><button onclick="addServiceItem()">+ 添加商品</button>
-            <h4>支付方式</h4><div id="payment-methods"></div><button onclick="addPaymentMethod()">+ 添加支付方式</button>
-            <button class="btn btn-primary" onclick="saveMerchantSelf()" style="margin-top:12px;">保存全部</button></div>`;
-        window._serviceData = m.service_data || []; window._paymentMethods = m.payment_methods || [];
-        renderServiceItems(); renderPaymentMethods();
+            <div class="card">
+                <h3>${poi.name} (账号: ${m.account_id})</h3>
+                <div class="form-group"><label>营业状态</label><select id="self-status">
+                    <option ${m.status==='open'?'selected':''}>open</option><option ${m.status==='closed'?'selected':''}>closed</option><option ${m.status==='busy'?'selected':''}>busy</option></select></div>
+                <div class="form-group"><label>房态总数</label><input type="number" id="self-room-total" value="${m.manual_room_total||''}"></div>
+                <div class="form-group"><label>可用房间</label><input type="number" id="self-room-avail" value="${m.manual_room_available||''}"></div>
+                <h4>📦 分类与商品</h4>
+                <div id="category-container"></div>
+                <button class="btn btn-primary" onclick="addCategory()">+ 新增分类</button>
+                <h4>💳 支付方式</h4>
+                <div id="payment-methods"></div>
+                <button onclick="addPaymentMethod()">+ 添加支付方式</button>
+                <button class="btn btn-primary" onclick="saveMerchantSelf()" style="margin-top:16px; width:100%;">保存全部</button>
+            </div>`;
+        window._serviceData = m.service_data || [];
+        window._paymentMethods = m.payment_methods || [];
+        renderCategories();
+        renderPaymentMethods();
     }
 
-    function renderServiceItems() {
-        const items = window._serviceData;
-        let html = items.map((item,i) => `
-            <div class="card"><label>名称</label><input value="${item.name}" onchange="updateServiceItem(${i},'name',this.value)">
-            <label>价格 ¥</label><input type="number" value="${item.price}" onchange="updateServiceItem(${i},'price',this.value)">
-            <label>简介</label><input value="${item.intro||''}" onchange="updateServiceItem(${i},'intro',this.value)">
-            <label>图片</label><input type="file" accept="image/*" onchange="handleServiceImage(this,${i})">
-            ${item.image?`<img src="${item.image}" class="upload-preview">`:''}
-            <button class="btn btn-danger" onclick="removeServiceItem(${i})">删除</button></div>`).join('');
-        document.getElementById('service-items').innerHTML = html || '<p>暂无商品</p>';
+    // 分类渲染
+    function renderCategories() {
+        const container = document.getElementById('category-container');
+        if (!window._serviceData.length) {
+            container.innerHTML = '<p>暂无分类，请点击下方按钮新增</p>';
+            return;
+        }
+        let html = '';
+        window._serviceData.forEach((cat, catIdx) => {
+            html += `<div class="category-block">
+                <div class="cat-header" onclick="toggleCatItems(${catIdx})">
+                    <span>${cat.cat_name || '未命名分类'} (${cat.items ? cat.items.length : 0}个)</span>
+                    <span id="cat-arrow-${catIdx}">▼</span>
+                </div>
+                <div id="cat-items-${catIdx}" class="cat-items">
+                    ${renderItems(cat.items, catIdx)}
+                    <button class="btn btn-default" onclick="addItem(${catIdx})">+ 添加商品</button>
+                </div>
+            </div>`;
+        });
+        container.innerHTML = html;
+        // 初始化所有分类为展开状态
+        window._serviceData.forEach((_, idx) => {
+            const el = document.getElementById(`cat-items-${idx}`);
+            if (el) el.style.display = 'block';
+        });
     }
-    function addServiceItem() { window._serviceData.push({name:'',price:0,intro:'',image:''}); renderServiceItems(); }
-    function removeServiceItem(i) { window._serviceData.splice(i,1); renderServiceItems(); }
-    function updateServiceItem(i,field,val) { window._serviceData[i][field]=val; }
-    async function handleServiceImage(input,i) { const url=await uploadImage(input.files[0]); if(url){ window._serviceData[i].image=url; renderServiceItems(); } }
 
+    function renderItems(items, catIdx) {
+        if (!items || !items.length) return '<p style="color:#999;">暂无商品</p>';
+        return items.map((item, itemIdx) => `
+            <div class="item-card">
+                <div class="item-row">
+                    <div>
+                        <b>${item.name || '未命名'}</b> - ¥${item.price || 0}
+                        <span class="status-badge ${item.status==='active'?'status-active':'status-inactive'}">${item.status==='active'?'上架':'下架'}</span>
+                    </div>
+                    <div>
+                        <button class="btn btn-default" onclick="toggleItemEdit(${catIdx},${itemIdx})">编辑</button>
+                        <button class="btn btn-danger" onclick="removeItem(${catIdx},${itemIdx})">删除</button>
+                    </div>
+                </div>
+                <div id="item-edit-${catIdx}-${itemIdx}" class="hidden" style="margin-top:10px;">
+                    <div class="form-group"><label>名称</label><input id="item-name-${catIdx}-${itemIdx}" value="${item.name||''}"></div>
+                    <div class="form-group"><label>价格 (¥)</label><input type="number" id="item-price-${catIdx}-${itemIdx}" value="${item.price||0}"></div>
+                    <div class="form-group"><label>时间/时长</label><input id="item-duration-${catIdx}-${itemIdx}" value="${item.duration||''}" placeholder="如 1晚 / 2小时"></div>
+                    <div class="form-group"><label>简介</label><input id="item-intro-${catIdx}-${itemIdx}" value="${item.intro||''}"></div>
+                    <div class="form-group"><label>图片</label>
+                        <input type="file" accept="image/*" onchange="handleItemImage(this, ${catIdx}, ${itemIdx})">
+                        ${item.image ? `<img src="${item.image}" class="upload-preview">` : ''}
+                    </div>
+                    <div class="form-group"><label>状态</label><select id="item-status-${catIdx}-${itemIdx}">
+                        <option ${item.status==='active'?'selected':''}>active</option>
+                        <option ${item.status==='inactive'?'selected':''}>inactive</option>
+                    </select></div>
+                    <button class="btn btn-primary" onclick="saveItemEdit(${catIdx},${itemIdx})">确定</button>
+                    <button class="btn btn-default" onclick="toggleItemEdit(${catIdx},${itemIdx})">取消</button>
+                </div>
+            </div>
+        `).join('');
+    }
+
+    function toggleCatItems(idx) {
+        const el = document.getElementById(`cat-items-${idx}`);
+        const arrow = document.getElementById(`cat-arrow-${idx}`);
+        if (el.style.display === 'none') {
+            el.style.display = 'block';
+            arrow.textContent = '▼';
+        } else {
+            el.style.display = 'none';
+            arrow.textContent = '▶';
+        }
+    }
+
+    function toggleItemEdit(catIdx, itemIdx) {
+        const el = document.getElementById(`item-edit-${catIdx}-${itemIdx}`);
+        el.classList.toggle('hidden');
+    }
+
+    async function handleItemImage(input, catIdx, itemIdx) {
+        const file = input.files[0];
+        if (!file) return;
+        const url = await uploadMerchantImage(file);
+        if (url) {
+            window._serviceData[catIdx].items[itemIdx].image = url;
+            renderCategories(); // 刷新预览
+        }
+    }
+
+    function saveItemEdit(catIdx, itemIdx) {
+        const item = window._serviceData[catIdx].items[itemIdx];
+        item.name = document.getElementById(`item-name-${catIdx}-${itemIdx}`).value;
+        item.price = parseFloat(document.getElementById(`item-price-${catIdx}-${itemIdx}`).value) || 0;
+        item.duration = document.getElementById(`item-duration-${catIdx}-${itemIdx}`).value;
+        item.intro = document.getElementById(`item-intro-${catIdx}-${itemIdx}`).value;
+        item.status = document.getElementById(`item-status-${catIdx}-${itemIdx}`).value;
+        renderCategories();
+    }
+
+    function addCategory() {
+        const name = prompt('请输入分类名称（如：舒适房型）');
+        if (!name) return;
+        window._serviceData.push({ cat_name: name, cat_order: window._serviceData.length + 1, items: [] });
+        renderCategories();
+    }
+
+    function addItem(catIdx) {
+        window._serviceData[catIdx].items.push({
+            name: '新商品',
+            price: 0,
+            duration: '',
+            intro: '',
+            image: '',
+            status: 'active',
+            sort: window._serviceData[catIdx].items.length + 1
+        });
+        renderCategories();
+    }
+
+    function removeItem(catIdx, itemIdx) {
+        if (confirm('确定删除该商品？')) {
+            window._serviceData[catIdx].items.splice(itemIdx, 1);
+            renderCategories();
+        }
+    }
+
+    async function uploadMerchantImage(file) {
+        if (!file) return null;
+        const allowed = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+        if (!allowed.includes(file.type)) { alert('仅支持 JPG/PNG/GIF/WebP'); return null; }
+        if (file.size > 2 * 1024 * 1024) { alert('图片不超过2MB'); return null; }
+        const accountId = merchantSelfData.account_id;
+        const path = `${accountId}/${Date.now()}_${file.name}`;
+        const { error } = await sb.storage.from('merchant-uploads').upload(path, file);
+        if (error) { alert('上传失败：' + error.message); return null; }
+        const { data: { publicUrl } } = sb.storage.from('merchant-uploads').getPublicUrl(path);
+        return publicUrl;
+    }
+
+    // 支付方式渲染（保持不变）
     function renderPaymentMethods() {
         const methods = window._paymentMethods;
         let html = methods.map((m,i) => `
@@ -458,29 +592,19 @@
     function addPaymentMethod() { window._paymentMethods.push({label:'',qr:''}); renderPaymentMethods(); }
     function removePaymentMethod(i) { window._paymentMethods.splice(i,1); renderPaymentMethods(); }
     function updatePaymentMethod(i,field,val) { window._paymentMethods[i][field]=val; }
-    async function handlePaymentQR(input,i) { const url=await uploadImage(input.files[0]); if(url){ window._paymentMethods[i].qr=url; renderPaymentMethods(); } }
-
-    async function uploadImage(file) {
-        if(!file) return null;
-        const allowed=['image/jpeg','image/png','image/gif','image/webp'];
-        if(!allowed.includes(file.type)){ alert('仅支持 JPG/PNG/GIF/WebP'); return null; }
-        if(file.size>2*1024*1024){ alert('图片不超过2MB'); return null; }
-        const accountId = merchantSelfData.account_id;
-        const path = `${accountId}/${Date.now()}_${file.name}`;
-        const { error } = await sb.storage.from('merchant-uploads').upload(path, file);
-        if(error){ alert('上传失败：'+error.message); return null; }
-        const { data: { publicUrl } } = sb.storage.from('merchant-uploads').getPublicUrl(path);
-        return publicUrl;
-    }
+    async function handlePaymentQR(input,i) { const url=await uploadMerchantImage(input.files[0]); if(url){ window._paymentMethods[i].qr=url; renderPaymentMethods(); } }
 
     async function saveMerchantSelf() {
-        const status=document.getElementById('self-status').value;
-        const total=parseInt(document.getElementById('self-room-total').value)||0;
-        const avail=parseInt(document.getElementById('self-room-avail').value)||0;
+        const status = document.getElementById('self-status').value;
+        const total = parseInt(document.getElementById('self-room-total').value) || 0;
+        const avail = parseInt(document.getElementById('self-room-avail').value) || 0;
         await sb.from('ztj_merchants').update({
-            status, manual_room_total:total, manual_room_available:avail,
-            service_data:window._serviceData, payment_methods:window._paymentMethods
-        }).eq('id',currentUser.id);
+            status,
+            manual_room_total: total,
+            manual_room_available: avail,
+            service_data: window._serviceData,
+            payment_methods: window._paymentMethods
+        }).eq('id', currentUser.id);
         alert('保存成功');
     }
 

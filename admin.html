@@ -16,7 +16,7 @@
         .form-group { margin-bottom:12px; }
         .form-group label { display:block; margin-bottom:4px; font-weight:500; font-size:14px; }
         .form-group input, .form-group select, .form-group textarea { width:100%; padding:8px 12px; border:1px solid #ccc; border-radius:6px; font-size:14px; }
-        .btn { padding:8px 16px; border:none; border-radius:6px; cursor:pointer; font-weight:500; font-size:14px; margin-right:4px; }
+        .btn { padding:6px 14px; border:none; border-radius:6px; cursor:pointer; font-weight:500; font-size:14px; margin-right:4px; }
         .btn-primary { background:#2e7d32; color:white; }
         .btn-danger { background:#c62828; color:white; }
         .btn-default { background:#e0e0e0; color:#333; }
@@ -26,7 +26,6 @@
         #login-page { max-width:400px; margin:80px auto; }
         .login-box { background:white; padding:30px; border-radius:12px; box-shadow:0 4px 16px rgba(0,0,0,0.1); }
         .login-box h2 { text-align:center; margin-bottom:20px; }
-        .error-msg { color:#c62828; margin-top:8px; }
         .star-input { display:flex; align-items:center; gap:6px; }
         .star-input input { width:60px; }
         .upload-preview { width:200px; height:150px; object-fit:cover; border:1px solid #ccc; border-radius:6px; margin-top:4px; }
@@ -57,6 +56,7 @@
         .checkbox-group { display:flex; flex-wrap:wrap; gap:8px; }
         .checkbox-group label { display:flex; align-items:center; gap:4px; font-weight:normal; cursor:pointer; }
         .tag { display:inline-block; background:#e0e0e0; padding:2px 6px; border-radius:10px; font-size:12px; margin-right:4px; }
+        .save-star-btn { padding:4px 10px; font-size:13px; background:#2e7d32; color:white; border:none; border-radius:4px; cursor:pointer; }
     </style>
 </head>
 <body>
@@ -490,18 +490,29 @@
     }
     async function replyFeedback(id) { const reply=document.getElementById('reply-'+id).value; await sb.from('ztj_feedbacks').update({reply}).eq('id',id); alert('已保存'); loadFeedbackList(); }
 
-    // ==================== 商户管理（超管） ====================
+    // ==================== 商户管理（超管，星级增加保存按钮） ====================
     async function loadMerchantList() {
         const { data } = await sb.from('ztj_merchants').select('*, poi:poi_id(name)');
         document.getElementById('merchant-list').innerHTML = data.map(m => `
             <div class="card"><div class="card-row">
                 <div><b>${m.display_name||m.account_id}</b> (POI: ${m.poi?.name||'-'})</div>
-                <div class="star-input">设施⭐<input type="number" value="${m.star_facility||0}" min="0" max="5" onchange="updateStar('${m.id}','star_facility',this.value)"></div>
-                <div class="star-input">服务⭐<input type="number" value="${m.star_service||0}" min="0" max="5" onchange="updateStar('${m.id}','star_service',this.value)"></div>
+                <div class="star-input">
+                    设施⭐<input type="number" id="star-facility-${m.id}" value="${m.star_facility||0}" min="0" max="5" style="width:60px;">
+                    <button class="save-star-btn" onclick="updateStar('${m.id}','star_facility',document.getElementById('star-facility-${m.id}').value)">保存</button>
+                </div>
+                <div class="star-input">
+                    服务⭐<input type="number" id="star-service-${m.id}" value="${m.star_service||0}" min="0" max="5" style="width:60px;">
+                    <button class="save-star-btn" onclick="updateStar('${m.id}','star_service',document.getElementById('star-service-${m.id}').value)">保存</button>
+                </div>
                 <button class="btn btn-danger" onclick="deleteMerchant('${m.id}')">删除</button>
             </div></div>`).join('');
     }
-    async function updateStar(id,field,val) { const v=parseInt(val)||0; await sb.from('ztj_merchants').update({[field]:v}).eq('id',id); }
+    async function updateStar(id,field,val) {
+        const v=parseInt(val)||0;
+        await sb.from('ztj_merchants').update({[field]:v}).eq('id',id);
+        alert('星级已更新');
+        loadMerchantList(); // 刷新列表
+    }
 
     async function showAddMerchant() {
         const accountId = prompt('请输入商户账号ID (如 st003):'); if(!accountId) return;

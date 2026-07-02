@@ -79,7 +79,6 @@
 
 <div id="admin-page" class="hidden">
     <div class="header"><h2>📊 智游通江管理后台</h2><button onclick="logout()">退出</button></div>
-    <!-- 超管视图 -->
     <div id="super-admin-view" class="container">
         <div class="tab">
             <button class="active" onclick="switchTab('poi')">📍POI</button>
@@ -96,6 +95,7 @@
                     <option>景点</option><option>文化场馆</option><option>餐饮</option><option>住宿</option><option>停车场</option><option>厕所</option><option>交通枢纽</option><option>公共服务</option><option>购物</option>
                 </select></div>
                 <div class="form-group"><label>排序序号</label><input id="new-poi-sort" type="number" value="0" step="1"></div>
+                <div class="form-group"><label>建议游览时间(分钟)</label><input id="new-poi-visit" type="number" value="60"></div>
                 <div class="form-group"><label>纬度 *</label><input id="new-poi-lat" type="number" step="any"></div>
                 <div class="form-group"><label>经度 *</label><input id="new-poi-lng" type="number" step="any"></div>
                 <div class="form-group"><label>简介</label><textarea id="new-poi-desc" rows="2"></textarea></div>
@@ -144,7 +144,6 @@
         </div>
     </div>
 
-    <!-- 商户自助视图（含店铺管理、订单管理） -->
     <div id="merchant-self-view" class="container hidden">
         <div class="tab" id="merchant-tabs">
             <button class="active" onclick="switchMerchantTab('shop')">🏪 店铺管理</button>
@@ -171,7 +170,6 @@
     let ordersSubscription = null;
     let audioCtx = null;
 
-    // ==================== 认证与会话 ====================
     async function checkSession() {
         const { data: { session } } = await sb.auth.getSession();
         if (session) { currentUser = session.user; await loadAdminView(); }
@@ -201,7 +199,6 @@
         await sb.auth.signOut();
     }
 
-    // ==================== 角色加载 ====================
     async function loadAdminView() {
         document.getElementById('login-page').classList.add('hidden');
         document.getElementById('admin-page').classList.remove('hidden');
@@ -211,7 +208,7 @@
             merchantSelfData = merchant;
             document.getElementById('super-admin-view').classList.add('hidden');
             document.getElementById('merchant-self-view').classList.remove('hidden');
-            switchMerchantTab('shop'); // 默认显示店铺管理
+            switchMerchantTab('shop');
         } else {
             isSuperAdmin = true;
             document.getElementById('super-admin-view').classList.remove('hidden');
@@ -220,7 +217,6 @@
         }
     }
 
-    // 超管标签切换
     function switchTab(tab) {
         document.querySelectorAll('#super-admin-view .tab button').forEach(b => b.classList.remove('active'));
         event.target.classList.add('active');
@@ -232,7 +228,6 @@
         else if (tab==='merchants') loadMerchantList();
     }
 
-    // 商户标签切换
     function switchMerchantTab(tab) {
         document.querySelectorAll('#merchant-tabs button').forEach(b => b.classList.remove('active'));
         if (event && event.target) event.target.classList.add('active');
@@ -249,12 +244,13 @@
         }
     }
 
-    // ==================== POI 管理 ====================
+    // ==================== POI 管理（含游览时间） ====================
     function showNewPoiForm() { document.getElementById('new-poi-form').classList.remove('hidden'); }
     function hideNewPoiForm() { document.getElementById('new-poi-form').classList.add('hidden'); clearNewPoiForm(); }
     function clearNewPoiForm() {
         document.getElementById('new-poi-name').value=''; document.getElementById('new-poi-category').value='景点';
-        document.getElementById('new-poi-sort').value='0'; document.getElementById('new-poi-lat').value=''; document.getElementById('new-poi-lng').value='';
+        document.getElementById('new-poi-sort').value='0'; document.getElementById('new-poi-visit').value='60';
+        document.getElementById('new-poi-lat').value=''; document.getElementById('new-poi-lng').value='';
         document.getElementById('new-poi-desc').value=''; document.getElementById('new-poi-voice-cn').value=''; document.getElementById('new-poi-voice-en').value='';
         document.getElementById('new-poi-radius').value='5';
     }
@@ -267,6 +263,7 @@
             name,
             category: document.getElementById('new-poi-category').value,
             sort_order: parseInt(document.getElementById('new-poi-sort').value) || 0,
+            visit_duration: parseInt(document.getElementById('new-poi-visit').value) || 60,
             lat, lng,
             description: document.getElementById('new-poi-desc').value,
             voice_cn: document.getElementById('new-poi-voice-cn').value,
@@ -311,6 +308,7 @@
                                     ${poiCategories.map(c => `<option ${p.category===c?'selected':''}>${c}</option>`).join('')}
                                 </select></div>
                                 <div class="form-group"><label>排序</label><input type="number" id="edit-sort-${p.id}" value="${p.sort_order || 0}"></div>
+                                <div class="form-group"><label>建议游览时间(分钟)</label><input type="number" id="edit-visit-${p.id}" value="${p.visit_duration || 60}"></div>
                                 <div class="form-group"><label>纬度</label><input type="number" step="any" id="edit-lat-${p.id}" value="${p.lat}"></div>
                                 <div class="form-group"><label>经度</label><input type="number" step="any" id="edit-lng-${p.id}" value="${p.lng}"></div>
                                 <div class="form-group"><label>简介</label><textarea id="edit-desc-${p.id}" rows="2">${p.description||''}</textarea></div>
@@ -343,6 +341,7 @@
             name,
             category: document.getElementById(`edit-category-${poiId}`).value,
             sort_order: parseInt(document.getElementById(`edit-sort-${poiId}`).value) || 0,
+            visit_duration: parseInt(document.getElementById(`edit-visit-${poiId}`).value) || 60,
             lat, lng,
             description: document.getElementById(`edit-desc-${poiId}`).value,
             voice_cn: document.getElementById(`edit-voice-cn-${poiId}`).value,
@@ -647,7 +646,7 @@
         alert('保存成功');
     }
 
-    // ==================== 商户自助：订单管理 ====================
+    // ==================== 商户订单管理 ====================
     async function loadOrders() {
         if (!merchantSelfData) return;
         const { data, error } = await sb.from('ztj_orders')

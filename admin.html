@@ -90,6 +90,8 @@
                 </div>
                 <div class="form-group"><label>排序序号</label><input id="new-poi-sort" type="number" value="0" step="1"></div>
                 <div class="form-group"><label>建议游览时间(分钟)</label><input id="new-poi-visit" type="number" value="60"></div>
+                <div class="form-group"><label>参考距离(公里，从县城)</label><input id="new-poi-ref-dist" type="number" step="any" placeholder="不填则估算"></div>
+                <div class="form-group"><label>参考耗时(分钟，从县城)</label><input id="new-poi-ref-dur" type="number" placeholder="不填则估算"></div>
                 <div class="form-group"><label>纬度 *</label><input id="new-poi-lat" type="number" step="any"></div>
                 <div class="form-group"><label>经度 *</label><input id="new-poi-lng" type="number" step="any"></div>
                 <div class="form-group"><label>简介</label><textarea id="new-poi-desc" rows="2"></textarea></div>
@@ -166,7 +168,6 @@
 
     const poiCategories = ['自然景区', '文化场馆', '餐饮住宿', '公共服务', '停车场', '交通枢纽', '购物', '游戏娱乐'];
 
-    // ==================== 认证与会话 ====================
     async function checkSession() {
         const { data: { session } } = await sb.auth.getSession();
         if (session) { currentUser = session.user; await loadAdminView(); }
@@ -241,7 +242,6 @@
         }
     }
 
-    // ==================== 工具函数 ====================
     function renderCategoryCheckboxes(containerId, selected = []) {
         const container = document.getElementById(containerId);
         if (!container) return;
@@ -252,8 +252,7 @@
 
     function getSelectedCategories(containerId) {
         const checks = document.querySelectorAll(`#${containerId} input[type="checkbox"]:checked`);
-        const values = Array.from(checks).map(cb => cb.value);
-        return [...new Set(values)].join(','); // 去重
+        return [...new Set(Array.from(checks).map(cb => cb.value))].join(',');
     }
 
     // ==================== POI 管理 ====================
@@ -269,6 +268,8 @@
         document.getElementById('new-poi-name').value='';
         document.getElementById('new-poi-sort').value='0';
         document.getElementById('new-poi-visit').value='60';
+        document.getElementById('new-poi-ref-dist').value='';
+        document.getElementById('new-poi-ref-dur').value='';
         document.getElementById('new-poi-lat').value=''; document.getElementById('new-poi-lng').value='';
         document.getElementById('new-poi-desc').value=''; document.getElementById('new-poi-voice-cn').value=''; document.getElementById('new-poi-voice-en').value='';
         document.getElementById('new-poi-radius').value='5';
@@ -281,11 +282,15 @@
         const lng = parseFloat(document.getElementById('new-poi-lng').value);
         if(!name || isNaN(lat) || isNaN(lng)) { alert('名称、纬度、经度必填'); return; }
         const categories = getSelectedCategories('new-poi-categories');
+        const refDist = document.getElementById('new-poi-ref-dist').value;
+        const refDur = document.getElementById('new-poi-ref-dur').value;
         const payload = {
             name,
             category: categories,
             sort_order: parseInt(document.getElementById('new-poi-sort').value) || 0,
             visit_duration: parseInt(document.getElementById('new-poi-visit').value) || 60,
+            ref_distance: refDist ? parseFloat(refDist) : null,
+            ref_duration: refDur ? parseInt(refDur) : null,
             lat, lng,
             description: document.getElementById('new-poi-desc').value,
             voice_cn: document.getElementById('new-poi-voice-cn').value,
@@ -299,7 +304,6 @@
     async function loadPoiList() {
         const { data } = await sb.from('ztj_poi').select('*').order('sort_order', { ascending: true }).order('id');
         if (!data) return;
-        // 分组构建，增加去重
         const grouped = {};
         poiCategories.forEach(cat => { grouped[cat] = []; });
         data.forEach(p => {
@@ -327,11 +331,12 @@
                         const editFormId = `edit-${p.id}`;
                         const cats = p.category ? p.category.split(',') : [];
                         const catTags = cats.map(c => `<span class="tag">${c.trim()}</span>`).join('');
+                        const refInfo = p.ref_distance ? ` 距县城${p.ref_distance}km/${p.ref_duration}分钟` : '';
                         return `<div class="card">
                             <div class="card-row">
                                 <span>
                                     <input type="number" class="sort-input" value="${p.sort_order || 0}" onchange="updatePoiSort(${p.id}, this.value)" title="修改排序序号">
-                                    <b>${serial}</b> ${p.name} ${catTags}
+                                    <b>${serial}</b> ${p.name} ${catTags} <small>${refInfo}</small>
                                 </span>
                                 <div><button class="btn btn-default" onclick="toggleEditForm('${editFormId}', ${p.id})">编辑</button><button class="btn btn-danger" onclick="deletePoi(${p.id})">删除</button></div>
                             </div>
@@ -344,6 +349,8 @@
                                 </div>
                                 <div class="form-group"><label>排序</label><input type="number" id="edit-sort-${p.id}" value="${p.sort_order || 0}"></div>
                                 <div class="form-group"><label>建议游览时间(分钟)</label><input type="number" id="edit-visit-${p.id}" value="${p.visit_duration || 60}"></div>
+                                <div class="form-group"><label>参考距离(公里)</label><input type="number" step="any" id="edit-ref-dist-${p.id}" value="${p.ref_distance || ''}"></div>
+                                <div class="form-group"><label>参考耗时(分钟)</label><input type="number" id="edit-ref-dur-${p.id}" value="${p.ref_duration || ''}"></div>
                                 <div class="form-group"><label>纬度</label><input type="number" step="any" id="edit-lat-${p.id}" value="${p.lat}"></div>
                                 <div class="form-group"><label>经度</label><input type="number" step="any" id="edit-lng-${p.id}" value="${p.lng}"></div>
                                 <div class="form-group"><label>简介</label><textarea id="edit-desc-${p.id}" rows="2">${p.description||''}</textarea></div>
@@ -378,11 +385,15 @@
         const lng = parseFloat(document.getElementById(`edit-lng-${id}`).value);
         if (!name || isNaN(lat) || isNaN(lng)) { alert('名称、纬度、经度必填'); return; }
         const categories = getSelectedCategories(`edit-categories-${id}`);
+        const refDist = document.getElementById(`edit-ref-dist-${id}`).value;
+        const refDur = document.getElementById(`edit-ref-dur-${id}`).value;
         const payload = {
             name,
             category: categories,
             sort_order: parseInt(document.getElementById(`edit-sort-${id}`).value) || 0,
             visit_duration: parseInt(document.getElementById(`edit-visit-${id}`).value) || 60,
+            ref_distance: refDist ? parseFloat(refDist) : null,
+            ref_duration: refDur ? parseInt(refDur) : null,
             lat, lng,
             description: document.getElementById(`edit-desc-${id}`).value,
             voice_cn: document.getElementById(`edit-voice-cn-${id}`).value,

@@ -68,6 +68,10 @@
         .custom-poi-item { display:flex; justify-content:space-between; align-items:center; background:#f0f0f0; padding:8px; border-radius:6px; margin-bottom:6px; }
         .remove-poi-btn { background:#c62828; color:white; border:none; border-radius:50%; width:24px; height:24px; cursor:pointer; }
         .my-feedback-btn { background:#f5f5f5; border:1px solid #ddd; padding:8px 16px; border-radius:8px; margin-top:20px; text-align:center; cursor:pointer; }
+        /* 自选面板分类折叠 */
+        .group-title { font-size:16px; font-weight:bold; padding:10px; background:#e9f5ea; border-radius:6px; cursor:pointer; margin-bottom:8px; display:flex; justify-content:space-between; }
+        .poi-select-item { display:flex; justify-content:space-between; align-items:center; padding:6px 10px; border-bottom:1px solid #eee; }
+        .poi-select-item button { padding:4px 10px; font-size:13px; }
     </style>
 </head>
 <body>
@@ -104,7 +108,6 @@
     <button class="btn btn-primary" id="navBtn" onclick="startSimulation()">📍 模拟导航</button>
 </div>
 
-<!-- 路线选择面板（包含自选行程入口和推荐路线列表） -->
 <div class="panel" id="routesPanel">
     <div class="panel-header"><h2>路线选择</h2><button class="close-btn" onclick="closePanel('routesPanel')">✕</button></div>
     <div class="panel-body">
@@ -119,16 +122,28 @@
     <div class="panel-body" id="routeDetailContent"></div>
 </div>
 
-<!-- 自选行程面板 -->
+<!-- 自选行程面板（分类选择） -->
 <div class="panel" id="customTripPanel">
     <div class="panel-header"><h2>自选行程</h2><button class="close-btn" onclick="closePanel('customTripPanel')">✕</button></div>
     <div class="panel-body">
-        <p style="color:#666; margin-bottom:10px;">在地图上长按或右键点击POI添加到下方列表</p>
         <div class="form-group"><label>出行方式</label><select id="travel-mode">
             <option value="auto">🚗 自驾（约40km/h）</option>
             <option value="bus">🚌 公交（约20km/h）</option>
             <option value="walk">🚶 步行（约5km/h）</option>
         </select></div>
+        <h4 style="margin:12px 0 8px;">选择要添加的地点</h4>
+        <!-- 分类折叠区域 -->
+        <div id="poi-group-select">
+            <div class="group-title" onclick="toggleGroup('group-cultural')">🏛️ 研学参观 (文化场馆)<span id="arrow-group-cultural">▼</span></div>
+            <div id="group-cultural" class="poi-group-items"></div>
+            <div class="group-title" onclick="toggleGroup('group-scenery')">🏞️ 景点游玩<span id="arrow-group-scenery">▼</span></div>
+            <div id="group-scenery" class="poi-group-items"></div>
+            <div class="group-title" onclick="toggleGroup('group-eatstay')">🍽️🛏️ 住宿餐饮<span id="arrow-group-eatstay">▼</span></div>
+            <div id="group-eatstay" class="poi-group-items"></div>
+            <div class="group-title" onclick="toggleGroup('group-fun')">🎮 游戏娱乐 (购物/茶楼等)<span id="arrow-group-fun">▼</span></div>
+            <div id="group-fun" class="poi-group-items"></div>
+        </div>
+        <h4 style="margin:16px 0 8px;">已选地点</h4>
         <div id="customPoiList" class="custom-poi-list"></div>
         <button class="btn btn-primary" onclick="generateCustomTrip()" style="width:100%; margin-top:10px;">生成行程预览</button>
         <div id="customTripPreview" style="margin-top:15px;"></div>
@@ -158,7 +173,6 @@
     <div class="panel-body" id="bookingContent"></div>
 </div>
 
-<!-- 我的面板（包含行程、订单、留言） -->
 <div class="panel" id="myPanel">
     <div class="panel-header"><h2>我的</h2><button class="close-btn" onclick="closePanel('myPanel')">✕</button></div>
     <div class="panel-body">
@@ -242,13 +256,41 @@
             });
             const marker = L.marker([poi.lat,poi.lng], {icon}).addTo(map);
             marker.on('click', () => showPoiDetail(poi));
-            // 右键加入自选（移动端长按）
-            marker.on('contextmenu', (e) => {
-                addToCustomList(poi);
-                return false;
-            });
             marker.bindPopup(`<b>${poi.name}</b><br>${poi.description||''}`);
         });
+    }
+
+    // 分类分组映射
+    function getCustomGroups() {
+        const groups = {
+            'group-cultural': { cats: ['文化场馆'], title: '研学参观' },
+            'group-scenery': { cats: ['景点'], title: '景点游玩' },
+            'group-eatstay': { cats: ['餐饮', '住宿'], title: '住宿餐饮' },
+            'group-fun': { cats: ['购物'], title: '游戏娱乐' }
+        };
+        return groups;
+    }
+
+    function renderCustomPoiSelect() {
+        const groups = getCustomGroups();
+        Object.keys(groups).forEach(groupId => {
+            const cats = groups[groupId].cats;
+            const filtered = allPois.filter(p => cats.includes(p.category));
+            const container = document.getElementById(groupId);
+            if (container) {
+                container.innerHTML = filtered.map(poi => `
+                    <div class="poi-select-item">
+                        <span>${poi.name} (${poi.category})</span>
+                        <button class="btn btn-default" onclick="addToCustomListById(${poi.id})">+ 加入</button>
+                    </div>
+                `).join('') || '<div class="poi-select-item" style="color:#999;">暂无相关地点</div>';
+            }
+        });
+    }
+
+    function addToCustomListById(id) {
+        const poi = allPois.find(p => p.id === id);
+        if (poi) addToCustomList(poi);
     }
 
     function addToCustomList(poi) {
@@ -260,7 +302,7 @@
 
     function updateCustomPoiList() {
         const container = document.getElementById('customPoiList');
-        if (!container) return; // 面板未打开时忽略
+        if (!container) return;
         container.innerHTML = selectedCustomPois.map((p, idx) => `
             <div class="custom-poi-item">
                 <span>${idx+1}. ${p.name}</span>
@@ -282,11 +324,10 @@
     }
 
     async function generateCustomTrip() {
-        if (selectedCustomPois.length === 0) { alert('请先添加至少一个POI'); return; }
+        if (selectedCustomPois.length === 0) { alert('请先添加至少一个地点'); return; }
         const mode = document.getElementById('travel-mode').value;
         const speeds = { auto: 40, bus: 20, walk: 5 };
         const speed = speeds[mode] || 40;
-        let totalTime = 0;
         const nodes = [];
         for (let i = 0; i < selectedCustomPois.length; i++) {
             const poi = selectedCustomPois[i];
@@ -298,7 +339,6 @@
             }
             const visitDuration = poi.visit_duration || 60;
             nodes.push({ ...poi, transportTime, visitDuration });
-            totalTime += transportTime + visitDuration;
         }
         let html = '<h4>行程预览</h4>';
         let timeCounter = 8*60;
@@ -546,9 +586,21 @@
         if(id==='nearbyPanel') loadNearbyPanel();
         if(id==='merchantDetailPanel') updateTotal();
         if(id==='myPanel') initMyPanel();
-        if(id==='customTripPanel') updateCustomPoiList();
+        if(id==='customTripPanel') { updateCustomPoiList(); renderCustomPoiSelect(); }
     }
     function closePanel(id){ document.getElementById(id).classList.remove('active'); }
+
+    function toggleGroup(id) {
+        const el = document.getElementById(id);
+        const arrow = document.getElementById('arrow-' + id);
+        if (el.style.display === 'none') {
+            el.style.display = 'block';
+            arrow.textContent = '▼';
+        } else {
+            el.style.display = 'none';
+            arrow.textContent = '▶';
+        }
+    }
 
     async function loadNearbyPanel(){
         const ref = simulatedPosition || {lat:32.08,lng:107.18};
@@ -687,13 +739,11 @@
             tripContent.classList.remove('hidden');
             orderContent.classList.add('hidden');
             renderMyTrip();
-            // 清空订单列表显示
             document.getElementById('myOrderList').innerHTML = '';
         } else {
             document.querySelector('#myTabs button:last-child').classList.add('active');
             tripContent.classList.add('hidden');
             orderContent.classList.remove('hidden');
-            // 不清空手机号，方便查询
         }
     }
 

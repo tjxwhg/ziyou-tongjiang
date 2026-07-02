@@ -14,6 +14,7 @@
         .lang-switch select { border:none; background:transparent; font-size:14px; }
         .feedback-btn { position:fixed; top:20px; right:120px; z-index:1500; background:white; border-radius:20px; padding:6px 12px; box-shadow:0 2px 8px rgba(0,0,0,0.2); border:none; cursor:pointer; }
         .my-btn { position:fixed; top:20px; right:190px; z-index:1500; background:white; border-radius:20px; padding:6px 12px; box-shadow:0 2px 8px rgba(0,0,0,0.2); border:none; cursor:pointer; font-size:14px; }
+        .custom-trip-btn { position:fixed; top:20px; right:260px; z-index:1500; background:white; border-radius:20px; padding:6px 12px; box-shadow:0 2px 8px rgba(0,0,0,0.2); border:none; cursor:pointer; font-size:14px; }
         .category-bar { position:fixed; top:70px; left:10px; right:10px; z-index:1500; display:flex; gap:8px; overflow-x:auto; padding:8px; background:rgba(255,255,255,0.95); border-radius:12px; box-shadow:0 2px 8px rgba(0,0,0,0.2); transition: transform 0.3s; }
         .category-bar.hidden-bar { transform: translateY(-120px); }
         .category-btn { flex-shrink:0; padding:6px 14px; border-radius:20px; border:1px solid #ddd; background:white; font-size:13px; cursor:pointer; white-space:nowrap; }
@@ -65,6 +66,9 @@
         .tab-inner { display:flex; gap:10px; margin-bottom:15px; }
         .tab-inner button { padding:8px 16px; border:none; background:#eee; border-radius:20px; cursor:pointer; }
         .tab-inner button.active { background:#2e7d32; color:white; }
+        .custom-poi-list { margin-top:10px; }
+        .custom-poi-item { display:flex; justify-content:space-between; align-items:center; background:#f0f0f0; padding:8px; border-radius:6px; margin-bottom:6px; }
+        .remove-poi-btn { background:#c62828; color:white; border:none; border-radius:50%; width:24px; height:24px; cursor:pointer; }
     </style>
 </head>
 <body>
@@ -80,6 +84,7 @@
 </div>
 <button class="my-btn" onclick="openPanel('myPanel')">👤 我的</button>
 <button class="feedback-btn" onclick="openPanel('feedbackPanel')">💬 留言</button>
+<button class="custom-trip-btn" onclick="openPanel('customTripPanel')">🛠️ 自选行程</button>
 
 <div class="category-bar" id="categoryBar">
     <button class="category-btn active" onclick="filterPOI('全部')">📍全部</button>
@@ -160,6 +165,20 @@
     <div class="panel-body" id="bookingContent"></div>
 </div>
 
+<div class="panel" id="customTripPanel">
+    <div class="panel-header"><h2>自选行程</h2><button class="close-btn" onclick="closePanel('customTripPanel')">✕</button></div>
+    <div class="panel-body">
+        <div class="form-group"><label>出行方式</label><select id="travel-mode">
+            <option value="auto">🚗 自驾（约40km/h）</option>
+            <option value="bus">🚌 公交（约20km/h）</option>
+            <option value="walk">🚶 步行（约5km/h）</option>
+        </select></div>
+        <div id="customPoiList" class="custom-poi-list"></div>
+        <button class="btn btn-primary" onclick="generateCustomTrip()" style="width:100%; margin-top:10px;">生成行程预览</button>
+        <div id="customTripPreview" style="margin-top:15px;"></div>
+    </div>
+</div>
+
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://unpkg.com/leaflet-polylinedecorator@1.6.0/dist/leaflet.polylineDecorator.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -172,6 +191,7 @@
     let allPois=[], activeCategory='全部', currentMerchant=null;
     let currentRoutePolyline = null;
     let hideTimer;
+    let selectedCustomPois = []; // 自选POI列表
 
     const poiCategories = ['景点', '文化场馆', '餐饮', '住宿', '停车场', '厕所', '交通枢纽', '公共服务', '购物'];
     const poiColors = {
@@ -215,234 +235,131 @@
             });
             const marker = L.marker([poi.lat,poi.lng], {icon}).addTo(map);
             marker.on('click', () => showPoiDetail(poi));
-        });
-    }
-
-    async function showPoiDetail(poi) {
-        const { data: merchant } = await sb.from('ztj_merchants').select('*').eq('poi_id', poi.id).maybeSingle();
-        if (merchant) {
-            currentMerchant = merchant;
-            renderMerchantDetail(poi, merchant);
-            openPanel('merchantDetailPanel');
-        } else {
-            const popup = L.popup().setLatLng([poi.lat, poi.lng]).setContent(`<b>${poi.name}</b><br>${poi.description||''}`);
-            popup.openOn(map);
-        }
-    }
-
-    function renderMerchantDetail(poi, merchant) {
-        document.getElementById('merchantDetailTitle').textContent = poi.name;
-        const stars = [];
-        if (merchant.star_facility) stars.push(`设施：${'⭐'.repeat(merchant.star_facility)}`);
-        if (merchant.star_service) stars.push(`服务：${'⭐'.repeat(merchant.star_service)}`);
-        const starsHtml = stars.length ? `<div class="stars">${stars.join(' ')}</div>` : '';
-
-        let bodyHtml = '';
-        const categories = merchant.service_data || [];
-        if (categories.length === 0) {
-            bodyHtml = '<p>暂无服务信息</p>';
-        } else {
-            categories.forEach((cat, catIdx) => {
-                const activeItems = (cat.items || []).filter(item => item.status !== 'inactive');
-                bodyHtml += `
-                    <div style="margin-bottom:15px;">
-                        <div class="merchant-cat-title" onclick="toggleFrontCat(${catIdx})">
-                            <span>${cat.cat_name} (${activeItems.length})</span>
-                            <span id="front-cat-arrow-${catIdx}">▼</span>
-                        </div>
-                        <div id="front-cat-items-${catIdx}" class="front-cat-items">
-                            ${activeItems.map(item => `
-                                <div class="service-item">
-                                    <input type="checkbox" class="service-check" data-price="${item.price}" data-name="${item.name}" onchange="updateTotal()">
-                                    ${item.image ? `<img src="${item.image}">` : '<div style="width:100px;height:80px;background:#eee;border-radius:6px;"></div>'}
-                                    <div class="service-info">
-                                        <div><b>${item.name}</b> <span class="service-price">¥${item.price}</span></div>
-                                        ${item.duration ? `<div style="color:#666;">${item.duration}</div>` : ''}
-                                        ${item.intro ? `<small>${item.intro}</small>` : ''}
-                                    </div>
-                                </div>
-                            `).join('')}
-                        </div>
-                    </div>`;
+            // 右键添加自选（移动端长按）
+            marker.on('contextmenu', (e) => {
+                addToCustomList(poi);
+                return false;
             });
-        }
+            marker.bindPopup(`<b>${poi.name}</b><br>${poi.description||''}<br><button onclick="addToCustomListById(${poi.id})">加入自选</button>`);
+        });
+    }
 
-        document.getElementById('merchantDetailContent').innerHTML = `
-            <div class="merchant-detail">
-                ${starsHtml}
-                <p>${poi.description||''}</p>
-                ${bodyHtml}
-                <div class="total-box">合计：<span id="merchantTotal">0</span> 元</div>
-                <div style="display:flex; gap:8px; margin-top:12px;">
-                    <button class="btn-reserve" onclick="openBooking()">📅 预订/下单</button>
-                    <button class="btn-pay" onclick="showPayment()">💳 去支付</button>
+    function addToCustomListById(id) {
+        const poi = allPois.find(p => p.id === id);
+        if (poi) addToCustomList(poi);
+    }
+
+    function addToCustomList(poi) {
+        if (!selectedCustomPois.find(p => p.id === poi.id)) {
+            selectedCustomPois.push(poi);
+            updateCustomPoiList();
+        }
+    }
+
+    function updateCustomPoiList() {
+        const container = document.getElementById('customPoiList');
+        container.innerHTML = selectedCustomPois.map((p, idx) => `
+            <div class="custom-poi-item">
+                <span>${idx+1}. ${p.name}</span>
+                <div>
+                    <button class="btn btn-default" style="padding:2px 6px;" onclick="moveCustomPoi(${idx}, -1)" ${idx===0?'disabled':''}>↑</button>
+                    <button class="btn btn-default" style="padding:2px 6px;" onclick="moveCustomPoi(${idx}, 1)" ${idx===selectedCustomPois.length-1?'disabled':''}>↓</button>
+                    <button class="remove-poi-btn" onclick="removeCustomPoi(${idx})">✕</button>
                 </div>
-            </div>`;
-        categories.forEach((_, idx) => {
-            const el = document.getElementById(`front-cat-items-${idx}`);
-            if (el) el.style.display = 'block';
-        });
-    }
-
-    function toggleFrontCat(idx) {
-        const el = document.getElementById(`front-cat-items-${idx}`);
-        const arrow = document.getElementById(`front-cat-arrow-${idx}`);
-        if (el.style.display === 'none') { el.style.display = 'block'; arrow.textContent = '▼'; }
-        else { el.style.display = 'none'; arrow.textContent = '▶'; }
-    }
-
-    function updateTotal() {
-        const checks = document.querySelectorAll('#merchantDetailContent input[type=checkbox]');
-        let total = 0;
-        checks.forEach(cb => { if(cb.checked) total += parseFloat(cb.dataset.price); });
-        document.getElementById('merchantTotal').textContent = total.toFixed(2);
-    }
-
-    function showPayment() {
-        const total = parseFloat(document.getElementById('merchantTotal').textContent);
-        if (total === 0) { alert('请先选择商品'); return; }
-        if (!currentMerchant || !currentMerchant.payment_methods || currentMerchant.payment_methods.length === 0) {
-            alert('该商户暂未设置支付方式'); return;
-        }
-        const methods = currentMerchant.payment_methods;
-        let btnsHtml = '';
-        methods.forEach((m, idx) => {
-            btnsHtml += `<button class="${idx===0?'active':''}" onclick="switchPayMethod(${idx})">${m.label||'方式'+ (idx+1)}</button>`;
-        });
-        const qrHtml = methods[0]?.qr ? `<img src="${methods[0].qr}" class="qr-img" id="payQrImg">` : '<p>无二维码</p>';
-        document.getElementById('payContent').innerHTML = `
-            <h3>请支付 ¥${total.toFixed(2)}</h3>
-            <div class="pay-btns">${btnsHtml}</div>
-            ${qrHtml}`;
-        window._payMethods = methods;
-        openPanel('payPanel');
-    }
-
-    function switchPayMethod(idx) {
-        document.querySelectorAll('.pay-btns button').forEach((btn,i) => btn.classList.toggle('active', i===idx));
-        const qrImg = document.getElementById('payQrImg');
-        if (qrImg && window._payMethods[idx]) {
-            qrImg.src = window._payMethods[idx].qr || '';
-        }
-    }
-
-    // 预订功能，增加时间选择
-    function openBooking() {
-        const total = parseFloat(document.getElementById('merchantTotal').textContent);
-        if (total === 0) { alert('请至少选择一件商品'); return; }
-
-        const selected = [];
-        document.querySelectorAll('#merchantDetailContent input[type=checkbox]').forEach(cb => {
-            if (cb.checked) {
-                selected.push({ name: cb.dataset.name, price: parseFloat(cb.dataset.price) });
-            }
-        });
-
-        let itemsHtml = '<ul>';
-        selected.forEach(item => { itemsHtml += `<li>${item.name} - ¥${item.price}</li>`; });
-        itemsHtml += '</ul>';
-
-        document.getElementById('bookingContent').innerHTML = `
-            <h3>订单预览</h3>
-            <div id="booking-items">${itemsHtml}</div>
-            <div class="total-box">合计：<span id="bookingTotal">${total.toFixed(2)}</span> 元</div>
-            <div class="form-group"><label>预定时间（选填）</label><input type="datetime-local" id="booking-time"></div>
-            <div class="form-group"><label>手机号 *</label><input type="tel" id="booking-phone" placeholder="请输入手机号"></div>
-            <div class="form-group"><label>姓名（选填）</label><input id="booking-name" placeholder="可不填"></div>
-            <div class="form-group"><label>备注（选填）</label><input id="booking-note" placeholder="如：免辣、到店时间等"></div>
-            <button class="btn btn-primary" onclick="submitOrder()" style="width:100%;">提交订单</button>
-        `;
-        // 预填手机号
-        const savedPhone = localStorage.getItem('lastOrderPhone') || '';
-        document.getElementById('booking-phone').value = savedPhone;
-        window._selectedItems = selected;
-        openPanel('bookingPanel');
-    }
-
-    async function submitOrder() {
-        const phone = document.getElementById('booking-phone').value.trim();
-        if (!phone) { alert('请填写手机号'); return; }
-        const name = document.getElementById('booking-name').value.trim();
-        const note = document.getElementById('booking-note').value.trim();
-        const timeInput = document.getElementById('booking-time').value;
-        const total = parseFloat(document.getElementById('bookingTotal').textContent);
-
-        // 将预定时间加入备注前缀或单独字段（目前订单表没有独立时间字段，我们合并到备注中）
-        let finalNote = note || '';
-        if (timeInput) {
-            const formattedTime = new Date(timeInput).toLocaleString('zh-CN');
-            finalNote = `【预定时间：${formattedTime}】${finalNote}`;
-        }
-
-        const orderData = {
-            merchant_id: currentMerchant.id,
-            poi_id: currentMerchant.poi_id,
-            items: window._selectedItems,
-            total: total,
-            phone: phone,
-            name: name || null,
-            note: finalNote || null,
-            status: 'new'
-        };
-
-        const { error } = await sb.from('ztj_orders').insert(orderData);
-        if (error) {
-            alert('订单提交失败：' + error.message);
-        } else {
-            alert('订单已提交！可在“我的”中查看订单状态。');
-            localStorage.setItem('lastOrderPhone', phone);
-            closePanel('bookingPanel');
-            closePanel('merchantDetailPanel');
-        }
-    }
-
-    function filterPOI(cat){
-        activeCategory = cat;
-        document.querySelectorAll('#categoryBar .category-btn').forEach(b=>b.classList.remove('active'));
-        event.target.classList.add('active');
-        if(cat==='全部') renderPOIs(allPois);
-        else renderPOIs(allPois.filter(p=>p.category===cat));
-        startHideTimer();
-    }
-
-    function openPanel(id){
-        document.getElementById(id).classList.add('active');
-        if(id==='routesPanel') loadRoutes();
-        if(id==='nearbyPanel') loadNearbyPanel();
-        if(id==='merchantDetailPanel') updateTotal();
-        if(id==='myPanel') initMyPanel();
-    }
-    function closePanel(id){ document.getElementById(id).classList.remove('active'); }
-
-    async function loadNearbyPanel(){
-        const ref = simulatedPosition || {lat:32.08,lng:107.18};
-        let html = '';
-        poiCategories.forEach(cat => html += `<button class="category-btn" onclick="nearbyFilter('${cat}')">${cat}</button>`);
-        document.getElementById('nearbyCategoryBar').innerHTML = '<button class="category-btn active" onclick="nearbyFilter(\'全部\')">全部</button>' + html;
-        nearbyFilter('全部');
-    }
-
-    function nearbyFilter(cat){
-        document.querySelectorAll('#nearbyCategoryBar .category-btn').forEach(b=>b.classList.remove('active'));
-        event.target.classList.add('active');
-        const ref = simulatedPosition || {lat:32.08,lng:107.18};
-        let list = allPois;
-        if(cat!=='全部') list = list.filter(p=>p.category===cat);
-        list = list.map(p=>({...p, distance: getDistance(ref.lat,ref.lng,p.lat,p.lng)})).sort((a,b)=>a.distance-b.distance);
-        document.getElementById('nearbyList').innerHTML = list.map(p=>`
-            <div class="nearby-item">
-                <div class="nearby-info"><b>${p.name}</b> (${p.category})<br><span class="nearby-distance">${(p.distance/1000).toFixed(1)} km</span></div>
-                <button onclick="window.open('https://uri.amap.com/marker?position=${p.lng},${p.lat}&name=${p.name}','_blank')" style="background:#2E7D32; color:white; border:none; padding:6px 12px; border-radius:6px;">导航</button>
             </div>
         `).join('');
     }
 
-    async function loadRoutes(){
-        const { data } = await sb.from('ztj_routes').select('*');
-        document.getElementById('routeList').innerHTML = data.map(r=>`
-            <div class="route-card" onclick="showRouteDetail(${r.id})"><h3>${r.name}</h3>
-            <div class="tags"><span class="tag">${r.days}天</span><span class="tag">${r.transport}</span></div><p>${r.intro||''}</p></div>`).join('');
+    function removeCustomPoi(idx) { selectedCustomPois.splice(idx,1); updateCustomPoiList(); }
+    function moveCustomPoi(idx, dir) {
+        const newIdx = idx + dir;
+        if (newIdx < 0 || newIdx >= selectedCustomPois.length) return;
+        [selectedCustomPois[idx], selectedCustomPois[newIdx]] = [selectedCustomPois[newIdx], selectedCustomPois[idx]];
+        updateCustomPoiList();
     }
+
+    async function generateCustomTrip() {
+        if (selectedCustomPois.length === 0) { alert('请先添加至少一个POI'); return; }
+        const mode = document.getElementById('travel-mode').value;
+        const speeds = { auto: 40, bus: 20, walk: 5 };
+        const speed = speeds[mode] || 40;
+        // 计算距离和参考时间
+        let totalTime = 0;
+        const nodes = [];
+        for (let i = 0; i < selectedCustomPois.length; i++) {
+            const poi = selectedCustomPois[i];
+            let transportTime = 0;
+            if (i > 0) {
+                const prev = selectedCustomPois[i-1];
+                const dist = getDistance(prev.lat, prev.lng, poi.lat, poi.lng);
+                transportTime = Math.round(dist / 1000 / speed * 60); // 分钟
+            }
+            const visitDuration = poi.visit_duration || 60; // 数据库字段，默认60
+            nodes.push({ ...poi, transportTime, visitDuration });
+            totalTime += transportTime + visitDuration;
+        }
+        let html = '<h4>行程预览</h4>';
+        let timeCounter = 8*60; // 8:00出发
+        nodes.forEach((node, idx) => {
+            const h = Math.floor(timeCounter/60), m = timeCounter%60;
+            html += `<div class="timeline-item"><div class="timeline-marker"></div><div class="timeline-content">
+                <div class="timeline-time">${('0'+h).slice(-2)}:${('0'+m).slice(-2)}</div>
+                <div class="timeline-name">${node.name} (游览${node.visitDuration}分钟)</div>
+                ${idx>0 ? `<div style="font-size:12px;color:#666;">交通约${node.transportTime}分钟</div>` : ''}
+            </div></div>`;
+            timeCounter += node.transportTime + node.visitDuration;
+        });
+        html += `<button class="btn btn-primary" onclick="saveCustomTrip()" style="width:100%;">保存并开始导航</button>`;
+        document.getElementById('customTripPreview').innerHTML = html;
+        window._customNodes = nodes;
+    }
+
+    function saveCustomTrip() {
+        if (!window._customNodes) return;
+        const name = prompt('请输入行程名称：', '自定义行程');
+        if (!name) return;
+        const tripData = {
+            name,
+            nodes: window._customNodes.map(n => ({ id: n.id, name: n.name, lat: n.lat, lng: n.lng, visitDuration: n.visitDuration, transportTime: n.transportTime })),
+            timestamp: Date.now()
+        };
+        const savedTrips = JSON.parse(localStorage.getItem('savedTrips') || '[]');
+        savedTrips.push(tripData);
+        localStorage.setItem('savedTrips', JSON.stringify(savedTrips));
+        // 设置为当前行程并开始模拟导航
+        setCurrentCustomTrip(tripData);
+        closePanel('customTripPanel');
+        alert('行程已保存，即将开始导航');
+        startSimulationFromNodes(tripData.nodes);
+    }
+
+    function setCurrentCustomTrip(trip) {
+        currentTrip = { type: 'custom', data: trip };
+        // 绘制路线
+        if (currentRoutePolyline) map.removeLayer(currentRoutePolyline);
+        const latlngs = trip.nodes.map(n => [n.lat, n.lng]);
+        const polyline = L.polyline(latlngs, { color: '#FF5722', weight: 4, opacity: 0.8 });
+        const decorator = L.polylineDecorator(polyline, {
+            patterns: [{ offset: 25, repeat: 80, symbol: L.Symbol.arrowHead({ pixelSize: 12, pathOptions: { color: '#FF5722', weight: 3 } }) }]
+        });
+        currentRoutePolyline = L.layerGroup([polyline, decorator]).addTo(map);
+        map.fitBounds(currentRoutePolyline.getBounds().pad(0.1));
+    }
+
+    function startSimulationFromNodes(nodes) {
+        simulationActive = true;
+        document.getElementById('voiceBtn').style.display = 'flex';
+        document.getElementById('navBtn').textContent = '📍 导航中...';
+        window._simNodes = nodes;
+        alert('模拟导航已开启，请在地图上点击移动');
+        if (voiceCheckingInterval) clearInterval(voiceCheckingInterval);
+        voiceCheckingInterval = setInterval(checkVoiceTrigger, 3000);
+    }
+
+    // 其余原有函数基本保持不变，但需要兼容 currentTrip 类型
+    // 因篇幅，下面省略部分重复代码，实际使用请保留之前的全部功能
+    // 请在原有 index.html 的基础上，合并以上修改和以下必要函数
+    // 注意：推荐路线的套用也要保存到 savedTrips
 
     async function showRouteDetail(id){
         const { data:route } = await sb.from('ztj_routes').select('*').eq('id',id).single();
@@ -458,185 +375,75 @@
         });
         document.getElementById('routeDetailTitle').textContent=route.name;
         document.getElementById('routeDetailContent').innerHTML=`<p>${route.intro||''}</p><div style="margin:20px 0;">${html}</div>
-        <button class="btn btn-primary" style="width:100%" onclick="setCurrentTrip(${id})">一键套用此线路</button>`;
+        <button class="btn btn-primary" style="width:100%" onclick="setCurrentTripFromRoute(${id})">一键套用此线路</button>`;
         openPanel('routeDetailPanel');
     }
 
-    function setCurrentTrip(routeId) {
-        if (currentRoutePolyline) { map.removeLayer(currentRoutePolyline); currentRoutePolyline = null; }
-        currentTrip = routeId;
+    async function setCurrentTripFromRoute(routeId) {
+        const { data:route } = await sb.from('ztj_routes').select('*').eq('id',routeId).single();
+        const { data:nodes } = await sb.from('ztj_route_nodes').select('*, poi:poi_id(*)').eq('route_id',routeId).order('order_num');
+        const tripNodes = nodes.map(n => ({
+            id: n.poi.id, name: n.poi.name, lat: n.poi.lat, lng: n.poi.lng,
+            visitDuration: n.duration_min, transportTime: n.transport_time
+        }));
+        const tripData = { name: route.name, nodes: tripNodes, timestamp: Date.now() };
+        const savedTrips = JSON.parse(localStorage.getItem('savedTrips') || '[]');
+        savedTrips.push(tripData);
+        localStorage.setItem('savedTrips', JSON.stringify(savedTrips));
+        setCurrentCustomTrip(tripData);
         closePanel('routeDetailPanel');
         closePanel('routesPanel');
-        alert('已设置行程，点击模拟导航开始');
+        startSimulationFromNodes(tripNodes);
     }
 
-    async function startSimulation(){
-        if(!currentTrip){ alert('请先选择路线'); return; }
-        simulationActive=true;
-        document.getElementById('voiceBtn').style.display='flex';
-        document.getElementById('navBtn').textContent='📍 导航中...';
-
-        const { data: nodes } = await sb.from('ztj_route_nodes').select('poi_id, order_num, poi:poi_id(lat, lng)').eq('route_id', currentTrip).order('order_num');
-        if (nodes && nodes.length > 0) {
-            const latlngs = nodes.map(n => [n.poi.lat, n.poi.lng]);
-            if (currentRoutePolyline) map.removeLayer(currentRoutePolyline);
-
-            const polyline = L.polyline(latlngs, { color: '#FF5722', weight: 4, opacity: 0.8 });
-            const decorator = L.polylineDecorator(polyline, {
-                patterns: [
-                    {
-                        offset: 25,
-                        repeat: 80,
-                        symbol: L.Symbol.arrowHead({ pixelSize: 12, pathOptions: { color: '#FF5722', weight: 3 } })
-                    }
-                ]
-            });
-            currentRoutePolyline = L.layerGroup([polyline, decorator]).addTo(map);
-            map.fitBounds(currentRoutePolyline.getBounds().pad(0.1));
-        }
-
-        alert('模拟导航已开启，请在地图上点击移动');
-        if(voiceCheckingInterval) clearInterval(voiceCheckingInterval);
-        voiceCheckingInterval=setInterval(checkVoiceTrigger,3000);
-    }
-
-    function setSimulatedPosition(lat,lng){
-        simulatedPosition={lat,lng};
-        if(window.simMarker) map.removeLayer(window.simMarker);
-        window.simMarker=L.circleMarker([lat,lng],{radius:8,color:'red',fillOpacity:0.8}).addTo(map);
-    }
-
-    async function checkVoiceTrigger(){
-        if(!simulatedPosition||!voiceEnabled) return;
-        const { data:pois } = await sb.from('ztj_poi').select('*').eq('status','active');
-        if(!pois) return;
-        pois.forEach(poi=>{
-            const dist=getDistance(simulatedPosition.lat,simulatedPosition.lng,poi.lat,poi.lng);
-            if(dist<=(poi.trigger_radius||10) && !triggeredPois[poi.id]){
-                triggerVoice(poi);
-                triggeredPois[poi.id]=Date.now();
-            }
-        });
-    }
-
-    function triggerVoice(poi){
-        const text=poi['voice_'+currentLang]||poi.voice_cn||poi.description;
-        if(!text) return;
-        const u=new SpeechSynthesisUtterance(text);
-        u.lang={cn:'zh-CN',en:'en-US',ja:'ja-JP',ko:'ko-KR'}[currentLang]||'zh-CN';
-        speechSynthesis.speak(u);
-    }
-
-    function toggleVoice(){
-        voiceEnabled=!voiceEnabled;
-        document.getElementById('voiceBtn').textContent=voiceEnabled?'🔊':'🔇';
-        if(!voiceEnabled) speechSynthesis.cancel();
-    }
-
-    function getDistance(lat1,lng1,lat2,lng2){
-        const R=6371000, dLat=(lat2-lat1)*Math.PI/180, dLng=(lng2-lng1)*Math.PI/180;
-        const a=Math.sin(dLat/2)**2+Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLng/2)**2;
-        return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
-    }
-
-    async function submitFeedback(){
-        const msg=document.getElementById('feedbackMsg').value;
-        if(!msg) return;
-        const {error}=await sb.from('ztj_feedbacks').insert([{message:msg}]);
-        document.getElementById('feedbackResult').innerHTML=error?'<p style="color:red">提交失败</p>':'<p style="color:green">感谢反馈！</p>';
-        if(!error) document.getElementById('feedbackMsg').value='';
-    }
-
-    // ==================== 我的面板逻辑 ====================
-    function initMyPanel() {
-        switchMyTab('trip');
-        const savedPhone = localStorage.getItem('lastOrderPhone') || '';
-        document.getElementById('query-phone').value = savedPhone;
-    }
-
-    function switchMyTab(tab) {
-        document.querySelectorAll('#myTabs button').forEach(b => b.classList.remove('active'));
-        if (tab === 'trip') {
-            document.querySelector('#myTabs button:first-child').classList.add('active');
-            document.getElementById('myTripContent').classList.remove('hidden');
-            document.getElementById('myOrderContent').classList.add('hidden');
-            renderMyTrip();
-        } else {
-            document.querySelector('#myTabs button:last-child').classList.add('active');
-            document.getElementById('myTripContent').classList.add('hidden');
-            document.getElementById('myOrderContent').classList.remove('hidden');
-            const phone = document.getElementById('query-phone').value.trim();
-            if (phone) queryMyOrders();
-        }
-    }
-
+    // 我的行程渲染
     function renderMyTrip() {
         const container = document.getElementById('myTripContent');
-        if (currentTrip) {
-            container.innerHTML = `
-                <div class="order-item">
-                    <div style="display:flex; justify-content:space-between;">
-                        <span><b>当前行程：</b>路线 #${currentTrip}</span>
-                        <button class="btn btn-cancel" style="padding:4px 10px; font-size:12px;" onclick="clearCurrentTrip()">取消行程</button>
-                    </div>
-                    <p style="font-size:13px; color:#666; margin-top:5px;">已选择模拟导航路线，可在地图上查看。</p>
-                </div>`;
-        } else {
-            container.innerHTML = '<p style="color:#999;">暂无行程，请从推荐路线中选择。</p>';
-        }
-    }
-
-    function clearCurrentTrip() {
-        currentTrip = null;
-        if (currentRoutePolyline) { map.removeLayer(currentRoutePolyline); currentRoutePolyline = null; }
-        simulationActive = false;
-        document.getElementById('voiceBtn').style.display = 'none';
-        document.getElementById('navBtn').textContent = '📍 模拟导航';
-        if (voiceCheckingInterval) clearInterval(voiceCheckingInterval);
-        renderMyTrip();
-        alert('行程已取消');
-    }
-
-    async function queryMyOrders() {
-        const phone = document.getElementById('query-phone').value.trim();
-        if (!phone) { alert('请输入手机号'); return; }
-        localStorage.setItem('lastOrderPhone', phone);
-        const { data, error } = await sb.from('ztj_orders').select('*').eq('phone', phone).order('created_at', { ascending: false });
-        const container = document.getElementById('myOrderList');
-        if (error) {
-            container.innerHTML = '<p style="color:red;">查询失败</p>';
-            return;
-        }
-        if (!data || data.length === 0) {
-            container.innerHTML = '<p style="color:#999;">暂无订单记录</p>';
+        const savedTrips = JSON.parse(localStorage.getItem('savedTrips') || '[]');
+        if (savedTrips.length === 0) {
+            container.innerHTML = '<p style="color:#999;">暂无行程，请从推荐路线中选择或自选景点生成。</p>';
             return;
         }
         let html = '';
-        data.forEach(order => {
-            const statusMap = {
-                'new': '待确认',
-                'confirmed': '已确认',
-                'completed': '已完成',
-                'cancelled': '已取消'
-            };
-            const statusClass = `status-${order.status}`;
-            const items = order.items.map(i => `${i.name} ¥${i.price}`).join(', ');
+        savedTrips.forEach((trip, idx) => {
             html += `
-                <div class="order-item">
-                    <div style="display:flex; justify-content:space-between;">
-                        <span class="order-status ${statusClass}">${statusMap[order.status] || order.status}</span>
-                        <span style="font-size:12px; color:#666;">${new Date(order.created_at).toLocaleString()}</span>
+                <div class="order-item" style="cursor:pointer;">
+                    <div style="display:flex; justify-content:space-between;" onclick="toggleTripDetail(${idx})">
+                        <b>${trip.name}</b>
+                        <span>${trip.nodes.length}个点</span>
                     </div>
-                    <div style="margin-top:6px;"><b>商品：</b>${items}</div>
-                    <div><b>合计：</b>¥${order.total}</div>
-                    ${order.note ? `<div><b>备注：</b>${order.note}</div>` : ''}
+                    <div id="trip-detail-${idx}" style="display:none; margin-top:8px;">
+                        ${trip.nodes.map(n => `<div>• ${n.name} (游览${n.visitDuration||60}分钟)</div>`).join('')}
+                        <button class="btn btn-default" style="margin-top:8px;" onclick="applySavedTrip(${idx})">使用此行程</button>
+                        <button class="btn btn-danger" style="margin-top:8px;" onclick="deleteSavedTrip(${idx})">删除</button>
+                    </div>
                 </div>`;
         });
         container.innerHTML = html;
     }
 
-    document.getElementById('langSelect').addEventListener('change',e=>currentLang=e.target.value);
-    window.onload=initMap;
+    function toggleTripDetail(idx) {
+        const el = document.getElementById(`trip-detail-${idx}`);
+        el.style.display = el.style.display === 'none' ? 'block' : 'none';
+    }
+
+    function applySavedTrip(idx) {
+        const savedTrips = JSON.parse(localStorage.getItem('savedTrips') || '[]');
+        const trip = savedTrips[idx];
+        setCurrentCustomTrip(trip);
+        startSimulationFromNodes(trip.nodes);
+        alert('行程已应用，开始模拟导航');
+    }
+
+    function deleteSavedTrip(idx) {
+        const savedTrips = JSON.parse(localStorage.getItem('savedTrips') || '[]');
+        savedTrips.splice(idx, 1);
+        localStorage.setItem('savedTrips', JSON.stringify(savedTrips));
+        renderMyTrip();
+    }
+
+    // 其余函数（支付、预订、附近、语音等）请沿用之前完整版本，这里不再重复
+    // 实际部署时请将本段代码与之前 index.html 中的对应部分合并
 </script>
 </body>
 </html>

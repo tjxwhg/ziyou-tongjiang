@@ -56,6 +56,7 @@
         .new-order-alert { position:fixed; top:20px; right:20px; background:#ff5722; color:white; padding:16px; border-radius:8px; box-shadow:0 4px 12px rgba(0,0,0,0.3); z-index:9999; display:none; cursor:pointer; }
         .checkbox-group { display:flex; flex-wrap:wrap; gap:8px; }
         .checkbox-group label { display:flex; align-items:center; gap:4px; font-weight:normal; cursor:pointer; }
+        .tag { display:inline-block; background:#e0e0e0; padding:2px 6px; border-radius:10px; font-size:12px; margin-right:4px; }
     </style>
 </head>
 <body>
@@ -85,9 +86,7 @@
                 <h3>新增POI</h3>
                 <div class="form-group"><label>名称 *</label><input id="new-poi-name"></div>
                 <div class="form-group"><label>类别（可多选）</label>
-                    <div class="checkbox-group" id="new-poi-categories">
-                        <!-- 动态生成复选框 -->
-                    </div>
+                    <div class="checkbox-group" id="new-poi-categories"></div>
                 </div>
                 <div class="form-group"><label>排序序号</label><input id="new-poi-sort" type="number" value="0" step="1"></div>
                 <div class="form-group"><label>建议游览时间(分钟)</label><input id="new-poi-visit" type="number" value="60"></div>
@@ -165,14 +164,14 @@
     let ordersSubscription = null;
     let audioCtx = null;
 
-    // 新分类列表（顺序即为分组顺序）
+    // 新的分类列表（顺序决定分组和前台自选面板）
     const poiCategories = ['自然景区', '文化场馆', '餐饮住宿', '公共服务', '停车场', '交通枢纽', '购物', '游戏娱乐'];
     const poiColors = {
         '自然景区':'#2E7D32', '文化场馆':'#9C27B0', '餐饮住宿':'#FF9800', '公共服务':'#607D8B',
         '停车场':'#00BCD4', '交通枢纽':'#795548', '购物':'#E91E63', '游戏娱乐':'#F44336'
     };
 
-    // 初始化分类复选框
+    // 复选框生成
     function renderCategoryCheckboxes(containerId, selected = []) {
         const container = document.getElementById(containerId);
         if (!container) return;
@@ -181,21 +180,12 @@
         `).join('');
     }
 
-    // 获取选中类别字符串
     function getSelectedCategories(containerId) {
         const checks = document.querySelectorAll(`#${containerId} input[type="checkbox"]:checked`);
         return Array.from(checks).map(cb => cb.value).join(',');
     }
 
-    // 设置复选框选中状态
-    function setSelectedCategories(containerId, categoriesStr) {
-        const selected = categoriesStr ? categoriesStr.split(',') : [];
-        const checks = document.querySelectorAll(`#${containerId} input[type="checkbox"]`);
-        checks.forEach(cb => {
-            cb.checked = selected.includes(cb.value);
-        });
-    }
-
+    // ==================== 认证与会话 ====================
     async function checkSession() {
         const { data: { session } } = await sb.auth.getSession();
         if (session) { currentUser = session.user; await loadAdminView(); }
@@ -270,7 +260,7 @@
         }
     }
 
-    // ==================== POI 管理 ====================
+    // ==================== POI 管理（多选类别） ====================
     function showNewPoiForm() {
         document.getElementById('new-poi-form').classList.remove('hidden');
         renderCategoryCheckboxes('new-poi-categories');
@@ -286,7 +276,6 @@
         document.getElementById('new-poi-lat').value=''; document.getElementById('new-poi-lng').value='';
         document.getElementById('new-poi-desc').value=''; document.getElementById('new-poi-voice-cn').value=''; document.getElementById('new-poi-voice-en').value='';
         document.getElementById('new-poi-radius').value='5';
-        // 清空复选框
         const checks = document.querySelectorAll('#new-poi-categories input[type="checkbox"]');
         checks.forEach(cb => cb.checked = false);
     }
@@ -314,7 +303,6 @@
     async function loadPoiList() {
         const { data } = await sb.from('ztj_poi').select('*').order('sort_order', { ascending: true }).order('id');
         if (!data) return;
-        // 构建分组：遍历每个POI，将其加入所有它所属的类别组
         const grouped = {};
         poiCategories.forEach(cat => { grouped[cat] = []; });
         data.forEach(p => {
@@ -337,7 +325,6 @@
                     ${list.map((p, idx) => {
                         const serial = `${catIndex}-${idx+1}`;
                         const editFormId = `edit-${p.id}`;
-                        // 显示所有类别标签
                         const cats = p.category ? p.category.split(',') : [];
                         const catTags = cats.map(c => `<span class="tag">${c}</span>`).join('');
                         return `<div class="card">
@@ -410,16 +397,393 @@
     function toggleGroup(id) { const el = document.getElementById(id); if (el) el.classList.toggle('hidden'); const arrow = document.getElementById(id+'-arrow'); if (arrow) arrow.textContent = el.classList.contains('hidden') ? '▶' : '▼'; }
     async function deletePoi(id) { if(confirm('删除POI？')){ await sb.from('ztj_poi').delete().eq('id',id); loadPoiList(); } }
 
-    // ==================== 路线管理（保持不变） ====================
-    // ... 省略路线管理代码，与之前完全一致，可粘贴之前版本的函数
-    // 请将之前版本的路线管理相关函数复制至此
-    async function loadRouteList() { /* 同之前 */ }
-    function showRouteForm(editMode=false) { /* 同之前 */ }
-    function hideRouteForm() { /* 同之前 */ }
-    // ... (为节省篇幅，此处未重复写出，实际使用时请保留完整功能)
+    // ==================== 路线管理 ====================
+    async function loadRouteList() {
+        const { data } = await sb.from('ztj_routes').select('*').order('id');
+        document.getElementById('route-list').innerHTML = data.map(r => `<div class="card"><div class="card-row"><div><b>${r.name}</b> (${r.days}天)</div><div><button class="btn btn-default" onclick="editRoute(${r.id})">编辑</button><button class="btn btn-danger" onclick="deleteRoute(${r.id})">删除</button></div></div></div>`).join('');
+    }
+    function showRouteForm(editMode=false) { document.getElementById('route-form').classList.remove('hidden'); document.getElementById('route-form-title').textContent=editMode?'编辑路线':'新增路线'; }
+    function hideRouteForm() { document.getElementById('route-form').classList.add('hidden'); clearRouteForm(); }
+    function clearRouteForm() {
+        document.getElementById('route-id').value=''; document.getElementById('route-name').value=''; document.getElementById('route-days').value='1';
+        document.getElementById('route-transport').value=''; document.getElementById('route-group').value=''; document.getElementById('route-start').value='';
+        document.getElementById('route-intro').value=''; nodesToSave=[]; document.getElementById('node-list').innerHTML='';
+    }
+    async function editRoute(id) {
+        const { data: route } = await sb.from('ztj_routes').select('*').eq('id',id).single();
+        document.getElementById('route-id').value=route.id; document.getElementById('route-name').value=route.name;
+        document.getElementById('route-days').value=route.days; document.getElementById('route-transport').value=route.transport;
+        document.getElementById('route-group').value=route.group_type; document.getElementById('route-start').value=route.start_point||'';
+        document.getElementById('route-intro').value=route.intro||'';
+        const { data: nodes } = await sb.from('ztj_route_nodes').select('*, poi:poi_id(id,name,sort_order)').eq('route_id',id).order('order_num');
+        nodesToSave = nodes.map(n => ({ id:n.id, poi_id:n.poi_id, poi_name:n.poi?.name||'未知', poi_sort:n.poi?.sort_order||0, duration_min:n.duration_min, transport_mode:n.transport_mode, transport_time:n.transport_time, note:n.note||'' }));
+        renderNodes(); showRouteForm(true);
+    }
+    function addNode() { nodesToSave.push({ id:null, poi_id:'', poi_name:'', poi_sort:0, duration_min:60, transport_mode:'步行', transport_time:0, note:'' }); renderNodes(); }
+    function removeNode(idx) { nodesToSave.splice(idx,1); renderNodes(); }
+    function moveNode(idx, direction) { if (idx===0&&direction===-1) return; if (idx===nodesToSave.length-1&&direction===1) return; const temp=nodesToSave[idx]; nodesToSave[idx]=nodesToSave[idx+direction]; nodesToSave[idx+direction]=temp; renderNodes(); }
+    function updateNodeField(idx, field, value) { nodesToSave[idx][field] = value; }
+    async function autoReorderNodes() {
+        if (nodesToSave.length===0) return;
+        const poiIds = nodesToSave.map(n => n.poi_id).filter(id => id);
+        if (poiIds.length===0) { alert('没有有效 POI，无法排序'); return; }
+        const { data: pois } = await sb.from('ztj_poi').select('id,sort_order').in('id', poiIds);
+        if (!pois) return;
+        const sortMap = {}; pois.forEach(p => sortMap[p.id] = p.sort_order||0);
+        nodesToSave.forEach(n => { n.poi_sort = sortMap[n.poi_id]||0; });
+        nodesToSave.sort((a,b) => (a.poi_sort-b.poi_sort)||(a.poi_id-b.poi_id));
+        renderNodes();
+    }
+    function renderNodes() {
+        document.getElementById('node-list').innerHTML = nodesToSave.map((n,i) => `
+            <div class="card node-item"><div style="flex:1;">
+                <div class="form-group"><label>POI ID</label><input type="number" value="${n.poi_id}" onchange="updateNodeField(${i},'poi_id',parseInt(this.value))"></div>
+                <div style="font-size:12px; color:#666;">当前 POI 排序：${n.poi_sort||0} (${n.poi_name})</div>
+                <div class="form-group"><label>停留(分钟)</label><input type="number" value="${n.duration_min}" onchange="updateNodeField(${i},'duration_min',parseInt(this.value))"></div>
+                <div class="form-group"><label>交通方式</label><select onchange="updateNodeField(${i},'transport_mode',this.value)"><option ${n.transport_mode==='步行'?'selected':''}>步行</option><option ${n.transport_mode==='自驾'?'selected':''}>自驾</option><option ${n.transport_mode==='大巴'?'selected':''}>大巴</option><option ${n.transport_mode==='公交'?'selected':''}>公交</option></select></div>
+                <div class="form-group"><label>交通耗时</label><input type="number" value="${n.transport_time}" onchange="updateNodeField(${i},'transport_time',parseInt(this.value))"></div>
+                <div class="form-group"><label>备注</label><input value="${n.note}" onchange="updateNodeField(${i},'note',this.value)"></div>
+            </div><div class="node-move">
+                <button class="btn btn-default" onclick="moveNode(${i}, -1)" ${i===0?'disabled':''}>上移</button>
+                <button class="btn btn-default" onclick="moveNode(${i}, 1)" ${i===nodesToSave.length-1?'disabled':''}>下移</button>
+                <button class="btn btn-danger" onclick="removeNode(${i})">删除</button>
+            </div></div>`).join('');
+    }
+    async function saveRoute() {
+        const id=document.getElementById('route-id').value; const name=document.getElementById('route-name').value.trim();
+        if(!name){alert('路线名称必填');return;} const days=parseInt(document.getElementById('route-days').value)||1;
+        const transport=document.getElementById('route-transport').value; const group=document.getElementById('route-group').value;
+        const start=document.getElementById('route-start').value.trim(); const intro=document.getElementById('route-intro').value;
+        let routeId=id;
+        if(id) await sb.from('ztj_routes').update({name,days,transport,group_type:group,intro,start_point:start}).eq('id',id);
+        else { const { data } = await sb.from('ztj_routes').insert([{name,days,transport,group_type:group,intro,start_point:start}]).select(); routeId=data[0].id; }
+        await sb.from('ztj_route_nodes').delete().eq('route_id',routeId);
+        const payload = nodesToSave.map((n,i)=>({route_id:routeId, order_num:i+1, poi_id:n.poi_id, duration_min:n.duration_min, transport_mode:n.transport_mode, transport_time:n.transport_time, note:n.note}));
+        if(payload.length) await sb.from('ztj_route_nodes').insert(payload);
+        hideRouteForm(); loadRouteList();
+    }
+    async function deleteRoute(id) { if(confirm('删除路线？')){ await sb.from('ztj_route_nodes').delete().eq('route_id',id); await sb.from('ztj_routes').delete().eq('id',id); loadRouteList(); } }
 
-    // ==================== 商户管理、订单、自助等 ====================
-    // ... 同样保留之前版本的函数
+    // ==================== 留言管理 ====================
+    async function loadFeedbackList() {
+        const { data } = await sb.from('ztj_feedbacks').select('*').order('created_at',{ascending:false});
+        document.getElementById('feedback-list').innerHTML = data.map(f => `
+            <div class="card"><p><b>留言：</b>${f.message}</p><p><b>时间：</b>${new Date(f.created_at).toLocaleString()}</p>
+            <p><b>回复：</b>${f.reply||'<span style="color:#999;">未回复</span>'}</p>
+            <textarea id="reply-${f.id}" rows="2" placeholder="输入回复">${f.reply||''}</textarea>
+            <button class="btn btn-primary" onclick="replyFeedback(${f.id})">保存回复</button></div>`).join('');
+    }
+    async function replyFeedback(id) { const reply=document.getElementById('reply-'+id).value; await sb.from('ztj_feedbacks').update({reply}).eq('id',id); alert('已保存'); loadFeedbackList(); }
+
+    // ==================== 商户管理（超管） ====================
+    async function loadMerchantList() {
+        const { data } = await sb.from('ztj_merchants').select('*, poi:poi_id(name)');
+        document.getElementById('merchant-list').innerHTML = data.map(m => `
+            <div class="card"><div class="card-row">
+                <div><b>${m.display_name||m.account_id}</b> (POI: ${m.poi?.name||'-'})</div>
+                <div class="star-input">设施⭐<input type="number" value="${m.star_facility||0}" min="0" max="5" onchange="updateStar('${m.id}','star_facility',this.value)"></div>
+                <div class="star-input">服务⭐<input type="number" value="${m.star_service||0}" min="0" max="5" onchange="updateStar('${m.id}','star_service',this.value)"></div>
+                <button class="btn btn-danger" onclick="deleteMerchant('${m.id}')">删除</button>
+            </div></div>`).join('');
+    }
+    async function updateStar(id,field,val) { const v=parseInt(val)||0; await sb.from('ztj_merchants').update({[field]:v}).eq('id',id); }
+
+    async function showAddMerchant() {
+        const accountId = prompt('请输入商户账号ID (如 st003):'); if(!accountId) return;
+        const displayName = prompt('请输入商户实际名称:'); if(!displayName) return;
+        const poiId = prompt('请输入绑定的POI ID:'); if(!poiId) return;
+        const userId = prompt('请输入该商户对应的 Auth 用户 UUID（在 Supabase Auth 中获取）:'); if(!userId) return;
+        const { error } = await sb.from('ztj_merchants').insert([{ id: userId, account_id: accountId, display_name: displayName, poi_id: parseInt(poiId) }]);
+        if (error) { alert('绑定失败：' + error.message); return; }
+        alert(`商户 ${accountId} 绑定成功，用户 UUID：${userId}`);
+        loadMerchantList();
+    }
+
+    async function deleteMerchant(id) { if(confirm('删除商户？')){ await sb.from('ztj_merchants').delete().eq('id',id); loadMerchantList(); } }
+
+    // ==================== 商户自助：店铺管理 ====================
+    async function renderMerchantSelf() {
+        const m = merchantSelfData;
+        const { data: poi } = await sb.from('ztj_poi').select('*').eq('id',m.poi_id).single();
+        document.getElementById('merchant-self-content').innerHTML = `
+            <div class="card">
+                <h3>${poi.name} (账号: ${m.account_id})</h3>
+                <div class="form-group"><label>营业状态</label><select id="self-status">
+                    <option ${m.status==='open'?'selected':''}>open</option><option ${m.status==='closed'?'selected':''}>closed</option><option ${m.status==='busy'?'selected':''}>busy</option></select></div>
+                <div class="form-group"><label>房态总数</label><input type="number" id="self-room-total" value="${m.manual_room_total||''}"></div>
+                <div class="form-group"><label>可用房间</label><input type="number" id="self-room-avail" value="${m.manual_room_available||''}"></div>
+                <h4>📦 分类与商品</h4>
+                <div id="category-container"></div>
+                <button class="btn btn-primary" onclick="addCategory()">+ 新增分类</button>
+                <h4>💳 支付方式</h4>
+                <div id="payment-methods"></div>
+                <button onclick="addPaymentMethod()">+ 添加支付方式</button>
+                <button class="btn btn-primary" onclick="saveMerchantSelf()" style="margin-top:16px; width:100%;">保存全部</button>
+            </div>`;
+        window._serviceData = m.service_data || [];
+        window._paymentMethods = m.payment_methods || [];
+        renderCategories();
+        renderPaymentMethods();
+    }
+
+    function renderCategories() {
+        const container = document.getElementById('category-container');
+        if (!window._serviceData.length) {
+            container.innerHTML = '<p>暂无分类，请点击下方按钮新增</p>';
+            return;
+        }
+        let html = '';
+        window._serviceData.forEach((cat, catIdx) => {
+            html += `<div class="category-block">
+                <div class="cat-header" onclick="toggleCatItems(${catIdx})">
+                    <span>
+                        ${cat.cat_name || '未命名分类'}
+                        <button class="btn btn-default" style="padding:2px 6px; font-size:12px;" onclick="event.stopPropagation(); renameCategory(${catIdx})">✏️</button>
+                    </span>
+                    <span id="cat-arrow-${catIdx}">▼</span>
+                </div>
+                <div id="cat-items-${catIdx}" class="cat-items">
+                    ${renderItems(cat.items, catIdx)}
+                    <button class="btn btn-default" onclick="addItem(${catIdx})">+ 添加商品</button>
+                </div>
+            </div>`;
+        });
+        container.innerHTML = html;
+        window._serviceData.forEach((_, idx) => {
+            const el = document.getElementById(`cat-items-${idx}`);
+            if (el) el.style.display = 'block';
+        });
+    }
+
+    function renameCategory(idx) {
+        const newName = prompt('请输入新分类名称：', window._serviceData[idx].cat_name);
+        if (newName && newName.trim() !== '') {
+            window._serviceData[idx].cat_name = newName.trim();
+            renderCategories();
+        }
+    }
+
+    function renderItems(items, catIdx) {
+        if (!items || !items.length) return '<p style="color:#999;">暂无商品</p>';
+        return items.map((item, itemIdx) => `
+            <div class="item-card">
+                <div class="item-row">
+                    <div>
+                        <b>${item.name || '未命名'}</b> - ¥${item.price || 0}
+                        <span class="status-badge ${item.status==='active'?'status-active':'status-inactive'}">${item.status==='active'?'上架':'下架'}</span>
+                    </div>
+                    <div>
+                        <button class="btn btn-default" onclick="toggleItemEdit(${catIdx},${itemIdx})">编辑</button>
+                        <button class="btn btn-danger" onclick="removeItem(${catIdx},${itemIdx})">删除</button>
+                    </div>
+                </div>
+                <div id="item-edit-${catIdx}-${itemIdx}" class="hidden" style="margin-top:10px;">
+                    <div class="form-group"><label>名称</label><input id="item-name-${catIdx}-${itemIdx}" value="${item.name||''}"></div>
+                    <div class="form-group"><label>价格 (¥)</label><input type="number" id="item-price-${catIdx}-${itemIdx}" value="${item.price||0}"></div>
+                    <div class="form-group"><label>时间/时长</label><input id="item-duration-${catIdx}-${itemIdx}" value="${item.duration||''}" placeholder="如 1晚 / 2小时"></div>
+                    <div class="form-group"><label>简介</label><input id="item-intro-${catIdx}-${itemIdx}" value="${item.intro||''}"></div>
+                    <div class="form-group"><label>图片</label>
+                        <input type="file" accept="image/*" onchange="handleItemImage(this, ${catIdx}, ${itemIdx})">
+                        <img src="${item.image || ''}" class="upload-preview" id="item-img-${catIdx}-${itemIdx}" style="${item.image ? '' : 'display:none'}">
+                    </div>
+                    <div class="form-group"><label>状态</label><select id="item-status-${catIdx}-${itemIdx}">
+                        <option ${item.status==='active'?'selected':''}>active</option>
+                        <option ${item.status==='inactive'?'selected':''}>inactive</option>
+                    </select></div>
+                    <button class="btn btn-primary" onclick="saveItemEdit(${catIdx},${itemIdx})">确定</button>
+                    <button class="btn btn-default" onclick="toggleItemEdit(${catIdx},${itemIdx})">取消</button>
+                </div>
+            </div>
+        `).join('');
+    }
+
+    function toggleCatItems(idx) {
+        const el = document.getElementById(`cat-items-${idx}`);
+        const arrow = document.getElementById(`cat-arrow-${idx}`);
+        if (el.style.display === 'none') { el.style.display = 'block'; arrow.textContent = '▼'; }
+        else { el.style.display = 'none'; arrow.textContent = '▶'; }
+    }
+
+    function toggleItemEdit(catIdx, itemIdx) {
+        const el = document.getElementById(`item-edit-${catIdx}-${itemIdx}`);
+        el.classList.toggle('hidden');
+    }
+
+    async function handleItemImage(input, catIdx, itemIdx) {
+        const file = input.files[0];
+        if (!file) return;
+        const url = await uploadMerchantImage(file);
+        if (url) {
+            window._serviceData[catIdx].items[itemIdx].image = url;
+            const imgEl = document.getElementById(`item-img-${catIdx}-${itemIdx}`);
+            if (imgEl) { imgEl.src = url; imgEl.style.display = ''; }
+        }
+    }
+
+    function saveItemEdit(catIdx, itemIdx) {
+        const item = window._serviceData[catIdx].items[itemIdx];
+        item.name = document.getElementById(`item-name-${catIdx}-${itemIdx}`).value;
+        item.price = parseFloat(document.getElementById(`item-price-${catIdx}-${itemIdx}`).value) || 0;
+        item.duration = document.getElementById(`item-duration-${catIdx}-${itemIdx}`).value;
+        item.intro = document.getElementById(`item-intro-${catIdx}-${itemIdx}`).value;
+        item.status = document.getElementById(`item-status-${catIdx}-${itemIdx}`).value;
+        renderCategories();
+    }
+
+    function addCategory() {
+        const name = prompt('请输入分类名称（如：舒适房型）');
+        if (!name) return;
+        window._serviceData.push({ cat_name: name, cat_order: window._serviceData.length + 1, items: [] });
+        renderCategories();
+    }
+
+    function addItem(catIdx) {
+        window._serviceData[catIdx].items.push({
+            name: '新商品', price: 0, duration: '', intro: '', image: '', status: 'active',
+            sort: window._serviceData[catIdx].items.length + 1
+        });
+        renderCategories();
+    }
+
+    function removeItem(catIdx, itemIdx) {
+        if (confirm('确定删除该商品？')) { window._serviceData[catIdx].items.splice(itemIdx, 1); renderCategories(); }
+    }
+
+    async function uploadMerchantImage(file) {
+        if (!file) return null;
+        const allowed = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+        if (!allowed.includes(file.type)) { alert('仅支持 JPG/PNG/GIF/WebP'); return null; }
+        if (file.size > 2 * 1024 * 1024) { alert('图片不超过2MB'); return null; }
+        const accountId = merchantSelfData.account_id;
+        const path = `${accountId}/${Date.now()}_${file.name}`;
+        const { error } = await sb.storage.from('merchant-uploads').upload(path, file);
+        if (error) { alert('上传失败：' + error.message); return null; }
+        const { data: { publicUrl } } = sb.storage.from('merchant-uploads').getPublicUrl(path);
+        return publicUrl;
+    }
+
+    function renderPaymentMethods() {
+        const methods = window._paymentMethods;
+        let html = methods.map((m,i) => `
+            <div class="card"><label>标签 (如微信)</label><input value="${m.label}" onchange="updatePaymentMethod(${i},'label',this.value)">
+            <label>二维码</label><input type="file" accept="image/*" onchange="handlePaymentQR(this,${i})">
+            ${m.qr?`<img src="${m.qr}" class="upload-preview">`:''}
+            <button class="btn btn-danger" onclick="removePaymentMethod(${i})">删除</button></div>`).join('');
+        document.getElementById('payment-methods').innerHTML = html || '<p>暂无支付方式</p>';
+    }
+    function addPaymentMethod() { window._paymentMethods.push({label:'',qr:''}); renderPaymentMethods(); }
+    function removePaymentMethod(i) { window._paymentMethods.splice(i,1); renderPaymentMethods(); }
+    function updatePaymentMethod(i,field,val) { window._paymentMethods[i][field]=val; }
+    async function handlePaymentQR(input,i) { const url=await uploadMerchantImage(input.files[0]); if(url){ window._paymentMethods[i].qr=url; renderPaymentMethods(); } }
+
+    async function saveMerchantSelf() {
+        const status = document.getElementById('self-status').value;
+        const total = parseInt(document.getElementById('self-room-total').value) || 0;
+        const avail = parseInt(document.getElementById('self-room-avail').value) || 0;
+        await sb.from('ztj_merchants').update({
+            status, manual_room_total: total, manual_room_available: avail,
+            service_data: window._serviceData, payment_methods: window._paymentMethods
+        }).eq('id', currentUser.id);
+        alert('保存成功');
+    }
+
+    // ==================== 商户订单管理 ====================
+    async function loadOrders() {
+        if (!merchantSelfData) return;
+        const { data, error } = await sb.from('ztj_orders')
+            .select('*')
+            .eq('merchant_id', merchantSelfData.id)
+            .order('created_at', { ascending: false });
+        if (error) return;
+        renderOrders(data || []);
+    }
+
+    function renderOrders(orders) {
+        const container = document.getElementById('order-list');
+        if (orders.length === 0) {
+            container.innerHTML = '<p>暂无订单</p>';
+            return;
+        }
+        container.innerHTML = orders.map(order => {
+            const statusClass = `status-${order.status}`;
+            const items = order.items.map(i => `${i.name} x1 ¥${i.price}`).join(', ');
+            return `
+                <div class="order-card">
+                    <div class="order-header">
+                        <div>
+                            <span class="order-status ${statusClass}">${statusText(order.status)}</span>
+                            <span style="margin-left:10px;">#${order.id}</span>
+                        </div>
+                        <div style="font-size:14px; color:#666;">${new Date(order.created_at).toLocaleString()}</div>
+                    </div>
+                    <div><b>手机号：</b>${order.phone} ${order.name ? ' | 姓名：'+order.name : ''}</div>
+                    <div class="order-items"><b>商品：</b>${items}</div>
+                    <div><b>合计：</b>¥${order.total}</div>
+                    ${order.note ? `<div><b>备注：</b>${order.note}</div>` : ''}
+                    <div class="order-footer">
+                        <div>
+                            ${order.status === 'new' ? `<button class="btn btn-confirm" onclick="updateOrderStatus(${order.id}, 'confirmed')">确认接单</button>` : ''}
+                            ${order.status === 'confirmed' ? `<button class="btn btn-complete" onclick="updateOrderStatus(${order.id}, 'completed')">完成</button>` : ''}
+                            ${(order.status === 'new' || order.status === 'confirmed') ? `<button class="btn btn-cancel" onclick="updateOrderStatus(${order.id}, 'cancelled')">取消</button>` : ''}
+                            <button class="btn btn-note" onclick="addOrderNote(${order.id})">备注</button>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    function statusText(status) {
+        const map = { 'new': '待确认', 'confirmed': '已确认', 'completed': '已完成', 'cancelled': '已取消' };
+        return map[status] || status;
+    }
+
+    async function updateOrderStatus(orderId, newStatus) {
+        const { error } = await sb.from('ztj_orders').update({ status: newStatus }).eq('id', orderId);
+        if (error) { alert('操作失败'); return; }
+        loadOrders();
+    }
+
+    async function addOrderNote(orderId) {
+        const note = prompt('请输入备注信息：');
+        if (note === null) return;
+        await sb.from('ztj_orders').update({ note }).eq('id', orderId);
+        loadOrders();
+    }
+
+    function setupOrdersRealtime() {
+        if (ordersSubscription) return;
+        ordersSubscription = sb.channel('merchant-orders')
+            .on('postgres_changes', {
+                event: 'INSERT',
+                schema: 'public',
+                table: 'ztj_orders',
+                filter: `merchant_id=eq.${merchantSelfData.id}`
+            }, (payload) => {
+                playNotificationSound();
+                showNewOrderAlert();
+                loadOrders();
+            })
+            .subscribe();
+    }
+
+    function playNotificationSound() {
+        if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const oscillator = audioCtx.createOscillator();
+        const gainNode = audioCtx.createGain();
+        oscillator.connect(gainNode);
+        gainNode.connect(audioCtx.destination);
+        oscillator.frequency.value = 800;
+        gainNode.gain.value = 0.1;
+        oscillator.start();
+        oscillator.stop(audioCtx.currentTime + 0.3);
+    }
+
+    function showNewOrderAlert() {
+        const alertEl = document.getElementById('newOrderAlert');
+        alertEl.style.display = 'block';
+        setTimeout(() => { alertEl.style.display = 'none'; }, 5000);
+    }
 
     window.onload = checkSession;
 </script>

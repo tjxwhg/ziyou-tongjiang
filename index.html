@@ -13,6 +13,7 @@
         .lang-switch { position:fixed; top:20px; right:20px; z-index:1500; background:white; border-radius:20px; padding:6px 12px; box-shadow:0 2px 8px rgba(0,0,0,0.2); }
         .lang-switch select { border:none; background:transparent; font-size:14px; }
         .feedback-btn { position:fixed; top:20px; right:120px; z-index:1500; background:white; border-radius:20px; padding:6px 12px; box-shadow:0 2px 8px rgba(0,0,0,0.2); border:none; cursor:pointer; }
+        .my-btn { position:fixed; top:20px; right:190px; z-index:1500; background:white; border-radius:20px; padding:6px 12px; box-shadow:0 2px 8px rgba(0,0,0,0.2); border:none; cursor:pointer; font-size:14px; }
         .category-bar { position:fixed; top:70px; left:10px; right:10px; z-index:1500; display:flex; gap:8px; overflow-x:auto; padding:8px; background:rgba(255,255,255,0.95); border-radius:12px; box-shadow:0 2px 8px rgba(0,0,0,0.2); transition: transform 0.3s; }
         .category-bar.hidden-bar { transform: translateY(-120px); }
         .category-btn { flex-shrink:0; padding:6px 14px; border-radius:20px; border:1px solid #ddd; background:white; font-size:13px; cursor:pointer; white-space:nowrap; }
@@ -53,8 +54,18 @@
         .pay-btns button.active { background:#2E7D32; color:white; }
         .qr-img { max-width:200px; margin-top:10px; }
         .merchant-cat-title { font-weight:bold; font-size:16px; background:#f5f5f5; padding:8px; cursor:pointer; display:flex; justify-content:space-between; margin-top:8px; }
-        .btn-reserve { background:#ff9800; color:white; border:none; padding:8px 16px; border-radius:20px; cursor:pointer; margin-right:8px; }
-        .btn-pay { background:#2E7D32; color:white; border:none; padding:8px 16px; border-radius:20px; cursor:pointer; }
+        .btn-reserve { background:#ff9800; color:white; border:none; padding:8px 16px; border-radius:20px; cursor:pointer; margin-right:8px; flex:1; }
+        .btn-pay { background:#2E7D32; color:white; border:none; padding:8px 16px; border-radius:20px; cursor:pointer; flex:1; }
+        /* 我的页面样式 */
+        .order-item { background:#f9f9f9; border-radius:8px; padding:12px; margin-bottom:10px; border-left:4px solid #2e7d32; }
+        .order-status { font-size:13px; padding:2px 8px; border-radius:10px; }
+        .status-new { background:#fff3e0; color:#e65100; }
+        .status-confirmed { background:#e3f2fd; color:#01579b; }
+        .status-completed { background:#e8f5e9; color:#1b5e20; }
+        .status-cancelled { background:#ffebee; color:#b71c1c; }
+        .tab-inner { display:flex; gap:10px; margin-bottom:15px; }
+        .tab-inner button { padding:8px 16px; border:none; background:#eee; border-radius:20px; cursor:pointer; }
+        .tab-inner button.active { background:#2e7d32; color:white; }
     </style>
 </head>
 <body>
@@ -68,6 +79,7 @@
         <option value="ko">한국어</option>
     </select>
 </div>
+<button class="my-btn" onclick="openPanel('myPanel')">👤 我的</button>
 <button class="feedback-btn" onclick="openPanel('feedbackPanel')">💬 留言</button>
 
 <div class="category-bar" id="categoryBar">
@@ -89,6 +101,23 @@
 <div class="bottom-bar">
     <button class="btn btn-secondary" onclick="openPanel('routesPanel')">📋 推荐路线</button>
     <button class="btn btn-primary" id="navBtn" onclick="startSimulation()">📍 模拟导航</button>
+</div>
+
+<!-- 我的面板 -->
+<div class="panel" id="myPanel">
+    <div class="panel-header"><h2>我的</h2><button class="close-btn" onclick="closePanel('myPanel')">✕</button></div>
+    <div class="panel-body">
+        <div class="tab-inner" id="myTabs">
+            <button class="active" onclick="switchMyTab('trip')">📅 我的行程</button>
+            <button onclick="switchMyTab('order')">📋 我的订单</button>
+        </div>
+        <div id="myTripContent"></div>
+        <div id="myOrderContent" class="hidden">
+            <div class="form-group"><label>手机号查询订单</label><input type="tel" id="query-phone" placeholder="请输入预订时填写的手机号"></div>
+            <button class="btn btn-primary" onclick="queryMyOrders()" style="width:100%;">查询</button>
+            <div id="myOrderList" style="margin-top:15px;"></div>
+        </div>
+    </div>
 </div>
 
 <div class="panel" id="nearbyPanel">
@@ -128,7 +157,6 @@
     <div class="panel-body" id="payContent"></div>
 </div>
 
-<!-- 预订面板 -->
 <div class="panel" id="bookingPanel">
     <div class="panel-header"><h2>预订/下单</h2><button class="close-btn" onclick="closePanel('bookingPanel')">✕</button></div>
     <div class="panel-body" id="bookingContent"></div>
@@ -300,7 +328,6 @@
         }
     }
 
-    // 预订功能
     function openBooking() {
         const total = parseFloat(document.getElementById('merchantTotal').textContent);
         if (total === 0) { alert('请至少选择一件商品'); return; }
@@ -351,7 +378,8 @@
         if (error) {
             alert('订单提交失败：' + error.message);
         } else {
-            alert('订单已提交！商户将尽快处理。');
+            alert('订单已提交！可在“我的”中查看订单状态。');
+            localStorage.setItem('lastOrderPhone', phone);
             closePanel('bookingPanel');
             closePanel('merchantDetailPanel');
         }
@@ -371,6 +399,7 @@
         if(id==='routesPanel') loadRoutes();
         if(id==='nearbyPanel') loadNearbyPanel();
         if(id==='merchantDetailPanel') updateTotal();
+        if(id==='myPanel') initMyPanel();
     }
     function closePanel(id){ document.getElementById(id).classList.remove('active'); }
 
@@ -505,6 +534,99 @@
         const {error}=await sb.from('ztj_feedbacks').insert([{message:msg}]);
         document.getElementById('feedbackResult').innerHTML=error?'<p style="color:red">提交失败</p>':'<p style="color:green">感谢反馈！</p>';
         if(!error) document.getElementById('feedbackMsg').value='';
+    }
+
+    // ==================== 我的面板逻辑 ====================
+    function initMyPanel() {
+        // 切换行程标签（默认显示行程）
+        switchMyTab('trip');
+        // 预填手机号
+        const savedPhone = localStorage.getItem('lastOrderPhone') || '';
+        document.getElementById('query-phone').value = savedPhone;
+    }
+
+    function switchMyTab(tab) {
+        document.querySelectorAll('#myTabs button').forEach(b => b.classList.remove('active'));
+        if (tab === 'trip') {
+            document.querySelector('#myTabs button:first-child').classList.add('active');
+            document.getElementById('myTripContent').classList.remove('hidden');
+            document.getElementById('myOrderContent').classList.add('hidden');
+            renderMyTrip();
+        } else {
+            document.querySelector('#myTabs button:last-child').classList.add('active');
+            document.getElementById('myTripContent').classList.add('hidden');
+            document.getElementById('myOrderContent').classList.remove('hidden');
+            // 如果有手机号，自动查询
+            const phone = document.getElementById('query-phone').value.trim();
+            if (phone) queryMyOrders();
+        }
+    }
+
+    function renderMyTrip() {
+        const container = document.getElementById('myTripContent');
+        if (currentTrip) {
+            // 获取路线名称（简化，从缓存中取或显示ID）
+            container.innerHTML = `
+                <div class="order-item">
+                    <div style="display:flex; justify-content:space-between;">
+                        <span><b>当前行程：</b>路线 #${currentTrip}</span>
+                        <button class="btn btn-cancel" style="padding:4px 10px; font-size:12px;" onclick="clearCurrentTrip()">取消行程</button>
+                    </div>
+                    <p style="font-size:13px; color:#666; margin-top:5px;">已选择模拟导航路线，可在地图上查看。</p>
+                </div>`;
+        } else {
+            container.innerHTML = '<p style="color:#999;">暂无行程，请从推荐路线中选择。</p>';
+        }
+    }
+
+    function clearCurrentTrip() {
+        currentTrip = null;
+        if (currentRoutePolyline) { map.removeLayer(currentRoutePolyline); currentRoutePolyline = null; }
+        simulationActive = false;
+        document.getElementById('voiceBtn').style.display = 'none';
+        document.getElementById('navBtn').textContent = '📍 模拟导航';
+        if (voiceCheckingInterval) clearInterval(voiceCheckingInterval);
+        renderMyTrip();
+        alert('行程已取消');
+    }
+
+    async function queryMyOrders() {
+        const phone = document.getElementById('query-phone').value.trim();
+        if (!phone) { alert('请输入手机号'); return; }
+        // 保存到本地
+        localStorage.setItem('lastOrderPhone', phone);
+        const { data, error } = await sb.from('ztj_orders').select('*').eq('phone', phone).order('created_at', { ascending: false });
+        const container = document.getElementById('myOrderList');
+        if (error) {
+            container.innerHTML = '<p style="color:red;">查询失败</p>';
+            return;
+        }
+        if (!data || data.length === 0) {
+            container.innerHTML = '<p style="color:#999;">暂无订单记录</p>';
+            return;
+        }
+        let html = '';
+        data.forEach(order => {
+            const statusMap = {
+                'new': '待确认',
+                'confirmed': '已确认',
+                'completed': '已完成',
+                'cancelled': '已取消'
+            };
+            const statusClass = `status-${order.status}`;
+            const items = order.items.map(i => `${i.name} ¥${i.price}`).join(', ');
+            html += `
+                <div class="order-item">
+                    <div style="display:flex; justify-content:space-between;">
+                        <span class="order-status ${statusClass}">${statusMap[order.status] || order.status}</span>
+                        <span style="font-size:12px; color:#666;">${new Date(order.created_at).toLocaleString()}</span>
+                    </div>
+                    <div style="margin-top:6px;"><b>商品：</b>${items}</div>
+                    <div><b>合计：</b>¥${order.total}</div>
+                    ${order.note ? `<div><b>备注：</b>${order.note}</div>` : ''}
+                </div>`;
+        });
+        container.innerHTML = html;
     }
 
     document.getElementById('langSelect').addEventListener('change',e=>currentLang=e.target.value);

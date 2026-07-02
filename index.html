@@ -43,13 +43,17 @@
         .nearby-distance { color:#666; font-size:13px; }
         .merchant-detail { padding:10px; }
         .stars { font-size:16px; color:#f39c12; }
-        .service-item { display:flex; align-items:center; gap:8px; margin:8px 0; }
-        .service-item img { width:50px; height:50px; object-fit:cover; border-radius:6px; }
+        .service-item { display:flex; align-items:center; gap:8px; margin:8px 0; padding:8px; border-bottom:1px solid #f0f0f0; }
+        .service-item img { width:100px; height:80px; object-fit:cover; border-radius:6px; }
+        .service-info { flex:1; }
+        .service-price { color:#2e7d32; font-weight:bold; }
         .total-box { margin:12px 0; font-size:18px; font-weight:bold; }
         .pay-btns { display:flex; gap:8px; margin-top:8px; }
         .pay-btns button { padding:6px 14px; border:1px solid #2E7D32; background:white; color:#2E7D32; border-radius:20px; }
         .pay-btns button.active { background:#2E7D32; color:white; }
         .qr-img { max-width:200px; margin-top:10px; }
+        .merchant-cat-title { font-weight:bold; font-size:16px; background:#f5f5f5; padding:8px; cursor:pointer; display:flex; justify-content:space-between; margin-top:8px; }
+        .reserve-btn { background:#ff9800; color:white; border:none; padding:8px 16px; border-radius:20px; cursor:pointer; margin-right:8px; }
     </style>
 </head>
 <body>
@@ -200,28 +204,61 @@
         if (merchant.star_service) stars.push(`服务：${'⭐'.repeat(merchant.star_service)}`);
         const starsHtml = stars.length ? `<div class="stars">${stars.join(' ')}</div>` : '';
 
-        const services = merchant.service_data || [];
-        let servicesHtml = '';
-        services.forEach((s, idx) => {
-            servicesHtml += `
-                <div class="service-item">
-                    <input type="checkbox" id="svc-${idx}" data-price="${s.price}" onchange="updateTotal()">
-                    ${s.image ? `<img src="${s.image}" alt="${s.name}">` : ''}
-                    <span>${s.name} - ¥${s.price}</span>
-                    ${s.intro ? `<small>${s.intro}</small>` : ''}
-                </div>`;
-        });
-        const totalHtml = `<div class="total-box">合计：<span id="merchantTotal">0</span> 元</div>`;
-        const payBtn = `<button class="btn btn-primary" onclick="showPayment()" style="width:100%;">去支付</button>`;
+        let bodyHtml = '';
+        const categories = merchant.service_data || [];
+        if (categories.length === 0) {
+            bodyHtml = '<p>暂无服务信息</p>';
+        } else {
+            categories.forEach((cat, catIdx) => {
+                const activeItems = (cat.items || []).filter(item => item.status !== 'inactive');
+                bodyHtml += `
+                    <div style="margin-bottom:15px;">
+                        <div class="merchant-cat-title" onclick="toggleFrontCat(${catIdx})">
+                            <span>${cat.cat_name} (${activeItems.length})</span>
+                            <span id="front-cat-arrow-${catIdx}">▼</span>
+                        </div>
+                        <div id="front-cat-items-${catIdx}" class="front-cat-items">
+                            ${activeItems.map(item => `
+                                <div class="service-item">
+                                    <input type="checkbox" class="service-check" data-price="${item.price}" onchange="updateTotal()">
+                                    ${item.image ? `<img src="${item.image}">` : '<div style="width:100px;height:80px;background:#eee;border-radius:6px;"></div>'}
+                                    <div class="service-info">
+                                        <div><b>${item.name}</b> <span class="service-price">¥${item.price}</span></div>
+                                        ${item.duration ? `<div style="color:#666;">${item.duration}</div>` : ''}
+                                        ${item.intro ? `<small>${item.intro}</small>` : ''}
+                                    </div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>`;
+            });
+        }
+
         document.getElementById('merchantDetailContent').innerHTML = `
             <div class="merchant-detail">
                 ${starsHtml}
                 <p>${poi.description||''}</p>
-                <h4>商品/服务</h4>
-                ${servicesHtml}
-                ${totalHtml}
-                ${payBtn}
+                ${bodyHtml}
+                <div class="total-box">合计：<span id="merchantTotal">0</span> 元</div>
+                <button class="reserve-btn" onclick="alert('预订功能即将上线，敬请期待')">📅 预订/预估</button>
+                <button class="btn btn-primary" onclick="showPayment()" style="width:100%; margin-top:8px;">去支付</button>
             </div>`;
+        categories.forEach((_, idx) => {
+            const el = document.getElementById(`front-cat-items-${idx}`);
+            if (el) el.style.display = 'block';
+        });
+    }
+
+    function toggleFrontCat(idx) {
+        const el = document.getElementById(`front-cat-items-${idx}`);
+        const arrow = document.getElementById(`front-cat-arrow-${idx}`);
+        if (el.style.display === 'none') {
+            el.style.display = 'block';
+            arrow.textContent = '▼';
+        } else {
+            el.style.display = 'none';
+            arrow.textContent = '▶';
+        }
     }
 
     function updateTotal() {

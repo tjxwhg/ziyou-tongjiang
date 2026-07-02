@@ -346,7 +346,7 @@
             <h3>订单预览</h3>
             <div id="booking-items">${itemsHtml}</div>
             <div class="total-box">合计：<span id="bookingTotal">${total.toFixed(2)}</span> 元</div>
-            <div class="form-group"><label>期望时间（选填）</label><input type="datetime-local" id="booking-time"></div>
+            <div class="form-group"><label>预定时间（选填）</label><input type="datetime-local" id="booking-time"></div>
             <div class="form-group"><label>手机号 *</label><input type="tel" id="booking-phone" placeholder="请输入手机号"></div>
             <div class="form-group"><label>姓名（选填）</label><input id="booking-name" placeholder="可不填"></div>
             <div class="form-group"><label>备注（选填）</label><input id="booking-note" placeholder="如：免辣、到店时间等"></div>
@@ -367,11 +367,11 @@
         const timeInput = document.getElementById('booking-time').value;
         const total = parseFloat(document.getElementById('bookingTotal').textContent);
 
-        // 将期望时间加入备注前缀或单独字段（目前订单表没有独立时间字段，我们合并到备注中）
+        // 将预定时间加入备注前缀或单独字段（目前订单表没有独立时间字段，我们合并到备注中）
         let finalNote = note || '';
         if (timeInput) {
             const formattedTime = new Date(timeInput).toLocaleString('zh-CN');
-            finalNote = `【期望时间：${formattedTime}】${finalNote}`;
+            finalNote = `【预定时间：${formattedTime}】${finalNote}`;
         }
 
         const orderData = {

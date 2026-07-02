@@ -40,7 +40,6 @@
         .inline-edit.hidden { display:none; }
         .node-item { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
         .node-move { display:flex; gap:4px; }
-        /* 商户分类/商品样式 */
         .category-block { margin-bottom:20px; border-left:4px solid #2e7d32; padding-left:14px; }
         .cat-header { font-size:18px; font-weight:bold; margin-bottom:10px; cursor:pointer; display:flex; justify-content:space-between; align-items:center; }
         .item-card { background:white; border:1px solid #eee; border-radius:8px; padding:12px; margin-bottom:10px; }
@@ -451,7 +450,10 @@
         window._serviceData.forEach((cat, catIdx) => {
             html += `<div class="category-block">
                 <div class="cat-header" onclick="toggleCatItems(${catIdx})">
-                    <span>${cat.cat_name || '未命名分类'} (${cat.items ? cat.items.length : 0}个)</span>
+                    <span>
+                        ${cat.cat_name || '未命名分类'}
+                        <button class="btn btn-default" style="padding:2px 6px; font-size:12px;" onclick="event.stopPropagation(); renameCategory(${catIdx})">✏️</button>
+                    </span>
                     <span id="cat-arrow-${catIdx}">▼</span>
                 </div>
                 <div id="cat-items-${catIdx}" class="cat-items">
@@ -461,11 +463,18 @@
             </div>`;
         });
         container.innerHTML = html;
-        // 初始化所有分类为展开状态
         window._serviceData.forEach((_, idx) => {
             const el = document.getElementById(`cat-items-${idx}`);
             if (el) el.style.display = 'block';
         });
+    }
+
+    function renameCategory(idx) {
+        const newName = prompt('请输入新分类名称：', window._serviceData[idx].cat_name);
+        if (newName && newName.trim() !== '') {
+            window._serviceData[idx].cat_name = newName.trim();
+            renderCategories(); // 重绘以更新标题
+        }
     }
 
     function renderItems(items, catIdx) {
@@ -489,7 +498,7 @@
                     <div class="form-group"><label>简介</label><input id="item-intro-${catIdx}-${itemIdx}" value="${item.intro||''}"></div>
                     <div class="form-group"><label>图片</label>
                         <input type="file" accept="image/*" onchange="handleItemImage(this, ${catIdx}, ${itemIdx})">
-                        ${item.image ? `<img src="${item.image}" class="upload-preview">` : ''}
+                        <img src="${item.image || ''}" class="upload-preview" id="item-img-${catIdx}-${itemIdx}" style="${item.image ? '' : 'display:none'}">
                     </div>
                     <div class="form-group"><label>状态</label><select id="item-status-${catIdx}-${itemIdx}">
                         <option ${item.status==='active'?'selected':''}>active</option>
@@ -524,8 +533,14 @@
         if (!file) return;
         const url = await uploadMerchantImage(file);
         if (url) {
+            // 更新数据
             window._serviceData[catIdx].items[itemIdx].image = url;
-            renderCategories(); // 刷新预览
+            // 直接更新图片元素
+            const imgEl = document.getElementById(`item-img-${catIdx}-${itemIdx}`);
+            if (imgEl) {
+                imgEl.src = url;
+                imgEl.style.display = '';
+            }
         }
     }
 
@@ -579,7 +594,7 @@
         return publicUrl;
     }
 
-    // 支付方式渲染（保持不变）
+    // 支付方式
     function renderPaymentMethods() {
         const methods = window._paymentMethods;
         let html = methods.map((m,i) => `

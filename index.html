@@ -120,17 +120,16 @@
     <div class="panel-body" id="routeDetailContent"></div>
 </div>
 
-<!-- 自选行程面板（分类选择） -->
+<!-- 自选行程面板 -->
 <div class="panel" id="customTripPanel">
     <div class="panel-header"><h2>自选行程</h2><button class="close-btn" onclick="closePanel('customTripPanel')">✕</button></div>
     <div class="panel-body">
         <div class="form-group"><label>出行方式</label><select id="travel-mode">
-            <option value="auto">🚗 自驾（约40km/h）</option>
-            <option value="bus">🚌 公交（约20km/h）</option>
-            <option value="walk">🚶 步行（约5km/h）</option>
+            <option value="auto">🚗 自驾（参考速度40km/h）</option>
+            <option value="bus">🚌 公交（参考速度20km/h）</option>
+            <option value="walk">🚶 步行（参考速度5km/h）</option>
         </select></div>
         <h4 style="margin:12px 0 8px;">选择要添加的地点</h4>
-        <!-- 分类折叠区域 -->
         <div id="poi-group-select">
             <div class="group-title" onclick="toggleGroup('group-scenery')">🏞️ 自然景区<span id="arrow-group-scenery">▼</span></div>
             <div id="group-scenery" class="poi-group-items"></div>
@@ -220,7 +219,6 @@
     let selectedCustomPois = [];
     let customTripNodes = null;
 
-    // 与后台一致的类别顺序
     const poiCategories = ['自然景区', '文化场馆', '餐饮住宿', '公共服务', '停车场', '交通枢纽', '购物', '游戏娱乐'];
     const poiColors = {
         '自然景区':'#2E7D32', '文化场馆':'#9C27B0', '餐饮住宿':'#FF9800', '公共服务':'#607D8B',
@@ -255,7 +253,6 @@
         if(window.simMarker) window.simMarker.addTo(map);
         if(currentRoutePolyline) currentRoutePolyline.addTo(map);
         pois.forEach(poi=>{
-            // 兼容多类别，取第一个有效颜色
             const cats = poi.category ? poi.category.split(',') : [];
             const mainCat = cats.find(c => poiColors[c]) || cats[0];
             const color = poiColors[mainCat] || '#999';
@@ -270,7 +267,6 @@
         });
     }
 
-    // 自选行程分组映射
     function getCustomGroups() {
         return {
             'group-scenery': { cats: ['自然景区'], title: '自然景区' },
@@ -288,7 +284,6 @@
         const groups = getCustomGroups();
         Object.keys(groups).forEach(groupId => {
             const cats = groups[groupId].cats;
-            // 注意：POI的类别可能是逗号分隔的多选，需匹配任一类别
             const filtered = allPois.filter(p => {
                 const pCats = p.category ? p.category.split(',') : [];
                 return cats.some(c => pCats.includes(c));
@@ -345,25 +340,39 @@
         const mode = document.getElementById('travel-mode').value;
         const speeds = { auto: 40, bus: 20, walk: 5 };
         const speed = speeds[mode] || 40;
+
+        // 获取选中POI的最新数据（含参考距离/耗时）
+        const ids = selectedCustomPois.map(p => p.id);
+        const { data: freshPois } = await sb.from('ztj_poi').select('*').in('id', ids);
+        if (!freshPois) return;
+        // 按原有顺序重排
+        selectedCustomPois = freshPois.sort((a,b) => selectedCustomPois.findIndex(p => p.id === a.id) - selectedCustomPois.findIndex(p => p.id === b.id));
+
         const nodes = [];
         for (let i = 0; i < selectedCustomPois.length; i++) {
             const poi = selectedCustomPois[i];
             let transportTime = 0;
             if (i > 0) {
                 const prev = selectedCustomPois[i-1];
-                const dist = getDistance(prev.lat, prev.lng, poi.lat, poi.lng);
-                transportTime = Math.round(dist / 1000 / speed * 60);
+                if (prev.ref_duration != null && poi.ref_duration != null) {
+                    transportTime = Math.abs(poi.ref_duration - prev.ref_duration);
+                } else {
+                    const dist = getDistance(prev.lat, prev.lng, poi.lat, poi.lng);
+                    transportTime = Math.round(dist / 1000 / speed * 60);
+                }
             }
             const visitDuration = poi.visit_duration || 60;
             nodes.push({ ...poi, transportTime, visitDuration });
         }
+
         let html = '<h4>行程预览</h4>';
         let timeCounter = 8*60;
         nodes.forEach((node, idx) => {
             const h = Math.floor(timeCounter/60), m = timeCounter%60;
+            const refStr = node.ref_distance ? ` (距县城约${node.ref_distance}km)` : '';
             html += `<div class="timeline-item"><div class="timeline-marker"></div><div class="timeline-content">
                 <div class="timeline-time">${('0'+h).slice(-2)}:${('0'+m).slice(-2)}</div>
-                <div class="timeline-name">${node.name} (游览${node.visitDuration}分钟)</div>
+                <div class="timeline-name">${node.name} <small>${refStr}</small> (游览${node.visitDuration}分钟)</div>
                 ${idx>0 ? `<div style="font-size:12px;color:#666;">交通约${node.transportTime}分钟</div>` : ''}
             </div></div>`;
             timeCounter += node.transportTime + node.visitDuration;
@@ -749,7 +758,6 @@
         if(!error) document.getElementById('feedbackMsg').value='';
     }
 
-    // ==================== 我的面板逻辑 ====================
     function initMyPanel() {
         switchMyTab('trip');
         const savedPhone = localStorage.getItem('lastOrderPhone') || '';

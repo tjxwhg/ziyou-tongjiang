@@ -193,7 +193,7 @@
         '停车场':'#00BCD4', '厕所':'#9E9E9E', '交通枢纽':'#795548', '公共服务':'#607D8B', '购物':'#E91E63'
     };
 
-    // POI 管理
+    // POI 管理（省略内部实现，与之前版本完全一致）
     function showNewPoiForm() { document.getElementById('new-poi-form').classList.remove('hidden'); }
     function hideNewPoiForm() { document.getElementById('new-poi-form').classList.add('hidden'); clearNewPoiForm(); }
     function clearNewPoiForm() {
@@ -300,7 +300,7 @@
     function toggleGroup(id) { const el = document.getElementById(id); if (el) el.classList.toggle('hidden'); const arrow = document.getElementById(id+'-arrow'); if (arrow) arrow.textContent = el.classList.contains('hidden') ? '▶' : '▼'; }
     async function deletePoi(id) { if(confirm('删除POI？')){ await sb.from('ztj_poi').delete().eq('id',id); loadPoiList(); } }
 
-    // 路线管理
+    // 路线管理（同之前，略，但此处保留完整逻辑）
     async function loadRouteList() {
         const { data } = await sb.from('ztj_routes').select('*').order('id');
         document.getElementById('route-list').innerHTML = data.map(r => `<div class="card"><div class="card-row"><div><b>${r.name}</b> (${r.days}天)</div><div><button class="btn btn-default" onclick="editRoute(${r.id})">编辑</button><button class="btn btn-danger" onclick="deleteRoute(${r.id})">删除</button></div></div></div>`).join('');
@@ -378,7 +378,7 @@
     }
     async function replyFeedback(id) { const reply=document.getElementById('reply-'+id).value; await sb.from('ztj_feedbacks').update({reply}).eq('id',id); alert('已保存'); loadFeedbackList(); }
 
-    // 商户管理
+    // 商户管理（超管，已修改）
     async function loadMerchantList() {
         const { data } = await sb.from('ztj_merchants').select('*, poi:poi_id(name)');
         document.getElementById('merchant-list').innerHTML = data.map(m => `
@@ -390,24 +390,31 @@
             </div></div>`).join('');
     }
     async function updateStar(id,field,val) { const v=parseInt(val)||0; await sb.from('ztj_merchants').update({[field]:v}).eq('id',id); }
+
+    // 修改后的 showAddMerchant：手动输入 UUID 绑定
     async function showAddMerchant() {
         const accountId = prompt('请输入商户账号ID (如 st003):'); if(!accountId) return;
         const displayName = prompt('请输入商户实际名称:'); if(!displayName) return;
-        const password = prompt('请输入初始密码:'); if(!password) return;
         const poiId = prompt('请输入绑定的POI ID:'); if(!poiId) return;
-        const email = accountId + '@zhiyoutongjiang.cn';
-        // 使用数据库 RPC 创建用户，避免邮件发送
-        const { data: userId, error: rpcError } = await sb.rpc('create_merchant_user', { email, password });
-        if (rpcError) { alert('创建用户失败：' + rpcError.message); return; }
-        if (userId) {
-            await sb.from('ztj_merchants').insert([{ id: userId, account_id: accountId, display_name: displayName, poi_id: parseInt(poiId) }]);
-            alert(`商户 ${accountId} 创建成功，初始密码：${password}`);
-            loadMerchantList();
+        const userId = prompt('请输入该商户对应的 Auth 用户 UUID（在 Supabase Auth 中获取）:'); if(!userId) return;
+
+        const { error } = await sb.from('ztj_merchants').insert([{
+            id: userId,
+            account_id: accountId,
+            display_name: displayName,
+            poi_id: parseInt(poiId)
+        }]);
+        if (error) {
+            alert('绑定失败：' + error.message);
+            return;
         }
+        alert(`商户 ${accountId} 绑定成功，用户 UUID：${userId}`);
+        loadMerchantList();
     }
+
     async function deleteMerchant(id) { if(confirm('删除商户？')){ await sb.from('ztj_merchants').delete().eq('id',id); loadMerchantList(); } }
 
-    // 商户自助
+    // 商户自助管理（保持不变）
     async function renderMerchantSelf() {
         const m = merchantSelfData;
         const { data: poi } = await sb.from('ztj_poi').select('*').eq('id',m.poi_id).single();

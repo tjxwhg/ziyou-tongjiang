@@ -164,26 +164,7 @@
     let ordersSubscription = null;
     let audioCtx = null;
 
-    // 新的分类列表（顺序决定分组和前台自选面板）
     const poiCategories = ['自然景区', '文化场馆', '餐饮住宿', '公共服务', '停车场', '交通枢纽', '购物', '游戏娱乐'];
-    const poiColors = {
-        '自然景区':'#2E7D32', '文化场馆':'#9C27B0', '餐饮住宿':'#FF9800', '公共服务':'#607D8B',
-        '停车场':'#00BCD4', '交通枢纽':'#795548', '购物':'#E91E63', '游戏娱乐':'#F44336'
-    };
-
-    // 复选框生成
-    function renderCategoryCheckboxes(containerId, selected = []) {
-        const container = document.getElementById(containerId);
-        if (!container) return;
-        container.innerHTML = poiCategories.map(cat => `
-            <label><input type="checkbox" value="${cat}" ${selected.includes(cat)?'checked':''}> ${cat}</label>
-        `).join('');
-    }
-
-    function getSelectedCategories(containerId) {
-        const checks = document.querySelectorAll(`#${containerId} input[type="checkbox"]:checked`);
-        return Array.from(checks).map(cb => cb.value).join(',');
-    }
 
     // ==================== 认证与会话 ====================
     async function checkSession() {
@@ -260,7 +241,22 @@
         }
     }
 
-    // ==================== POI 管理（多选类别） ====================
+    // ==================== 工具函数 ====================
+    function renderCategoryCheckboxes(containerId, selected = []) {
+        const container = document.getElementById(containerId);
+        if (!container) return;
+        container.innerHTML = poiCategories.map(cat => `
+            <label><input type="checkbox" value="${cat}" ${selected.includes(cat)?'checked':''}> ${cat}</label>
+        `).join('');
+    }
+
+    function getSelectedCategories(containerId) {
+        const checks = document.querySelectorAll(`#${containerId} input[type="checkbox"]:checked`);
+        const values = Array.from(checks).map(cb => cb.value);
+        return [...new Set(values)].join(','); // 去重
+    }
+
+    // ==================== POI 管理 ====================
     function showNewPoiForm() {
         document.getElementById('new-poi-form').classList.remove('hidden');
         renderCategoryCheckboxes('new-poi-categories');
@@ -303,12 +299,16 @@
     async function loadPoiList() {
         const { data } = await sb.from('ztj_poi').select('*').order('sort_order', { ascending: true }).order('id');
         if (!data) return;
+        // 分组构建，增加去重
         const grouped = {};
         poiCategories.forEach(cat => { grouped[cat] = []; });
         data.forEach(p => {
             const cats = p.category ? p.category.split(',') : [];
             cats.forEach(c => {
-                if (grouped[c]) grouped[c].push(p);
+                const cleanCat = c.trim();
+                if (grouped[cleanCat] && !grouped[cleanCat].some(existing => existing.id === p.id)) {
+                    grouped[cleanCat].push(p);
+                }
             });
         });
         let html = ''; let catIndex = 1;
@@ -326,7 +326,7 @@
                         const serial = `${catIndex}-${idx+1}`;
                         const editFormId = `edit-${p.id}`;
                         const cats = p.category ? p.category.split(',') : [];
-                        const catTags = cats.map(c => `<span class="tag">${c}</span>`).join('');
+                        const catTags = cats.map(c => `<span class="tag">${c.trim()}</span>`).join('');
                         return `<div class="card">
                             <div class="card-row">
                                 <span>
@@ -372,25 +372,29 @@
     }
 
     async function saveInlineEdit(poiId) {
-        const name = document.getElementById(`edit-name-${poiId}`).value.trim();
-        const lat = parseFloat(document.getElementById(`edit-lat-${poiId}`).value);
-        const lng = parseFloat(document.getElementById(`edit-lng-${poiId}`).value);
+        const id = parseInt(poiId);
+        const name = document.getElementById(`edit-name-${id}`).value.trim();
+        const lat = parseFloat(document.getElementById(`edit-lat-${id}`).value);
+        const lng = parseFloat(document.getElementById(`edit-lng-${id}`).value);
         if (!name || isNaN(lat) || isNaN(lng)) { alert('名称、纬度、经度必填'); return; }
-        const catContainerId = `edit-categories-${poiId}`;
-        const categories = getSelectedCategories(catContainerId);
+        const categories = getSelectedCategories(`edit-categories-${id}`);
         const payload = {
             name,
             category: categories,
-            sort_order: parseInt(document.getElementById(`edit-sort-${poiId}`).value) || 0,
-            visit_duration: parseInt(document.getElementById(`edit-visit-${poiId}`).value) || 60,
+            sort_order: parseInt(document.getElementById(`edit-sort-${id}`).value) || 0,
+            visit_duration: parseInt(document.getElementById(`edit-visit-${id}`).value) || 60,
             lat, lng,
-            description: document.getElementById(`edit-desc-${poiId}`).value,
-            voice_cn: document.getElementById(`edit-voice-cn-${poiId}`).value,
-            voice_en: document.getElementById(`edit-voice-en-${poiId}`).value,
-            trigger_radius: parseInt(document.getElementById(`edit-radius-${poiId}`).value) || 5
+            description: document.getElementById(`edit-desc-${id}`).value,
+            voice_cn: document.getElementById(`edit-voice-cn-${id}`).value,
+            voice_en: document.getElementById(`edit-voice-en-${id}`).value,
+            trigger_radius: parseInt(document.getElementById(`edit-radius-${id}`).value) || 5
         };
-        await sb.from('ztj_poi').update(payload).eq('id', poiId);
-        loadPoiList();
+        const { error } = await sb.from('ztj_poi').update(payload).eq('id', id);
+        if (error) {
+            alert('更新失败：' + error.message);
+        } else {
+            loadPoiList();
+        }
     }
 
     async function updatePoiSort(poiId, newValue) { const val = parseInt(newValue) || 0; await sb.from('ztj_poi').update({ sort_order: val }).eq('id', poiId); loadPoiList(); }

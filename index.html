@@ -67,10 +67,10 @@
         .custom-poi-list { margin-top:10px; }
         .custom-poi-item { display:flex; justify-content:space-between; align-items:center; background:#f0f0f0; padding:8px; border-radius:6px; margin-bottom:6px; }
         .remove-poi-btn { background:#c62828; color:white; border:none; border-radius:50%; width:24px; height:24px; cursor:pointer; }
-        .my-feedback-btn { background:#f5f5f5; border:1px solid #ddd; padding:8px 16px; border-radius:8px; margin-top:20px; text-align:center; cursor:pointer; }
         .group-title { font-size:16px; font-weight:bold; padding:10px; background:#e9f5ea; border-radius:6px; cursor:pointer; margin-bottom:8px; display:flex; justify-content:space-between; }
         .poi-select-item { display:flex; justify-content:space-between; align-items:center; padding:6px 10px; border-bottom:1px solid #eee; }
         .poi-select-item button { padding:4px 10px; font-size:13px; }
+        .feedback-textarea { width:100%; padding:10px; border:1px solid #ddd; border-radius:8px; }
     </style>
 </head>
 <body>
@@ -178,12 +178,14 @@
     <div class="panel-body" id="bookingContent"></div>
 </div>
 
+<!-- 我的面板（行程、订单、留言） -->
 <div class="panel" id="myPanel">
     <div class="panel-header"><h2>我的</h2><button class="close-btn" onclick="closePanel('myPanel')">✕</button></div>
     <div class="panel-body">
         <div class="tab-inner" id="myTabs">
-            <button class="active" onclick="switchMyTab('trip')">📅 我的行程</button>
-            <button onclick="switchMyTab('order')">📋 我的订单</button>
+            <button class="active" onclick="switchMyTab('trip')">📅 行程</button>
+            <button onclick="switchMyTab('order')">📋 订单</button>
+            <button onclick="switchMyTab('feedback')">💬 留言</button>
         </div>
         <div id="myTripContent"></div>
         <div id="myOrderContent" class="hidden">
@@ -191,16 +193,11 @@
             <button class="btn btn-primary" onclick="queryMyOrders()" style="width:100%;">查询</button>
             <div id="myOrderList" style="margin-top:15px;"></div>
         </div>
-        <div class="my-feedback-btn" onclick="openPanel('feedbackPanel')">💬 留言反馈</div>
-    </div>
-</div>
-
-<div class="panel" id="feedbackPanel">
-    <div class="panel-header"><h2>留言反馈</h2><button class="close-btn" onclick="closePanel('feedbackPanel')">✕</button></div>
-    <div class="panel-body">
-        <textarea id="feedbackMsg" rows="4" placeholder="请留下您的建议或问题..." style="width:100%; padding:12px; border-radius:8px; border:1px solid #ddd;"></textarea>
-        <button onclick="submitFeedback()" style="background:#2E7D32; color:white; border:none; padding:10px 20px; border-radius:8px; margin-top:10px;">提交</button>
-        <div id="feedbackResult" style="margin-top:10px;"></div>
+        <div id="myFeedbackContent" class="hidden">
+            <textarea id="feedbackMsg" rows="4" class="feedback-textarea" placeholder="请留下您的建议或问题..."></textarea>
+            <button class="btn btn-primary" onclick="submitFeedback()" style="width:100%; margin-top:10px;">提交</button>
+            <div id="feedbackResult" style="margin-top:10px;"></div>
+        </div>
     </div>
 </div>
 
@@ -306,10 +303,9 @@
     }
 
     function addToCustomList(poi) {
-        if (!selectedCustomPois.find(p => p.id === poi.id)) {
-            selectedCustomPois.push(poi);
-            updateCustomPoiList();
-        }
+        // 允许重复添加同一个POI
+        selectedCustomPois.push(poi);
+        updateCustomPoiList();
     }
 
     function updateCustomPoiList() {
@@ -340,31 +336,27 @@
         const mode = document.getElementById('travel-mode').value;
         const speeds = { auto: 40, bus: 20, walk: 5 };
         const speed = speeds[mode] || 40;
-
-        // 获取选中POI的最新数据（含参考距离/耗时）
-        const ids = selectedCustomPois.map(p => p.id);
+        const ids = [...new Set(selectedCustomPois.map(p => p.id))];
         const { data: freshPois } = await sb.from('ztj_poi').select('*').in('id', ids);
         if (!freshPois) return;
-        // 按原有顺序重排
-        selectedCustomPois = freshPois.sort((a,b) => selectedCustomPois.findIndex(p => p.id === a.id) - selectedCustomPois.findIndex(p => p.id === b.id));
-
         const nodes = [];
         for (let i = 0; i < selectedCustomPois.length; i++) {
             const poi = selectedCustomPois[i];
+            const freshData = freshPois.find(p => p.id === poi.id) || poi;
             let transportTime = 0;
             if (i > 0) {
                 const prev = selectedCustomPois[i-1];
-                if (prev.ref_duration != null && poi.ref_duration != null) {
-                    transportTime = Math.abs(poi.ref_duration - prev.ref_duration);
+                const prevFresh = freshPois.find(p => p.id === prev.id) || prev;
+                if (prevFresh.ref_duration != null && freshData.ref_duration != null) {
+                    transportTime = Math.abs(freshData.ref_duration - prevFresh.ref_duration);
                 } else {
-                    const dist = getDistance(prev.lat, prev.lng, poi.lat, poi.lng);
+                    const dist = getDistance(prev.lat, prev.lng, freshData.lat, freshData.lng);
                     transportTime = Math.round(dist / 1000 / speed * 60);
                 }
             }
-            const visitDuration = poi.visit_duration || 60;
-            nodes.push({ ...poi, transportTime, visitDuration });
+            const visitDuration = freshData.visit_duration || 60;
+            nodes.push({ ...freshData, transportTime, visitDuration });
         }
-
         let html = '<h4>行程预览</h4>';
         let timeCounter = 8*60;
         nodes.forEach((node, idx) => {
@@ -396,7 +388,6 @@
         localStorage.setItem('savedTrips', JSON.stringify(savedTrips));
         setCurrentCustomTrip(tripData);
         closePanel('customTripPanel');
-        alert('行程已保存，即将开始导航');
         startSimulationFromNodes(tripData.nodes);
     }
 
@@ -416,8 +407,6 @@
         simulationActive = true;
         document.getElementById('voiceBtn').style.display = 'flex';
         document.getElementById('navBtn').textContent = '📍 导航中...';
-        window._simNodes = nodes;
-        alert('模拟导航已开启，请在地图上点击移动');
         if (voiceCheckingInterval) clearInterval(voiceCheckingInterval);
         voiceCheckingInterval = setInterval(checkVoiceTrigger, 3000);
     }
@@ -533,18 +522,15 @@
     function openBooking() {
         const total = parseFloat(document.getElementById('merchantTotal').textContent);
         if (total === 0) { alert('请至少选择一件商品'); return; }
-
         const selected = [];
         document.querySelectorAll('#merchantDetailContent input[type=checkbox]').forEach(cb => {
             if (cb.checked) {
                 selected.push({ name: cb.dataset.name, price: parseFloat(cb.dataset.price) });
             }
         });
-
         let itemsHtml = '<ul>';
         selected.forEach(item => { itemsHtml += `<li>${item.name} - ¥${item.price}</li>`; });
         itemsHtml += '</ul>';
-
         document.getElementById('bookingContent').innerHTML = `
             <h3>订单预览</h3>
             <div id="booking-items">${itemsHtml}</div>
@@ -568,13 +554,11 @@
         const note = document.getElementById('booking-note').value.trim();
         const timeInput = document.getElementById('booking-time').value;
         const total = parseFloat(document.getElementById('bookingTotal').textContent);
-
         let finalNote = note || '';
         if (timeInput) {
             const formattedTime = new Date(timeInput).toLocaleString('zh-CN');
             finalNote = `【预定时间：${formattedTime}】${finalNote}`;
         }
-
         const orderData = {
             merchant_id: currentMerchant.id,
             poi_id: currentMerchant.poi_id,
@@ -585,7 +569,6 @@
             note: finalNote || null,
             status: 'new'
         };
-
         const { error } = await sb.from('ztj_orders').insert(orderData);
         if (error) {
             alert('订单提交失败：' + error.message);
@@ -702,7 +685,7 @@
         startSimulationFromNodes(tripNodes);
     }
 
-    async function startSimulation(){
+    function startSimulation(){
         if(!currentTrip){ alert('请先选择路线'); return; }
         simulationActive=true;
         document.getElementById('voiceBtn').style.display='flex';
@@ -758,6 +741,7 @@
         if(!error) document.getElementById('feedbackMsg').value='';
     }
 
+    // ==================== 我的面板逻辑 ====================
     function initMyPanel() {
         switchMyTab('trip');
         const savedPhone = localStorage.getItem('lastOrderPhone') || '';
@@ -766,18 +750,19 @@
 
     function switchMyTab(tab) {
         document.querySelectorAll('#myTabs button').forEach(b => b.classList.remove('active'));
-        const tripContent = document.getElementById('myTripContent');
-        const orderContent = document.getElementById('myOrderContent');
+        document.getElementById('myTripContent').classList.add('hidden');
+        document.getElementById('myOrderContent').classList.add('hidden');
+        document.getElementById('myFeedbackContent').classList.add('hidden');
         if (tab === 'trip') {
             document.querySelector('#myTabs button:first-child').classList.add('active');
-            tripContent.classList.remove('hidden');
-            orderContent.classList.add('hidden');
+            document.getElementById('myTripContent').classList.remove('hidden');
             renderMyTrip();
-            document.getElementById('myOrderList').innerHTML = '';
-        } else {
+        } else if (tab === 'order') {
+            document.querySelector('#myTabs button:nth-child(2)').classList.add('active');
+            document.getElementById('myOrderContent').classList.remove('hidden');
+        } else if (tab === 'feedback') {
             document.querySelector('#myTabs button:last-child').classList.add('active');
-            tripContent.classList.add('hidden');
-            orderContent.classList.remove('hidden');
+            document.getElementById('myFeedbackContent').classList.remove('hidden');
         }
     }
 
@@ -816,7 +801,7 @@
         const trip = savedTrips[idx];
         setCurrentCustomTrip(trip);
         startSimulationFromNodes(trip.nodes);
-        alert('行程已应用，开始模拟导航');
+        closePanel('myPanel');
     }
 
     function deleteSavedTrip(idx) {

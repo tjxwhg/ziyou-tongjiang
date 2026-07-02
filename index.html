@@ -68,7 +68,6 @@
         .custom-poi-item { display:flex; justify-content:space-between; align-items:center; background:#f0f0f0; padding:8px; border-radius:6px; margin-bottom:6px; }
         .remove-poi-btn { background:#c62828; color:white; border:none; border-radius:50%; width:24px; height:24px; cursor:pointer; }
         .my-feedback-btn { background:#f5f5f5; border:1px solid #ddd; padding:8px 16px; border-radius:8px; margin-top:20px; text-align:center; cursor:pointer; }
-        /* 自选面板分类折叠 */
         .group-title { font-size:16px; font-weight:bold; padding:10px; background:#e9f5ea; border-radius:6px; cursor:pointer; margin-bottom:8px; display:flex; justify-content:space-between; }
         .poi-select-item { display:flex; justify-content:space-between; align-items:center; padding:6px 10px; border-bottom:1px solid #eee; }
         .poi-select-item button { padding:4px 10px; font-size:13px; }
@@ -89,15 +88,14 @@
 
 <div class="category-bar" id="categoryBar">
     <button class="category-btn active" onclick="filterPOI('全部')">📍全部</button>
-    <button class="category-btn" onclick="filterPOI('景点')">🏞️景点</button>
+    <button class="category-btn" onclick="filterPOI('自然景区')">🏞️景区</button>
     <button class="category-btn" onclick="filterPOI('文化场馆')">🏛️文化</button>
-    <button class="category-btn" onclick="filterPOI('餐饮')">🍽️餐饮</button>
-    <button class="category-btn" onclick="filterPOI('住宿')">🛏️住宿</button>
-    <button class="category-btn" onclick="filterPOI('停车场')">🚗停车</button>
-    <button class="category-btn" onclick="filterPOI('厕所')">🚻厕所</button>
-    <button class="category-btn" onclick="filterPOI('交通枢纽')">🚉交通</button>
+    <button class="category-btn" onclick="filterPOI('餐饮住宿')">🍽️🛏️食宿</button>
     <button class="category-btn" onclick="filterPOI('公共服务')">ℹ️服务</button>
+    <button class="category-btn" onclick="filterPOI('停车场')">🚗停车</button>
+    <button class="category-btn" onclick="filterPOI('交通枢纽')">🚉交通</button>
     <button class="category-btn" onclick="filterPOI('购物')">🛍️购物</button>
+    <button class="category-btn" onclick="filterPOI('游戏娱乐')">🎮娱乐</button>
 </div>
 
 <div class="float-voice" id="voiceBtn" onclick="toggleVoice()">🔊</div>
@@ -134,14 +132,22 @@
         <h4 style="margin:12px 0 8px;">选择要添加的地点</h4>
         <!-- 分类折叠区域 -->
         <div id="poi-group-select">
-            <div class="group-title" onclick="toggleGroup('group-cultural')">🏛️ 研学参观 (文化场馆)<span id="arrow-group-cultural">▼</span></div>
-            <div id="group-cultural" class="poi-group-items"></div>
-            <div class="group-title" onclick="toggleGroup('group-scenery')">🏞️ 景点游玩<span id="arrow-group-scenery">▼</span></div>
+            <div class="group-title" onclick="toggleGroup('group-scenery')">🏞️ 自然景区<span id="arrow-group-scenery">▼</span></div>
             <div id="group-scenery" class="poi-group-items"></div>
-            <div class="group-title" onclick="toggleGroup('group-eatstay')">🍽️🛏️ 住宿餐饮<span id="arrow-group-eatstay">▼</span></div>
+            <div class="group-title" onclick="toggleGroup('group-cultural')">🏛️ 文化场馆<span id="arrow-group-cultural">▼</span></div>
+            <div id="group-cultural" class="poi-group-items"></div>
+            <div class="group-title" onclick="toggleGroup('group-eatstay')">🍽️🛏️ 餐饮住宿<span id="arrow-group-eatstay">▼</span></div>
             <div id="group-eatstay" class="poi-group-items"></div>
-            <div class="group-title" onclick="toggleGroup('group-fun')">🎮 游戏娱乐 (购物/茶楼等)<span id="arrow-group-fun">▼</span></div>
+            <div class="group-title" onclick="toggleGroup('group-fun')">🎮 游戏娱乐<span id="arrow-group-fun">▼</span></div>
             <div id="group-fun" class="poi-group-items"></div>
+            <div class="group-title" onclick="toggleGroup('group-public')">ℹ️ 公共服务<span id="arrow-group-public">▼</span></div>
+            <div id="group-public" class="poi-group-items"></div>
+            <div class="group-title" onclick="toggleGroup('group-parking')">🚗 停车场<span id="arrow-group-parking">▼</span></div>
+            <div id="group-parking" class="poi-group-items"></div>
+            <div class="group-title" onclick="toggleGroup('group-transport')">🚉 交通枢纽<span id="arrow-group-transport">▼</span></div>
+            <div id="group-transport" class="poi-group-items"></div>
+            <div class="group-title" onclick="toggleGroup('group-shopping')">🛍️ 购物<span id="arrow-group-shopping">▼</span></div>
+            <div id="group-shopping" class="poi-group-items"></div>
         </div>
         <h4 style="margin:16px 0 8px;">已选地点</h4>
         <div id="customPoiList" class="custom-poi-list"></div>
@@ -214,10 +220,11 @@
     let selectedCustomPois = [];
     let customTripNodes = null;
 
-    const poiCategories = ['景点', '文化场馆', '餐饮', '住宿', '停车场', '厕所', '交通枢纽', '公共服务', '购物'];
+    // 与后台一致的类别顺序
+    const poiCategories = ['自然景区', '文化场馆', '餐饮住宿', '公共服务', '停车场', '交通枢纽', '购物', '游戏娱乐'];
     const poiColors = {
-        '景点':'#2E7D32', '文化场馆':'#9C27B0', '餐饮':'#FF9800', '住宿':'#2196F3',
-        '停车场':'#00BCD4', '厕所':'#9E9E9E', '交通枢纽':'#795548', '公共服务':'#607D8B', '购物':'#E91E63'
+        '自然景区':'#2E7D32', '文化场馆':'#9C27B0', '餐饮住宿':'#FF9800', '公共服务':'#607D8B',
+        '停车场':'#00BCD4', '交通枢纽':'#795548', '购物':'#E91E63', '游戏娱乐':'#F44336'
     };
 
     function initMap(){
@@ -248,7 +255,10 @@
         if(window.simMarker) window.simMarker.addTo(map);
         if(currentRoutePolyline) currentRoutePolyline.addTo(map);
         pois.forEach(poi=>{
-            const color = poiColors[poi.category] || '#999';
+            // 兼容多类别，取第一个有效颜色
+            const cats = poi.category ? poi.category.split(',') : [];
+            const mainCat = cats.find(c => poiColors[c]) || cats[0];
+            const color = poiColors[mainCat] || '#999';
             const icon = L.divIcon({
                 className:'custom-poi',
                 html:`<div style="background:${color}; width:24px; height:24px; border-radius:50%; border:2px solid white; box-shadow:0 2px 6px rgba(0,0,0,0.3);"></div>`,
@@ -260,22 +270,29 @@
         });
     }
 
-    // 分类分组映射
+    // 自选行程分组映射
     function getCustomGroups() {
-        const groups = {
-            'group-cultural': { cats: ['文化场馆'], title: '研学参观' },
-            'group-scenery': { cats: ['景点'], title: '景点游玩' },
-            'group-eatstay': { cats: ['餐饮', '住宿'], title: '住宿餐饮' },
-            'group-fun': { cats: ['购物'], title: '游戏娱乐' }
+        return {
+            'group-scenery': { cats: ['自然景区'], title: '自然景区' },
+            'group-cultural': { cats: ['文化场馆'], title: '文化场馆' },
+            'group-eatstay': { cats: ['餐饮住宿'], title: '餐饮住宿' },
+            'group-fun': { cats: ['游戏娱乐'], title: '游戏娱乐' },
+            'group-public': { cats: ['公共服务'], title: '公共服务' },
+            'group-parking': { cats: ['停车场'], title: '停车场' },
+            'group-transport': { cats: ['交通枢纽'], title: '交通枢纽' },
+            'group-shopping': { cats: ['购物'], title: '购物' }
         };
-        return groups;
     }
 
     function renderCustomPoiSelect() {
         const groups = getCustomGroups();
         Object.keys(groups).forEach(groupId => {
             const cats = groups[groupId].cats;
-            const filtered = allPois.filter(p => cats.includes(p.category));
+            // 注意：POI的类别可能是逗号分隔的多选，需匹配任一类别
+            const filtered = allPois.filter(p => {
+                const pCats = p.category ? p.category.split(',') : [];
+                return cats.some(c => pCats.includes(c));
+            });
             const container = document.getElementById(groupId);
             if (container) {
                 container.innerHTML = filtered.map(poi => `
@@ -576,7 +593,13 @@
         document.querySelectorAll('#categoryBar .category-btn').forEach(b=>b.classList.remove('active'));
         event.target.classList.add('active');
         if(cat==='全部') renderPOIs(allPois);
-        else renderPOIs(allPois.filter(p=>p.category===cat));
+        else {
+            const filtered = allPois.filter(p => {
+                const cats = p.category ? p.category.split(',') : [];
+                return cats.includes(cat);
+            });
+            renderPOIs(filtered);
+        }
         startHideTimer();
     }
 
@@ -615,7 +638,10 @@
         event.target.classList.add('active');
         const ref = simulatedPosition || {lat:32.08,lng:107.18};
         let list = allPois;
-        if(cat!=='全部') list = list.filter(p=>p.category===cat);
+        if(cat!=='全部') list = list.filter(p => {
+            const cats = p.category ? p.category.split(',') : [];
+            return cats.includes(cat);
+        });
         list = list.map(p=>({...p, distance: getDistance(ref.lat,ref.lng,p.lat,p.lng)})).sort((a,b)=>a.distance-b.distance);
         document.getElementById('nearbyList').innerHTML = list.map(p=>`
             <div class="nearby-item">

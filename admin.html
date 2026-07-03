@@ -54,9 +54,9 @@
         .checkbox-group label { display:flex; align-items:center; gap:4px; font-weight:normal; cursor:pointer; }
         .tag { display:inline-block; background:#e0e0e0; padding:2px 6px; border-radius:10px; font-size:12px; margin-right:4px; }
         .save-star-btn { padding:4px 10px; font-size:13px; background:#2e7d32; color:white; border:none; border-radius:4px; cursor:pointer; }
-        .transport-table { width:100%; border-collapse:collapse; }
-        .transport-table th, .transport-table td { border:1px solid #ddd; padding:8px; text-align:center; }
-        .transport-table th { background:#f5f5f5; }
+        .transport-table, .missing-table { width:100%; border-collapse:collapse; margin-top:10px; }
+        .transport-table th, .transport-table td, .missing-table th, .missing-table td { border:1px solid #ddd; padding:8px; text-align:center; }
+        .transport-table th, .missing-table th { background:#f5f5f5; }
     </style>
 </head>
 <body>
@@ -155,6 +155,9 @@
             </div>
             <h4>现有预设</h4>
             <div id="preset-list"></div>
+
+            <h3 style="margin-top:40px;">🔔 待补充预设（游客常用但缺失）</h3>
+            <div id="missing-list"></div>
         </div>
     </div>
 
@@ -229,7 +232,7 @@
         else if (tab==='routes') loadRouteList();
         else if (tab==='feedbacks') loadFeedbackList();
         else if (tab==='merchants') loadMerchantList();
-        else if (tab==='transport') { loadCountyTimeEditor(); loadPresetList(); loadPoiSelects(); }
+        else if (tab==='transport') { loadCountyTimeEditor(); loadPresetList(); loadPoiSelects(); loadMissingList(); }
     }
 
     function switchMerchantTab(tab) {
@@ -535,16 +538,11 @@
         const time = parseInt(document.getElementById('preset-time').value);
         if (!from || !to || !time || time <= 0) { alert('请完整填写'); return; }
         if (from === to) { alert('起止点不能相同'); return; }
-
-        // 使用 upsert 并指定冲突列为唯一约束的列，自动处理插入或更新
         const { error } = await sb.from('ztj_transport_presets').upsert(
             { from_poi_id: from, to_poi_id: to, travel_mode: mode, time_min: time },
             { onConflict: 'from_poi_id, to_poi_id, travel_mode' }
         );
-        if (error) {
-            alert('添加失败：' + error.message);
-            return;
-        }
+        if (error) { alert('添加失败：' + error.message); return; }
         alert('预设已保存');
         document.getElementById('preset-time').value = '';
         loadPresetList();
@@ -555,6 +553,53 @@
             await sb.from('ztj_transport_presets').delete().eq('id', id);
             loadPresetList();
         }
+    }
+
+    async function loadMissingList() {
+        const { data } = await sb.from('ztj_missing_presets').select('*').order('created_at', { ascending: false }).limit(100);
+        if (!data || data.length === 0) {
+            document.getElementById('missing-list').innerHTML = '<p>暂无缺失记录</p>';
+            return;
+        }
+        const grouped = {};
+        data.forEach(row => {
+            const key = `${row.from_poi_id}-${row.to_poi_id}-${row.travel_mode}`;
+            if (!grouped[key]) grouped[key] = { ...row, count: 0 };
+            grouped[key].count++;
+        });
+        let html = '<table class="missing-table"><tr><th>起点</th><th>终点</th><th>出行方式</th><th>请求次数</th><th>操作</th></tr>';
+        for (const key in grouped) {
+            const m = grouped[key];
+            const fromName = m.from_poi_id === 0 ? '通江县城' : await getPoiName(m.from_poi_id);
+            const toName = await getPoiName(m.to_poi_id);
+            html += `<tr>
+                <td>${fromName}</td><td>${toName}</td><td>${m.travel_mode}</td><td>${m.count}</td>
+                <td>
+                    <input type="number" id="fill-time-${key}" style="width:60px;" placeholder="分钟">
+                    <button class="btn btn-primary" onclick="fillMissing('${m.from_poi_id}','${m.to_poi_id}','${m.travel_mode}','${key}')">补充预设</button>
+                </td>
+            </tr>`;
+        }
+        html += '</table>';
+        document.getElementById('missing-list').innerHTML = html;
+    }
+
+    async function getPoiName(id) {
+        if (id == 0) return '通江县城';
+        const { data } = await sb.from('ztj_poi').select('name').eq('id', id).maybeSingle();
+        return data ? data.name : '未知';
+    }
+
+    async function fillMissing(from, to, mode, key) {
+        const time = parseInt(document.getElementById(`fill-time-${key}`).value);
+        if (!time || time <= 0) { alert('请填写有效分钟数'); return; }
+        const { error } = await sb.from('ztj_transport_presets').upsert(
+            { from_poi_id: parseInt(from), to_poi_id: parseInt(to), travel_mode: mode, time_min: time },
+            { onConflict: 'from_poi_id, to_poi_id, travel_mode' }
+        );
+        if (error) { alert('添加失败：' + error.message); return; }
+        alert('预设已添加');
+        loadMissingList();
     }
 
     // ==================== 商户自助（店铺管理、订单管理） ====================

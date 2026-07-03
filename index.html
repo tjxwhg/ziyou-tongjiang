@@ -204,7 +204,7 @@
     let allPois=[], activeCategory='全部', currentMerchant=null;
     let currentRoutePolyline = null, hideTimer;
     let selectedCustomPois = [], customTripNodes = null;
-    let currentMyTab = 'trip'; // 当前我的面板标签
+    let currentMyTab = 'trip';
 
     const COUNTY_CENTER = { lat: 32.08, lng: 107.24, name: '通江县城（红军广场）' };
     const poiCategories = ['自然景区', '文化场馆', '餐饮住宿', '公共服务', '停车场', '交通枢纽', '购物', '游戏娱乐'];
@@ -279,17 +279,15 @@
     function removeCustomPoi(idx) { selectedCustomPois.splice(idx,1); updateCustomPoiList(); }
     function moveCustomPoi(idx, dir) { const newIdx = idx + dir; if (newIdx<0||newIdx>=selectedCustomPois.length) return; [selectedCustomPois[idx], selectedCustomPois[newIdx]] = [selectedCustomPois[newIdx], selectedCustomPois[idx]]; updateCustomPoiList(); }
 
-    // 只查询预设表，双向，若无返回null
+    // 查询预设表（双向），若无返回 null，绝不进行任何计算
     async function getTransportPresetTime(from, to, mode) {
         if (!from || !to) return null;
         const fromId = from.id || 0;
-        // 先查正向
-        let { data, error } = await sb.from('ztj_transport_presets').select('time_min').eq('from_poi_id', fromId).eq('to_poi_id', to.id).eq('travel_mode', mode).maybeSingle();
-        if (error) { console.warn(error); return null; }
+        // 正向查询
+        let { data } = await sb.from('ztj_transport_presets').select('time_min').eq('from_poi_id', fromId).eq('to_poi_id', to.id).eq('travel_mode', mode).maybeSingle();
         if (data) return data.time_min;
-        // 再查反向 (A-B 等同 B-A)
-        const { data: reverseData, error: reverseError } = await sb.from('ztj_transport_presets').select('time_min').eq('from_poi_id', to.id).eq('to_poi_id', fromId).eq('travel_mode', mode).maybeSingle();
-        if (reverseError) { console.warn(reverseError); return null; }
+        // 反向查询 (A-B 同 B-A)
+        const { data: reverseData } = await sb.from('ztj_transport_presets').select('time_min').eq('from_poi_id', to.id).eq('to_poi_id', fromId).eq('travel_mode', mode).maybeSingle();
         if (reverseData) return reverseData.time_min;
         return null;
     }
@@ -307,10 +305,10 @@
         if (selectedCustomPois.length === 0) { alert('请先添加至少一个地点'); return; }
         const mode = document.getElementById('travel-mode').value, startOption = document.getElementById('start-point').value;
 
-        const nodes = [];
         let allPresetsFound = true;
+        const nodes = [];
 
-        // 处理起点到第一个POI
+        // 起点到第一个POI
         let startNode = null;
         if (startOption === 'county') {
             startNode = { ...COUNTY_CENTER, id: 0 };
@@ -319,22 +317,22 @@
             if (time === null) {
                 allPresetsFound = false;
                 startNode.transportTime = null;
-                await recordMissingPreset(0, firstPoi.id, mode);
+                recordMissingPreset(0, firstPoi.id, mode);
             } else {
                 startNode.transportTime = time;
             }
         }
 
+        // POI 间
         for (let i = 0; i < selectedCustomPois.length; i++) {
             const poi = selectedCustomPois[i];
-            let transportTime = 0;
+            let transportTime = null;
             if (i > 0) {
                 const prev = selectedCustomPois[i-1];
                 const time = await getTransportPresetTime(prev, poi, mode);
                 if (time === null) {
                     allPresetsFound = false;
-                    transportTime = null;
-                    await recordMissingPreset(prev.id, poi.id, mode);
+                    recordMissingPreset(prev.id, poi.id, mode);
                 } else {
                     transportTime = time;
                 }

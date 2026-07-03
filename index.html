@@ -210,7 +210,6 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="config.js"></script>
 <script>
-    // 检查 config 是否加载成功
     if (typeof SUPABASE_URL === 'undefined' || typeof SUPABASE_ANON_KEY === 'undefined') {
         alert('配置文件加载失败，请检查 config.js 是否存在并正确配置');
         throw new Error('Config not loaded');
@@ -337,15 +336,19 @@
         updateCustomPoiList();
     }
 
-    // ---------- 交通耗时计算（新规则） ----------
+    // 交通耗时计算
     async function getTransportTime(from, to, mode, trackMissing = false) {
         if (!from || !to) return 0;
         const fromId = from.id || 0;
         try {
-            const { data: preset } = await sb.from('ztj_transport_presets')
+            const { data: preset, error: presetErr } = await sb.from('ztj_transport_presets')
                 .select('time_min').eq('from_poi_id', fromId).eq('to_poi_id', to.id).eq('travel_mode', mode).maybeSingle();
-            if (preset && preset.time_min) return preset.time_min;
-        } catch (e) { console.warn('预设查询失败', e); }
+            if (presetErr) console.warn('预设查询失败', presetErr);
+            if (preset && preset.time_min) {
+                console.log(`使用预设 (${from.name||fromId} -> ${to.name||to.id}): ${preset.time_min}分钟`);
+                return preset.time_min;
+            }
+        } catch (e) { console.warn('预设查询异常', e); }
 
         const aHasCounty = from.county_auto_time != null;
         const bHasCounty = to.county_auto_time != null;
@@ -798,7 +801,7 @@
         if(!error) document.getElementById('feedbackMsg').value='';
     }
 
-    // ==================== 我的面板逻辑 ====================
+    // ==================== 我的面板逻辑（已修复） ====================
     function initMyPanel() {
         switchMyTab('trip');
         const savedPhone = localStorage.getItem('lastOrderPhone') || '';
@@ -817,6 +820,8 @@
         } else if (tab === 'order') {
             document.querySelector('#myTabs button:nth-child(2)').classList.add('active');
             document.getElementById('myOrderContent').classList.remove('hidden');
+            // 清空之前订单列表
+            document.getElementById('myOrderList').innerHTML = '';
         } else if (tab === 'feedback') {
             document.querySelector('#myTabs button:last-child').classList.add('active');
             document.getElementById('myFeedbackContent').classList.remove('hidden');

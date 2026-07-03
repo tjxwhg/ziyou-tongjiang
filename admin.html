@@ -91,7 +91,7 @@
                 <div class="form-group"><label>路线方向</label><select id="new-poi-route-group"><option value="">未分类</option><option>城内</option><option>东线</option><option>南线</option><option>西线</option><option>北线</option><option>东北</option><option>东南</option><option>西北</option><option>西南</option></select></div>
                 <div class="form-group"><label>排序序号</label><input id="new-poi-sort" type="number" value="0"></div>
                 <div class="form-group"><label>建议游览时间(分钟)</label><input id="new-poi-visit" type="number" value="60"></div>
-                <div class="form-group"><label>从县城自驾耗时(分钟)</label><input id="new-poi-county-auto" type="number" placeholder="不填则估算"></div>
+                <div class="form-group"><label>从县城自驾耗时(分钟)</label><input id="new-poi-county-auto" type="number" placeholder="不填则无"></div>
                 <div class="form-group"><label>纬度 *</label><input id="new-poi-lat" type="number" step="any"></div>
                 <div class="form-group"><label>经度 *</label><input id="new-poi-lng" type="number" step="any"></div>
                 <div class="form-group"><label>简介</label><textarea id="new-poi-desc" rows="2"></textarea></div>
@@ -183,7 +183,7 @@
     const poiCategories = ['自然景区', '文化场馆', '餐饮住宿', '公共服务', '停车场', '交通枢纽', '购物', '游戏娱乐'];
     const routeGroups = ['', '城内', '东线', '南线', '西线', '北线', '东北', '东南', '西北', '西南'];
 
-    // ========== 认证与会话 ==========
+    // 认证与会话
     async function checkSession() {
         const { data: { session } } = await sb.auth.getSession();
         if (session) { currentUser = session.user; await loadAdminView(); }
@@ -464,11 +464,22 @@
                 <button class="btn btn-danger" onclick="deleteMerchant('${m.id}')">删除</button>
             </div></div>`).join('');
     }
+
     async function updateStar(id, field, val) {
         const v = parseInt(val) || 0;
-        const { error } = await sb.rpc('update_merchant_stars', { merchant_id: id, field, new_value: v });
-        if (error) alert('保存失败：' + error.message);
-        else alert('星级已更新');
+        // 调用 RPC 函数 update_merchant_stars(merchant_id, field, new_value)
+        const { error } = await sb.rpc('update_merchant_stars', {
+            merchant_id: id,
+            field: field,
+            new_value: v
+        });
+        if (error) {
+            alert('保存失败：' + error.message);
+            console.error(error);
+        } else {
+            alert('星级已更新');
+            loadMerchantList(); // 刷新列表
+        }
     }
 
     async function showAddMerchant() {
@@ -688,9 +699,20 @@
         const { data: { publicUrl } } = sb.storage.from('merchant-uploads').getPublicUrl(path);
         return publicUrl;
     }
-    function renderPaymentMethods() { /* 略，保持原有 */ }
+    function renderPaymentMethods() {
+        const methods = window._paymentMethods;
+        let html = methods.map((m,i) => `
+            <div class="card"><label>标签 (如微信)</label><input value="${m.label}" onchange="updatePaymentMethod(${i},'label',this.value)">
+            <label>二维码</label><input type="file" accept="image/*" onchange="handlePaymentQR(this,${i})">
+            ${m.qr?`<img src="${m.qr}" class="upload-preview">`:''}
+            <button class="btn btn-danger" onclick="removePaymentMethod(${i})">删除</button></div>`).join('');
+        document.getElementById('payment-methods').innerHTML = html || '<p>暂无支付方式</p>';
+    }
     function addPaymentMethod() { window._paymentMethods.push({label:'',qr:''}); renderPaymentMethods(); }
     function removePaymentMethod(i) { window._paymentMethods.splice(i,1); renderPaymentMethods(); }
+    function updatePaymentMethod(i,field,val) { window._paymentMethods[i][field]=val; }
+    async function handlePaymentQR(input,i) { const url=await uploadMerchantImage(input.files[0]); if(url){ window._paymentMethods[i].qr=url; renderPaymentMethods(); } }
+
     async function saveMerchantSelf() {
         const status = document.getElementById('self-status').value;
         const total = parseInt(document.getElementById('self-room-total').value) || 0;
@@ -699,10 +721,43 @@
         alert('保存成功');
     }
 
-    async function loadOrders() { /* 略 */ }
-    function renderOrders(orders) { /* 略 */ }
-    async function updateOrderStatus(orderId, newStatus) { /* 略 */ }
-    async function addOrderNote(orderId) { /* 略 */ }
+    async function loadOrders() {
+        if (!merchantSelfData) return;
+        const { data, error } = await sb.from('ztj_orders').select('*').eq('merchant_id', merchantSelfData.id).order('created_at', { ascending: false });
+        if (error) return;
+        renderOrders(data || []);
+    }
+
+    function renderOrders(orders) {
+        const container = document.getElementById('order-list');
+        if (orders.length === 0) { container.innerHTML = '<p>暂无订单</p>'; return; }
+        container.innerHTML = orders.map(order => {
+            const statusClass = `status-${order.status}`;
+            const items = order.items.map(i => `${i.name} x1 ¥${i.price}`).join(', ');
+            return `
+                <div class="order-card">
+                    <div class="order-header"><div><span class="order-status ${statusClass}">${statusText(order.status)}</span><span style="margin-left:10px;">#${order.id}</span></div><div style="font-size:14px; color:#666;">${new Date(order.created_at).toLocaleString()}</div></div>
+                    <div><b>手机号：</b>${order.phone} ${order.name ? ' | 姓名：'+order.name : ''}</div>
+                    <div class="order-items"><b>商品：</b>${items}</div>
+                    <div><b>合计：</b>¥${order.total}</div>
+                    ${order.note ? `<div><b>备注：</b>${order.note}</div>` : ''}
+                    <div class="order-footer"><div>
+                        ${order.status === 'new' ? `<button class="btn btn-confirm" onclick="updateOrderStatus(${order.id}, 'confirmed')">确认接单</button>` : ''}
+                        ${order.status === 'confirmed' ? `<button class="btn btn-complete" onclick="updateOrderStatus(${order.id}, 'completed')">完成</button>` : ''}
+                        ${(order.status === 'new' || order.status === 'confirmed') ? `<button class="btn btn-cancel" onclick="updateOrderStatus(${order.id}, 'cancelled')">取消</button>` : ''}
+                        <button class="btn btn-note" onclick="addOrderNote(${order.id})">备注</button>
+                    </div></div>
+                </div>`;
+        }).join('');
+    }
+
+    function statusText(status) {
+        const map = { 'new': '待确认', 'confirmed': '已确认', 'completed': '已完成', 'cancelled': '已取消' };
+        return map[status] || status;
+    }
+
+    async function updateOrderStatus(orderId, newStatus) { const { error } = await sb.from('ztj_orders').update({ status: newStatus }).eq('id', orderId); if (error) { alert('操作失败'); return; } loadOrders(); }
+    async function addOrderNote(orderId) { const note = prompt('请输入备注信息：'); if (note === null) return; await sb.from('ztj_orders').update({ note }).eq('id', orderId); loadOrders(); }
 
     window.onload = checkSession;
 </script>

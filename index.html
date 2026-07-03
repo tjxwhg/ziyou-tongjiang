@@ -72,6 +72,7 @@
         .poi-select-item button { padding:4px 10px; font-size:13px; }
         .feedback-item { background:#f0f0f0; border-radius:6px; padding:10px; margin-bottom:8px; }
         .feedback-item .reply { margin-left:20px; background:#e8f5e9; padding:6px 10px; border-radius:4px; margin-top:4px; }
+        .hidden { display:none; }
     </style>
 </head>
 <body>
@@ -171,8 +172,11 @@
             <button onclick="switchMyTab('order')">📋 订单</button>
             <button onclick="switchMyTab('feedback')">💬 留言</button>
         </div>
-        <div class="form-group"><label>手机号</label><input type="tel" id="query-phone" placeholder="请输入手机号"></div>
-        <div id="myTripContent" class="hidden"></div>
+        <div id="my-query-area">
+            <div class="form-group"><label>手机号</label><input type="tel" id="query-phone" placeholder="请输入手机号"></div>
+            <button class="btn btn-primary" onclick="executeMyQuery()" style="width:100%;">查询</button>
+        </div>
+        <div id="myTripContent"></div>
         <div id="myOrderContent" class="hidden"></div>
         <div id="myFeedbackContent" class="hidden">
             <textarea id="feedbackMsg" rows="4" class="feedback-textarea" placeholder="请留下您的建议或问题..."></textarea>
@@ -200,6 +204,7 @@
     let allPois=[], activeCategory='全部', currentMerchant=null;
     let currentRoutePolyline = null, hideTimer;
     let selectedCustomPois = [], customTripNodes = null;
+    let currentMyTab = 'trip'; // 当前我的面板标签
 
     const COUNTY_CENTER = { lat: 32.08, lng: 107.24, name: '通江县城（红军广场）' };
     const poiCategories = ['自然景区', '文化场馆', '餐饮住宿', '公共服务', '停车场', '交通枢纽', '购物', '游戏娱乐'];
@@ -274,60 +279,84 @@
     function removeCustomPoi(idx) { selectedCustomPois.splice(idx,1); updateCustomPoiList(); }
     function moveCustomPoi(idx, dir) { const newIdx = idx + dir; if (newIdx<0||newIdx>=selectedCustomPois.length) return; [selectedCustomPois[idx], selectedCustomPois[newIdx]] = [selectedCustomPois[newIdx], selectedCustomPois[idx]]; updateCustomPoiList(); }
 
-    async function getTransportTime(from, to, mode, trackMissing = false) {
-        if (!from || !to) return 0;
+    // 只查询预设表，双向，若无返回null
+    async function getTransportPresetTime(from, to, mode) {
+        if (!from || !to) return null;
         const fromId = from.id || 0;
-        if (fromId === 0 && to.county_auto_time != null) return to.county_auto_time;
-        if (to.id === 0 && from.county_auto_time != null) return from.county_auto_time;
-        try {
-            const { data: preset } = await sb.from('ztj_transport_presets').select('time_min').eq('from_poi_id', fromId).eq('to_poi_id', to.id).eq('travel_mode', mode).maybeSingle();
-            if (preset && preset.time_min) return preset.time_min;
-        } catch(e){}
-        const aHasCounty = from.county_auto_time != null, bHasCounty = to.county_auto_time != null;
-        const sameGroup = from.route_group && to.route_group && from.route_group === to.route_group && from.route_group !== '城内';
-        if (aHasCounty && bHasCounty && sameGroup) {
-            const diff = Math.abs(to.county_auto_time - from.county_auto_time);
-            if (mode === 'auto') return diff; if (mode === 'bus') return Math.round(diff * 1.5); return Math.round(diff * 3);
-        }
-        const dist = getDistance(from.lat, from.lng, to.lat, to.lng);
-        let speed = 40; if (mode === 'bus') speed = 20; else if (mode === 'walk') speed = 5;
-        if (from.route_group === '城内' && to.route_group === '城内') speed = 5;
-        let time = Math.round(dist / 1000 / speed * 60); if (time < 5) time = 5;
-        if (trackMissing) recordMissingPreset(fromId, to.id, mode);
-        return time;
+        // 先查正向
+        let { data, error } = await sb.from('ztj_transport_presets').select('time_min').eq('from_poi_id', fromId).eq('to_poi_id', to.id).eq('travel_mode', mode).maybeSingle();
+        if (error) { console.warn(error); return null; }
+        if (data) return data.time_min;
+        // 再查反向 (A-B 等同 B-A)
+        const { data: reverseData, error: reverseError } = await sb.from('ztj_transport_presets').select('time_min').eq('from_poi_id', to.id).eq('to_poi_id', fromId).eq('travel_mode', mode).maybeSingle();
+        if (reverseError) { console.warn(reverseError); return null; }
+        if (reverseData) return reverseData.time_min;
+        return null;
     }
 
     async function recordMissingPreset(fromId, toId, mode) {
-        try { const { data } = await sb.from('ztj_missing_presets').select('id').eq('from_poi_id', fromId).eq('to_poi_id', toId).eq('travel_mode', mode).maybeSingle(); if (!data) await sb.from('ztj_missing_presets').insert({ from_poi_id: fromId, to_poi_id: toId, travel_mode: mode }); } catch(e){}
+        try {
+            const { data } = await sb.from('ztj_missing_presets').select('id').eq('from_poi_id', fromId).eq('to_poi_id', toId).eq('travel_mode', mode).maybeSingle();
+            if (!data) {
+                await sb.from('ztj_missing_presets').insert({ from_poi_id: fromId, to_poi_id: toId, travel_mode: mode });
+            }
+        } catch(e){}
     }
 
     async function generateCustomTrip() {
         if (selectedCustomPois.length === 0) { alert('请先添加至少一个地点'); return; }
         const mode = document.getElementById('travel-mode').value, startOption = document.getElementById('start-point').value;
-        const ids = [...new Set(selectedCustomPois.map(p => p.id))];
-        let freshPois = []; try { const { data } = await sb.from('ztj_poi').select('*').in('id', ids); freshPois = data || []; } catch(e){}
+
         const nodes = [];
-        for (let i = 0; i < selectedCustomPois.length; i++) {
-            const poi = selectedCustomPois[i], freshData = freshPois.find(p => p.id === poi.id) || poi;
-            let transportTime = 0;
-            if (i > 0) transportTime = await getTransportTime(selectedCustomPois[i-1], freshData, mode, true);
-            nodes.push({ ...freshData, transportTime, visitDuration: freshData.visit_duration || 60 });
-        }
+        let allPresetsFound = true;
+
+        // 处理起点到第一个POI
         let startNode = null;
         if (startOption === 'county') {
-            startNode = { ...COUNTY_CENTER, id: 0, county_auto_time: 0, route_group: '城内' };
-            startNode.transportTime = await getTransportTime(startNode, nodes[0], mode, true);
+            startNode = { ...COUNTY_CENTER, id: 0 };
+            const firstPoi = selectedCustomPois[0];
+            const time = await getTransportPresetTime(startNode, firstPoi, mode);
+            if (time === null) {
+                allPresetsFound = false;
+                startNode.transportTime = null;
+                await recordMissingPreset(0, firstPoi.id, mode);
+            } else {
+                startNode.transportTime = time;
+            }
         }
-        let html = '<h4>行程预览</h4>'; let timeCounter = 8*60;
+
+        for (let i = 0; i < selectedCustomPois.length; i++) {
+            const poi = selectedCustomPois[i];
+            let transportTime = 0;
+            if (i > 0) {
+                const prev = selectedCustomPois[i-1];
+                const time = await getTransportPresetTime(prev, poi, mode);
+                if (time === null) {
+                    allPresetsFound = false;
+                    transportTime = null;
+                    await recordMissingPreset(prev.id, poi.id, mode);
+                } else {
+                    transportTime = time;
+                }
+            }
+            nodes.push({ ...poi, transportTime, visitDuration: poi.visit_duration || 60 });
+        }
+
+        // 渲染预览
+        let html = '<h4>行程预览</h4>';
+        if (!allPresetsFound) html += '<p style="color:#ff9800;">部分交通耗时待补充，已通知后台</p>';
+        let timeCounter = 8*60;
         if (startNode) {
             const h = Math.floor(timeCounter/60), m = timeCounter%60;
-            html += `<div class="timeline-item"><div class="timeline-marker"></div><div class="timeline-content"><div class="timeline-time">${('0'+h).slice(-2)}:${('0'+m).slice(-2)}</div><div class="timeline-name">🚩 ${startNode.name} (起点)</div><div style="font-size:12px;color:#666;">→ 下一站约${startNode.transportTime}分钟</div></div></div>`;
-            timeCounter += startNode.transportTime;
+            const timeStr = startNode.transportTime != null ? `约${startNode.transportTime}分钟` : '待补充';
+            html += `<div class="timeline-item"><div class="timeline-marker"></div><div class="timeline-content"><div class="timeline-time">${('0'+h).slice(-2)}:${('0'+m).slice(-2)}</div><div class="timeline-name">🚩 ${startNode.name} (起点)</div><div style="font-size:12px;color:#666;">→ 下一站 ${timeStr}</div></div></div>`;
+            if (startNode.transportTime != null) timeCounter += startNode.transportTime;
         }
         nodes.forEach((node, idx) => {
             const h = Math.floor(timeCounter/60), m = timeCounter%60;
-            html += `<div class="timeline-item"><div class="timeline-marker"></div><div class="timeline-content"><div class="timeline-time">${('0'+h).slice(-2)}:${('0'+m).slice(-2)}</div><div class="timeline-name">${node.name} (游览${node.visitDuration}分钟)</div>${idx < nodes.length-1 ? `<div style="font-size:12px;color:#666;">→ 下一站约${node.transportTime}分钟</div>` : ''}</div></div>`;
-            timeCounter += node.transportTime + node.visitDuration;
+            const nextTimeStr = node.transportTime != null ? `→ 下一站约${node.transportTime}分钟` : '→ 下一站 待补充';
+            html += `<div class="timeline-item"><div class="timeline-marker"></div><div class="timeline-content"><div class="timeline-time">${('0'+h).slice(-2)}:${('0'+m).slice(-2)}</div><div class="timeline-name">${node.name} (游览${node.visitDuration}分钟)</div>${idx < nodes.length-1 ? `<div style="font-size:12px;color:#666;">${nextTimeStr}</div>` : ''}</div></div>`;
+            if (node.transportTime != null) timeCounter += node.transportTime + node.visitDuration;
         });
         html += `<button class="btn btn-primary" onclick="saveCustomTrip()" style="width:100%;">保存并开始导航</button>`;
         document.getElementById('customTripPreview').innerHTML = html;
@@ -482,22 +511,53 @@
         container.innerHTML = html;
     }
 
-    function initMyPanel() { switchMyTab('trip'); const savedPhone = localStorage.getItem('lastOrderPhone') || ''; document.getElementById('query-phone').value = savedPhone; }
+    function initMyPanel() {
+        switchMyTab('trip');
+        const savedPhone = localStorage.getItem('lastOrderPhone') || '';
+        document.getElementById('query-phone').value = savedPhone;
+    }
 
     function switchMyTab(tab) {
+        currentMyTab = tab;
         document.querySelectorAll('#myTabs button').forEach(b => b.classList.remove('active'));
-        document.getElementById('myTripContent').classList.add('hidden'); document.getElementById('myOrderContent').classList.add('hidden'); document.getElementById('myFeedbackContent').classList.add('hidden');
-        if (tab === 'trip') { document.querySelector('#myTabs button:first-child').classList.add('active'); document.getElementById('myTripContent').classList.remove('hidden'); renderMyTrip(); }
-        else if (tab === 'order') { document.querySelector('#myTabs button:nth-child(2)').classList.add('active'); document.getElementById('myOrderContent').classList.remove('hidden'); }
-        else if (tab === 'feedback') { document.querySelector('#myTabs button:last-child').classList.add('active'); document.getElementById('myFeedbackContent').classList.remove('hidden'); loadFeedbackHistory(); }
+        document.getElementById('myTripContent').classList.add('hidden');
+        document.getElementById('myOrderContent').classList.add('hidden');
+        document.getElementById('myFeedbackContent').classList.add('hidden');
+        const queryArea = document.getElementById('my-query-area');
+        if (tab === 'trip') {
+            document.querySelector('#myTabs button:first-child').classList.add('active');
+            document.getElementById('myTripContent').classList.remove('hidden');
+            queryArea.classList.remove('hidden');
+            renderMyTrip();
+        } else if (tab === 'order') {
+            document.querySelector('#myTabs button:nth-child(2)').classList.add('active');
+            document.getElementById('myOrderContent').classList.remove('hidden');
+            queryArea.classList.remove('hidden');
+            document.getElementById('myOrderContent').innerHTML = '';
+        } else if (tab === 'feedback') {
+            document.querySelector('#myTabs button:last-child').classList.add('active');
+            document.getElementById('myFeedbackContent').classList.remove('hidden');
+            queryArea.classList.add('hidden');
+            loadFeedbackHistory();
+        }
+    }
+
+    function executeMyQuery() {
+        if (currentMyTab === 'trip') {
+            renderMyTrip();
+        } else if (currentMyTab === 'order') {
+            queryMyOrders();
+        }
     }
 
     function renderMyTrip() {
-        const container = document.getElementById('myTripContent'); const savedTrips = JSON.parse(localStorage.getItem('savedTrips') || '[]');
+        const container = document.getElementById('myTripContent');
+        const savedTrips = JSON.parse(localStorage.getItem('savedTrips') || '[]');
         if (savedTrips.length === 0) { container.innerHTML = '<p style="color:#999;">暂无行程，请从路线选择中添加。</p>'; return; }
         let html = ''; savedTrips.forEach((trip, idx) => { html += `<div class="order-item" style="cursor:pointer;"><div style="display:flex; justify-content:space-between;" onclick="toggleTripDetail(${idx})"><b>${trip.name}</b><span>${trip.nodes.length}个点</span></div><div id="trip-detail-${idx}" style="display:none; margin-top:8px;">${trip.nodes.map(n => `<div>• ${n.name} (游览${n.visitDuration||60}分钟)</div>`).join('')}<button class="btn btn-default" style="margin-top:8px;" onclick="applySavedTrip(${idx})">使用此行程</button><button class="btn btn-danger" style="margin-top:8px;" onclick="deleteSavedTrip(${idx})">删除</button></div></div>`; });
         container.innerHTML = html;
     }
+
     function toggleTripDetail(idx) { const el = document.getElementById(`trip-detail-${idx}`); el.style.display = el.style.display==='none'?'block':'none'; }
     function applySavedTrip(idx) { const savedTrips = JSON.parse(localStorage.getItem('savedTrips') || '[]'); const trip = savedTrips[idx]; setCurrentCustomTrip(trip); startSimulationFromTrip(trip); closePanel('myPanel'); }
     function deleteSavedTrip(idx) { const savedTrips = JSON.parse(localStorage.getItem('savedTrips') || '[]'); savedTrips.splice(idx,1); localStorage.setItem('savedTrips', JSON.stringify(savedTrips)); renderMyTrip(); }

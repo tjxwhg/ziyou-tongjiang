@@ -193,12 +193,14 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="config.js"></script>
 <script>
+    // 基础配置检查
     if (typeof SUPABASE_URL === 'undefined' || typeof SUPABASE_ANON_KEY === 'undefined') {
         alert('配置文件加载失败，请检查 config.js');
         throw new Error('Config not loaded');
     }
     const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
+    // 全局变量
     let map, currentLang='cn', voiceEnabled=true, triggeredPois={}, currentTrip=null;
     let simulationActive=false, simulatedPosition=null, voiceCheckingInterval=null;
     let allPois=[], activeCategory='全部', currentMerchant=null;
@@ -206,13 +208,14 @@
     let selectedCustomPois = [], customTripNodes = null;
     let currentMyTab = 'trip';
 
-    const COUNTY_CENTER = { lat: 32.08, lng: 107.24, name: '通江县城（红军广场）' };
+    const COUNTY_CENTER = { lat: 32.08, lng: 107.24, name: '通江县城（红军广场）', id: 0 };
     const poiCategories = ['自然景区', '文化场馆', '餐饮住宿', '公共服务', '停车场', '交通枢纽', '购物', '游戏娱乐'];
     const poiColors = {
         '自然景区':'#2E7D32','文化场馆':'#9C27B0','餐饮住宿':'#FF9800','公共服务':'#607D8B',
         '停车场':'#00BCD4','交通枢纽':'#795548','购物':'#E91E63','游戏娱乐':'#F44336'
     };
 
+    // ---------- 地图初始化 ----------
     function initMap(){
         map = L.map('map').setView([32.08,107.18],12);
         L.tileLayer('https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}',{
@@ -249,6 +252,7 @@
         });
     }
 
+    // ---------- 自选行程相关 ----------
     function getCustomGroups() {
         return {
             'group-scenery':{ cats:['自然景区'] }, 'group-cultural':{ cats:['文化场馆'] }, 'group-eatstay':{ cats:['餐饮住宿'] },
@@ -279,69 +283,86 @@
     function removeCustomPoi(idx) { selectedCustomPois.splice(idx,1); updateCustomPoiList(); }
     function moveCustomPoi(idx, dir) { const newIdx = idx + dir; if (newIdx<0||newIdx>=selectedCustomPois.length) return; [selectedCustomPois[idx], selectedCustomPois[newIdx]] = [selectedCustomPois[newIdx], selectedCustomPois[idx]]; updateCustomPoiList(); }
 
-    // 查询预设表（正向，若无则返回 null）
-    async function getTransportPresetTime(from, to, mode) {
-        if (!from || !to) return null;
-        const fromId = from.id || 0;
-        const { data } = await sb.from('ztj_transport_presets')
-            .select('time_min')
-            .eq('from_poi_id', fromId)
-            .eq('to_poi_id', to.id)
-            .eq('travel_mode', mode)
-            .maybeSingle();
-        if (data && data.time_min > 0) return data.time_min;
-        return null;
-    }
-
-    async function recordMissingPreset(fromId, toId, mode) {
-        try {
-            const { data } = await sb.from('ztj_missing_presets').select('id').eq('from_poi_id', fromId).eq('to_poi_id', toId).eq('travel_mode', mode).maybeSingle();
-            if (!data) {
-                await sb.from('ztj_missing_presets').insert({ from_poi_id: fromId, to_poi_id: toId, travel_mode: mode });
-            }
-        } catch(e){}
-    }
-
+    // ---------- 核心：构建交通耗时 Map 并生成行程预览 ----------
     async function generateCustomTrip() {
         if (selectedCustomPois.length === 0) { alert('请先添加至少一个地点'); return; }
-        const mode = document.getElementById('travel-mode').value, startOption = document.getElementById('start-point').value;
+        const mode = document.getElementById('travel-mode').value;
+        const startOption = document.getElementById('start-point').value;
 
-        let allPresetsFound = true;
+        // 1. 准备需要查询的点对列表（起点0 + 所有POI）
+        const queryPairs = [];
+        if (startOption === 'county') {
+            queryPairs.push({ from: 0, to: selectedCustomPois[0].id });
+        }
+        for (let i = 0; i < selectedCustomPois.length - 1; i++) {
+            queryPairs.push({ from: selectedCustomPois[i].id, to: selectedCustomPois[i+1].id });
+        }
+
+        // 2. 批量查询数据库，构建 trafficTimeMap
+        const trafficTimeMap = {};
+        for (const pair of queryPairs) {
+            const { data, error } = await sb.from('ztj_transport_presets')
+                .select('time_min')
+                .eq('from_poi_id', pair.from)
+                .eq('to_poi_id', pair.to)
+                .eq('travel_mode', mode)
+                .maybeSingle();
+            if (error) {
+                console.error('批量查询错误', error);
+                continue;
+            }
+            if (data && data.time_min > 0) {
+                // 键名格式："from_to"，确保ID为字符串并去空格
+                const key = String(pair.from).trim() + '_' + String(pair.to).trim();
+                trafficTimeMap[key] = data.time_min;
+                console.log(`已缓存预设: ${key} = ${data.time_min}分钟`);
+            } else {
+                const key = String(pair.from).trim() + '_' + String(pair.to).trim();
+                console.warn(`未找到预设: ${key}，将显示待补充`);
+                // 记录缺失
+                recordMissingPreset(pair.from, pair.to, mode);
+            }
+        }
+
+        // 3. 生成节点列表（每个节点含交通时间到下一个点）
         const nodes = [];
+        let allPresetsFound = true;
 
-        // 起点到第一个POI
+        // 处理起点
         let startNode = null;
         if (startOption === 'county') {
             startNode = { ...COUNTY_CENTER, id: 0 };
             const firstPoi = selectedCustomPois[0];
-            const time = await getTransportPresetTime(startNode, firstPoi, mode);
+            const key = '0_' + String(firstPoi.id).trim();
+            const time = trafficTimeMap[key] ?? null;
             if (time === null) {
                 allPresetsFound = false;
                 startNode.transportTime = null;
-                recordMissingPreset(0, firstPoi.id, mode);
             } else {
                 startNode.transportTime = time;
             }
         }
 
-        // POI 节点（每个节点存储到下一个点的交通时间）
+        // 处理各个POI
         for (let i = 0; i < selectedCustomPois.length; i++) {
             const poi = selectedCustomPois[i];
+            const freshData = { ...poi };
             let transportTime = null;
             if (i < selectedCustomPois.length - 1) {
-                const nextPoi = selectedCustomPois[i + 1];
-                const time = await getTransportPresetTime(poi, nextPoi, mode);
+                const nextPoi = selectedCustomPois[i+1];
+                const key = String(poi.id).trim() + '_' + String(nextPoi.id).trim();
+                console.log(`查询键: ${key}, 值: ${trafficTimeMap[key]}`);
+                const time = trafficTimeMap[key] ?? null;
                 if (time === null) {
                     allPresetsFound = false;
-                    recordMissingPreset(poi.id, nextPoi.id, mode);
                 } else {
                     transportTime = time;
                 }
             }
-            nodes.push({ ...poi, transportTime, visitDuration: poi.visit_duration || 60 });
+            nodes.push({ ...freshData, transportTime, visitDuration: freshData.visit_duration || 60 });
         }
 
-        // 渲染预览
+        // 4. 渲染预览HTML
         let html = '<h4>行程预览</h4>';
         if (!allPresetsFound) html += '<p style="color:#ff9800;">部分交通耗时待补充，已通知后台</p>';
         let timeCounter = 8*60;
@@ -362,6 +383,18 @@
         customTripNodes = { start: startNode, nodes };
     }
 
+    function recordMissingPreset(fromId, toId, mode) {
+        // 异步记录缺失，不阻塞
+        (async () => {
+            try {
+                const { data } = await sb.from('ztj_missing_presets').select('id').eq('from_poi_id', fromId).eq('to_poi_id', toId).eq('travel_mode', mode).maybeSingle();
+                if (!data) {
+                    await sb.from('ztj_missing_presets').insert({ from_poi_id: fromId, to_poi_id: toId, travel_mode: mode });
+                }
+            } catch(e) {}
+        })();
+    }
+
     function saveCustomTrip() {
         if (!customTripNodes) return;
         const name = prompt('请输入行程名称：', '自定义行程'); if (!name) return;
@@ -380,6 +413,7 @@
 
     function startSimulationFromTrip(trip) { simulationActive = true; document.getElementById('voiceBtn').style.display='flex'; document.getElementById('navBtn').textContent='📍 导航中...'; window._simNodes = trip.nodes; if(voiceCheckingInterval) clearInterval(voiceCheckingInterval); voiceCheckingInterval = setInterval(checkVoiceTrigger, 3000); }
 
+    // ---------- 商户详情、支付、预订等（保持不变） ----------
     async function showPoiDetail(poi) {
         const { data: merchant } = await sb.from('ztj_merchants').select('*').eq('poi_id', poi.id).maybeSingle();
         if (merchant) { currentMerchant = merchant; renderMerchantDetail(poi, merchant); openPanel('merchantDetailPanel'); }

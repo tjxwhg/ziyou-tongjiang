@@ -210,6 +210,11 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="config.js"></script>
 <script>
+    // 检查 config 是否加载成功
+    if (typeof SUPABASE_URL === 'undefined' || typeof SUPABASE_ANON_KEY === 'undefined') {
+        alert('配置文件加载失败，请检查 config.js 是否存在并正确配置');
+        throw new Error('Config not loaded');
+    }
     const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
     let map, currentLang='cn', voiceEnabled=true, triggeredPois={}, currentTrip=null;
@@ -245,7 +250,8 @@
     }
 
     async function loadAllPOIs(){
-        const { data } = await sb.from('ztj_poi').select('*').eq('status','active');
+        const { data, error } = await sb.from('ztj_poi').select('*').eq('status','active');
+        if (error) { console.error('加载POI失败', error); return; }
         allPois = data || [];
         renderPOIs(allPois);
     }
@@ -338,31 +344,33 @@
     // 交通耗时计算核心
     async function getTransportTime(from, to, mode) {
         if (!from || !to) return 0;
-        // 1. 查询预设表
-        const fromId = from.id || 0;
-        const { data: preset } = await sb.from('ztj_transport_presets')
-            .select('time_min')
-            .eq('from_poi_id', fromId)
-            .eq('to_poi_id', to.id)
-            .eq('travel_mode', mode)
-            .maybeSingle();
-        if (preset) return preset.time_min;
+        try {
+            const fromId = from.id || 0;
+            const { data: preset } = await sb.from('ztj_transport_presets')
+                .select('time_min')
+                .eq('from_poi_id', fromId)
+                .eq('to_poi_id', to.id)
+                .eq('travel_mode', mode)
+                .maybeSingle();
+            if (preset) return preset.time_min;
 
-        // 2. 同方向差值
-        const aHasCounty = from.county_auto_time != null;
-        const bHasCounty = to.county_auto_time != null;
-        if (aHasCounty && bHasCounty && from.route_group && to.route_group && from.route_group === to.route_group) {
-            const diff = Math.abs(to.county_auto_time - from.county_auto_time);
-            if (mode === 'auto') return diff;
-            if (mode === 'bus') return Math.round(diff * 1.5);
-            return Math.round(diff * 3);
+            const aHasCounty = from.county_auto_time != null;
+            const bHasCounty = to.county_auto_time != null;
+            if (aHasCounty && bHasCounty && from.route_group && to.route_group && from.route_group === to.route_group) {
+                const diff = Math.abs(to.county_auto_time - from.county_auto_time);
+                if (mode === 'auto') return diff;
+                if (mode === 'bus') return Math.round(diff * 1.5);
+                return Math.round(diff * 3);
+            }
+
+            const dist = getDistance(from.lat, from.lng, to.lat, to.lng);
+            const speed = mode === 'auto' ? 40 : (mode === 'bus' ? 20 : 5);
+            let time = Math.round(dist / 1000 / speed * 60);
+            return Math.max(time, 5);
+        } catch (e) {
+            console.error('交通耗时计算失败', e);
+            return 10;
         }
-
-        // 3. 兜底直线距离估算，至少5分钟
-        const dist = getDistance(from.lat, from.lng, to.lat, to.lng);
-        const speed = mode === 'auto' ? 40 : (mode === 'bus' ? 20 : 5);
-        let time = Math.round(dist / 1000 / speed * 60);
-        return Math.max(time, 5);
     }
 
     async function generateCustomTrip() {
@@ -374,7 +382,6 @@
         const { data: freshPois } = await sb.from('ztj_poi').select('*').in('id', ids);
         if (!freshPois) return;
 
-        // 构建节点列表
         const nodes = [];
         for (let i = 0; i < selectedCustomPois.length; i++) {
             const poi = selectedCustomPois[i];
@@ -387,7 +394,6 @@
             nodes.push({ ...freshData, transportTime, visitDuration: freshData.visit_duration || 60 });
         }
 
-        // 起点处理
         let startNode = null;
         if (startOption === 'county') {
             startNode = { ...COUNTY_CENTER, id: 0, county_auto_time: 0 };
@@ -395,7 +401,6 @@
             startNode.transportTime = await getTransportTime(startNode, firstPoi, mode);
         }
 
-        // 渲染预览
         let html = '<h4>行程预览</h4>';
         let timeCounter = 8*60;
         if (startNode) {
@@ -792,7 +797,6 @@
         if(!error) document.getElementById('feedbackMsg').value='';
     }
 
-    // ==================== 我的面板逻辑 ====================
     function initMyPanel() {
         switchMyTab('trip');
         const savedPhone = localStorage.getItem('lastOrderPhone') || '';
@@ -901,7 +905,7 @@
     }
 
     document.getElementById('langSelect').addEventListener('change',e=>currentLang=e.target.value);
-    window.onload=initMap;
+    window.onload = initMap;
 </script>
 </body>
 </html>

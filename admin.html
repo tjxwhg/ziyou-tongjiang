@@ -151,7 +151,7 @@
                 <div class="form-group"><label>起始 POI</label><select id="preset-from"></select></div>
                 <div class="form-group"><label>目标 POI</label><select id="preset-to"></select></div>
                 <div class="form-group"><label>预估时间 (分钟)</label><input type="number" id="preset-time" min="1"></div>
-                <button class="btn btn-primary" onclick="addPreset()">添加预设</button>
+                <button class="btn btn-primary" onclick="addPreset()">添加/更新预设</button>
             </div>
             <h4>现有预设</h4>
             <div id="preset-list"></div>
@@ -535,8 +535,17 @@
         const time = parseInt(document.getElementById('preset-time').value);
         if (!from || !to || !time || time <= 0) { alert('请完整填写'); return; }
         if (from === to) { alert('起止点不能相同'); return; }
-        const { error } = await sb.from('ztj_transport_presets').upsert([{ from_poi_id: from, to_poi_id: to, travel_mode: mode, time_min: time }]);
-        if (error) { alert('添加失败：' + error.message); return; }
+
+        // 使用 upsert 并指定冲突列为唯一约束的列，自动处理插入或更新
+        const { error } = await sb.from('ztj_transport_presets').upsert(
+            { from_poi_id: from, to_poi_id: to, travel_mode: mode, time_min: time },
+            { onConflict: 'from_poi_id, to_poi_id, travel_mode' }
+        );
+        if (error) {
+            alert('添加失败：' + error.message);
+            return;
+        }
+        alert('预设已保存');
         document.getElementById('preset-time').value = '';
         loadPresetList();
     }

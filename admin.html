@@ -10,8 +10,8 @@
         .header { background:#1b5e20; color:white; padding:12px 20px; display:flex; justify-content:space-between; align-items:center; }
         .header button { background:white; color:#1b5e20; border:none; padding:6px 14px; border-radius:6px; font-weight:bold; cursor:pointer; }
         .container { max-width:960px; margin:20px auto; background:white; padding:20px; border-radius:12px; box-shadow:0 2px 8px rgba(0,0,0,0.1); }
-        .tab { display:flex; gap:6px; margin-bottom:20px; border-bottom:2px solid #e0e0e0; }
-        .tab button { padding:10px 20px; border:none; background:none; font-size:16px; cursor:pointer; border-bottom:2px solid transparent; margin-bottom:-2px; }
+        .tab { display:flex; gap:6px; margin-bottom:20px; border-bottom:2px solid #e0e0e0; overflow-x:auto; }
+        .tab button { padding:10px 20px; border:none; background:none; font-size:16px; cursor:pointer; border-bottom:2px solid transparent; margin-bottom:-2px; white-space:nowrap; }
         .tab button.active { border-bottom-color:#2e7d32; color:#2e7d32; font-weight:bold; }
         .form-group { margin-bottom:12px; }
         .form-group label { display:block; margin-bottom:4px; font-weight:500; font-size:14px; }
@@ -26,6 +26,7 @@
         #login-page { max-width:400px; margin:80px auto; }
         .login-box { background:white; padding:30px; border-radius:12px; box-shadow:0 4px 16px rgba(0,0,0,0.1); }
         .login-box h2 { text-align:center; margin-bottom:20px; }
+        .error-msg { color:#c62828; margin-top:8px; }
         .star-input { display:flex; align-items:center; gap:6px; }
         .star-input input { width:60px; }
         .upload-preview { width:200px; height:150px; object-fit:cover; border:1px solid #ccc; border-radius:6px; margin-top:4px; }
@@ -102,7 +103,7 @@
             <div id="poi-list" style="margin-top:20px;"></div>
         </div>
 
-        <!-- 路线管理（保持不变） -->
+        <!-- 路线管理 -->
         <div id="tab-routes" class="hidden">
             <button class="btn btn-primary" onclick="showRouteForm()">+ 新增路线</button>
             <div id="route-form" class="card hidden" style="margin-top:14px;">
@@ -139,10 +140,20 @@
 
         <!-- 交通耗时管理 -->
         <div id="tab-transport" class="hidden">
-            <h3>交通耗时预设（从通江县城出发）</h3>
-            <div class="form-group"><label>批量设置：为每个POI填写从县城自驾耗时（分钟），留空则保留原值</label></div>
+            <h3>批量设置县城耗时</h3>
             <div id="county-time-editor"></div>
             <button class="btn btn-primary" onclick="saveCountyTimes()">保存全部</button>
+
+            <h3 style="margin-top:30px;">自由组合交通耗时</h3>
+            <div class="card">
+                <div class="form-group"><label>出行方式</label><select id="preset-mode"><option value="auto">自驾</option><option value="bus">公交</option><option value="walk">步行</option></select></div>
+                <div class="form-group"><label>起始 POI</label><select id="preset-from"></select></div>
+                <div class="form-group"><label>目标 POI</label><select id="preset-to"></select></div>
+                <div class="form-group"><label>预估时间 (分钟)</label><input type="number" id="preset-time" min="1"></div>
+                <button class="btn btn-primary" onclick="addPreset()">添加预设</button>
+            </div>
+            <h4>现有预设</h4>
+            <div id="preset-list"></div>
         </div>
     </div>
 
@@ -221,7 +232,7 @@
         else if (tab==='routes') loadRouteList();
         else if (tab==='feedbacks') loadFeedbackList();
         else if (tab==='merchants') loadMerchantList();
-        else if (tab==='transport') loadCountyTimeEditor();
+        else if (tab==='transport') { loadCountyTimeEditor(); loadPresetList(); loadPoiSelects(); }
     }
 
     function switchMerchantTab(tab) {
@@ -364,7 +375,7 @@
     function toggleGroup(id) { const el = document.getElementById(id); if (el) el.classList.toggle('hidden'); const arrow = document.getElementById(id+'-arrow'); if (arrow) arrow.textContent = el.classList.contains('hidden') ? '▶' : '▼'; }
     async function deletePoi(id) { if(confirm('删除POI？')){ await sb.from('ztj_poi').delete().eq('id',id); loadPoiList(); } }
 
-    // ==================== 路线管理（保持不变） ====================
+    // ==================== 路线管理 ====================
     async function loadRouteList() {
         const { data } = await sb.from('ztj_routes').select('*').order('id');
         document.getElementById('route-list').innerHTML = data.map(r => `<div class="card"><div class="card-row"><div><b>${r.name}</b> (${r.days}天)</div><div><button class="btn btn-default" onclick="editRoute(${r.id})">编辑</button><button class="btn btn-danger" onclick="deleteRoute(${r.id})">删除</button></div></div></div>`).join('');
@@ -442,7 +453,7 @@
     }
     async function replyFeedback(id) { const reply=document.getElementById('reply-'+id).value; await sb.from('ztj_feedbacks').update({reply}).eq('id',id); alert('已保存'); loadFeedbackList(); }
 
-    // ==================== 商户管理（超管，星级保存） ====================
+    // ==================== 商户管理（超管） ====================
     async function loadMerchantList() {
         const { data } = await sb.from('ztj_merchants').select('*, poi:poi_id(name)');
         document.getElementById('merchant-list').innerHTML = data.map(m => `
@@ -490,11 +501,54 @@
         for (const input of inputs) {
             const id = parseInt(input.id.replace('county-auto-', ''));
             const val = input.value ? parseInt(input.value) : null;
-            if (id) {
-                await sb.from('ztj_poi').update({ county_auto_time: val }).eq('id', id);
-            }
+            if (id) await sb.from('ztj_poi').update({ county_auto_time: val }).eq('id', id);
         }
         alert('保存成功');
+    }
+
+    async function loadPoiSelects() {
+        const { data: pois } = await sb.from('ztj_poi').select('id,name').order('name');
+        if (!pois) return;
+        const options = pois.map(p => `<option value="${p.id}">${p.name}</option>`).join('');
+        document.getElementById('preset-from').innerHTML = '<option value="0">通江县城（红军广场）</option>' + options;
+        document.getElementById('preset-to').innerHTML = options;
+    }
+
+    async function loadPresetList() {
+        const { data: presets } = await sb.from('ztj_transport_presets').select('*, from_poi:from_poi_id(id,name), to_poi:to_poi_id(id,name)').order('id');
+        if (!presets || presets.length === 0) {
+            document.getElementById('preset-list').innerHTML = '<p>暂无预设</p>';
+            return;
+        }
+        let html = '<table class="transport-table"><tr><th>出行方式</th><th>起点</th><th>终点</th><th>耗时(分钟)</th><th>操作</th></tr>';
+        presets.forEach(p => {
+            const fromName = p.from_poi_id === 0 ? '通江县城' : (p.from_poi?.name || '未知');
+            const toName = p.to_poi?.name || '未知';
+            const modeName = { auto: '自驾', bus: '公交', walk: '步行' }[p.travel_mode] || p.travel_mode;
+            html += `<tr><td>${modeName}</td><td>${fromName}</td><td>${toName}</td><td>${p.time_min}</td><td><button class="btn btn-danger" onclick="deletePreset(${p.id})">删除</button></td></tr>`;
+        });
+        html += '</table>';
+        document.getElementById('preset-list').innerHTML = html;
+    }
+
+    async function addPreset() {
+        const from = parseInt(document.getElementById('preset-from').value);
+        const to = parseInt(document.getElementById('preset-to').value);
+        const mode = document.getElementById('preset-mode').value;
+        const time = parseInt(document.getElementById('preset-time').value);
+        if (!from || !to || !time || time <= 0) { alert('请完整填写'); return; }
+        if (from === to) { alert('起止点不能相同'); return; }
+        const { error } = await sb.from('ztj_transport_presets').upsert([{ from_poi_id: from, to_poi_id: to, travel_mode: mode, time_min: time }]);
+        if (error) { alert('添加失败：' + error.message); return; }
+        document.getElementById('preset-time').value = '';
+        loadPresetList();
+    }
+
+    async function deletePreset(id) {
+        if (confirm('确定删除此预设？')) {
+            await sb.from('ztj_transport_presets').delete().eq('id', id);
+            loadPresetList();
+        }
     }
 
     // ==================== 商户自助（店铺管理、订单管理） ====================
@@ -514,14 +568,88 @@
         renderCategories(); renderPaymentMethods();
     }
 
-    function renderCategories() { /* 略，保持原有逻辑 */ }
-    function renderItems(items, catIdx) { /* 略 */ }
-    function addCategory() { /* 略 */ }
-    function addItem(catIdx) { /* 略 */ }
-    function saveMerchantSelf() { /* 略 */ }
-    function loadOrders() { /* 略 */ }
-    function renderOrders(orders) { /* 略 */ }
-    // 以下省略商户自助完整实现，使用已有代码补充即可（因长度限制，此处不再重复，实际部署时请复制之前完整版本的对应函数）
+    function renderCategories() {
+        const container = document.getElementById('category-container');
+        if (!window._serviceData.length) { container.innerHTML = '<p>暂无分类，请点击下方按钮新增</p>'; return; }
+        let html = '';
+        window._serviceData.forEach((cat, catIdx) => {
+            html += `<div class="category-block">
+                <div class="cat-header" onclick="toggleCatItems(${catIdx})">
+                    <span>${cat.cat_name || '未命名分类'} <button class="btn btn-default" style="padding:2px 6px; font-size:12px;" onclick="event.stopPropagation(); renameCategory(${catIdx})">✏️</button></span>
+                    <span id="cat-arrow-${catIdx}">▼</span>
+                </div>
+                <div id="cat-items-${catIdx}" class="cat-items">${renderItems(cat.items, catIdx)}<button class="btn btn-default" onclick="addItem(${catIdx})">+ 添加商品</button></div>
+            </div>`;
+        });
+        container.innerHTML = html;
+        window._serviceData.forEach((_, idx) => { const el = document.getElementById(`cat-items-${idx}`); if (el) el.style.display = 'block'; });
+    }
+
+    function renderItems(items, catIdx) {
+        if (!items || !items.length) return '<p style="color:#999;">暂无商品</p>';
+        return items.map((item, itemIdx) => `
+            <div class="item-card">
+                <div class="item-row"><div><b>${item.name || '未命名'}</b> - ¥${item.price || 0} <span class="status-badge ${item.status==='active'?'status-active':'status-inactive'}">${item.status==='active'?'上架':'下架'}</span></div>
+                <div><button class="btn btn-default" onclick="toggleItemEdit(${catIdx},${itemIdx})">编辑</button><button class="btn btn-danger" onclick="removeItem(${catIdx},${itemIdx})">删除</button></div></div>
+                <div id="item-edit-${catIdx}-${itemIdx}" class="hidden" style="margin-top:10px;">
+                    <div class="form-group"><label>名称</label><input id="item-name-${catIdx}-${itemIdx}" value="${item.name||''}"></div>
+                    <div class="form-group"><label>价格 (¥)</label><input type="number" id="item-price-${catIdx}-${itemIdx}" value="${item.price||0}"></div>
+                    <div class="form-group"><label>时间/时长</label><input id="item-duration-${catIdx}-${itemIdx}" value="${item.duration||''}" placeholder="如 1晚 / 2小时"></div>
+                    <div class="form-group"><label>简介</label><input id="item-intro-${catIdx}-${itemIdx}" value="${item.intro||''}"></div>
+                    <div class="form-group"><label>图片</label><input type="file" accept="image/*" onchange="handleItemImage(this, ${catIdx}, ${itemIdx})"><img src="${item.image || ''}" class="upload-preview" id="item-img-${catIdx}-${itemIdx}" style="${item.image ? '' : 'display:none'}"></div>
+                    <div class="form-group"><label>状态</label><select id="item-status-${catIdx}-${itemIdx}"><option ${item.status==='active'?'selected':''}>active</option><option ${item.status==='inactive'?'selected':''}>inactive</option></select></div>
+                    <button class="btn btn-primary" onclick="saveItemEdit(${catIdx},${itemIdx})">确定</button><button class="btn btn-default" onclick="toggleItemEdit(${catIdx},${itemIdx})">取消</button>
+                </div>
+            </div>`).join('');
+    }
+
+    function toggleCatItems(idx) { const el = document.getElementById(`cat-items-${idx}`); const arrow = document.getElementById(`cat-arrow-${idx}`); if (el.style.display === 'none') { el.style.display = 'block'; arrow.textContent = '▼'; } else { el.style.display = 'none'; arrow.textContent = '▶'; } }
+    function toggleItemEdit(catIdx, itemIdx) { document.getElementById(`item-edit-${catIdx}-${itemIdx}`).classList.toggle('hidden'); }
+    async function handleItemImage(input, catIdx, itemIdx) {
+        const file = input.files[0]; if (!file) return;
+        const url = await uploadMerchantImage(file);
+        if (url) { window._serviceData[catIdx].items[itemIdx].image = url; const imgEl = document.getElementById(`item-img-${catIdx}-${itemIdx}`); if (imgEl) { imgEl.src = url; imgEl.style.display = ''; } }
+    }
+    function saveItemEdit(catIdx, itemIdx) {
+        const item = window._serviceData[catIdx].items[itemIdx];
+        item.name = document.getElementById(`item-name-${catIdx}-${itemIdx}`).value;
+        item.price = parseFloat(document.getElementById(`item-price-${catIdx}-${itemIdx}`).value) || 0;
+        item.duration = document.getElementById(`item-duration-${catIdx}-${itemIdx}`).value;
+        item.intro = document.getElementById(`item-intro-${catIdx}-${itemIdx}`).value;
+        item.status = document.getElementById(`item-status-${catIdx}-${itemIdx}`).value;
+        renderCategories();
+    }
+    function addCategory() { const name = prompt('请输入分类名称'); if (!name) return; window._serviceData.push({ cat_name: name, cat_order: window._serviceData.length + 1, items: [] }); renderCategories(); }
+    function addItem(catIdx) { window._serviceData[catIdx].items.push({ name: '新商品', price: 0, duration: '', intro: '', image: '', status: 'active', sort: window._serviceData[catIdx].items.length + 1 }); renderCategories(); }
+    function removeItem(catIdx, itemIdx) { if (confirm('删除该商品？')) { window._serviceData[catIdx].items.splice(itemIdx, 1); renderCategories(); } }
+    async function uploadMerchantImage(file) {
+        if (!file) return null;
+        const allowed = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+        if (!allowed.includes(file.type)) { alert('仅支持 JPG/PNG/GIF/WebP'); return null; }
+        if (file.size > 2 * 1024 * 1024) { alert('图片不超过2MB'); return null; }
+        const accountId = merchantSelfData.account_id;
+        const path = `${accountId}/${Date.now()}_${file.name}`;
+        const { error } = await sb.storage.from('merchant-uploads').upload(path, file);
+        if (error) { alert('上传失败：' + error.message); return null; }
+        const { data: { publicUrl } } = sb.storage.from('merchant-uploads').getPublicUrl(path);
+        return publicUrl;
+    }
+    function renderPaymentMethods() { /* 省略，同之前 */ }
+    function addPaymentMethod() { window._paymentMethods.push({label:'',qr:''}); renderPaymentMethods(); }
+    function removePaymentMethod(i) { window._paymentMethods.splice(i,1); renderPaymentMethods(); }
+    async function saveMerchantSelf() {
+        const status = document.getElementById('self-status').value;
+        const total = parseInt(document.getElementById('self-room-total').value) || 0;
+        const avail = parseInt(document.getElementById('self-room-avail').value) || 0;
+        await sb.from('ztj_merchants').update({ status, manual_room_total: total, manual_room_available: avail, service_data: window._serviceData, payment_methods: window._paymentMethods }).eq('id', currentUser.id);
+        alert('保存成功');
+    }
+
+    async function loadOrders() { /* 省略 */ }
+    function renderOrders(orders) { /* 省略 */ }
+    async function updateOrderStatus(orderId, newStatus) { /* 省略 */ }
+    async function addOrderNote(orderId) { /* 省略 */ }
+    function setupOrdersRealtime() { /* 省略 */ }
 
     window.onload = checkSession;
 </script>

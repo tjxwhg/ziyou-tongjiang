@@ -250,10 +250,14 @@
     }
 
     async function loadAllPOIs(){
-        const { data, error } = await sb.from('ztj_poi').select('*').eq('status','active');
-        if (error) { console.error('加载POI失败', error); return; }
-        allPois = data || [];
-        renderPOIs(allPois);
+        try {
+            const { data, error } = await sb.from('ztj_poi').select('*').eq('status','active');
+            if (error) { console.error('加载POI失败', error); return; }
+            allPois = data || [];
+            renderPOIs(allPois);
+        } catch (e) {
+            console.error('POI加载异常', e);
+        }
     }
 
     function renderPOIs(pois){
@@ -341,18 +345,19 @@
         updateCustomPoiList();
     }
 
-    // 交通耗时计算核心
+    // 交通耗时计算核心（优化容错）
     async function getTransportTime(from, to, mode) {
         if (!from || !to) return 0;
         try {
             const fromId = from.id || 0;
-            const { data: preset } = await sb.from('ztj_transport_presets')
+            const { data: preset, error: presetErr } = await sb.from('ztj_transport_presets')
                 .select('time_min')
                 .eq('from_poi_id', fromId)
                 .eq('to_poi_id', to.id)
                 .eq('travel_mode', mode)
                 .maybeSingle();
-            if (preset) return preset.time_min;
+            if (presetErr) { console.warn('预设查询失败', presetErr); }
+            if (preset && preset.time_min) return preset.time_min;
 
             const aHasCounty = from.county_auto_time != null;
             const bHasCounty = to.county_auto_time != null;
@@ -368,8 +373,8 @@
             let time = Math.round(dist / 1000 / speed * 60);
             return Math.max(time, 5);
         } catch (e) {
-            console.error('交通耗时计算失败', e);
-            return 10;
+            console.error('交通耗时计算异常', e);
+            return 10; // 默认10分钟
         }
     }
 
@@ -379,8 +384,11 @@
         const startOption = document.getElementById('start-point').value;
 
         const ids = [...new Set(selectedCustomPois.map(p => p.id))];
-        const { data: freshPois } = await sb.from('ztj_poi').select('*').in('id', ids);
-        if (!freshPois) return;
+        let freshPois = [];
+        try {
+            const { data } = await sb.from('ztj_poi').select('*').in('id', ids);
+            freshPois = data || [];
+        } catch (e) { console.error('获取最新POI失败', e); }
 
         const nodes = [];
         for (let i = 0; i < selectedCustomPois.length; i++) {
@@ -468,15 +476,17 @@
     }
 
     async function showPoiDetail(poi) {
-        const { data: merchant } = await sb.from('ztj_merchants').select('*').eq('poi_id', poi.id).maybeSingle();
-        if (merchant) {
-            currentMerchant = merchant;
-            renderMerchantDetail(poi, merchant);
-            openPanel('merchantDetailPanel');
-        } else {
-            const popup = L.popup().setLatLng([poi.lat, poi.lng]).setContent(`<b>${poi.name}</b><br>${poi.description||''}`);
-            popup.openOn(map);
-        }
+        try {
+            const { data: merchant } = await sb.from('ztj_merchants').select('*').eq('poi_id', poi.id).maybeSingle();
+            if (merchant) {
+                currentMerchant = merchant;
+                renderMerchantDetail(poi, merchant);
+                openPanel('merchantDetailPanel');
+            } else {
+                const popup = L.popup().setLatLng([poi.lat, poi.lng]).setContent(`<b>${poi.name}</b><br>${poi.description||''}`);
+                popup.openOn(map);
+            }
+        } catch (e) { console.error('商户详情加载失败', e); }
     }
 
     function renderMerchantDetail(poi, merchant) {
@@ -625,15 +635,17 @@
             note: finalNote || null,
             status: 'new'
         };
-        const { error } = await sb.from('ztj_orders').insert(orderData);
-        if (error) {
-            alert('订单提交失败：' + error.message);
-        } else {
-            alert('订单已提交！可在“我的”中查看订单状态。');
-            localStorage.setItem('lastOrderPhone', phone);
-            closePanel('bookingPanel');
-            closePanel('merchantDetailPanel');
-        }
+        try {
+            const { error } = await sb.from('ztj_orders').insert(orderData);
+            if (error) {
+                alert('订单提交失败：' + error.message);
+            } else {
+                alert('订单已提交！可在“我的”中查看订单状态。');
+                localStorage.setItem('lastOrderPhone', phone);
+                closePanel('bookingPanel');
+                closePanel('merchantDetailPanel');
+            }
+        } catch (e) { alert('提交异常，请稍后重试'); }
     }
 
     function filterPOI(cat){
@@ -792,9 +804,11 @@
     async function submitFeedback(){
         const msg=document.getElementById('feedbackMsg').value;
         if(!msg) return;
-        const {error}=await sb.from('ztj_feedbacks').insert([{message:msg}]);
-        document.getElementById('feedbackResult').innerHTML=error?'<p style="color:red">提交失败</p>':'<p style="color:green">感谢反馈！</p>';
-        if(!error) document.getElementById('feedbackMsg').value='';
+        try {
+            const {error}=await sb.from('ztj_feedbacks').insert([{message:msg}]);
+            document.getElementById('feedbackResult').innerHTML=error?'<p style="color:red">提交失败</p>':'<p style="color:green">感谢反馈！</p>';
+            if(!error) document.getElementById('feedbackMsg').value='';
+        } catch(e) { alert('留言提交异常'); }
     }
 
     function initMyPanel() {
@@ -870,38 +884,35 @@
         const phone = document.getElementById('query-phone').value.trim();
         if (!phone) { alert('请输入手机号'); return; }
         localStorage.setItem('lastOrderPhone', phone);
-        const { data, error } = await sb.from('ztj_orders').select('*').eq('phone', phone).order('created_at', { ascending: false });
-        const container = document.getElementById('myOrderList');
-        if (error) {
-            container.innerHTML = '<p style="color:red;">查询失败</p>';
-            return;
-        }
-        if (!data || data.length === 0) {
-            container.innerHTML = '<p style="color:#999;">暂无订单记录</p>';
-            return;
-        }
-        let html = '';
-        data.forEach(order => {
-            const statusMap = {
-                'new': '待确认',
-                'confirmed': '已确认',
-                'completed': '已完成',
-                'cancelled': '已取消'
-            };
-            const statusClass = `status-${order.status}`;
-            const items = order.items.map(i => `${i.name} ¥${i.price}`).join(', ');
-            html += `
-                <div class="order-item">
-                    <div style="display:flex; justify-content:space-between;">
-                        <span class="order-status ${statusClass}">${statusMap[order.status] || order.status}</span>
-                        <span style="font-size:12px; color:#666;">${new Date(order.created_at).toLocaleString()}</span>
-                    </div>
-                    <div style="margin-top:6px;"><b>商品：</b>${items}</div>
-                    <div><b>合计：</b>¥${order.total}</div>
-                    ${order.note ? `<div><b>备注：</b>${order.note}</div>` : ''}
-                </div>`;
-        });
-        container.innerHTML = html;
+        try {
+            const { data, error } = await sb.from('ztj_orders').select('*').eq('phone', phone).order('created_at', { ascending: false });
+            const container = document.getElementById('myOrderList');
+            if (error) {
+                container.innerHTML = '<p style="color:red;">查询失败</p>';
+                return;
+            }
+            if (!data || data.length === 0) {
+                container.innerHTML = '<p style="color:#999;">暂无订单记录</p>';
+                return;
+            }
+            let html = '';
+            data.forEach(order => {
+                const statusMap = {'new':'待确认','confirmed':'已确认','completed':'已完成','cancelled':'已取消'};
+                const statusClass = `status-${order.status}`;
+                const items = order.items.map(i => `${i.name} ¥${i.price}`).join(', ');
+                html += `
+                    <div class="order-item">
+                        <div style="display:flex; justify-content:space-between;">
+                            <span class="order-status ${statusClass}">${statusMap[order.status] || order.status}</span>
+                            <span style="font-size:12px; color:#666;">${new Date(order.created_at).toLocaleString()}</span>
+                        </div>
+                        <div style="margin-top:6px;"><b>商品：</b>${items}</div>
+                        <div><b>合计：</b>¥${order.total}</div>
+                        ${order.note ? `<div><b>备注：</b>${order.note}</div>` : ''}
+                    </div>`;
+            });
+            container.innerHTML = html;
+        } catch (e) { alert('订单查询异常'); }
     }
 
     document.getElementById('langSelect').addEventListener('change',e=>currentLang=e.target.value);

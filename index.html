@@ -279,16 +279,16 @@
     function removeCustomPoi(idx) { selectedCustomPois.splice(idx,1); updateCustomPoiList(); }
     function moveCustomPoi(idx, dir) { const newIdx = idx + dir; if (newIdx<0||newIdx>=selectedCustomPois.length) return; [selectedCustomPois[idx], selectedCustomPois[newIdx]] = [selectedCustomPois[newIdx], selectedCustomPois[idx]]; updateCustomPoiList(); }
 
-    // 查询预设表（双向），若无返回 null，绝不进行任何计算
+    // 查询预设表（双向，若时间为0或不存在则返回null）
     async function getTransportPresetTime(from, to, mode) {
         if (!from || !to) return null;
         const fromId = from.id || 0;
         // 正向查询
         let { data } = await sb.from('ztj_transport_presets').select('time_min').eq('from_poi_id', fromId).eq('to_poi_id', to.id).eq('travel_mode', mode).maybeSingle();
-        if (data) return data.time_min;
-        // 反向查询 (A-B 同 B-A)
+        if (data && data.time_min > 0) return data.time_min;
+        // 反向查询
         const { data: reverseData } = await sb.from('ztj_transport_presets').select('time_min').eq('from_poi_id', to.id).eq('to_poi_id', fromId).eq('travel_mode', mode).maybeSingle();
-        if (reverseData) return reverseData.time_min;
+        if (reverseData && reverseData.time_min > 0) return reverseData.time_min;
         return null;
     }
 

@@ -74,32 +74,20 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="config.js"></script>
 <script>
-    // 基础配置检查
     if (typeof SUPABASE_URL === 'undefined' || typeof SUPABASE_ANON_KEY === 'undefined') {
         alert('配置文件加载失败，请检查 config.js');
         throw new Error('Config not loaded');
     }
     const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-    // 全局变量
     let map, currentLang='cn', voiceEnabled=true, triggeredPois={};
-    let userPosition = null;            // 当前 GPS 位置
-    let watchId = null;                // 位置监听 ID
-    let allPois = [];                  // 所有 POI 数据
-    let visitedPois = {};              // 已游览 POI 标记
-    let assistantTimer = null;         // 助手定时器
-    let lunchReminded = false;         // 午饭已提醒
-    let dinnerReminded = false;        // 晚饭已提醒
-    let restReminded = {};             // 休息提醒状态
+    let userPosition = null, watchId = null, allPois = [], visitedPois = {};
+    let assistantTimer = null, lunchReminded = false, dinnerReminded = false, restReminded = {};
 
     const poiColors = {
-        '景点':'#2E7D32',
-        '卫生间':'#2196F3',
-        '休息区':'#FF9800',
-        '出入口':'#9E9E9E'
+        '景点':'#2E7D32', '卫生间':'#2196F3', '休息区':'#FF9800', '出入口':'#9E9E9E', '餐饮':'#FF5722'
     };
 
-    // ---------- 地图初始化 ----------
     function initMap(){
         map = L.map('map').setView([32.08,107.18], 13);
         L.tileLayer('https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}',{
@@ -108,12 +96,10 @@
         loadAllPOIs();
         loadCustomMap();
         startGPS();
-        // 定时执行服务提醒检查
         assistantTimer = setInterval(checkServiceReminders, 30000);
         document.getElementById('langSelect').addEventListener('change', e => currentLang = e.target.value);
     }
 
-    // ---------- 加载 POI ----------
     async function loadAllPOIs(){
         const { data, error } = await sb.from('ztj_poi').select('*').eq('status','active');
         if (error) { console.error(error); return; }
@@ -137,7 +123,6 @@
         });
     }
 
-    // 加载超管上传的景区导览图（叠加底图）
     async function loadCustomMap(){
         const { data: config } = await sb.from('ztj_system_config').select('value').eq('key','custom_map').maybeSingle();
         if (config && config.value && config.value.url) {
@@ -145,7 +130,6 @@
         }
     }
 
-    // ---------- GPS 定位 ----------
     function startGPS(){
         if (navigator.geolocation) {
             watchId = navigator.geolocation.watchPosition(
@@ -168,14 +152,12 @@
         }).addTo(map);
     }
 
-    // ---------- 电子围栏检测 ----------
     async function checkGeofence(){
         if (!userPosition || !voiceEnabled) return;
         for (const poi of allPois) {
             const dist = getDistance(userPosition.lat, userPosition.lng, poi.lat, poi.lng);
             const radius = poi.trigger_radius || 15;
             if (dist <= radius) {
-                // 未触发过或重新进入
                 if (!triggeredPois[poi.id] || (Date.now() - triggeredPois[poi.id] > 60000 && dist < radius*0.5)) {
                     triggeredPois[poi.id] = Date.now();
                     markVisited(poi);
@@ -188,7 +170,6 @@
     function markVisited(poi){
         visitedPois[poi.id] = true;
         updateProgress();
-        // 改变地图上标记颜色（可通过刷新标记实现，简化为更新卡片）
     }
 
     function updateProgress(){
@@ -204,7 +185,6 @@
         }
     }
 
-    // ---------- 语音播报 ----------
     function playVoice(poi){
         if (!voiceEnabled) return;
         const text = poi['voice_'+currentLang] || poi.voice_cn || poi.description;
@@ -220,33 +200,19 @@
         if (!voiceEnabled) speechSynthesis.cancel();
     }
 
-    // ---------- 服务提醒 ----------
     function checkServiceReminders(){
         if (!userPosition) return;
         const now = new Date();
         const hours = now.getHours();
-        // 午饭提醒
         if (hours >= 11 && hours < 14 && !lunchReminded) {
             showReminder('🍽️ 已到午餐时间，您可以查看附近餐饮点位。');
             lunchReminded = true;
         }
-        // 晚饭提醒
         if (hours >= 17 && hours < 20 && !dinnerReminded) {
             showReminder('🍽️ 已到晚餐时间，您可以查看附近餐饮点位。');
             dinnerReminded = true;
         }
-        // 休息提醒：连续游览超过90分钟
-        const lastActive = lastInteractionTime || startTime;
-        if (Date.now() - lastActive > 90 * 60000 && !restReminded['rest']) {
-            showReminder('☕ 您已游览超过1.5小时，建议稍事休息。');
-            restReminded['rest'] = true;
-        }
     }
-
-    let startTime = Date.now();
-    let lastInteractionTime = Date.now();
-    // 用户点击地图或按钮时更新活跃时间
-    document.addEventListener('click', () => lastInteractionTime = Date.now());
 
     function showReminder(msg){
         const toast = document.getElementById('reminderToast');
@@ -255,29 +221,20 @@
         setTimeout(() => { toast.style.display = 'none'; }, 8000);
     }
 
-    function closeReminder(){
-        document.getElementById('reminderToast').style.display = 'none';
-    }
+    function closeReminder(){ document.getElementById('reminderToast').style.display = 'none'; }
 
-    // ---------- POI 详情 ----------
     function showPoiDetail(poi){
-        // 简单 Popup 展示
         const visited = visitedPois[poi.id];
         const badge = visited ? '<span class="status-badge status-visited">已游览</span>' : '<span class="status-badge status-unvisited">未游览</span>';
         const popup = L.popup().setLatLng([poi.lat, poi.lng])
-            .setContent(`<div class="poi-popup"><h4>${poi.name}</h4>${badge}<p>${poi.description||''}</p>${poi.suggested_time ? '<p>⏱️ 建议游览 '+poi.suggested_time+' 分钟</p>':''}${poi.best_photo ? '<p>📸 '+poi.best_photo+'</p>':''}</div>`)
+            .setContent(`<div class="poi-popup"><h4>${poi.name}</h4>${badge}<p>${poi.description||''}</p>${poi.suggested_time ? '<p>⏱️ 建议游览 '+poi.suggested_time+' 分钟</p>':''}${poi.best_view ? '<p>📸 '+poi.best_view+'</p>':''}</div>`)
             .openOn(map);
     }
 
-    // ---------- 助手面板 ----------
     function openPanel(id){
         document.getElementById(id).classList.add('active');
-        if (id === 'assistantPanel') {
-            updateProgress();
-        }
-        if (id === 'myPanel') {
-            renderVisitedList();
-        }
+        if (id === 'assistantPanel') { updateProgress(); }
+        if (id === 'myPanel') { renderVisitedList(); }
     }
     function closePanel(id){ document.getElementById(id).classList.remove('active'); }
 
@@ -298,7 +255,6 @@
         if (!error) document.getElementById('feedbackMsg').value = '';
     }
 
-    // ---------- 工具函数 ----------
     function getDistance(lat1, lng1, lat2, lng2){
         const R = 6371000;
         const dLat = (lat2-lat1)*Math.PI/180, dLng = (lng2-lng1)*Math.PI/180;

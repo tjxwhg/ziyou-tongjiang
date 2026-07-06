@@ -52,7 +52,7 @@
         <div id="tab-poi">
             <button class="btn btn-primary" onclick="showNewPoiForm()">+ 新增POI</button>
             <div id="new-poi-form" class="card hidden" style="margin-top:14px;">
-                <h3>新增POI</h3>
+                <h3>新增/编辑POI</h3>
                 <input type="hidden" id="poi-id">
                 <div class="form-group"><label>名称 *</label><input id="poi-name"></div>
                 <div class="form-group"><label>类别</label><select id="poi-category"><option>景点</option><option>卫生间</option><option>休息区</option><option>出入口</option><option>餐饮</option></select></div>
@@ -60,7 +60,7 @@
                 <div class="form-group"><label>经度 *</label><input id="poi-lng" type="number" step="any"></div>
                 <div class="form-group"><label>简介</label><textarea id="poi-desc" rows="2"></textarea></div>
                 <div class="form-group"><label>建议游览时间(分钟)</label><input id="poi-suggested" type="number" value="10"></div>
-                <div class="form-group"><label>最佳观赏点</label><input id="poi-best-view"></div>
+                <div class="form-group"><label>最佳位置</label><input id="poi-best-view" placeholder="如：正门左侧石狮旁、碑前广场中央"></div>
                 <div class="form-group"><label>中文讲解词</label><textarea id="poi-voice-cn" rows="2"></textarea></div>
                 <div class="form-group"><label>英文讲解词</label><textarea id="poi-voice-en" rows="2"></textarea></div>
                 <div class="form-group"><label>触发半径(米)</label><input id="poi-radius" type="number" value="15"></div>

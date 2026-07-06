@@ -26,7 +26,7 @@
         #login-page { max-width:400px; margin:80px auto; }
         .login-box { background:white; padding:30px; border-radius:12px; box-shadow:0 4px 16px rgba(0,0,0,0.1); }
         .login-box h2 { text-align:center; margin-bottom:20px; }
-        .inline-edit { background:#fff; border:1px solid #2e7d32; border-radius:8px; padding:12px; margin-top:8px; }
+        .inline-edit { background:#fff; border:1px solid #2e7d32; border-radius:8px; padding:12px; margin-top:8px; transition: max-height 0.3s ease; }
     </style>
 </head>
 <body>
@@ -47,7 +47,6 @@
         </div>
         <div id="tab-poi">
             <button class="btn btn-primary" onclick="showNewPoiForm()">+ 新增POI</button>
-            <!-- 新增表单（独立显示） -->
             <div id="new-poi-form" class="card hidden" style="margin-top:14px;">
                 <h3>新增POI</h3>
                 <div class="form-group"><label>名称 *</label><input id="poi-name"></div>
@@ -111,7 +110,7 @@
         else if(tab==='settings'){ document.getElementById('tab-settings').classList.remove('hidden'); loadMapConfig(); }
     }
 
-    // 新增表单控制
+    // 新增表单
     function showNewPoiForm(){ document.getElementById('new-poi-form').classList.remove('hidden'); clearNewPoiForm(); }
     function hideNewPoiForm(){ document.getElementById('new-poi-form').classList.add('hidden'); }
     function clearNewPoiForm(){
@@ -142,18 +141,23 @@
         loadPoiList();
     }
 
-    // 内联编辑相关
+    // 内联编辑函数
     function toggleEditForm(poiId){
-        // 关闭所有其他内联编辑
-        document.querySelectorAll('.inline-edit').forEach(el=>{ if(el.id !== `edit-${poiId}`) el.classList.add('hidden'); });
+        document.querySelectorAll('.inline-edit').forEach(el => {
+            if (el.id !== `edit-${poiId}`) el.classList.add('hidden');
+        });
         const form = document.getElementById(`edit-${poiId}`);
-        if(form) form.classList.toggle('hidden');
+        if (form) {
+            form.classList.toggle('hidden');
+            if (!form.classList.contains('hidden')) {
+                form.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
+        }
     }
 
     async function editPoi(poiId){
         const { data } = await sb.from('ztj_poi').select('*').eq('id', poiId).single();
-        if(!data) return;
-        // 填充内联表单
+        if (!data) return;
         document.getElementById(`edit-name-${poiId}`).value = data.name;
         document.getElementById(`edit-category-${poiId}`).value = data.category;
         document.getElementById(`edit-lat-${poiId}`).value = data.lat;
@@ -171,7 +175,7 @@
         const name = document.getElementById(`edit-name-${poiId}`).value.trim();
         const lat = parseFloat(document.getElementById(`edit-lat-${poiId}`).value);
         const lng = parseFloat(document.getElementById(`edit-lng-${poiId}`).value);
-        if(!name || isNaN(lat)||isNaN(lng)){ alert('名称、坐标必填'); return; }
+        if (!name || isNaN(lat) || isNaN(lng)) { alert('名称、坐标必填'); return; }
         const payload = {
             name,
             category: document.getElementById(`edit-category-${poiId}`).value,

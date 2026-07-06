@@ -82,7 +82,8 @@
 
     let map, currentLang='cn', voiceEnabled=true, triggeredPois={};
     let userPosition = null, watchId = null, allPois = [], visitedPois = {};
-    let assistantTimer = null, lunchReminded = false, dinnerReminded = false, restReminded = {};
+    let assistantTimer = null, lunchReminded = false, dinnerReminded = false;
+    let initialPositionSet = false;   // 是否已首次定位居中
 
     const poiColors = {
         '景点':'#2E7D32', '卫生间':'#2196F3', '休息区':'#FF9800', '出入口':'#9E9E9E', '餐饮':'#FF5722'
@@ -138,9 +139,14 @@
                     updateUserMarker();
                     checkGeofence();
                 },
-                (err) => console.warn('GPS 错误', err),
+                (err) => {
+                    console.warn('GPS 错误', err);
+                    if (err.code === 1) alert('请允许定位权限，才能体验自动导览。');
+                },
                 { enableHighAccuracy: true, maximumAge: 5000 }
             );
+        } else {
+            alert('您的设备不支持GPS定位');
         }
     }
 
@@ -150,6 +156,12 @@
         window.userMarker = L.circleMarker([userPosition.lat, userPosition.lng], {
             radius: 8, color: '#2196F3', fillColor: '#2196F3', fillOpacity: 0.9
         }).addTo(map);
+
+        // 首次获取到位置时，将地图中心移动到定位点并放大
+        if (!initialPositionSet) {
+            map.setView([userPosition.lat, userPosition.lng], 15);
+            initialPositionSet = true;
+        }
     }
 
     async function checkGeofence(){

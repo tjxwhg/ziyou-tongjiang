@@ -83,7 +83,7 @@
     let map, currentLang='cn', voiceEnabled=true, triggeredPois={};
     let userPosition = null, watchId = null, allPois = [], visitedPois = {};
     let assistantTimer = null, lunchReminded = false, dinnerReminded = false;
-    let initialPositionSet = false;   // 是否已首次定位居中
+    let initialPositionSet = false;
 
     const poiColors = {
         '景点':'#2E7D32', '卫生间':'#2196F3', '休息区':'#FF9800', '出入口':'#9E9E9E', '餐饮':'#FF5722'
@@ -157,7 +157,6 @@
             radius: 8, color: '#2196F3', fillColor: '#2196F3', fillOpacity: 0.9
         }).addTo(map);
 
-        // 首次获取到位置时，将地图中心移动到定位点并放大
         if (!initialPositionSet) {
             map.setView([userPosition.lat, userPosition.lng], 15);
             initialPositionSet = true;
@@ -238,8 +237,9 @@
     function showPoiDetail(poi){
         const visited = visitedPois[poi.id];
         const badge = visited ? '<span class="status-badge status-visited">已游览</span>' : '<span class="status-badge status-unvisited">未游览</span>';
+        const bestViewHtml = poi.best_view ? `<p>📍 最佳位置：${poi.best_view}</p>` : '';
         const popup = L.popup().setLatLng([poi.lat, poi.lng])
-            .setContent(`<div class="poi-popup"><h4>${poi.name}</h4>${badge}<p>${poi.description||''}</p>${poi.suggested_time ? '<p>⏱️ 建议游览 '+poi.suggested_time+' 分钟</p>':''}${poi.best_view ? '<p>📸 '+poi.best_view+'</p>':''}</div>`)
+            .setContent(`<div class="poi-popup"><h4>${poi.name}</h4>${badge}<p>${poi.description||''}</p>${poi.suggested_time ? '<p>⏱️ 建议游览 '+poi.suggested_time+' 分钟</p>':''}${bestViewHtml}</div>`)
             .openOn(map);
     }
 

@@ -31,15 +31,13 @@
 </head>
 <body>
 <div id="login-page">
-    <div class="login-box">
-        <h2>🔐 管理后台登录</h2>
+    <div class="login-box"><h2>🔐 管理后台登录</h2>
         <div class="form-group"><input type="text" id="account" placeholder="账号"></div>
         <div class="form-group"><input type="password" id="password" placeholder="密码"></div>
-        <button class="btn btn-primary" style="width:100%;" onclick="login()">登录</button>
+        <button class="btn btn-primary" style="width:100%" onclick="login()">登录</button>
         <div id="login-msg"></div>
     </div>
 </div>
-
 <div id="admin-page" class="hidden">
     <div class="header"><h2>📊 智游通江管理后台</h2><button onclick="logout()">退出</button></div>
     <div id="super-admin-view" class="container">
@@ -47,30 +45,26 @@
             <button class="active" onclick="switchTab('poi')">📍POI</button>
             <button onclick="switchTab('settings')">⚙️设置</button>
         </div>
-
-        <!-- POI 管理 -->
         <div id="tab-poi">
             <button class="btn btn-primary" onclick="showNewPoiForm()">+ 新增POI</button>
+            <!-- 新增表单（独立显示） -->
             <div id="new-poi-form" class="card hidden" style="margin-top:14px;">
-                <h3>新增/编辑POI</h3>
-                <input type="hidden" id="poi-id">
+                <h3>新增POI</h3>
                 <div class="form-group"><label>名称 *</label><input id="poi-name"></div>
                 <div class="form-group"><label>类别</label><select id="poi-category"><option>景点</option><option>卫生间</option><option>休息区</option><option>出入口</option><option>餐饮</option></select></div>
                 <div class="form-group"><label>纬度 *</label><input id="poi-lat" type="number" step="any"></div>
                 <div class="form-group"><label>经度 *</label><input id="poi-lng" type="number" step="any"></div>
                 <div class="form-group"><label>简介</label><textarea id="poi-desc" rows="2"></textarea></div>
                 <div class="form-group"><label>建议游览时间(分钟)</label><input id="poi-suggested" type="number" value="10"></div>
-                <div class="form-group"><label>最佳位置</label><input id="poi-best-view" placeholder="如：正门左侧石狮旁、碑前广场中央"></div>
+                <div class="form-group"><label>最佳位置</label><input id="poi-best-view" placeholder="如：正门左侧石狮旁"></div>
                 <div class="form-group"><label>中文讲解词</label><textarea id="poi-voice-cn" rows="2"></textarea></div>
                 <div class="form-group"><label>英文讲解词</label><textarea id="poi-voice-en" rows="2"></textarea></div>
                 <div class="form-group"><label>触发半径(米)</label><input id="poi-radius" type="number" value="15"></div>
-                <button class="btn btn-primary" onclick="savePoi()">保存</button>
-                <button class="btn btn-default" onclick="hidePoiForm()">取消</button>
+                <button class="btn btn-primary" onclick="saveNewPoi()">保存</button>
+                <button class="btn btn-default" onclick="hideNewPoiForm()">取消</button>
             </div>
             <div id="poi-list" style="margin-top:20px;"></div>
         </div>
-
-        <!-- 系统设置 -->
         <div id="tab-settings" class="hidden">
             <h3>上传景区导览图</h3>
             <div class="card">
@@ -91,113 +85,153 @@
     const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
     let currentUser = null;
 
-    async function checkSession() {
-        const { data: { session } } = await sb.auth.getSession();
-        if (session) { currentUser = session.user; await loadAdminView(); }
-    }
-    sb.auth.onAuthStateChange((event, session) => {
-        if (session) { currentUser = session.user; loadAdminView(); }
-        else { showLogin(); }
-    });
-    function showLogin() { document.getElementById('login-page').classList.remove('hidden'); document.getElementById('admin-page').classList.add('hidden'); }
-    async function login() {
-        const account = document.getElementById('account').value.trim();
-        const password = document.getElementById('password').value;
-        if (!account || !password) return;
-        const email = account.includes('@') ? account : account + '@zhiyoutongjiang.cn';
+    async function checkSession() { const { data:{session} } = await sb.auth.getSession(); if(session){ currentUser=session.user; await loadAdminView(); } }
+    sb.auth.onAuthStateChange((event,session)=>{ if(session){ currentUser=session.user; loadAdminView(); } else { showLogin(); } });
+    function showLogin(){ document.getElementById('login-page').classList.remove('hidden'); document.getElementById('admin-page').classList.add('hidden'); }
+    async function login(){
+        const account = document.getElementById('account').value.trim(), password = document.getElementById('password').value;
+        if(!account||!password) return;
+        const email = account.includes('@') ? account : account+'@zhiyoutongjiang.cn';
         const { error } = await sb.auth.signInWithPassword({ email, password });
-        if (error) { document.getElementById('login-msg').innerHTML = `<p style="color:red">${error.message}</p>`; }
+        if(error){ document.getElementById('login-msg').innerHTML = `<p style="color:red">${error.message}</p>`; }
     }
-    async function logout() { await sb.auth.signOut(); }
-    async function loadAdminView() {
+    async function logout(){ await sb.auth.signOut(); }
+    async function loadAdminView(){
         document.getElementById('login-page').classList.add('hidden');
         document.getElementById('admin-page').classList.remove('hidden');
         switchTab('poi');
     }
 
-    function switchTab(tab) {
-        document.querySelectorAll('#super-admin-view .tab button').forEach(b => b.classList.remove('active'));
+    function switchTab(tab){
+        document.querySelectorAll('#super-admin-view .tab button').forEach(b=>b.classList.remove('active'));
         event.target.classList.add('active');
         document.getElementById('tab-poi').classList.add('hidden');
         document.getElementById('tab-settings').classList.add('hidden');
-        if (tab === 'poi') { document.getElementById('tab-poi').classList.remove('hidden'); loadPoiList(); }
-        else if (tab === 'settings') { document.getElementById('tab-settings').classList.remove('hidden'); loadMapConfig(); }
+        if(tab==='poi'){ document.getElementById('tab-poi').classList.remove('hidden'); loadPoiList(); }
+        else if(tab==='settings'){ document.getElementById('tab-settings').classList.remove('hidden'); loadMapConfig(); }
     }
 
-    // POI 管理
-    function showNewPoiForm() { document.getElementById('new-poi-form').classList.remove('hidden'); document.getElementById('poi-id').value=''; clearPoiForm(); }
-    function hidePoiForm() { document.getElementById('new-poi-form').classList.add('hidden'); }
-    function clearPoiForm() {
+    // 新增表单控制
+    function showNewPoiForm(){ document.getElementById('new-poi-form').classList.remove('hidden'); clearNewPoiForm(); }
+    function hideNewPoiForm(){ document.getElementById('new-poi-form').classList.add('hidden'); }
+    function clearNewPoiForm(){
         document.getElementById('poi-name').value=''; document.getElementById('poi-category').value='景点';
         document.getElementById('poi-lat').value=''; document.getElementById('poi-lng').value='';
         document.getElementById('poi-desc').value=''; document.getElementById('poi-suggested').value='10';
         document.getElementById('poi-best-view').value=''; document.getElementById('poi-voice-cn').value='';
         document.getElementById('poi-voice-en').value=''; document.getElementById('poi-radius').value='15';
     }
-    async function savePoi() {
-        const id = document.getElementById('poi-id').value;
+    async function saveNewPoi(){
         const name = document.getElementById('poi-name').value.trim();
         const lat = parseFloat(document.getElementById('poi-lat').value);
         const lng = parseFloat(document.getElementById('poi-lng').value);
-        if (!name || isNaN(lat) || isNaN(lng)) { alert('名称、坐标必填'); return; }
+        if(!name || isNaN(lat)||isNaN(lng)){ alert('名称、坐标必填'); return; }
         const payload = {
             name,
             category: document.getElementById('poi-category').value,
             lat, lng,
             description: document.getElementById('poi-desc').value,
-            suggested_time: parseInt(document.getElementById('poi-suggested').value) || 10,
+            suggested_time: parseInt(document.getElementById('poi-suggested').value)||10,
             best_view: document.getElementById('poi-best-view').value,
             voice_cn: document.getElementById('poi-voice-cn').value,
             voice_en: document.getElementById('poi-voice-en').value,
-            trigger_radius: parseInt(document.getElementById('poi-radius').value) || 15
+            trigger_radius: parseInt(document.getElementById('poi-radius').value)||15
         };
-        if (id) {
-            await sb.from('ztj_poi').update(payload).eq('id', id);
-        } else {
-            await sb.from('ztj_poi').insert([payload]);
-        }
-        hidePoiForm();
+        await sb.from('ztj_poi').insert([payload]);
+        hideNewPoiForm();
         loadPoiList();
     }
 
-    async function editPoi(id) {
-        const { data } = await sb.from('ztj_poi').select('*').eq('id', id).single();
-        if (!data) return;
-        document.getElementById('poi-id').value = data.id;
-        document.getElementById('poi-name').value = data.name;
-        document.getElementById('poi-category').value = data.category;
-        document.getElementById('poi-lat').value = data.lat;
-        document.getElementById('poi-lng').value = data.lng;
-        document.getElementById('poi-desc').value = data.description || '';
-        document.getElementById('poi-suggested').value = data.suggested_time || 10;
-        document.getElementById('poi-best-view').value = data.best_view || '';
-        document.getElementById('poi-voice-cn').value = data.voice_cn || '';
-        document.getElementById('poi-voice-en').value = data.voice_en || '';
-        document.getElementById('poi-radius').value = data.trigger_radius || 15;
-        document.getElementById('new-poi-form').classList.remove('hidden');
+    // 内联编辑相关
+    function toggleEditForm(poiId){
+        // 关闭所有其他内联编辑
+        document.querySelectorAll('.inline-edit').forEach(el=>{ if(el.id !== `edit-${poiId}`) el.classList.add('hidden'); });
+        const form = document.getElementById(`edit-${poiId}`);
+        if(form) form.classList.toggle('hidden');
     }
 
-    async function deletePoi(id) {
-        if (!confirm('确定删除此POI吗？')) return;
-        await sb.from('ztj_poi').delete().eq('id', id);
+    async function editPoi(poiId){
+        const { data } = await sb.from('ztj_poi').select('*').eq('id', poiId).single();
+        if(!data) return;
+        // 填充内联表单
+        document.getElementById(`edit-name-${poiId}`).value = data.name;
+        document.getElementById(`edit-category-${poiId}`).value = data.category;
+        document.getElementById(`edit-lat-${poiId}`).value = data.lat;
+        document.getElementById(`edit-lng-${poiId}`).value = data.lng;
+        document.getElementById(`edit-desc-${poiId}`).value = data.description || '';
+        document.getElementById(`edit-suggested-${poiId}`).value = data.suggested_time || 10;
+        document.getElementById(`edit-bestview-${poiId}`).value = data.best_view || '';
+        document.getElementById(`edit-voicecn-${poiId}`).value = data.voice_cn || '';
+        document.getElementById(`edit-voiceen-${poiId}`).value = data.voice_en || '';
+        document.getElementById(`edit-radius-${poiId}`).value = data.trigger_radius || 15;
+        toggleEditForm(poiId);
+    }
+
+    async function saveInlineEdit(poiId){
+        const name = document.getElementById(`edit-name-${poiId}`).value.trim();
+        const lat = parseFloat(document.getElementById(`edit-lat-${poiId}`).value);
+        const lng = parseFloat(document.getElementById(`edit-lng-${poiId}`).value);
+        if(!name || isNaN(lat)||isNaN(lng)){ alert('名称、坐标必填'); return; }
+        const payload = {
+            name,
+            category: document.getElementById(`edit-category-${poiId}`).value,
+            lat, lng,
+            description: document.getElementById(`edit-desc-${poiId}`).value,
+            suggested_time: parseInt(document.getElementById(`edit-suggested-${poiId}`).value)||10,
+            best_view: document.getElementById(`edit-bestview-${poiId}`).value,
+            voice_cn: document.getElementById(`edit-voicecn-${poiId}`).value,
+            voice_en: document.getElementById(`edit-voiceen-${poiId}`).value,
+            trigger_radius: parseInt(document.getElementById(`edit-radius-${poiId}`).value)||15
+        };
+        await sb.from('ztj_poi').update(payload).eq('id', poiId);
         loadPoiList();
     }
 
-    async function loadPoiList() {
+    async function deletePoi(id){ if(confirm('确定删除？')){ await sb.from('ztj_poi').delete().eq('id',id); loadPoiList(); } }
+
+    async function loadPoiList(){
         const { data } = await sb.from('ztj_poi').select('*').order('id');
         let html = '';
-        if (data) {
+        if(data){
             data.forEach(p => {
-                html += `<div class="card card-row"><div><b>${p.name}</b> (${p.category})</div><div><button class="btn btn-default" onclick="editPoi('${p.id}')">编辑</button><button class="btn btn-danger" onclick="deletePoi('${p.id}')">删除</button></div></div>`;
+                html += `<div class="card">
+                    <div class="card-row">
+                        <div><b>${p.name}</b> (${p.category})</div>
+                        <div>
+                            <button class="btn btn-default" onclick="editPoi('${p.id}')">编辑</button>
+                            <button class="btn btn-danger" onclick="deletePoi('${p.id}')">删除</button>
+                        </div>
+                    </div>
+                    <div id="edit-${p.id}" class="inline-edit hidden">
+                        <div class="form-group"><label>名称</label><input id="edit-name-${p.id}" value="${p.name}"></div>
+                        <div class="form-group"><label>类别</label><select id="edit-category-${p.id}">
+                            <option ${p.category==='景点'?'selected':''}>景点</option>
+                            <option ${p.category==='卫生间'?'selected':''}>卫生间</option>
+                            <option ${p.category==='休息区'?'selected':''}>休息区</option>
+                            <option ${p.category==='出入口'?'selected':''}>出入口</option>
+                            <option ${p.category==='餐饮'?'selected':''}>餐饮</option>
+                        </select></div>
+                        <div class="form-group"><label>纬度</label><input id="edit-lat-${p.id}" type="number" step="any" value="${p.lat}"></div>
+                        <div class="form-group"><label>经度</label><input id="edit-lng-${p.id}" type="number" step="any" value="${p.lng}"></div>
+                        <div class="form-group"><label>简介</label><textarea id="edit-desc-${p.id}" rows="2">${p.description||''}</textarea></div>
+                        <div class="form-group"><label>建议游览时间(分钟)</label><input id="edit-suggested-${p.id}" type="number" value="${p.suggested_time||10}"></div>
+                        <div class="form-group"><label>最佳位置</label><input id="edit-bestview-${p.id}" value="${p.best_view||''}"></div>
+                        <div class="form-group"><label>中文讲解词</label><textarea id="edit-voicecn-${p.id}" rows="2">${p.voice_cn||''}</textarea></div>
+                        <div class="form-group"><label>英文讲解词</label><textarea id="edit-voiceen-${p.id}" rows="2">${p.voice_en||''}</textarea></div>
+                        <div class="form-group"><label>触发半径(米)</label><input id="edit-radius-${p.id}" type="number" value="${p.trigger_radius||15}"></div>
+                        <button class="btn btn-primary" onclick="saveInlineEdit('${p.id}')">保存</button>
+                        <button class="btn btn-default" onclick="toggleEditForm('${p.id}')">取消</button>
+                    </div>
+                </div>`;
             });
         }
         document.getElementById('poi-list').innerHTML = html || '<p>暂无POI</p>';
     }
 
-    // 系统设置
-    async function loadMapConfig() {
+    // 设置
+    async function loadMapConfig(){
         const { data } = await sb.from('ztj_system_config').select('value').eq('key','custom_map').maybeSingle();
-        if (data && data.value) {
+        if(data && data.value){
             document.getElementById('map-url').value = data.value.url || '';
             document.getElementById('map-sw-lat').value = data.value.bounds[0][0] || '';
             document.getElementById('map-sw-lng').value = data.value.bounds[0][1] || '';
@@ -205,21 +239,17 @@
             document.getElementById('map-ne-lng').value = data.value.bounds[1][1] || '';
         }
     }
-
-    async function saveMapConfig() {
+    async function saveMapConfig(){
         const url = document.getElementById('map-url').value.trim();
         const swLat = parseFloat(document.getElementById('map-sw-lat').value);
         const swLng = parseFloat(document.getElementById('map-sw-lng').value);
         const neLat = parseFloat(document.getElementById('map-ne-lat').value);
         const neLng = parseFloat(document.getElementById('map-ne-lng').value);
-        if (!url || isNaN(swLat) || isNaN(swLng) || isNaN(neLat) || isNaN(neLng)) { alert('请完整填写'); return; }
-        const value = { url, bounds: [[swLat, swLng], [neLat, neLng]] };
-        const { data: existing } = await sb.from('ztj_system_config').select('key').eq('key','custom_map').maybeSingle();
-        if (existing) {
-            await sb.from('ztj_system_config').update({ value }).eq('key','custom_map');
-        } else {
-            await sb.from('ztj_system_config').insert({ key: 'custom_map', value });
-        }
+        if(!url || isNaN(swLat)||isNaN(swLng)||isNaN(neLat)||isNaN(neLng)){ alert('请完整填写'); return; }
+        const value = { url, bounds: [[swLat,swLng],[neLat,neLng]] };
+        const { data:exist } = await sb.from('ztj_system_config').select('key').eq('key','custom_map').maybeSingle();
+        if(exist) await sb.from('ztj_system_config').update({value}).eq('key','custom_map');
+        else await sb.from('ztj_system_config').insert({key:'custom_map',value});
         alert('保存成功');
     }
 

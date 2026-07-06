@@ -89,6 +89,33 @@
         '景点':'#2E7D32', '卫生间':'#2196F3', '休息区':'#FF9800', '出入口':'#9E9E9E', '餐饮':'#FF5722'
     };
 
+    function wgs84ToGcj02(lng, lat) {
+        if (lng < 72.004 || lng > 137.8347 || lat < 0.8293 || lat > 55.8271) return { lng, lat };
+        let dlat = transformLat(lng - 105.0, lat - 35.0);
+        let dlng = transformLng(lng - 105.0, lat - 35.0);
+        let radlat = lat / 180.0 * Math.PI;
+        let magic = Math.sin(radlat);
+        magic = 1 - 0.00669342162296594323 * magic * magic;
+        let sqrtmagic = Math.sqrt(magic);
+        dlat = (dlat * 180.0) / ((6378245.0 * (1 - 0.00669342162296594323)) / (magic * sqrtmagic) * Math.PI);
+        dlng = (dlng * 180.0) / (6378245.0 / sqrtmagic * Math.cos(radlat) * Math.PI);
+        return { lng: lng + dlng, lat: lat + dlat };
+    }
+    function transformLat(x, y) {
+        let ret = -100.0 + 2.0*x + 3.0*y + 0.2*y*y + 0.1*x*y + 0.2*Math.sqrt(Math.abs(x));
+        ret += (20.0*Math.sin(6.0*x*Math.PI) + 20.0*Math.sin(2.0*x*Math.PI))*2.0/3.0;
+        ret += (20.0*Math.sin(y*Math.PI) + 40.0*Math.sin(y/3.0*Math.PI))*2.0/3.0;
+        ret += (160.0*Math.sin(y/12.0*Math.PI) + 320.0*Math.sin(y*Math.PI/30.0))*2.0/3.0;
+        return ret;
+    }
+    function transformLng(x, y) {
+        let ret = 300.0 + x + 2.0*y + 0.1*x*x + 0.1*x*y + 0.1*Math.sqrt(Math.abs(x));
+        ret += (20.0*Math.sin(6.0*x*Math.PI) + 20.0*Math.sin(2.0*x*Math.PI))*2.0/3.0;
+        ret += (20.0*Math.sin(x*Math.PI) + 40.0*Math.sin(x/3.0*Math.PI))*2.0/3.0;
+        ret += (150.0*Math.sin(x/12.0*Math.PI) + 300.0*Math.sin(x/30.0*Math.PI))*2.0/3.0;
+        return ret;
+    }
+
     function initMap(){
         map = L.map('map').setView([32.08,107.18], 13);
         L.tileLayer('https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}',{
@@ -135,28 +162,28 @@
         if (navigator.geolocation) {
             watchId = navigator.geolocation.watchPosition(
                 (pos) => {
-                    userPosition = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+                    const gcj = wgs84ToGcj02(pos.coords.longitude, pos.coords.latitude);
+                    userPosition = { lat: gcj.lat, lng: gcj.lng, accuracy: pos.coords.accuracy };
                     updateUserMarker();
                     checkGeofence();
                 },
                 (err) => {
-                    console.warn('GPS 错误', err);
-                    if (err.code === 1) alert('请允许定位权限，才能体验自动导览。');
+                    console.warn('GPS错误', err);
+                    if (err.code === 1) alert('请允许定位权限');
                 },
                 { enableHighAccuracy: true, maximumAge: 5000 }
             );
-        } else {
-            alert('您的设备不支持GPS定位');
-        }
+        } else { alert('设备不支持GPS'); }
     }
 
     function updateUserMarker(){
         if (!userPosition) return;
         if (window.userMarker) map.removeLayer(window.userMarker);
+        // 精度越差，圆圈越透明
+        const opacity = userPosition.accuracy ? Math.max(0.3, 1 - userPosition.accuracy/50) : 0.8;
         window.userMarker = L.circleMarker([userPosition.lat, userPosition.lng], {
-            radius: 8, color: '#2196F3', fillColor: '#2196F3', fillOpacity: 0.9
+            radius: 8, color: '#2196F3', fillColor: '#2196F3', fillOpacity: opacity
         }).addTo(map);
-
         if (!initialPositionSet) {
             map.setView([userPosition.lat, userPosition.lng], 15);
             initialPositionSet = true;
@@ -178,99 +205,77 @@
         }
     }
 
-    function markVisited(poi){
-        visitedPois[poi.id] = true;
-        updateProgress();
-    }
-
+    function markVisited(poi){ visitedPois[poi.id]=true; updateProgress(); }
     function updateProgress(){
-        const total = allPois.filter(p => p.category === '景点').length;
-        const visited = Object.keys(visitedPois).filter(id => {
-            const p = allPois.find(poi => poi.id == id);
-            return p && p.category === '景点';
-        }).length;
-        const container = document.getElementById('progressBar');
-        if (container) {
-            container.innerHTML = `<div style="background:#2E7D32; height:100%; width:${(visited/total*100)||0}%; border-radius:10px; transition: width 0.3s;"></div>`;
-            container.title = `已游览 ${visited}/${total} 个景点`;
-        }
+        const total = allPois.filter(p=>p.category==='景点').length;
+        const visited = Object.keys(visitedPois).filter(id=>allPois.find(p=>p.id==id&&p.category==='景点')).length;
+        const bar = document.getElementById('progressBar');
+        if(bar) bar.innerHTML = `<div style="background:#2E7D32; height:100%; width:${(visited/total*100)||0}%; border-radius:10px;"></div>`;
     }
 
     function playVoice(poi){
-        if (!voiceEnabled) return;
+        if(!voiceEnabled) return;
         const text = poi['voice_'+currentLang] || poi.voice_cn || poi.description;
-        if (!text) return;
-        const utterance = new SpeechSynthesisUtterance(text);
-        utterance.lang = { cn:'zh-CN', en:'en-US', ja:'ja-JP', ko:'ko-KR' }[currentLang] || 'zh-CN';
-        speechSynthesis.speak(utterance);
+        if(!text) return;
+        const u = new SpeechSynthesisUtterance(text);
+        u.lang = { cn:'zh-CN', en:'en-US', ja:'ja-JP', ko:'ko-KR' }[currentLang] || 'zh-CN';
+        speechSynthesis.speak(u);
     }
 
     function toggleVoice(){
         voiceEnabled = !voiceEnabled;
         document.getElementById('voiceToggle').textContent = voiceEnabled ? '🔊' : '🔇';
-        if (!voiceEnabled) speechSynthesis.cancel();
+        if(!voiceEnabled) speechSynthesis.cancel();
     }
 
     function checkServiceReminders(){
-        if (!userPosition) return;
-        const now = new Date();
-        const hours = now.getHours();
-        if (hours >= 11 && hours < 14 && !lunchReminded) {
-            showReminder('🍽️ 已到午餐时间，您可以查看附近餐饮点位。');
-            lunchReminded = true;
-        }
-        if (hours >= 17 && hours < 20 && !dinnerReminded) {
-            showReminder('🍽️ 已到晚餐时间，您可以查看附近餐饮点位。');
-            dinnerReminded = true;
-        }
+        if(!userPosition) return;
+        const h = new Date().getHours();
+        if(h>=11 && h<14 && !lunchReminded){ showReminder('🍽️ 已到午餐时间'); lunchReminded=true; }
+        if(h>=17 && h<20 && !dinnerReminded){ showReminder('🍽️ 已到晚餐时间'); dinnerReminded=true; }
     }
-
     function showReminder(msg){
         const toast = document.getElementById('reminderToast');
         document.getElementById('reminderMsg').textContent = msg;
-        toast.style.display = 'block';
-        setTimeout(() => { toast.style.display = 'none'; }, 8000);
+        toast.style.display='block';
+        setTimeout(()=>toast.style.display='none', 8000);
     }
-
-    function closeReminder(){ document.getElementById('reminderToast').style.display = 'none'; }
+    function closeReminder(){ document.getElementById('reminderToast').style.display='none'; }
 
     function showPoiDetail(poi){
         const visited = visitedPois[poi.id];
         const badge = visited ? '<span class="status-badge status-visited">已游览</span>' : '<span class="status-badge status-unvisited">未游览</span>';
         const bestViewHtml = poi.best_view ? `<p>📍 最佳位置：${poi.best_view}</p>` : '';
-        const popup = L.popup().setLatLng([poi.lat, poi.lng])
+        L.popup().setLatLng([poi.lat, poi.lng])
             .setContent(`<div class="poi-popup"><h4>${poi.name}</h4>${badge}<p>${poi.description||''}</p>${poi.suggested_time ? '<p>⏱️ 建议游览 '+poi.suggested_time+' 分钟</p>':''}${bestViewHtml}</div>`)
             .openOn(map);
     }
 
     function openPanel(id){
         document.getElementById(id).classList.add('active');
-        if (id === 'assistantPanel') { updateProgress(); }
-        if (id === 'myPanel') { renderVisitedList(); }
+        if(id==='assistantPanel') updateProgress();
+        if(id==='myPanel') renderVisitedList();
     }
     function closePanel(id){ document.getElementById(id).classList.remove('active'); }
 
     function renderVisitedList(){
-        const visited = allPois.filter(p => visitedPois[p.id]);
+        const visited = allPois.filter(p=>visitedPois[p.id]);
         let html = '';
-        visited.forEach(p => {
-            html += `<div style="padding:8px; border-bottom:1px solid #eee;"><b>${p.name}</b> (${p.category}) - ${p.suggested_time||'?'}分钟</div>`;
-        });
+        visited.forEach(p=>{ html += `<div style="padding:8px;border-bottom:1px solid #eee;"><b>${p.name}</b> (${p.category}) - ${p.suggested_time||'?'}分钟</div>`; });
         document.getElementById('visitedList').innerHTML = html || '<p style="color:#999;">暂无游览记录</p>';
     }
 
     async function submitFeedback(){
         const msg = document.getElementById('feedbackMsg').value.trim();
-        if (!msg) return;
-        const { error } = await sb.from('ztj_feedbacks').insert([{ message: msg }]);
-        document.getElementById('feedbackResult').innerHTML = error ? '<p style="color:red">提交失败</p>' : '<p style="color:green">感谢反馈！</p>';
-        if (!error) document.getElementById('feedbackMsg').value = '';
+        if(!msg) return;
+        const {error} = await sb.from('ztj_feedbacks').insert([{message:msg}]);
+        document.getElementById('feedbackResult').innerHTML = error ? '<p style="color:red">失败</p>' : '<p style="color:green">感谢反馈！</p>';
+        if(!error) document.getElementById('feedbackMsg').value='';
     }
 
-    function getDistance(lat1, lng1, lat2, lng2){
-        const R = 6371000;
-        const dLat = (lat2-lat1)*Math.PI/180, dLng = (lng2-lng1)*Math.PI/180;
-        const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLng/2)**2;
+    function getDistance(lat1,lng1,lat2,lng2){
+        const R=6371000, dLat=(lat2-lat1)*Math.PI/180, dLng=(lng2-lng1)*Math.PI/180;
+        const a=Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLng/2)**2;
         return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
     }
 

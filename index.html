@@ -14,6 +14,7 @@
         .my-btn { position:fixed; top:20px; right:90px; z-index:1500; background:white; border-radius:20px; padding:6px 12px; box-shadow:0 2px 8px rgba(0,0,0,0.2); border:none; cursor:pointer; font-size:14px; }
         .voice-toggle { position:fixed; bottom:100px; right:20px; z-index:1500; background:white; border-radius:50%; width:48px; height:48px; display:flex; align-items:center; justify-content:center; box-shadow:0 4px 12px rgba(0,0,0,0.3); cursor:pointer; font-size:20px; }
         .assistant-btn { position:fixed; bottom:160px; right:20px; z-index:1500; background:white; border-radius:50%; width:48px; height:48px; display:flex; align-items:center; justify-content:center; box-shadow:0 4px 12px rgba(0,0,0,0.3); cursor:pointer; font-size:20px; }
+        .exit-scenic { position:fixed; top:80px; left:20px; z-index:1500; background:white; border-radius:20px; padding:6px 14px; box-shadow:0 2px 8px rgba(0,0,0,0.2); display:none; cursor:pointer; font-size:14px; }
         .panel { position:fixed; top:0; left:0; right:0; bottom:0; background:white; z-index:2000; transform:translateY(100%); transition:transform 0.3s; overflow-y:auto; display:flex; flex-direction:column; }
         .panel.active { transform:translateY(0); }
         .panel-header { padding:16px; border-bottom:1px solid #eee; display:flex; justify-content:space-between; align-items:center; }
@@ -22,7 +23,6 @@
         .panel-body { flex:1; padding:16px; }
         .poi-popup { padding:8px; }
         .poi-popup h4 { margin-bottom:4px; }
-        .poi-popup p { font-size:13px; color:#555; }
         .status-badge { padding:2px 8px; border-radius:10px; font-size:11px; display:inline-block; margin-right:4px; }
         .status-visited { background:#c8e6c9; color:#2e7d32; }
         .status-unvisited { background:#ffecb3; color:#e65100; }
@@ -42,6 +42,7 @@
     </select>
 </div>
 <button class="my-btn" onclick="openPanel('myPanel')">👤 我的</button>
+<button class="exit-scenic" id="exitScenicBtn" onclick="exitScenicArea()">↩️ 退出景区导览</button>
 <div class="voice-toggle" id="voiceToggle" onclick="toggleVoice()">🔊</div>
 <div class="assistant-btn" onclick="openPanel('assistantPanel')">🕐</div>
 
@@ -84,6 +85,7 @@
     let userPosition = null, watchId = null, allPois = [], visitedPois = {};
     let assistantTimer = null, lunchReminded = false, dinnerReminded = false;
     let initialPositionSet = false;
+    let currentScenicPoi = null;  // 当前处于内部导览的父POI
 
     const poiColors = {
         '景点':'#2E7D32', '卫生间':'#2196F3', '休息区':'#FF9800', '出入口':'#9E9E9E', '餐饮':'#FF5722'
@@ -101,20 +103,8 @@
         dlng = (dlng * 180.0) / (6378245.0 / sqrtmagic * Math.cos(radlat) * Math.PI);
         return { lng: lng + dlng, lat: lat + dlat };
     }
-    function transformLat(x, y) {
-        let ret = -100.0 + 2.0*x + 3.0*y + 0.2*y*y + 0.1*x*y + 0.2*Math.sqrt(Math.abs(x));
-        ret += (20.0*Math.sin(6.0*x*Math.PI) + 20.0*Math.sin(2.0*x*Math.PI))*2.0/3.0;
-        ret += (20.0*Math.sin(y*Math.PI) + 40.0*Math.sin(y/3.0*Math.PI))*2.0/3.0;
-        ret += (160.0*Math.sin(y/12.0*Math.PI) + 320.0*Math.sin(y*Math.PI/30.0))*2.0/3.0;
-        return ret;
-    }
-    function transformLng(x, y) {
-        let ret = 300.0 + x + 2.0*y + 0.1*x*x + 0.1*x*y + 0.1*Math.sqrt(Math.abs(x));
-        ret += (20.0*Math.sin(6.0*x*Math.PI) + 20.0*Math.sin(2.0*x*Math.PI))*2.0/3.0;
-        ret += (20.0*Math.sin(x*Math.PI) + 40.0*Math.sin(x/3.0*Math.PI))*2.0/3.0;
-        ret += (150.0*Math.sin(x/12.0*Math.PI) + 300.0*Math.sin(x/30.0*Math.PI))*2.0/3.0;
-        return ret;
-    }
+    function transformLat(x,y){ let ret=-100.0+2.0*x+3.0*y+0.2*y*y+0.1*x*y+0.2*Math.sqrt(Math.abs(x)); ret+=(20.0*Math.sin(6.0*x*Math.PI)+20.0*Math.sin(2.0*x*Math.PI))*2.0/3.0; ret+=(20.0*Math.sin(y*Math.PI)+40.0*Math.sin(y/3.0*Math.PI))*2.0/3.0; ret+=(160.0*Math.sin(y/12.0*Math.PI)+320.0*Math.sin(y*Math.PI/30.0))*2.0/3.0; return ret; }
+    function transformLng(x,y){ let ret=300.0+x+2.0*y+0.1*x*x+0.1*x*y+0.1*Math.sqrt(Math.abs(x)); ret+=(20.0*Math.sin(6.0*x*Math.PI)+20.0*Math.sin(2.0*x*Math.PI))*2.0/3.0; ret+=(20.0*Math.sin(x*Math.PI)+40.0*Math.sin(x/3.0*Math.PI))*2.0/3.0; ret+=(150.0*Math.sin(x/12.0*Math.PI)+300.0*Math.sin(x/30.0*Math.PI))*2.0/3.0; return ret; }
 
     function initMap(){
         map = L.map('map').setView([32.08,107.18], 13);
@@ -129,15 +119,31 @@
     }
 
     async function loadAllPOIs(){
-        const { data, error } = await sb.from('ztj_poi').select('*').eq('status','active');
+        const { data, error } = await sb.from('ztj_poi').select('*').eq('status','active').order('id');
         if (error) { console.error(error); return; }
         allPois = data || [];
-        renderPOIs(allPois);
+        applyFilter();
+    }
+
+    function applyFilter(){
+        if (currentScenicPoi) {
+            // 内部导览模式：仅显示该父POI下的子POI
+            const children = allPois.filter(p => p.parent_id == currentScenicPoi.id);
+            renderPOIs(children);
+            loadScenicCustomMap(currentScenicPoi.id);
+            document.getElementById('exitScenicBtn').style.display = 'block';
+        } else {
+            // 全局模式：只显示顶级景点（没有parent_id的）
+            const topLevel = allPois.filter(p => !p.parent_id);
+            renderPOIs(topLevel);
+            document.getElementById('exitScenicBtn').style.display = 'none';
+        }
         updateProgress();
     }
 
     function renderPOIs(pois){
         map.eachLayer(layer => { if(layer instanceof L.Marker) map.removeLayer(layer); });
+        if (window.userMarker) window.userMarker.addTo(map);
         pois.forEach(poi => {
             const color = poiColors[poi.category] || '#999';
             const icon = L.divIcon({
@@ -151,8 +157,26 @@
         });
     }
 
-    async function loadCustomMap(){
-        const { data: config } = await sb.from('ztj_system_config').select('value').eq('key','custom_map').maybeSingle();
+    async function loadCustomMap(scenicPoiId){
+        if (!scenicPoiId) {
+            const { data: config } = await sb.from('ztj_system_config').select('value').eq('key','custom_map').maybeSingle();
+            if (config && config.value && config.value.url) {
+                L.imageOverlay(config.value.url, config.value.bounds).addTo(map);
+            }
+        } else {
+            const key = `custom_map_${scenicPoiId}`;
+            const { data: config } = await sb.from('ztj_system_config').select('value').eq('key', key).maybeSingle();
+            if (config && config.value && config.value.url) {
+                L.imageOverlay(config.value.url, config.value.bounds).addTo(map);
+            }
+        }
+    }
+
+    async function loadScenicCustomMap(poiId){
+        // 移除旧叠加层，加载新景区图
+        map.eachLayer(layer => { if(layer instanceof L.ImageOverlay) map.removeLayer(layer); });
+        const key = `custom_map_${poiId}`;
+        const { data: config } = await sb.from('ztj_system_config').select('value').eq('key', key).maybeSingle();
         if (config && config.value && config.value.url) {
             L.imageOverlay(config.value.url, config.value.bounds).addTo(map);
         }
@@ -167,10 +191,7 @@
                     updateUserMarker();
                     checkGeofence();
                 },
-                (err) => {
-                    console.warn('GPS错误', err);
-                    if (err.code === 1) alert('请允许定位权限');
-                },
+                (err) => { console.warn('GPS错误', err); if (err.code === 1) alert('请允许定位权限'); },
                 { enableHighAccuracy: true, maximumAge: 5000 }
             );
         } else { alert('设备不支持GPS'); }
@@ -179,7 +200,6 @@
     function updateUserMarker(){
         if (!userPosition) return;
         if (window.userMarker) map.removeLayer(window.userMarker);
-        // 精度越差，圆圈越透明
         const opacity = userPosition.accuracy ? Math.max(0.3, 1 - userPosition.accuracy/50) : 0.8;
         window.userMarker = L.circleMarker([userPosition.lat, userPosition.lng], {
             radius: 8, color: '#2196F3', fillColor: '#2196F3', fillOpacity: opacity
@@ -192,7 +212,9 @@
 
     async function checkGeofence(){
         if (!userPosition || !voiceEnabled) return;
-        for (const poi of allPois) {
+        // 检测所有POI（如果是内部导览模式，只检测当前景区子POI）
+        const targets = currentScenicPoi ? allPois.filter(p => p.parent_id == currentScenicPoi.id) : allPois.filter(p => !p.parent_id);
+        for (const poi of targets) {
             const dist = getDistance(userPosition.lat, userPosition.lng, poi.lat, poi.lng);
             const radius = poi.trigger_radius || 15;
             if (dist <= radius) {
@@ -200,15 +222,37 @@
                     triggeredPois[poi.id] = Date.now();
                     markVisited(poi);
                     playVoice(poi);
+                    // 如果是父景点且尚未进入内部导览，提示
+                    if (!currentScenicPoi && poi.category === '景点' && allPois.some(p => p.parent_id == poi.id)) {
+                        if (confirm(`您已进入「${poi.name}」景区，是否切换到内部导览模式？`)) {
+                            enterScenicArea(poi);
+                        }
+                    }
                 }
             }
         }
     }
 
+    function enterScenicArea(poi){
+        currentScenicPoi = poi;
+        applyFilter();
+        map.setView([poi.lat, poi.lng], 16);
+        showReminder(`已进入「${poi.name}」内部导览`);
+    }
+
+    function exitScenicArea(){
+        currentScenicPoi = null;
+        applyFilter();
+        loadCustomMap();
+        map.setView([32.08,107.18], 13);
+        showReminder('已退出景区导览');
+    }
+
     function markVisited(poi){ visitedPois[poi.id]=true; updateProgress(); }
     function updateProgress(){
-        const total = allPois.filter(p=>p.category==='景点').length;
-        const visited = Object.keys(visitedPois).filter(id=>allPois.find(p=>p.id==id&&p.category==='景点')).length;
+        const targets = currentScenicPoi ? allPois.filter(p => p.parent_id == currentScenicPoi.id && p.category==='景点') : allPois.filter(p => !p.parent_id && p.category==='景点');
+        const total = targets.length;
+        const visited = targets.filter(p => visitedPois[p.id]).length;
         const bar = document.getElementById('progressBar');
         if(bar) bar.innerHTML = `<div style="background:#2E7D32; height:100%; width:${(visited/total*100)||0}%; border-radius:10px;"></div>`;
     }
@@ -234,12 +278,14 @@
         if(h>=11 && h<14 && !lunchReminded){ showReminder('🍽️ 已到午餐时间'); lunchReminded=true; }
         if(h>=17 && h<20 && !dinnerReminded){ showReminder('🍽️ 已到晚餐时间'); dinnerReminded=true; }
     }
+
     function showReminder(msg){
         const toast = document.getElementById('reminderToast');
         document.getElementById('reminderMsg').textContent = msg;
         toast.style.display='block';
         setTimeout(()=>toast.style.display='none', 8000);
     }
+
     function closeReminder(){ document.getElementById('reminderToast').style.display='none'; }
 
     function showPoiDetail(poi){
@@ -259,9 +305,9 @@
     function closePanel(id){ document.getElementById(id).classList.remove('active'); }
 
     function renderVisitedList(){
-        const visited = allPois.filter(p=>visitedPois[p.id]);
+        const visited = allPois.filter(p => visitedPois[p.id]);
         let html = '';
-        visited.forEach(p=>{ html += `<div style="padding:8px;border-bottom:1px solid #eee;"><b>${p.name}</b> (${p.category}) - ${p.suggested_time||'?'}分钟</div>`; });
+        visited.forEach(p => { html += `<div style="padding:8px;border-bottom:1px solid #eee;"><b>${p.name}</b> (${p.category}) - ${p.suggested_time||'?'}分钟</div>`; });
         document.getElementById('visitedList').innerHTML = html || '<p style="color:#999;">暂无游览记录</p>';
     }
 

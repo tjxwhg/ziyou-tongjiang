@@ -65,7 +65,9 @@
     let initialPositionSet=false;
     let currentScenicPoi=null;
 
-    const poiColors = { '自然景区':'#2E7D32','住宿餐饮':'#FF9800','交通服务':'#00BCD4','公共服务':'#607D8B','购物消费':'#E91E63','文化场所':'#9C27B0','卫生间':'#2196F3','休息区':'#FF9800','出入口':'#9E9E9E','餐饮':'#FF5722' };
+    const poiColors = {
+        '自然景区':'#2E7D32','住宿餐饮':'#FF9800','交通服务':'#00BCD4','公共服务':'#607D8B','购物娱乐':'#E91E63','文化场所':'#9C27B0'
+    };
 
     // 坐标转换（WGS84→GCJ02）
     function wgs84ToGcj02(lng, lat) { if (lng < 72.004 || lng > 137.8347 || lat < 0.8293 || lat > 55.8271) return { lng, lat }; let dlat = transformLat(lng - 105.0, lat - 35.0); let dlng = transformLng(lng - 105.0, lat - 35.0); let radlat = lat / 180.0 * Math.PI; let magic = Math.sin(radlat); magic = 1 - 0.00669342162296594323 * magic * magic; let sqrtmagic = Math.sqrt(magic); dlat = (dlat * 180.0) / ((6378245.0 * (1 - 0.00669342162296594323)) / (magic * sqrtmagic) * Math.PI); dlng = (dlng * 180.0) / (6378245.0 / sqrtmagic * Math.cos(radlat) * Math.PI); return { lng: lng + dlng, lat: lat + dlat }; }
@@ -192,7 +194,7 @@
                     triggeredPois[poi.id] = Date.now();
                     markVisited(poi);
                     playVoice(poi);
-                    if (!currentScenicPoi && poi.category === '自然景区' && allPois.some(p => p.parent_id == poi.id)) {
+                    if (!currentScenicPoi && allPois.some(p => p.parent_id == poi.id)) {
                         if (confirm(`您已进入「${poi.name}」景区，是否切换到内部导览？`)) {
                             enterScenicArea(poi);
                         }
@@ -218,7 +220,7 @@
 
     function markVisited(poi){ visitedPois[poi.id]=true; updateProgress(); }
     function updateProgress(){
-        const targets = currentScenicPoi ? allPois.filter(p => p.parent_id == currentScenicPoi.id && p.category==='景点') : allPois.filter(p => !p.parent_id && p.category==='景点');
+        const targets = currentScenicPoi ? allPois.filter(p => p.parent_id == currentScenicPoi.id) : allPois.filter(p => !p.parent_id);
         const total = targets.length;
         const visited = targets.filter(p => visitedPois[p.id]).length;
         const bar = document.getElementById('progressBar');

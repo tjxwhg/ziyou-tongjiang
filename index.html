@@ -22,7 +22,6 @@
         .close-btn { background:none; border:none; font-size:24px; cursor:pointer; }
         .panel-body { flex:1; padding:16px; }
         .poi-popup { padding:8px; }
-        .poi-popup h4 { margin-bottom:4px; }
         .status-badge { padding:2px 8px; border-radius:10px; font-size:11px; display:inline-block; margin-right:4px; }
         .status-visited { background:#c8e6c9; color:#2e7d32; }
         .status-unvisited { background:#ffecb3; color:#e65100; }
@@ -32,15 +31,7 @@
 </head>
 <body>
 <div id="map"></div>
-
-<div class="lang-switch">
-    <select id="langSelect">
-        <option value="cn">中文</option>
-        <option value="en">English</option>
-        <option value="ja">日本語</option>
-        <option value="ko">한국어</option>
-    </select>
-</div>
+<div class="lang-switch"><select id="langSelect"><option value="cn">中文</option><option value="en">English</option><option value="ja">日本語</option><option value="ko">한국어</option></select></div>
 <button class="my-btn" onclick="openPanel('myPanel')">👤 我的</button>
 <button class="exit-scenic" id="exitScenicBtn" onclick="exitScenicArea()">↩️ 退出景区导览</button>
 <div class="voice-toggle" id="voiceToggle" onclick="toggleVoice()">🔊</div>
@@ -48,69 +39,42 @@
 
 <div class="panel" id="assistantPanel">
     <div class="panel-header"><h2>游览助手</h2><button class="close-btn" onclick="closePanel('assistantPanel')">✕</button></div>
-    <div class="panel-body" id="assistantContent">
-        <div id="progressBar" style="background:#eee; border-radius:10px; height:12px; margin-bottom:15px;"></div>
-        <div id="reminderSection"></div>
-    </div>
+    <div class="panel-body" id="assistantContent"><div id="progressBar" style="background:#eee; border-radius:10px; height:12px; margin-bottom:15px;"></div></div>
 </div>
-
 <div class="panel" id="myPanel">
     <div class="panel-header"><h2>我的</h2><button class="close-btn" onclick="closePanel('myPanel')">✕</button></div>
     <div class="panel-body">
-        <h4>游览记录</h4>
-        <div id="visitedList"></div>
+        <h4>游览记录</h4><div id="visitedList"></div>
         <h4 style="margin-top:20px;">留言反馈</h4>
         <textarea id="feedbackMsg" rows="3" placeholder="请留下您的建议或问题..." style="width:100%; padding:8px; border:1px solid #ddd; border-radius:6px;"></textarea>
         <button class="btn btn-primary" onclick="submitFeedback()" style="margin-top:10px; width:100%;">提交</button>
         <div id="feedbackResult" style="margin-top:10px;"></div>
     </div>
 </div>
-
-<div class="reminder-toast" id="reminderToast">
-    <span id="reminderMsg"></span>
-    <span class="close-remind" onclick="closeReminder()">✕</span>
-</div>
+<div class="reminder-toast" id="reminderToast"><span id="reminderMsg"></span><span class="close-remind" onclick="closeReminder()">✕</span></div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="config.js"></script>
 <script>
-    if (typeof SUPABASE_URL === 'undefined' || typeof SUPABASE_ANON_KEY === 'undefined') {
-        alert('配置文件加载失败，请检查 config.js');
-        throw new Error('Config not loaded');
-    }
+    if (typeof SUPABASE_URL === 'undefined' || typeof SUPABASE_ANON_KEY === 'undefined') { alert('配置文件加载失败'); throw new Error('Config not loaded'); }
     const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-
     let map, currentLang='cn', voiceEnabled=true, triggeredPois={};
-    let userPosition = null, watchId = null, allPois = [], visitedPois = {};
-    let assistantTimer = null, lunchReminded = false, dinnerReminded = false;
-    let initialPositionSet = false;
-    let currentScenicPoi = null;  // 当前处于内部导览的父POI
+    let userPosition=null, watchId=null, allPois=[], visitedPois={};
+    let assistantTimer=null, lunchReminded=false, dinnerReminded=false;
+    let initialPositionSet=false;
+    let currentScenicPoi=null;
 
-    const poiColors = {
-        '景点':'#2E7D32', '卫生间':'#2196F3', '休息区':'#FF9800', '出入口':'#9E9E9E', '餐饮':'#FF5722'
-    };
+    const poiColors = { '自然景区':'#2E7D32','住宿餐饮':'#FF9800','交通服务':'#00BCD4','公共服务':'#607D8B','购物消费':'#E91E63','文化场所':'#9C27B0','卫生间':'#2196F3','休息区':'#FF9800','出入口':'#9E9E9E','餐饮':'#FF5722' };
 
-    function wgs84ToGcj02(lng, lat) {
-        if (lng < 72.004 || lng > 137.8347 || lat < 0.8293 || lat > 55.8271) return { lng, lat };
-        let dlat = transformLat(lng - 105.0, lat - 35.0);
-        let dlng = transformLng(lng - 105.0, lat - 35.0);
-        let radlat = lat / 180.0 * Math.PI;
-        let magic = Math.sin(radlat);
-        magic = 1 - 0.00669342162296594323 * magic * magic;
-        let sqrtmagic = Math.sqrt(magic);
-        dlat = (dlat * 180.0) / ((6378245.0 * (1 - 0.00669342162296594323)) / (magic * sqrtmagic) * Math.PI);
-        dlng = (dlng * 180.0) / (6378245.0 / sqrtmagic * Math.cos(radlat) * Math.PI);
-        return { lng: lng + dlng, lat: lat + dlat };
-    }
-    function transformLat(x,y){ let ret=-100.0+2.0*x+3.0*y+0.2*y*y+0.1*x*y+0.2*Math.sqrt(Math.abs(x)); ret+=(20.0*Math.sin(6.0*x*Math.PI)+20.0*Math.sin(2.0*x*Math.PI))*2.0/3.0; ret+=(20.0*Math.sin(y*Math.PI)+40.0*Math.sin(y/3.0*Math.PI))*2.0/3.0; ret+=(160.0*Math.sin(y/12.0*Math.PI)+320.0*Math.sin(y*Math.PI/30.0))*2.0/3.0; return ret; }
-    function transformLng(x,y){ let ret=300.0+x+2.0*y+0.1*x*x+0.1*x*y+0.1*Math.sqrt(Math.abs(x)); ret+=(20.0*Math.sin(6.0*x*Math.PI)+20.0*Math.sin(2.0*x*Math.PI))*2.0/3.0; ret+=(20.0*Math.sin(x*Math.PI)+40.0*Math.sin(x/3.0*Math.PI))*2.0/3.0; ret+=(150.0*Math.sin(x/12.0*Math.PI)+300.0*Math.sin(x/30.0*Math.PI))*2.0/3.0; return ret; }
+    // 坐标转换（WGS84→GCJ02）
+    function wgs84ToGcj02(lng, lat) { if (lng < 72.004 || lng > 137.8347 || lat < 0.8293 || lat > 55.8271) return { lng, lat }; let dlat = transformLat(lng - 105.0, lat - 35.0); let dlng = transformLng(lng - 105.0, lat - 35.0); let radlat = lat / 180.0 * Math.PI; let magic = Math.sin(radlat); magic = 1 - 0.00669342162296594323 * magic * magic; let sqrtmagic = Math.sqrt(magic); dlat = (dlat * 180.0) / ((6378245.0 * (1 - 0.00669342162296594323)) / (magic * sqrtmagic) * Math.PI); dlng = (dlng * 180.0) / (6378245.0 / sqrtmagic * Math.cos(radlat) * Math.PI); return { lng: lng + dlng, lat: lat + dlat }; }
+    function transformLat(x,y){ let ret = -100.0 + 2.0*x + 3.0*y + 0.2*y*y + 0.1*x*y + 0.2*Math.sqrt(Math.abs(x)); ret += (20.0*Math.sin(6.0*x*Math.PI) + 20.0*Math.sin(2.0*x*Math.PI))*2.0/3.0; ret += (20.0*Math.sin(y*Math.PI) + 40.0*Math.sin(y/3.0*Math.PI))*2.0/3.0; ret += (160.0*Math.sin(y/12.0*Math.PI) + 320.0*Math.sin(y*Math.PI/30.0))*2.0/3.0; return ret; }
+    function transformLng(x,y){ let ret = 300.0 + x + 2.0*y + 0.1*x*x + 0.1*x*y + 0.1*Math.sqrt(Math.abs(x)); ret += (20.0*Math.sin(6.0*x*Math.PI) + 20.0*Math.sin(2.0*x*Math.PI))*2.0/3.0; ret += (20.0*Math.sin(x*Math.PI) + 40.0*Math.sin(x/3.0*Math.PI))*2.0/3.0; ret += (150.0*Math.sin(x/12.0*Math.PI) + 300.0*Math.sin(x/30.0*Math.PI))*2.0/3.0; return ret; }
 
     function initMap(){
         map = L.map('map').setView([32.08,107.18], 13);
-        L.tileLayer('https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}',{
-            subdomains:['1','2','3','4'], attribution:'', maxZoom:18
-        }).addTo(map);
+        L.tileLayer('https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}',{ subdomains:['1','2','3','4'], attribution:'', maxZoom:18 }).addTo(map);
         loadAllPOIs();
         loadCustomMap();
         startGPS();
@@ -126,30 +90,32 @@
     }
 
     function applyFilter(){
+        map.eachLayer(layer => { if((layer instanceof L.Marker || layer instanceof L.CircleMarker) && layer !== window.userMarker) map.removeLayer(layer); });
         if (currentScenicPoi) {
-            // 内部导览模式：仅显示该父POI下的子POI
             const children = allPois.filter(p => p.parent_id == currentScenicPoi.id);
-            renderPOIs(children);
+            renderPOIs(children, true);
             loadScenicCustomMap(currentScenicPoi.id);
             document.getElementById('exitScenicBtn').style.display = 'block';
         } else {
-            // 全局模式：只显示顶级景点（没有parent_id的）
             const topLevel = allPois.filter(p => !p.parent_id);
-            renderPOIs(topLevel);
+            const subPois = allPois.filter(p => p.parent_id);
+            renderPOIs(topLevel, false);
+            renderSubPOIs(subPois);
             document.getElementById('exitScenicBtn').style.display = 'none';
         }
+        if (window.userMarker) window.userMarker.addTo(map);
         updateProgress();
     }
 
-    function renderPOIs(pois){
-        map.eachLayer(layer => { if(layer instanceof L.Marker) map.removeLayer(layer); });
-        if (window.userMarker) window.userMarker.addTo(map);
+    function renderPOIs(pois, fullSize){
         pois.forEach(poi => {
             const color = poiColors[poi.category] || '#999';
+            const size = fullSize ? 20 : 14;
+            const opacity = fullSize ? 1 : 0.6;
             const icon = L.divIcon({
                 className: 'custom-poi',
-                html: `<div style="background:${color}; width:20px; height:20px; border-radius:50%; border:2px solid white; box-shadow:0 2px 4px rgba(0,0,0,0.3);"></div>`,
-                iconSize: [20,20], iconAnchor: [10,10]
+                html: `<div style="background:${color}; width:${size}px; height:${size}px; border-radius:50%; border:2px solid white; box-shadow:0 2px 4px rgba(0,0,0,0.3); opacity:${opacity}"></div>`,
+                iconSize: [size, size], iconAnchor: [size/2, size/2]
             });
             const marker = L.marker([poi.lat, poi.lng], {icon}).addTo(map);
             marker.poiId = poi.id;
@@ -157,23 +123,28 @@
         });
     }
 
+    function renderSubPOIs(pois){
+        pois.forEach(poi => {
+            const icon = L.divIcon({
+                className: 'sub-poi',
+                html: `<div style="background:#aaa; width:8px; height:8px; border-radius:50%; border:1px solid white; opacity:0.6"></div>`,
+                iconSize: [8,8], iconAnchor: [4,4]
+            });
+            const marker = L.marker([poi.lat, poi.lng], {icon, opacity:0.6}).addTo(map);
+            marker.poiId = poi.id;
+            marker.on('click', () => showPoiDetail(poi));
+        });
+    }
+
     async function loadCustomMap(scenicPoiId){
-        if (!scenicPoiId) {
-            const { data: config } = await sb.from('ztj_system_config').select('value').eq('key','custom_map').maybeSingle();
-            if (config && config.value && config.value.url) {
-                L.imageOverlay(config.value.url, config.value.bounds).addTo(map);
-            }
-        } else {
-            const key = `custom_map_${scenicPoiId}`;
-            const { data: config } = await sb.from('ztj_system_config').select('value').eq('key', key).maybeSingle();
-            if (config && config.value && config.value.url) {
-                L.imageOverlay(config.value.url, config.value.bounds).addTo(map);
-            }
+        const key = scenicPoiId ? `custom_map_${scenicPoiId}` : 'custom_map';
+        const { data: config } = await sb.from('ztj_system_config').select('value').eq('key',key).maybeSingle();
+        if (config && config.value && config.value.url) {
+            L.imageOverlay(config.value.url, config.value.bounds).addTo(map);
         }
     }
 
     async function loadScenicCustomMap(poiId){
-        // 移除旧叠加层，加载新景区图
         map.eachLayer(layer => { if(layer instanceof L.ImageOverlay) map.removeLayer(layer); });
         const key = `custom_map_${poiId}`;
         const { data: config } = await sb.from('ztj_system_config').select('value').eq('key', key).maybeSingle();
@@ -212,7 +183,6 @@
 
     async function checkGeofence(){
         if (!userPosition || !voiceEnabled) return;
-        // 检测所有POI（如果是内部导览模式，只检测当前景区子POI）
         const targets = currentScenicPoi ? allPois.filter(p => p.parent_id == currentScenicPoi.id) : allPois.filter(p => !p.parent_id);
         for (const poi of targets) {
             const dist = getDistance(userPosition.lat, userPosition.lng, poi.lat, poi.lng);
@@ -222,9 +192,8 @@
                     triggeredPois[poi.id] = Date.now();
                     markVisited(poi);
                     playVoice(poi);
-                    // 如果是父景点且尚未进入内部导览，提示
-                    if (!currentScenicPoi && poi.category === '景点' && allPois.some(p => p.parent_id == poi.id)) {
-                        if (confirm(`您已进入「${poi.name}」景区，是否切换到内部导览模式？`)) {
+                    if (!currentScenicPoi && poi.category === '自然景区' && allPois.some(p => p.parent_id == poi.id)) {
+                        if (confirm(`您已进入「${poi.name}」景区，是否切换到内部导览？`)) {
                             enterScenicArea(poi);
                         }
                     }
@@ -236,14 +205,13 @@
     function enterScenicArea(poi){
         currentScenicPoi = poi;
         applyFilter();
-        map.setView([poi.lat, poi.lng], 16);
+        map.setView([poi.lat, poi.lng], 17);
         showReminder(`已进入「${poi.name}」内部导览`);
     }
 
     function exitScenicArea(){
         currentScenicPoi = null;
         applyFilter();
-        loadCustomMap();
         map.setView([32.08,107.18], 13);
         showReminder('已退出景区导览');
     }
@@ -266,26 +234,19 @@
         speechSynthesis.speak(u);
     }
 
-    function toggleVoice(){
-        voiceEnabled = !voiceEnabled;
-        document.getElementById('voiceToggle').textContent = voiceEnabled ? '🔊' : '🔇';
-        if(!voiceEnabled) speechSynthesis.cancel();
-    }
-
+    function toggleVoice(){ voiceEnabled = !voiceEnabled; document.getElementById('voiceToggle').textContent = voiceEnabled ? '🔊' : '🔇'; if(!voiceEnabled) speechSynthesis.cancel(); }
     function checkServiceReminders(){
         if(!userPosition) return;
         const h = new Date().getHours();
         if(h>=11 && h<14 && !lunchReminded){ showReminder('🍽️ 已到午餐时间'); lunchReminded=true; }
         if(h>=17 && h<20 && !dinnerReminded){ showReminder('🍽️ 已到晚餐时间'); dinnerReminded=true; }
     }
-
     function showReminder(msg){
         const toast = document.getElementById('reminderToast');
         document.getElementById('reminderMsg').textContent = msg;
         toast.style.display='block';
         setTimeout(()=>toast.style.display='none', 8000);
     }
-
     function closeReminder(){ document.getElementById('reminderToast').style.display='none'; }
 
     function showPoiDetail(poi){
@@ -306,8 +267,7 @@
 
     function renderVisitedList(){
         const visited = allPois.filter(p => visitedPois[p.id]);
-        let html = '';
-        visited.forEach(p => { html += `<div style="padding:8px;border-bottom:1px solid #eee;"><b>${p.name}</b> (${p.category}) - ${p.suggested_time||'?'}分钟</div>`; });
+        let html = visited.map(p => `<div style="padding:8px;border-bottom:1px solid #eee;"><b>${p.name}</b> (${p.category}) - ${p.suggested_time||'?'}分钟</div>`).join('');
         document.getElementById('visitedList').innerHTML = html || '<p style="color:#999;">暂无游览记录</p>';
     }
 

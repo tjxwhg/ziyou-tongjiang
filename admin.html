@@ -33,6 +33,7 @@
         .child-poi { margin-left:25px; border-left:2px solid #2e7d32; padding-left:12px; margin-top:5px; background:#f9f9f9; }
         .inline-edit { background:#fff; border:1px solid #2e7d32; border-radius:8px; padding:12px; margin-top:8px; }
         .add-child-form { margin:10px 0 10px 25px; background:#f0f0f0; padding:12px; border-radius:6px; }
+        .error-msg { color:#c62828; margin-top:8px; }
     </style>
 </head>
 <body>
@@ -55,7 +56,10 @@
             <button class="btn btn-primary" onclick="showNewPoiForm()">+ 新增POI</button>
             <div id="new-poi-form" class="card hidden" style="margin-top:14px;">
                 <h3>新增POI</h3>
-                <div class="form-group"><label>所属分类 *</label><select id="new-poi-category"></select></div>
+                <div class="form-group"><label>类别</label>
+                    <input list="category-list" id="new-poi-category" placeholder="选择或输入新类别">
+                    <datalist id="category-list"></datalist>
+                </div>
                 <div class="form-group"><label>所属景区（留空为顶级）</label><select id="new-poi-parent"><option value="">无</option></select></div>
                 <div class="form-group"><label>名称 *</label><input id="new-poi-name"></div>
                 <div class="form-group"><label>纬度 *</label><input id="new-poi-lat" type="number" step="any"></div>
@@ -91,7 +95,7 @@
 <script>
     const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
     let currentUser = null;
-    const mainCategories = ['自然景区', '住宿餐饮', '交通服务', '公共服务', '购物消费', '文化场所'];
+    let allCategories = [];
 
     // 认证
     async function checkSession() { const { data:{session} } = await sb.auth.getSession(); if(session){ currentUser=session.user; await loadAdminView(); } }
@@ -120,13 +124,11 @@
         else if(tab==='settings'){ document.getElementById('tab-settings').classList.remove('hidden'); loadSettings(); }
     }
 
-    // 初始化新增表单分类选项
-    function initNewPoiCategorySelect(){
-        const sel = document.getElementById('new-poi-category');
-        sel.innerHTML = mainCategories.map(c => `<option value="${c}">${c}</option>`).join('');
+    function refreshCategoryDatalist(){
+        const datalist = document.getElementById('category-list');
+        datalist.innerHTML = allCategories.map(c => `<option value="${c}">`).join('');
     }
 
-    // 加载父POI选项
     async function loadParentOptions(selectId, selectedId=null){
         const { data } = await sb.from('ztj_poi').select('id,name').is('parent_id', null).order('name');
         const sel = document.getElementById(selectId);
@@ -134,11 +136,16 @@
         if(data) data.forEach(p => { sel.innerHTML += `<option value="${p.id}" ${selectedId==p.id?'selected':''}>${p.name}</option>`; });
     }
 
-    // 显示/隐藏新增表单
     function showNewPoiForm(){
-        initNewPoiCategorySelect();
+        if (allCategories.length === 0) {
+            loadPoiList().then(() => {
+                refreshCategoryDatalist();
+                document.getElementById('new-poi-form').classList.remove('hidden');
+            });
+        } else {
+            document.getElementById('new-poi-form').classList.remove('hidden');
+        }
         loadParentOptions('new-poi-parent');
-        document.getElementById('new-poi-form').classList.remove('hidden');
         clearNewPoiForm();
     }
     function hideNewPoiForm(){ document.getElementById('new-poi-form').classList.add('hidden'); }
@@ -151,12 +158,13 @@
     }
     async function saveNewPoi(){
         const name = document.getElementById('new-poi-name').value.trim();
+        const category = document.getElementById('new-poi-category').value.trim();
         const lat = parseFloat(document.getElementById('new-poi-lat').value);
         const lng = parseFloat(document.getElementById('new-poi-lng').value);
-        if(!name || isNaN(lat)||isNaN(lng)){ alert('名称、坐标必填'); return; }
+        if(!name || !category || isNaN(lat)||isNaN(lng)){ alert('名称、类别、坐标必填'); return; }
         const payload = {
             name,
-            category: document.getElementById('new-poi-category').value,
+            category,
             parent_id: document.getElementById('new-poi-parent').value || null,
             lat, lng,
             description: document.getElementById('new-poi-desc').value,
@@ -166,12 +174,12 @@
             voice_en: document.getElementById('new-poi-voice-en').value,
             trigger_radius: parseInt(document.getElementById('new-poi-radius').value)||15
         };
-        await sb.from('ztj_poi').insert([payload]);
+        const { error } = await sb.from('ztj_poi').insert([payload]);
+        if (error) { alert('保存失败：' + error.message); return; }
         hideNewPoiForm();
         loadPoiList();
     }
 
-    // 内联编辑切换
     function toggleEditForm(poiId){
         document.querySelectorAll('.inline-edit').forEach(el => { if(el.id !== `edit-${poiId}`) el.classList.add('hidden'); });
         const form = document.getElementById(`edit-${poiId}`);
@@ -182,8 +190,8 @@
         const { data } = await sb.from('ztj_poi').select('*').eq('id', poiId).single();
         if(!data) return;
         await loadParentOptions(`edit-parent-${poiId}`, data.parent_id);
+        document.getElementById(`edit-category-${poiId}`).value = data.category || '';
         document.getElementById(`edit-name-${poiId}`).value = data.name;
-        document.getElementById(`edit-category-${poiId}`).value = data.category;
         document.getElementById(`edit-lat-${poiId}`).value = data.lat;
         document.getElementById(`edit-lng-${poiId}`).value = data.lng;
         document.getElementById(`edit-desc-${poiId}`).value = data.description || '';
@@ -197,12 +205,13 @@
 
     async function saveInlineEdit(poiId){
         const name = document.getElementById(`edit-name-${poiId}`).value.trim();
+        const category = document.getElementById(`edit-category-${poiId}`).value.trim();
         const lat = parseFloat(document.getElementById(`edit-lat-${poiId}`).value);
         const lng = parseFloat(document.getElementById(`edit-lng-${poiId}`).value);
-        if(!name || isNaN(lat)||isNaN(lng)){ alert('名称、坐标必填'); return; }
+        if(!name || !category || isNaN(lat)||isNaN(lng)){ alert('名称、类别、坐标必填'); return; }
         const payload = {
             name,
-            category: document.getElementById(`edit-category-${poiId}`).value,
+            category,
             parent_id: document.getElementById(`edit-parent-${poiId}`).value || null,
             lat, lng,
             description: document.getElementById(`edit-desc-${poiId}`).value,
@@ -212,29 +221,28 @@
             voice_en: document.getElementById(`edit-voiceen-${poiId}`).value,
             trigger_radius: parseInt(document.getElementById(`edit-radius-${poiId}`).value)||15
         };
-        await sb.from('ztj_poi').update(payload).eq('id', poiId);
+        const { error } = await sb.from('ztj_poi').update(payload).eq('id', poiId);
+        if (error) { alert('保存失败：' + error.message); return; }
         loadPoiList();
     }
 
     async function deletePoi(id){ if(confirm('确定删除？')){ await sb.from('ztj_poi').delete().eq('id',id); loadPoiList(); } }
 
-    // 添加子POI表单的切换
     function toggleAddChildForm(parentId){
         const form = document.getElementById(`add-child-${parentId}`);
         if(form) form.classList.toggle('hidden');
     }
 
-    // 保存新增的子POI
     async function saveNewChild(parentId){
         const container = document.getElementById(`add-child-${parentId}`);
         const name = container.querySelector('input[name="child-name"]').value.trim();
-        const cat = container.querySelector('select[name="child-category"]').value;
+        const category = container.querySelector('input[name="child-category"]').value.trim();
         const lat = parseFloat(container.querySelector('input[name="child-lat"]').value);
         const lng = parseFloat(container.querySelector('input[name="child-lng"]').value);
-        if(!name || isNaN(lat)||isNaN(lng)){ alert('名称、坐标必填'); return; }
+        if(!name || !category || isNaN(lat)||isNaN(lng)){ alert('名称、类别、坐标必填'); return; }
         const payload = {
             name,
-            category: cat,
+            category,
             parent_id: parentId,
             lat, lng,
             description: container.querySelector('textarea[name="child-desc"]').value,
@@ -244,19 +252,24 @@
             voice_en: container.querySelector('textarea[name="child-voiceen"]').value,
             trigger_radius: parseInt(container.querySelector('input[name="child-radius"]').value)||15
         };
-        await sb.from('ztj_poi').insert([payload]);
+        const { error } = await sb.from('ztj_poi').insert([payload]);
+        if (error) { alert('保存失败：' + error.message); return; }
         loadPoiList();
     }
 
-    // 主列表渲染
     async function loadPoiList(){
-        const { data } = await sb.from('ztj_poi').select('*').order('id');
-        if(!data){ document.getElementById('poi-list').innerHTML='<p>暂无POI</p>'; return; }
+        const { data, error } = await sb.from('ztj_poi').select('*').order('id');
+        if (error) { console.error(error); return; }
+        if(!data || data.length === 0){ document.getElementById('poi-list').innerHTML='<p>暂无POI</p>'; return; }
         const parents = data.filter(p => !p.parent_id);
         const children = data.filter(p => p.parent_id);
 
+        const categorySet = new Set(data.map(p => p.category).filter(Boolean));
+        allCategories = Array.from(categorySet).sort();
+        refreshCategoryDatalist();
+
         let html = '';
-        mainCategories.forEach(cat => {
+        allCategories.forEach(cat => {
             const catParents = parents.filter(p => p.category === cat);
             const catId = `cat-${cat.replace(/\s+/g,'')}`;
             html += `<div class="category-section">
@@ -265,7 +278,6 @@
                     <span id="${catId}-arrow">▼</span>
                 </div>
                 <div id="${catId}" class="cat-content">`;
-
             if(catParents.length === 0){
                 html += '<p style="color:#999; padding:10px;">暂无点位</p>';
             } else {
@@ -281,7 +293,7 @@
                             </div>
                         </div>
                         <div id="edit-${parent.id}" class="inline-edit hidden">
-                            <div class="form-group"><label>分类</label><select id="edit-category-${parent.id}">${mainCategories.map(c => `<option value="${c}" ${parent.category===c?'selected':''}>${c}</option>`).join('')}</select></div>
+                            <div class="form-group"><label>类别</label><input id="edit-category-${parent.id}" value="${parent.category||''}"></div>
                             <div class="form-group"><label>所属景区</label><select id="edit-parent-${parent.id}"><option value="">无</option></select></div>
                             <div class="form-group"><label>名称</label><input id="edit-name-${parent.id}"></div>
                             <div class="form-group"><label>纬度</label><input id="edit-lat-${parent.id}" type="number" step="any"></div>
@@ -299,14 +311,14 @@
                             ${children.filter(c => c.parent_id == parent.id).map(c => `
                             <div class="child-poi">
                                 <div class="card-row">
-                                    <div>└ <b>${c.name}</b> (${c.category})</div>
+                                    <div>└ <b>${c.name}</b> (${c.category||''})</div>
                                     <div>
                                         <button class="btn btn-default" onclick="editPoi('${c.id}')">编辑</button>
                                         <button class="btn btn-danger" onclick="deletePoi('${c.id}')">删除</button>
                                     </div>
                                 </div>
                                 <div id="edit-${c.id}" class="inline-edit hidden">
-                                    <div class="form-group"><label>分类</label><select id="edit-category-${c.id}">${mainCategories.map(cat => `<option value="${cat}" ${c.category===cat?'selected':''}>${cat}</option>`).join('')}</select></div>
+                                    <div class="form-group"><label>类别</label><input id="edit-category-${c.id}" value="${c.category||''}"></div>
                                     <div class="form-group"><label>所属景区</label><select id="edit-parent-${c.id}"><option value="">无</option></select></div>
                                     <div class="form-group"><label>名称</label><input id="edit-name-${c.id}"></div>
                                     <div class="form-group"><label>纬度</label><input id="edit-lat-${c.id}" type="number" step="any"></div>
@@ -325,7 +337,7 @@
                         </div>
                         <div id="add-child-${parent.id}" class="add-child-form hidden">
                             <h4>新增子POI</h4>
-                            <div class="form-group"><label>分类</label><select name="child-category">${mainCategories.map(c => `<option>${c}</option>`).join('')}</select></div>
+                            <div class="form-group"><label>类别</label><input name="child-category" list="category-list" placeholder="选择或输入类别"></div>
                             <div class="form-group"><label>名称</label><input name="child-name"></div>
                             <div class="form-group"><label>纬度</label><input name="child-lat" type="number" step="any"></div>
                             <div class="form-group"><label>经度</label><input name="child-lng" type="number" step="any"></div>

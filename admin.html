@@ -32,6 +32,7 @@
         .poi-card { margin:8px 0; }
         .child-poi { margin-left:25px; border-left:2px solid #2e7d32; padding-left:12px; margin-top:5px; background:#f9f9f9; }
         .inline-edit { background:#fff; border:1px solid #2e7d32; border-radius:8px; padding:12px; margin-top:8px; }
+        .add-child-form { margin:10px 0 10px 25px; background:#f0f0f0; padding:12px; border-radius:6px; }
     </style>
 </head>
 <body>
@@ -90,11 +91,9 @@
 <script>
     const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
     let currentUser = null;
-
-    // 预定义分类列表（第一层级）
     const mainCategories = ['自然景区', '住宿餐饮', '交通服务', '公共服务', '购物消费', '文化场所'];
 
-    // 认证与会话
+    // 认证
     async function checkSession() { const { data:{session} } = await sb.auth.getSession(); if(session){ currentUser=session.user; await loadAdminView(); } }
     sb.auth.onAuthStateChange((event,session)=>{ if(session){ currentUser=session.user; loadAdminView(); } else { showLogin(); } });
     function showLogin(){ document.getElementById('login-page').classList.remove('hidden'); document.getElementById('admin-page').classList.add('hidden'); }
@@ -121,28 +120,24 @@
         else if(tab==='settings'){ document.getElementById('tab-settings').classList.remove('hidden'); loadSettings(); }
     }
 
-    // 初始化新增表单的分类选项
+    // 初始化新增表单分类选项
     function initNewPoiCategorySelect(){
         const sel = document.getElementById('new-poi-category');
         sel.innerHTML = mainCategories.map(c => `<option value="${c}">${c}</option>`).join('');
     }
 
-    // 加载父POI选项（顶级景点）
+    // 加载父POI选项
     async function loadParentOptions(selectId, selectedId=null){
         const { data } = await sb.from('ztj_poi').select('id,name').is('parent_id', null).order('name');
         const sel = document.getElementById(selectId);
         sel.innerHTML = '<option value="">无（顶级景点）</option>';
-        if(data){
-            data.forEach(p => {
-                sel.innerHTML += `<option value="${p.id}" ${selectedId==p.id?'selected':''}>${p.name}</option>`;
-            });
-        }
+        if(data) data.forEach(p => { sel.innerHTML += `<option value="${p.id}" ${selectedId==p.id?'selected':''}>${p.name}</option>`; });
     }
 
-    // 显示新增表单
-    async function showNewPoiForm(){
+    // 显示/隐藏新增表单
+    function showNewPoiForm(){
         initNewPoiCategorySelect();
-        await loadParentOptions('new-poi-parent');
+        loadParentOptions('new-poi-parent');
         document.getElementById('new-poi-form').classList.remove('hidden');
         clearNewPoiForm();
     }
@@ -176,21 +171,16 @@
         loadPoiList();
     }
 
-    // 内联编辑：切换显示
+    // 内联编辑切换
     function toggleEditForm(poiId){
         document.querySelectorAll('.inline-edit').forEach(el => { if(el.id !== `edit-${poiId}`) el.classList.add('hidden'); });
         const form = document.getElementById(`edit-${poiId}`);
-        if(form) {
-            form.classList.toggle('hidden');
-            if(!form.classList.contains('hidden')) form.scrollIntoView({ behavior:'smooth', block:'nearest' });
-        }
+        if(form) { form.classList.toggle('hidden'); if(!form.classList.contains('hidden')) form.scrollIntoView({ behavior:'smooth', block:'nearest' }); }
     }
 
-    // 填充编辑表单并显示
     async function editPoi(poiId){
         const { data } = await sb.from('ztj_poi').select('*').eq('id', poiId).single();
         if(!data) return;
-        // 加载父POI选项并设置选中值
         await loadParentOptions(`edit-parent-${poiId}`, data.parent_id);
         document.getElementById(`edit-name-${poiId}`).value = data.name;
         document.getElementById(`edit-category-${poiId}`).value = data.category;
@@ -228,7 +218,37 @@
 
     async function deletePoi(id){ if(confirm('确定删除？')){ await sb.from('ztj_poi').delete().eq('id',id); loadPoiList(); } }
 
-    // 加载POI列表并渲染折叠分类
+    // 添加子POI表单的切换
+    function toggleAddChildForm(parentId){
+        const form = document.getElementById(`add-child-${parentId}`);
+        if(form) form.classList.toggle('hidden');
+    }
+
+    // 保存新增的子POI
+    async function saveNewChild(parentId){
+        const container = document.getElementById(`add-child-${parentId}`);
+        const name = container.querySelector('input[name="child-name"]').value.trim();
+        const cat = container.querySelector('select[name="child-category"]').value;
+        const lat = parseFloat(container.querySelector('input[name="child-lat"]').value);
+        const lng = parseFloat(container.querySelector('input[name="child-lng"]').value);
+        if(!name || isNaN(lat)||isNaN(lng)){ alert('名称、坐标必填'); return; }
+        const payload = {
+            name,
+            category: cat,
+            parent_id: parentId,
+            lat, lng,
+            description: container.querySelector('textarea[name="child-desc"]').value,
+            suggested_time: parseInt(container.querySelector('input[name="child-suggested"]').value)||10,
+            best_view: container.querySelector('input[name="child-bestview"]').value,
+            voice_cn: container.querySelector('textarea[name="child-voicecn"]').value,
+            voice_en: container.querySelector('textarea[name="child-voiceen"]').value,
+            trigger_radius: parseInt(container.querySelector('input[name="child-radius"]').value)||15
+        };
+        await sb.from('ztj_poi').insert([payload]);
+        loadPoiList();
+    }
+
+    // 主列表渲染
     async function loadPoiList(){
         const { data } = await sb.from('ztj_poi').select('*').order('id');
         if(!data){ document.getElementById('poi-list').innerHTML='<p>暂无POI</p>'; return; }
@@ -238,100 +258,107 @@
         let html = '';
         mainCategories.forEach(cat => {
             const catParents = parents.filter(p => p.category === cat);
-            // 如果该分类没有任何顶级POI，则不显示
-            if (catParents.length === 0 && children.filter(c => c.category === cat).length === 0) return;
-
             const catId = `cat-${cat.replace(/\s+/g,'')}`;
             html += `<div class="category-section">
                 <div class="cat-title" onclick="toggleCategory('${catId}')">
-                    <span>${cat} (${catParents.length}个景点)</span>
+                    <span>${cat} (${catParents.length})</span>
                     <span id="${catId}-arrow">▼</span>
                 </div>
                 <div id="${catId}" class="cat-content">`;
 
-            // 展示该分类下的顶级POI
-            catParents.forEach(parent => {
-                html += `<div class="card poi-card">
-                    <div class="card-row">
-                        <div><b>${parent.name}</b> <span style="color:#888; font-size:12px;">顶级</span></div>
-                        <div>
-                            <button class="btn btn-default" onclick="editPoi('${parent.id}')">编辑</button>
-                            <button class="btn btn-danger" onclick="deletePoi('${parent.id}')">删除</button>
-                            ${children.some(c => c.parent_id == parent.id) ? `<button class="btn btn-default" onclick="toggleChildren('${parent.id}')">子景点</button>` : ''}
+            if(catParents.length === 0){
+                html += '<p style="color:#999; padding:10px;">暂无点位</p>';
+            } else {
+                catParents.forEach(parent => {
+                    html += `<div class="card poi-card">
+                        <div class="card-row">
+                            <div><b>${parent.name}</b></div>
+                            <div>
+                                <button class="btn btn-default" onclick="editPoi('${parent.id}')">编辑</button>
+                                <button class="btn btn-danger" onclick="deletePoi('${parent.id}')">删除</button>
+                                <button class="btn btn-default" onclick="toggleChildren('${parent.id}')">子景点</button>
+                                <button class="btn btn-default" onclick="toggleAddChildForm('${parent.id}')">+ 添加子POI</button>
+                            </div>
                         </div>
-                    </div>
-                    <!-- 内联编辑 -->
-                    <div id="edit-${parent.id}" class="inline-edit hidden">
-                        <div class="form-group"><label>分类</label><select id="edit-category-${parent.id}">${mainCategories.map(c => `<option value="${c}" ${parent.category===c?'selected':''}>${c}</option>`).join('')}</select></div>
-                        <div class="form-group"><label>所属景区</label><select id="edit-parent-${parent.id}"><option value="">无</option></select></div>
-                        <div class="form-group"><label>名称</label><input id="edit-name-${parent.id}"></div>
-                        <div class="form-group"><label>纬度</label><input id="edit-lat-${parent.id}" type="number" step="any"></div>
-                        <div class="form-group"><label>经度</label><input id="edit-lng-${parent.id}" type="number" step="any"></div>
-                        <div class="form-group"><label>简介</label><textarea id="edit-desc-${parent.id}" rows="2"></textarea></div>
-                        <div class="form-group"><label>建议游览时间(分钟)</label><input id="edit-suggested-${parent.id}" type="number" value="10"></div>
-                        <div class="form-group"><label>最佳位置</label><input id="edit-bestview-${parent.id}"></div>
-                        <div class="form-group"><label>中文讲解词</label><textarea id="edit-voicecn-${parent.id}" rows="2"></textarea></div>
-                        <div class="form-group"><label>英文讲解词</label><textarea id="edit-voiceen-${parent.id}" rows="2"></textarea></div>
-                        <div class="form-group"><label>触发半径(米)</label><input id="edit-radius-${parent.id}" type="number" value="15"></div>
-                        <button class="btn btn-primary" onclick="saveInlineEdit('${parent.id}')">保存</button>
-                        <button class="btn btn-default" onclick="toggleEditForm('${parent.id}')">取消</button>
-                    </div>
-                    <!-- 子POI折叠区域 -->
-                    <div id="children-${parent.id}" class="hidden" style="margin-left:20px; margin-top:8px;">
-                        ${children.filter(c => c.parent_id == parent.id).map(c => `
-                        <div class="child-poi">
-                            <div class="card-row">
-                                <div>└ <b>${c.name}</b> (${c.category})</div>
-                                <div>
-                                    <button class="btn btn-default" onclick="editPoi('${c.id}')">编辑</button>
-                                    <button class="btn btn-danger" onclick="deletePoi('${c.id}')">删除</button>
+                        <div id="edit-${parent.id}" class="inline-edit hidden">
+                            <div class="form-group"><label>分类</label><select id="edit-category-${parent.id}">${mainCategories.map(c => `<option value="${c}" ${parent.category===c?'selected':''}>${c}</option>`).join('')}</select></div>
+                            <div class="form-group"><label>所属景区</label><select id="edit-parent-${parent.id}"><option value="">无</option></select></div>
+                            <div class="form-group"><label>名称</label><input id="edit-name-${parent.id}"></div>
+                            <div class="form-group"><label>纬度</label><input id="edit-lat-${parent.id}" type="number" step="any"></div>
+                            <div class="form-group"><label>经度</label><input id="edit-lng-${parent.id}" type="number" step="any"></div>
+                            <div class="form-group"><label>简介</label><textarea id="edit-desc-${parent.id}" rows="2"></textarea></div>
+                            <div class="form-group"><label>建议游览时间</label><input id="edit-suggested-${parent.id}" type="number" value="10"></div>
+                            <div class="form-group"><label>最佳位置</label><input id="edit-bestview-${parent.id}"></div>
+                            <div class="form-group"><label>中文讲解</label><textarea id="edit-voicecn-${parent.id}" rows="2"></textarea></div>
+                            <div class="form-group"><label>英文讲解</label><textarea id="edit-voiceen-${parent.id}" rows="2"></textarea></div>
+                            <div class="form-group"><label>半径(米)</label><input id="edit-radius-${parent.id}" type="number" value="15"></div>
+                            <button class="btn btn-primary" onclick="saveInlineEdit('${parent.id}')">保存</button>
+                            <button class="btn btn-default" onclick="toggleEditForm('${parent.id}')">取消</button>
+                        </div>
+                        <div id="children-${parent.id}" class="hidden" style="margin-left:20px; margin-top:8px;">
+                            ${children.filter(c => c.parent_id == parent.id).map(c => `
+                            <div class="child-poi">
+                                <div class="card-row">
+                                    <div>└ <b>${c.name}</b> (${c.category})</div>
+                                    <div>
+                                        <button class="btn btn-default" onclick="editPoi('${c.id}')">编辑</button>
+                                        <button class="btn btn-danger" onclick="deletePoi('${c.id}')">删除</button>
+                                    </div>
+                                </div>
+                                <div id="edit-${c.id}" class="inline-edit hidden">
+                                    <div class="form-group"><label>分类</label><select id="edit-category-${c.id}">${mainCategories.map(cat => `<option value="${cat}" ${c.category===cat?'selected':''}>${cat}</option>`).join('')}</select></div>
+                                    <div class="form-group"><label>所属景区</label><select id="edit-parent-${c.id}"><option value="">无</option></select></div>
+                                    <div class="form-group"><label>名称</label><input id="edit-name-${c.id}"></div>
+                                    <div class="form-group"><label>纬度</label><input id="edit-lat-${c.id}" type="number" step="any"></div>
+                                    <div class="form-group"><label>经度</label><input id="edit-lng-${c.id}" type="number" step="any"></div>
+                                    <div class="form-group"><label>简介</label><textarea id="edit-desc-${c.id}" rows="2"></textarea></div>
+                                    <div class="form-group"><label>建议游览时间</label><input id="edit-suggested-${c.id}" type="number" value="10"></div>
+                                    <div class="form-group"><label>最佳位置</label><input id="edit-bestview-${c.id}"></div>
+                                    <div class="form-group"><label>中文讲解</label><textarea id="edit-voicecn-${c.id}" rows="2"></textarea></div>
+                                    <div class="form-group"><label>英文讲解</label><textarea id="edit-voiceen-${c.id}" rows="2"></textarea></div>
+                                    <div class="form-group"><label>半径(米)</label><input id="edit-radius-${c.id}" type="number" value="15"></div>
+                                    <button class="btn btn-primary" onclick="saveInlineEdit('${c.id}')">保存</button>
+                                    <button class="btn btn-default" onclick="toggleEditForm('${c.id}')">取消</button>
                                 </div>
                             </div>
-                            <div id="edit-${c.id}" class="inline-edit hidden">
-                                <div class="form-group"><label>分类</label><select id="edit-category-${c.id}">${mainCategories.map(cat => `<option value="${cat}" ${c.category===cat?'selected':''}>${cat}</option>`).join('')}</select></div>
-                                <div class="form-group"><label>所属景区</label><select id="edit-parent-${c.id}"><option value="">无</option></select></div>
-                                <div class="form-group"><label>名称</label><input id="edit-name-${c.id}"></div>
-                                <div class="form-group"><label>纬度</label><input id="edit-lat-${c.id}" type="number" step="any"></div>
-                                <div class="form-group"><label>经度</label><input id="edit-lng-${c.id}" type="number" step="any"></div>
-                                <div class="form-group"><label>简介</label><textarea id="edit-desc-${c.id}" rows="2"></textarea></div>
-                                <div class="form-group"><label>建议游览时间(分钟)</label><input id="edit-suggested-${c.id}" type="number" value="10"></div>
-                                <div class="form-group"><label>最佳位置</label><input id="edit-bestview-${c.id}"></div>
-                                <div class="form-group"><label>中文讲解词</label><textarea id="edit-voicecn-${c.id}" rows="2"></textarea></div>
-                                <div class="form-group"><label>英文讲解词</label><textarea id="edit-voiceen-${c.id}" rows="2"></textarea></div>
-                                <div class="form-group"><label>触发半径(米)</label><input id="edit-radius-${c.id}" type="number" value="15"></div>
-                                <button class="btn btn-primary" onclick="saveInlineEdit('${c.id}')">保存</button>
-                                <button class="btn btn-default" onclick="toggleEditForm('${c.id}')">取消</button>
-                            </div>
+                            `).join('')}
                         </div>
-                        `).join('')}
-                    </div>
-                </div>`;
-            });
+                        <div id="add-child-${parent.id}" class="add-child-form hidden">
+                            <h4>新增子POI</h4>
+                            <div class="form-group"><label>分类</label><select name="child-category">${mainCategories.map(c => `<option>${c}</option>`).join('')}</select></div>
+                            <div class="form-group"><label>名称</label><input name="child-name"></div>
+                            <div class="form-group"><label>纬度</label><input name="child-lat" type="number" step="any"></div>
+                            <div class="form-group"><label>经度</label><input name="child-lng" type="number" step="any"></div>
+                            <div class="form-group"><label>简介</label><textarea name="child-desc" rows="2"></textarea></div>
+                            <div class="form-group"><label>建议游览时间</label><input name="child-suggested" type="number" value="10"></div>
+                            <div class="form-group"><label>最佳位置</label><input name="child-bestview"></div>
+                            <div class="form-group"><label>中文讲解</label><textarea name="child-voicecn" rows="2"></textarea></div>
+                            <div class="form-group"><label>英文讲解</label><textarea name="child-voiceen" rows="2"></textarea></div>
+                            <div class="form-group"><label>半径(米)</label><input name="child-radius" type="number" value="15"></div>
+                            <button class="btn btn-primary" onclick="saveNewChild('${parent.id}')">保存</button>
+                            <button class="btn btn-default" onclick="toggleAddChildForm('${parent.id}')">取消</button>
+                        </div>
+                    </div>`;
+                });
+            }
             html += `</div></div>`;
         });
         document.getElementById('poi-list').innerHTML = html || '<p>暂无POI</p>';
     }
 
-    // 折叠分类
     function toggleCategory(id){
         const el = document.getElementById(id);
         const arrow = document.getElementById(id + '-arrow');
-        if(el.classList.contains('hidden')){
-            el.classList.remove('hidden');
-            arrow.textContent = '▼';
-        } else {
-            el.classList.add('hidden');
-            arrow.textContent = '▶';
-        }
+        if(el.classList.contains('hidden')){ el.classList.remove('hidden'); arrow.textContent='▼'; }
+        else { el.classList.add('hidden'); arrow.textContent='▶'; }
     }
 
-    // 展开/折叠某个父POI下的子POI
     function toggleChildren(parentId){
         const el = document.getElementById(`children-${parentId}`);
         el.classList.toggle('hidden');
     }
 
-    // 设置相关（保留）
+    // 设置相关
     async function loadSettings(){
         await loadScenicSelect();
         const { data } = await sb.from('ztj_system_config').select('value').eq('key','custom_map').maybeSingle();

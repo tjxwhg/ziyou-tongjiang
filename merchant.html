@@ -63,20 +63,22 @@
     </div>
 </div>
 
+<!-- 使用 CDN 引入 supabase-js -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="config.js"></script>
 <script>
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 let merchant = null;
-let timeSlots = [];   // 临时存储时段数据
+let timeSlots = [];
 
 async function login(){
     const account = document.getElementById('account').value.trim();
     const pwd = document.getElementById('password').value;
     const email = account.includes('@') ? account : account + '@zhiyoutongjiang.cn';
-    const { error } = await sb.auth.signInWithPassword({email, password:pwd});
+    const { data, error } = await sb.auth.signInWithPassword({email, password:pwd});
     if(error){ document.getElementById('login-msg').innerText = '登录失败：'+error.message; return; }
-    const { data: m } = await sb.from('ztj_merchants').select('*').eq('id', sb.auth.session().user.id).single();
+    const userId = data.session.user.id;
+    const { data: m } = await sb.from('ztj_merchants').select('*').eq('id', userId).single();
     if(!m){ alert('非商户账号'); await sb.auth.signOut(); return; }
     merchant = m;
     document.getElementById('login-page').classList.add('hidden');
@@ -85,16 +87,21 @@ async function login(){
     loadInfo();
     switchTab('info');
 }
+
 function logout(){ sb.auth.signOut(); merchant = null; document.getElementById('main').classList.add('hidden'); document.getElementById('login-page').classList.remove('hidden'); }
+
 function switchTab(tab){
     document.querySelectorAll('.tab button').forEach(b => b.classList.remove('active'));
-    event.target.classList.add('active');
+    // 根据 tab 名称激活对应按钮
+    const tabIndex = ['info','reserve-settings','activities','reservations'].indexOf(tab);
+    if(tabIndex >= 0) document.querySelectorAll('.tab button')[tabIndex].classList.add('active');
     ['info','reserve-settings','activities','reservations'].forEach(t => document.getElementById('tab-'+t).classList.add('hidden'));
     document.getElementById('tab-'+tab).classList.remove('hidden');
     if(tab==='reserve-settings') loadReserveSettings();
     if(tab==='activities') loadActivities();
     if(tab==='reservations') loadReservations();
 }
+
 function loadInfo(){
     document.getElementById('status').value = merchant.status||'open';
     document.getElementById('phone').value = merchant.phone||'';
@@ -102,6 +109,7 @@ function loadInfo(){
     document.getElementById('parking').value = merchant.parking_spots||0;
     document.getElementById('intro').value = merchant.intro||'';
 }
+
 async function saveInfo(){
     const updates = {
         status: document.getElementById('status').value,
@@ -113,47 +121,72 @@ async function saveInfo(){
     await sb.from('ztj_merchants').update(updates).eq('id', merchant.id);
     alert('保存成功');
 }
-// --- 预约设置 ---
+
 async function loadReserveSettings(){
     const { data: settings } = await sb.from('reservation_settings').select('*').eq('merchant_id', merchant.id);
     timeSlots = settings || [];
-    if(timeSlots.length) document.getElementById('day-limit').value = timeSlots[0].day_total_limit || 10;
-    if(timeSlots.length) document.getElementById('team-max').value = timeSlots[0].team_max_size || 50;
+    if(timeSlots.length){
+        document.getElementById('day-limit').value = timeSlots[0].day_total_limit || 10;
+        document.getElementById('team-max').value = timeSlots[0].team_max_size || 50;
+    }
     renderTimeSlots();
 }
+
 function renderTimeSlots(){
     let html = '';
     timeSlots.forEach((s,i) => {
-        html += `<div class="card"><input type="time" value="${s.time_slot_start}" onchange="updateSlot(${i},'start',this.value)"> - <input type="time" value="${s.time_slot_end}" onchange="updateSlot(${i},'end',this.value)"> 最多团队 <input type="number" value="${s.max_teams}" style="width:60px" onchange="updateSlot(${i},'max_teams',this.value)"> <button class="btn-danger" onclick="removeSlot(${i})">删除</button></div>`;
+        html += `<div class="card">
+            <input type="time" value="${s.time_slot_start}" onchange="updateSlot(${i},'start',this.value)"> - 
+            <input type="time" value="${s.time_slot_end}" onchange="updateSlot(${i},'end',this.value)">
+            最多团队 <input type="number" value="${s.max_teams}" style="width:60px" onchange="updateSlot(${i},'max_teams',this.value)">
+            <button class="btn-danger" onclick="removeSlot(${i})">删除</button>
+        </div>`;
     });
     document.getElementById('time-slots').innerHTML = html || '<p>暂无时段</p>';
 }
+
 function addTimeSlot(){ timeSlots.push({time_slot_start:'09:00', time_slot_end:'10:30', max_teams:1}); renderTimeSlots(); }
-function updateSlot(idx, field, value){ timeSlots[idx][field==='start'?'time_slot_start':field==='end'?'time_slot_end':'max_teams'] = field==='max_teams'?parseInt(value):value; }
+function updateSlot(idx, field, value){ 
+    if(field === 'start') timeSlots[idx].time_slot_start = value;
+    else if(field === 'end') timeSlots[idx].time_slot_end = value;
+    else timeSlots[idx].max_teams = parseInt(value)||1;
+}
 function removeSlot(idx){ timeSlots.splice(idx,1); renderTimeSlots(); }
+
 async function saveReserveSettings(){
     const dayLimit = parseInt(document.getElementById('day-limit').value)||10;
     const teamMax = parseInt(document.getElementById('team-max').value)||50;
     await sb.from('reservation_settings').delete().eq('merchant_id', merchant.id);
     if(timeSlots.length){
-        const data = timeSlots.map(s => ({ merchant_id:merchant.id, time_slot_start:s.time_slot_start, time_slot_end:s.time_slot_end, max_teams:s.max_teams, day_total_limit:dayLimit, team_max_size:teamMax }));
+        const data = timeSlots.map(s => ({ 
+            merchant_id:merchant.id, 
+            time_slot_start:s.time_slot_start, 
+            time_slot_end:s.time_slot_end, 
+            max_teams:s.max_teams, 
+            day_total_limit:dayLimit, 
+            team_max_size:teamMax 
+        }));
         await sb.from('reservation_settings').insert(data);
     }
     alert('预约时段已保存');
 }
-// --- 活动模板 ---
+
 async function loadActivities(){
     const { data } = await sb.from('reservation_activities').select('*').eq('merchant_id', merchant.id);
-    document.getElementById('activity-list').innerHTML = data.map(a => `<div class="card"><b>${a.title}</b> (${a.duration||0}分钟) <button class="btn-danger" onclick="deleteActivity(${a.id})">删除</button></div>`).join('');
+    document.getElementById('activity-list').innerHTML = data.map(a => 
+        `<div class="card"><b>${a.title}</b> (${a.duration||0}分钟) <button class="btn-danger" onclick="deleteActivity(${a.id})">删除</button></div>`
+    ).join('');
 }
+
 async function addActivity(){
     const title = prompt('活动名称'), duration = prompt('时长(分钟)'), desc = prompt('描述');
     if(!title) return;
     await sb.from('reservation_activities').insert({merchant_id:merchant.id, title, duration:parseInt(duration)||60, description:desc||''});
     loadActivities();
 }
+
 async function deleteActivity(id){ if(confirm('删除？')){ await sb.from('reservation_activities').delete().eq('id',id); loadActivities(); } }
-// --- 预约列表 ---
+
 async function loadReservations(){
     const { data } = await sb.from('reservations').select('*').eq('merchant_id', merchant.id).order('created_at',false);
     let html = '';
@@ -166,6 +199,7 @@ async function loadReservations(){
     });
     document.getElementById('reservation-list').innerHTML = html || '<p>暂无预约</p>';
 }
+
 async function updateReservation(id, status){
     await sb.from('reservations').update({status}).eq('id',id);
     loadReservations();

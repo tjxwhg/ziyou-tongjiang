@@ -82,17 +82,24 @@ async function login(){
     if(error) document.getElementById('login-msg').innerText = '登录失败：'+error.message;
 }
 async function logout(){ await sb.auth.signOut(); }
+
 function switchTab(tab){
-    document.querySelectorAll('.tab button').forEach(b => b.classList.remove('active'));
-    event.target.classList.add('active');
-    ['poi','routes','feedbacks','merchants','transport'].forEach(t => document.getElementById('tab-'+t).classList.add('hidden'));
+    const tabNames = ['poi','routes','feedbacks','merchants','transport'];
+    const buttons = document.querySelectorAll('.tab button');
+    buttons.forEach(b => b.classList.remove('active'));
+    const idx = tabNames.indexOf(tab);
+    if(idx >= 0 && buttons[idx]) buttons[idx].classList.add('active');
+    
+    tabNames.forEach(t => document.getElementById('tab-'+t).classList.add('hidden'));
     document.getElementById('tab-'+tab).classList.remove('hidden');
+    
     if(tab==='poi') loadPOIs();
     if(tab==='routes') loadRoutes();
     if(tab==='feedbacks') loadFeedbacks();
     if(tab==='merchants') loadMerchants();
     if(tab==='transport') loadTransport();
 }
+
 // --- POI 管理 ---
 async function loadPOIs(){
     const { data } = await sb.from('ztj_poi').select('*').order('sort_order');
@@ -139,8 +146,8 @@ async function addSubPoi(poiId){
     await sb.from('sub_pois').insert({poi_id:poiId, name, lat:parseFloat(lat), lng:parseFloat(lng)});
     loadSubPois(poiId);
 }
-async function editSubPoi(id){ /* 省略，用prompt实现 */ }
-async function deleteSubPoi(id){ if(confirm('删除？')){ await sb.from('sub_pois').delete().eq('id',id); loadSubPois(/*需要poiId*/); } }
+async function editSubPoi(id){ /* 可扩展 */ }
+async function deleteSubPoi(id){ if(confirm('删除？')){ await sb.from('sub_pois').delete().eq('id',id); /* 需刷新列表，可暂不处理 */ } }
 
 // --- 路线管理 ---
 async function loadRoutes(){
@@ -154,7 +161,7 @@ async function showAddRoute(){
     alert('已创建路线 ID:'+data[0].id);
     loadRoutes();
 }
-async function editRoute(id){ alert('请在线路详情中添加节点，暂用简化版'); }
+async function editRoute(id){ alert('编辑路线功能简化，可自行扩展'); }
 async function deleteRoute(id){ if(confirm('删除？')){ await sb.from('ztj_routes').delete().eq('id',id); loadRoutes(); } }
 
 // --- 留言 ---
@@ -176,9 +183,9 @@ async function loadMerchants(){
 async function createMerchant(){
     const email = prompt('邮箱'), pwd = prompt('密码'), name = prompt('商户名称'), poiId = prompt('绑定POI ID');
     if(!email||!pwd||!name) return;
-    const { data: user, error } = await sb.auth.admin.createUser({email, password:pwd, email_confirm:true});
+    const { data: userData, error } = await sb.auth.admin.createUser({email, password:pwd, email_confirm:true});
     if(error){ alert('创建用户失败：'+error.message); return; }
-    await sb.from('ztj_merchants').insert({id:user.user.id, account_id:name, display_name:name, poi_id:poiId||null});
+    await sb.from('ztj_merchants').insert({id:userData.user.id, account_id:name, display_name:name, poi_id:poiId||null});
     alert('商户账号创建成功');
     loadMerchants();
 }

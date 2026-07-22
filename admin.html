@@ -34,6 +34,8 @@
         .transport-item label { width:40%; font-size:14px; }
         .transport-item input { width:80px; padding:4px; border:1px solid #ccc; border-radius:4px; text-align:center; }
         .save-status { font-size:12px; margin-left:8px; color:#2e7d32; }
+        .category-group { margin-bottom:15px; }
+        .category-title { font-size:16px; font-weight:bold; background:#e9f5ea; padding:8px; border-radius:4px; cursor:pointer; }
     </style>
 </head>
 <body>
@@ -132,31 +134,252 @@ function switchTab(tab){
     if(tab==='feedbacks') loadFeedbacks();
 }
 
-// POI 管理（保持不变）
-async function loadPOIs(){ /* 略，与之前相同 */ }
-async function toggleEditPoi(id){ /* 略 */ }
-async function savePoiEdit(id){ /* 略 */ }
-async function uploadPoiVoice(poiId, input){ /* 略 */ }
-function showAddPoi(){ /* 略 */ }
-async function manageSubPois(poiId){ /* 略 */ }
-async function loadSubPois(poiId){ /* 略 */ }
-async function addSubPoi(parentId){ /* 略 */ }
-async function removeFromParent(subId, parentId){ /* 略 */ }
-async function deletePoi(id){ /* 略 */ }
+// ========== POI 管理 ==========
+async function loadPOIs(){
+    const { data } = await sb.from('ztj_poi').select('*').eq('status','active').order('sort_order');
+    const grouped = {};
+    POI_CATEGORIES.forEach(cat => grouped[cat] = []);
+    if(data) data.forEach(p => {
+        const cats = (p.category||'').split(',');
+        cats.forEach(c => { if(grouped[c]) grouped[c].push(p); });
+    });
+    let html = '';
+    POI_CATEGORIES.forEach(cat => {
+        const pois = grouped[cat] || [];
+        if(pois.length===0) return;
+        html += `<div class="category-group">
+            <div class="category-title" onclick="this.nextElementSibling.classList.toggle('hidden')">${cat} (${pois.length})</div>
+            <div class="category-content hidden">`;
+        pois.forEach(p => {
+            const hasParent = p.parent_id ? true : false;
+            html += `<div class="card ${hasParent?'sub-poi-card':''}">
+                <div class="poi-name-header">
+                    <span><b>${p.name}</b> [${p.category}] 游览时长：${p.visit_duration||60}分钟</span>
+                    <div>
+                        <button class="btn btn-default" onclick="toggleEditPoi(${p.id})">编辑</button>
+                        ${!hasParent ? `<button class="btn btn-default" onclick="manageSubPois(${p.id})">子点管理</button>` : ''}
+                        <button class="btn btn-danger" onclick="deletePoi(${p.id})">删除</button>
+                    </div>
+                </div>
+                <div id="edit-poi-${p.id}" class="inline-edit hidden"></div>
+                <div id="sub-pois-${p.id}" class="hidden" style="margin-top:8px;"></div>
+            </div>`;
+        });
+        html += `</div></div>`;
+    });
+    document.getElementById('poi-list').innerHTML = html || '<p>暂无POI</p>';
+}
 
-// 路线管理（保持不变）
-async function loadRoutes(){ /* 略 */ }
-async function loadPoiOptionsForRoute(){ /* 略 */ }
-async function renderRouteNodes(){ /* 略 */ }
-function updateRouteNode(idx, field, value){ /* 略 */ }
-function addRouteNode(){ /* 略 */ }
-function removeRouteNode(idx){ /* 略 */ }
-function toggleRouteForm(editMode = false){ /* 略 */ }
-async function editRoute(id){ /* 略 */ }
-async function saveRoute(){ /* 略 */ }
-async function deleteRoute(id){ /* 略 */ }
+async function toggleEditPoi(id){
+    const container = document.getElementById(`edit-poi-${id}`);
+    if(!container.classList.contains('hidden')){ container.classList.add('hidden'); return; }
+    const { data:poi } = await sb.from('ztj_poi').select('*').eq('id',id).single();
+    const selectedCats = (poi.category||'').split(',');
+    const { data: parents } = await sb.from('ztj_poi').select('id,name').is('parent_id', null).neq('id', id);
+    let parentOpts = '<option value="">无</option>';
+    if(parents) parents.forEach(p => parentOpts += `<option value="${p.id}" ${poi.parent_id==p.id?'selected':''}>${p.name}</option>`);
+    container.innerHTML = `
+        <div class="form-group"><label>名称</label><input id="edit-name-${id}" value="${poi.name}"></div>
+        <div class="form-group"><label>类别</label>
+            <div class="checkbox-group">${POI_CATEGORIES.map(c => `<label><input type="checkbox" value="${c}" ${selectedCats.includes(c)?'checked':''}> ${c}</label>`).join('')}</div>
+        </div>
+        <div class="form-group"><label>归属主景区</label><select id="edit-parent-${id}">${parentOpts}</select></div>
+        <div class="form-group"><label>游览时长 (分钟)</label><input type="number" id="edit-visit-${id}" value="${poi.visit_duration||60}"></div>
+        <div class="form-group"><label>纬度</label><input type="number" step="any" id="edit-lat-${id}" value="${poi.lat}"></div>
+        <div class="form-group"><label>经度</label><input type="number" step="any" id="edit-lng-${id}" value="${poi.lng}"></div>
+        <div class="form-group"><label>简介</label><textarea id="edit-desc-${id}">${poi.description||''}</textarea></div>
+        <div class="form-group"><label>语音文件</label><input type="file" accept="audio/*" onchange="uploadPoiVoice(${id}, this)"></div>
+        <button class="btn btn-primary" onclick="savePoiEdit(${id})">保存</button>
+        <button class="btn btn-default" onclick="toggleEditPoi(${id})">取消</button>
+    `;
+    container.classList.remove('hidden');
+}
 
-// ========== 交通耗时编辑器（修复保存逻辑） ==========
+async function savePoiEdit(id){
+    const name = document.getElementById(`edit-name-${id}`).value.trim();
+    const lat = parseFloat(document.getElementById(`edit-lat-${id}`).value);
+    const lng = parseFloat(document.getElementById(`edit-lng-${id}`).value);
+    if(!name || isNaN(lat) || isNaN(lng)){ alert('名称、经纬度必填'); return; }
+    const checks = [...document.querySelectorAll(`#edit-poi-${id} input[type="checkbox"]:checked`)].map(cb => cb.value);
+    const category = checks.join(',');
+    const parent_id = document.getElementById(`edit-parent-${id}`).value || null;
+    const visit_duration = parseInt(document.getElementById(`edit-visit-${id}`).value) || 60;
+    const description = document.getElementById(`edit-desc-${id}`).value;
+    await sb.from('ztj_poi').update({ name, lat, lng, category, parent_id: parent_id||null, visit_duration, description }).eq('id', id);
+    alert('保存成功');
+    loadPOIs();
+}
+
+async function uploadPoiVoice(poiId, input){
+    const file = input.files[0];
+    if(!file) return;
+    const path = `poi_${poiId}_${Date.now()}.mp3`;
+    const { error } = await sb.storage.from('audio-guides').upload(path, file);
+    if(error){ alert('上传失败'); return; }
+    const { data: { publicUrl } } = sb.storage.from('audio-guides').getPublicUrl(path);
+    await sb.from('ztj_poi').update({ voice_cn: publicUrl }).eq('id', poiId);
+    alert('语音已更新');
+}
+
+function showAddPoi(){
+    const name = prompt('名称'), lat = prompt('纬度'), lng = prompt('经度');
+    if(!name||!lat||!lng) return;
+    sb.from('ztj_poi').insert({ name, lat:parseFloat(lat), lng:parseFloat(lng), category: '' }).then(() => loadPOIs());
+}
+
+async function manageSubPois(poiId){
+    const container = document.getElementById(`sub-pois-${poiId}`);
+    if(!container.classList.contains('hidden')){ container.classList.add('hidden'); return; }
+    container.classList.remove('hidden');
+    loadSubPois(poiId);
+}
+
+async function loadSubPois(poiId){
+    const { data } = await sb.from('ztj_poi').select('*').eq('parent_id', poiId).order('sort_order');
+    let html = `<button class="btn btn-primary" onclick="addSubPoi(${poiId})">+ 添加子点</button>`;
+    if(data) data.forEach(sub => {
+        html += `<div class="card sub-poi-card">
+            <div><b>${sub.name}</b> (${sub.lat},${sub.lng})</div>
+            <button class="btn btn-default" onclick="toggleEditPoi(${sub.id})">编辑</button>
+            <button class="btn btn-danger" onclick="removeFromParent(${sub.id}, ${poiId})">移出</button>
+        </div>`;
+    });
+    document.getElementById(`sub-pois-${poiId}`).innerHTML = html;
+}
+
+async function addSubPoi(parentId){
+    const name = prompt('子点名称'), lat = prompt('纬度'), lng = prompt('经度');
+    if(!name||!lat||!lng) return;
+    await sb.from('ztj_poi').insert({ name, lat:parseFloat(lat), lng:parseFloat(lng), parent_id: parentId, category: '' });
+    loadSubPois(parentId);
+}
+
+async function removeFromParent(subId, parentId){
+    await sb.from('ztj_poi').update({ parent_id: null }).eq('id', subId);
+    loadSubPois(parentId);
+    loadPOIs();
+}
+
+async function deletePoi(id){
+    if(confirm('确定删除？')){ await sb.from('ztj_poi').delete().eq('id', id); loadPOIs(); }
+}
+
+// ========== 路线管理 ==========
+async function loadPoiOptionsForRoute(){
+    const { data } = await sb.from('ztj_poi').select('id,name').order('name');
+    window.poiOptions = data || [];
+}
+
+async function renderRouteNodes(){
+    if(!window.poiOptions) await loadPoiOptionsForRoute();
+    const container = document.getElementById('route-node-selects');
+    const opts = (window.poiOptions||[]).map(p => `<option value="${p.id}">${p.name}</option>`).join('');
+    let html = '';
+    routeNodes.forEach((n, i) => {
+        html += `<div class="route-node">
+            <select onchange="updateRouteNode(${i},'poi_id',this.value)">
+                <option value="">--选择--</option>${opts}
+            </select>
+            <input type="number" value="${n.duration_min||60}" placeholder="分钟" style="width:80px" onchange="updateRouteNode(${i},'duration_min',this.value)">
+            <button class="btn btn-danger" onclick="removeRouteNode(${i})">删除</button>
+        </div>`;
+    });
+    container.innerHTML = html;
+    routeNodes.forEach((n, i) => {
+        const sel = container.querySelectorAll('select')[i];
+        if(sel && n.poi_id) sel.value = n.poi_id;
+    });
+}
+
+function updateRouteNode(idx, field, value){
+    if(field === 'poi_id') routeNodes[idx].poi_id = value || '';
+    else routeNodes[idx].duration_min = parseInt(value) || 60;
+}
+
+function addRouteNode(){ routeNodes.push({ poi_id: '', duration_min: 60 }); renderRouteNodes(); }
+function removeRouteNode(idx){ routeNodes.splice(idx,1); renderRouteNodes(); }
+
+function toggleRouteForm(editMode = false){
+    const form = document.getElementById('route-form');
+    if(!form.classList.contains('hidden')){ form.classList.add('hidden'); return; }
+    form.classList.remove('hidden');
+    if(!editMode){
+        document.getElementById('edit-route-id').value = '';
+        document.getElementById('route-name').value = '';
+        document.getElementById('route-start-time').value = '08:30';
+        document.getElementById('route-transport').value = '';
+        document.getElementById('route-form-title').textContent = '新增路线';
+        routeNodes = [];
+        renderRouteNodes();
+    }
+    loadPoiOptionsForRoute();
+}
+
+async function editRoute(id){
+    const form = document.getElementById('route-form');
+    form.classList.remove('hidden');
+    document.getElementById('route-form-title').textContent = '编辑路线';
+    const { data: route } = await sb.from('ztj_routes').select('*').eq('id',id).single();
+    const { data: nodes } = await sb.from('ztj_route_nodes').select('*').eq('route_id',id).order('order_num');
+    document.getElementById('edit-route-id').value = id;
+    document.getElementById('route-name').value = route.name;
+    document.getElementById('route-start-time').value = route.start_time || '08:30';
+    document.getElementById('route-transport').value = route.transport || '';
+    routeNodes = (nodes||[]).map(n => ({ poi_id: n.poi_id, duration_min: n.duration_min }));
+    await loadPoiOptionsForRoute();
+    renderRouteNodes();
+}
+
+async function saveRoute(){
+    const name = document.getElementById('route-name').value.trim();
+    if(!name){ alert('输入路线名称'); return; }
+    const editId = document.getElementById('edit-route-id').value;
+    const start_time = document.getElementById('route-start-time').value;
+    const transport = document.getElementById('route-transport').value;
+    const routeData = { name, start_time, transport };
+    let routeId = editId;
+    if(editId){
+        await sb.from('ztj_routes').update(routeData).eq('id', editId);
+        await sb.from('ztj_route_nodes').delete().eq('route_id', editId);
+    } else {
+        const { data, error } = await sb.from('ztj_routes').insert(routeData).select();
+        if(error){ alert('创建路线失败：'+error.message); return; }
+        routeId = data[0].id;
+    }
+    const nodesPayload = routeNodes.filter(n => n.poi_id).map((n,i) => ({
+        route_id: parseInt(routeId),
+        poi_id: parseInt(n.poi_id),
+        order_num: i+1,
+        duration_min: n.duration_min || 60,
+        transport_mode: '步行',
+        transport_time: 0
+    }));
+    if(nodesPayload.length === 0){ alert('请至少添加一个有效节点'); return; }
+    const { error } = await sb.from('ztj_route_nodes').insert(nodesPayload);
+    if(error){ alert('保存节点失败：'+error.message); return; }
+    alert('路线已保存');
+    document.getElementById('route-form').classList.add('hidden');
+    loadRoutes();
+}
+
+async function deleteRoute(id){
+    if(confirm('删除路线？')){
+        await sb.from('ztj_route_nodes').delete().eq('route_id', id);
+        await sb.from('ztj_routes').delete().eq('id', id);
+        loadRoutes();
+    }
+}
+
+async function loadRoutes(){
+    const { data } = await sb.from('ztj_routes').select('*');
+    let html = '';
+    if(data && data.length){
+        data.forEach(r => html += `<div class="card"><b>${r.name}</b> (${r.start_time||'未设'}) <button class="btn btn-default" onclick="editRoute(${r.id})">编辑</button> <button class="btn btn-danger" onclick="deleteRoute(${r.id})">删除</button></div>`);
+    } else html = '<p>暂无路线</p>';
+    document.getElementById('route-list').innerHTML = html;
+}
+
+// ========== 交通耗时编辑器（使用 'auto' 兼容约束） ==========
 async function loadTransportEditor(){
     const { data: pois } = await sb.from('ztj_poi').select('id,name').is('parent_id', null).order('name');
     mainPoisForTransport = [ { id: 0, name: '红军广场' }, ...(pois||[]) ];
@@ -180,15 +403,13 @@ function getTransportTimeAdmin(fromId, toId){
 async function saveTransportTime(fromId, toId, time){
     const timeVal = parseInt(time);
     if(isNaN(timeVal) || timeVal < 0) return;
-    // upsert 基于唯一约束 from_poi_id + to_poi_id
     const { error } = await sb.from('ztj_transport_presets').upsert({
         from_poi_id: fromId,
         to_poi_id: toId,
-        travel_mode: 'general',
+        travel_mode: 'auto',
         time_min: timeVal
     }, { onConflict: 'from_poi_id,to_poi_id' });
     if(error) {
-        console.error('保存失败', error);
         alert('保存失败：' + error.message);
     } else {
         if(!allTransportPresets[fromId]) allTransportPresets[fromId] = {};
@@ -228,17 +449,14 @@ async function handleTransportChange(input){
     const to = parseInt(input.dataset.to);
     const val = input.value.trim();
     const statusEl = input.parentElement.querySelector('.save-status');
-    if(val === '') {
-        statusEl.textContent = '';
-        return;
-    }
+    if(val === '') { statusEl.textContent = ''; return; }
     statusEl.textContent = '保存中...';
     await saveTransportTime(from, to, val);
     statusEl.textContent = '✓已保存';
     setTimeout(() => statusEl.textContent = '', 1500);
 }
 
-// 商户账号
+// ========== 商户账号 ==========
 async function createMerchant(){
     const email = prompt('商户邮箱'), pwd = prompt('密码'), name = prompt('商户名称'), poiId = prompt('绑定POI ID（可留空）');
     if(!email||!pwd||!name) return;
@@ -248,9 +466,23 @@ async function createMerchant(){
     alert('商户创建成功');
 }
 
-// 留言
-async function loadFeedbacks(){ /* 略 */ }
-async function replyFeedback(id){ /* 略 */ }
+// ========== 留言反馈 ==========
+async function loadFeedbacks(){
+    const { data } = await sb.from('ztj_feedbacks').select('*').order('created_at', {ascending: false});
+    let html = '';
+    if(data) data.forEach(f => {
+        html += `<div class="card"><p><b>留言：</b>${f.message}</p><p><small>${new Date(f.created_at).toLocaleString()}</small></p>
+        <p><b>回复：</b>${f.reply||'未回复'}</p>
+        <textarea id="reply-${f.id}" rows="2">${f.reply||''}</textarea>
+        <button class="btn btn-primary" onclick="replyFeedback(${f.id})">回复</button></div>`;
+    });
+    document.getElementById('feedback-list').innerHTML = html || '<p>暂无留言</p>';
+}
+async function replyFeedback(id){
+    const reply = document.getElementById('reply-'+id).value;
+    await sb.from('ztj_feedbacks').update({ reply }).eq('id', id);
+    loadFeedbacks();
+}
 
 window.onload = checkSession;
 </script>

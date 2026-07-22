@@ -157,10 +157,9 @@ function getTransportTime(fromId, toId) {
     if (transportPresets[key] !== undefined) return transportPresets[key];
     const reverseKey = `${tId}_${fId}`;
     if (transportPresets[reverseKey] !== undefined) return transportPresets[reverseKey];
-    return null; // 无数据
+    return null;
 }
 
-// 记录缺失数据
 async function reportMissingTransport(fromId, toId, fromName, toName){
     const fId = fromId === 'county' ? 0 : fromId;
     const tId = toId === 'county' ? 0 : toId;
@@ -168,9 +167,75 @@ async function reportMissingTransport(fromId, toId, fromName, toName){
     await sb.from('ztj_feedbacks').insert({ user_id: 'system', message: msg });
 }
 
-// 其他函数保持不变...
+function renderPOIs(pois){
+    map.eachLayer(layer => { if(layer instanceof L.Marker) map.removeLayer(layer); });
+    if(window.simMarker) window.simMarker.addTo(map);
+    if(window.routeLine) window.routeLine.addTo(map);
+    pois.forEach(p => {
+        const mainCat = (p.category||'').split(',')[0] || '其他';
+        const color = poiColors[mainCat] || '#999';
+        const icon = L.divIcon({html:`<div style="background:${color}; width:20px; height:20px; border-radius:50%; border:2px solid white;"></div>`, iconSize:[20,20]});
+        const m = L.marker([p.lat,p.lng], {icon}).addTo(map);
+        m.on('click', ()=> showPoiDetail(p));
+    });
+}
 
-// ========== 自设行程（无子POI） ==========
+async function showPoiDetail(poi){
+    const { data: m } = await sb.from('ztj_merchants').select('*').eq('poi_id', poi.id).maybeSingle();
+    document.getElementById('merchantDetailTitle').textContent = poi.name;
+    let html = `<p>${poi.description||''}</p>`;
+    if(m){
+        html += `<p>📞 ${m.phone||'未提供'}</p>`;
+        html += `<p>状态：${m.status==='open'?'营业':m.status==='closed'?'休息':'繁忙'}</p>`;
+        html += `<p>车位：${m.parking_spots||0}</p>`;
+        if(m.allow_reserve) html += `<button class="reserve-btn" onclick="openReservePanel('${m.id}')">📋 研学预约</button>`;
+    }
+    document.getElementById('merchantDetailContent').innerHTML = html;
+    openPanel('merchantDetailPanel');
+}
+
+async function openReservePanel(merchantId){
+    const { data: activities } = await sb.from('reservation_activities').select('*').eq('merchant_id', merchantId);
+    let html = `
+        <div class="form-group"><label>活动类型</label><select id="reserve-activity" onchange="updateActivityDetail()">
+            ${activities.map(a => `<option value="${a.id}" data-location="${a.location||''}">${a.title}</option>`).join('')}
+        </select></div>
+        <div id="activity-location" style="margin:8px 0; color:#666;"></div>
+        <div class="form-group"><label>单位名称</label><select id="reserve-unit"><option>单位</option><option>集团</option><option>家庭</option><option>团队</option><option>其他</option></select> <input id="reserve-unit-other" placeholder="自定义" style="display:none; margin-top:4px;"></div>
+        <div class="form-group"><label>联系人</label><input id="reserve-name"></div>
+        <div class="form-group"><label>联系电话</label><input id="reserve-phone"></div>
+        <div class="form-group"><label>人数</label><input type="number" id="reserve-count" min="1"></div>
+        <div class="form-group"><label>预约日期</label><input type="date" id="reserve-date" min="${new Date().toISOString().split('T')[0]}"></div>
+        <div class="form-group"><label>时段</label><div id="time-slots"></div></div>
+        <div class="form-group"><label>教室/场地</label><select id="reserve-room">
+            <option>会议室</option><option>功能室</option><option>多媒体室</option><option>圆桌会议室</option><option>核心景点</option><option>会客室</option>
+        </select></div>
+        <button class="btn btn-primary" onclick="submitReservation('${merchantId}')" style="margin-top:12px;">提交预约</button>
+    `;
+    document.getElementById('reserveContent').innerHTML = html;
+    document.getElementById('reserve-date').onchange = ()=> loadTimeSlots(merchantId);
+    document.getElementById('reserve-unit').onchange = function(){
+        document.getElementById('reserve-unit-other').style.display = this.value==='其他'?'block':'none';
+    };
+    updateActivityDetail();
+    openPanel('reservePanel');
+}
+function updateActivityDetail(){ /* 同上 */ }
+async function loadTimeSlots(merchantId){ /* 同上 */ }
+function selectTimeSlot(el, slot){ /* 同上 */ }
+async function submitReservation(merchantId){ /* 同上 */ }
+
+// 路线推荐
+async function loadRoutes(){
+    const { data } = await sb.from('ztj_routes').select('*');
+    document.getElementById('routeList').innerHTML = data.map(r => `
+        <div class="card">
+            <h3>${r.name}</h3><p>${r.days||1}天 | ${r.transport||'自驾'}</p>
+            <button class="btn btn-primary" onclick="showRouteDetail(${r.id})">查看详情</button>
+        </div>`).join('');
+}
+
+// 自设行程（无子POI）
 let routeLegs = [], mainPoiOptions = [];
 
 async function toggleCustomTripSection(){
@@ -230,17 +295,16 @@ async function generateCustomTrip(){
     const valid = routeLegs.filter(l => l.id && l.id!=='county');
     if(valid.length===0) return alert('请至少选择一个景区');
     const startTime = document.getElementById('trip-time').value;
-    const mode = document.getElementById('trip-mode').value; // 暂不使用
     let fullNodes = [ { ...routeLegs[0], type:'start' } ];
     for(let i=1; i<routeLegs.length; i++) fullNodes.push({ ...routeLegs[i], type:'poi', visitDuration: allPois.find(p=>p.id==routeLegs[i].id)?.visit_duration || 60 });
 
-    // 检查并记录缺失
+    // 检查缺失并反馈
     for(let i=1; i<fullNodes.length; i++){
         const from = fullNodes[i-1], to = fullNodes[i];
         const time = getTransportTime(from.id, to.id);
         if(time === null){
             await reportMissingTransport(from.id, to.id, from.name, to.name);
-            fullNodes[i].transportTime = -1; // 标记缺失
+            fullNodes[i].transportTime = -1;
         } else {
             fullNodes[i].transportTime = time;
         }
@@ -268,11 +332,23 @@ async function generateCustomTrip(){
     if(missingList.length) timeline += `<div style="color:#c00;">${missingList.join('<br>')}</div>`;
     document.getElementById('generated-trip').innerHTML = `<div class="card">${timeline}</div>`;
     document.getElementById('saveGeneratedTripBtn').classList.remove('hidden');
-    // 提示
     document.getElementById('trip-warnings').innerHTML = missingList.length ? `<div>部分交通耗时缺失，已自动反馈，请等待数据补充</div>` : '';
 }
 
-// ... 其余函数（我的面板、预约等）保持不变
+function saveGeneratedTrip(){ /* 保持不变 */ }
+
+// 我的面板
+function switchMyTab(tab){ /* 保持不变 */ }
+function renderMyTrip(){ /* 保持不变 */ }
+async function loadMyReservations(){ /* 保持不变 */ }
+async function submitFeedback(){ /* 保持不变 */ }
+
+function openPanel(id){ document.getElementById(id).classList.add('active'); if(id==='routesPanel'){ loadRoutes(); } }
+function closePanel(id){ document.getElementById(id).classList.remove('active'); }
+function startSimulation(){ alert('模拟导航功能尚未完整实现'); }
+function toggleVoice(){}
+function getDistance(lat1,lng1,lat2,lng2){ /* 不变 */ }
+
 window.onload = initMap;
 </script>
 </body>

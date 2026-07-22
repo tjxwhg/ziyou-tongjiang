@@ -8,31 +8,32 @@
     <style>
         * { margin:0; padding:0; box-sizing:border-box; }
         body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; height:100vh; overflow:hidden; }
-        #map { height:100vh; width:100vw; }
-        .top-bar { position:fixed; top:20px; right:20px; z-index:1500; }
-        .top-btn { background:white; border-radius:20px; padding:6px 12px; box-shadow:0 2px 8px rgba(0,0,0,0.2); border:none; }
-        .float-voice { position:fixed; bottom:120px; right:20px; background:#2E7D32; color:white; border-radius:50%; width:50px; height:50px; display:none; align-items:center; justify-content:center; }
-        .bottom-bar { position:fixed; bottom:20px; left:20px; right:20px; display:flex; gap:10px; }
-        .btn { flex:1; padding:14px; border:none; border-radius:12px; font-weight:bold; }
+        #map { height:100vh; width:100vw; z-index:1; position:relative; }
+        .top-bar { position:fixed; top:20px; right:20px; z-index:1500; display:flex; gap:8px; }
+        .top-btn { background:white; border-radius:20px; padding:6px 12px; box-shadow:0 2px 8px rgba(0,0,0,0.2); border:none; font-size:14px; cursor:pointer; }
+        .float-voice { position:fixed; bottom:120px; right:20px; z-index:1500; background:#2E7D32; color:white; border-radius:50%; width:50px; height:50px; display:none; align-items:center; justify-content:center; box-shadow:0 4px 12px rgba(0,0,0,0.3); cursor:pointer; font-size:20px; }
+        .bottom-bar { position:fixed; bottom:20px; left:20px; right:20px; z-index:1500; display:flex; gap:10px; }
+        .btn { flex:1; padding:14px; border:none; border-radius:12px; font-size:16px; font-weight:bold; box-shadow:0 4px 12px rgba(0,0,0,0.15); cursor:pointer; }
         .btn-primary { background:#2E7D32; color:white; }
         .btn-secondary { background:white; color:#2E7D32; }
-        .panel { position:fixed; top:0; left:0; right:0; bottom:0; background:white; z-index:2000; transform:translateY(100%); transition:0.3s; overflow-y:auto; }
+        .panel { position:fixed; top:0; left:0; right:0; bottom:0; background:white; z-index:2000; transform:translateY(100%); transition:transform 0.3s; overflow-y:auto; display:flex; flex-direction:column; }
         .panel.active { transform:translateY(0); }
-        .panel-header { padding:16px; border-bottom:1px solid #eee; display:flex; justify-content:space-between; }
-        .panel-body { padding:16px; }
-        .reserve-btn { background:#1565C0; color:white; padding:10px; border-radius:20px; width:100%; margin-top:12px; }
+        .panel-header { padding:16px; border-bottom:1px solid #eee; display:flex; justify-content:space-between; align-items:center; }
+        .panel-body { flex:1; padding:16px; overflow-y:auto; }
+        .reserve-btn { background:#1565C0; color:white; border:none; padding:10px 20px; border-radius:20px; width:100%; margin-top:12px; cursor:pointer; }
         .time-slot { display:inline-block; padding:6px 12px; margin:4px; border:1px solid #ccc; border-radius:20px; cursor:pointer; }
-        .time-slot.full { background:#eee; color:#999; }
+        .time-slot.full { background:#eee; color:#999; cursor:not-allowed; }
         .time-slot.selected { background:#2E7D32; color:white; }
         .card { border:1px solid #eee; border-radius:8px; padding:12px; margin:8px 0; background:#fafafa; }
         .hidden { display:none; }
         .form-group { margin:8px 0; }
-        label { display:block; font-weight:500; }
+        label { display:block; margin-bottom:4px; font-weight:500; }
         input, select, textarea { width:100%; padding:8px; border:1px solid #ccc; border-radius:4px; }
         .toggle-section { background:#f0f0f0; border-radius:8px; padding:12px; margin:10px 0; cursor:pointer; }
-        .my-tab { padding:8px 16px; border:none; background:#eee; border-radius:20px; }
+        .toggle-section h4 { margin:0; display:flex; justify-content:space-between; align-items:center; }
+        .my-tab { padding:8px 16px; border:none; background:#eee; border-radius:20px; cursor:pointer; }
         .my-tab.active { background:#2e7d32; color:white; }
-        .route-node { display:flex; gap:8px; align-items:center; margin:8px 0; }
+        .route-node { display:flex; gap:8px; align-items:center; margin:8px 0; flex-wrap:wrap; }
         .route-time { font-size:12px; color:#666; margin-left:8px; }
         .lang-select { margin-bottom:15px; }
     </style>
@@ -42,7 +43,7 @@
 <div class="top-bar">
     <button class="top-btn" onclick="openPanel('myPanel')">👤 我的</button>
 </div>
-<div class="float-voice" id="voiceBtn">🔊</div>
+<div class="float-voice" id="voiceBtn" onclick="toggleVoice()">🔊</div>
 <div class="bottom-bar">
     <button class="btn btn-secondary" onclick="openPanel('routesPanel')">📋 路线</button>
     <button class="btn btn-primary" id="navBtn" onclick="startSimulation()">📍 模拟导航</button>
@@ -89,7 +90,7 @@
     <div class="panel-body">
         <div class="lang-select">
             <label>语言</label>
-            <select id="langSelect" style="width:100%;">
+            <select id="langSelect" style="width:100%; padding:8px; border:1px solid #ccc; border-radius:4px;">
                 <option value="cn">中文</option><option value="en">English</option><option value="ja">日本語</option><option value="ko">한국어</option>
             </select>
         </div>
@@ -102,7 +103,7 @@
         <div id="myReservationContent" class="hidden"></div>
         <div id="myFeedbackContent" class="hidden">
             <textarea id="feedbackMsg" rows="4" placeholder="建议或问题..."></textarea>
-            <button class="btn btn-primary" onclick="submitFeedback()" style="width:100%;">提交</button>
+            <button class="btn btn-primary" onclick="submitFeedback()" style="width:100%; margin-top:10px;">提交</button>
         </div>
     </div>
 </div>
@@ -121,21 +122,31 @@ let transportPresets = {};
 
 function getUserId(){ let uid = localStorage.getItem('vid'); if(!uid){ uid='v_'+Date.now()+Math.random().toString(36); localStorage.setItem('vid',uid); } return uid; }
 
+// 地图初始化
 function initMap(){
-    map = L.map('map').setView([32.08,107.18], 12);
+    map = L.map('map', { zoomControl: false }).setView([32.08,107.18], 12);
     L.tileLayer('https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}',{
         subdomains:['1','2','3','4'], maxZoom:18
     }).addTo(map);
+    // 将缩放控件移到右上角，避免遮挡底部按钮
+    L.control.zoom({ position: 'topright' }).addTo(map);
     loadAllPOIs();
     map.on('click', e => { if(simPos) setSimulatedPosition(e.latlng.lat, e.latlng.lng); });
 }
 
 async function loadAllPOIs(){
-    const { data } = await sb.from('ztj_poi').select('*').eq('status','active');
+    const { data, error } = await sb.from('ztj_poi').select('*').eq('status','active');
+    if(error){ console.error(error); return; }
     allPois = data || [];
     renderPOIs(allPois);
+    // 构建父子关系
     window.subPoisMap = {};
-    allPois.forEach(p => { if(p.parent_id){ if(!window.subPoisMap[p.parent_id]) window.subPoisMap[p.parent_id] = []; window.subPoisMap[p.parent_id].push(p); } });
+    allPois.forEach(p => {
+        if(p.parent_id){
+            if(!window.subPoisMap[p.parent_id]) window.subPoisMap[p.parent_id] = [];
+            window.subPoisMap[p.parent_id].push(p);
+        }
+    });
     await loadTransportPresets();
 }
 
@@ -220,12 +231,56 @@ async function openReservePanel(merchantId){
     updateActivityDetail();
     openPanel('reservePanel');
 }
-function updateActivityDetail(){ /* 同上 */ }
-async function loadTimeSlots(merchantId){ /* 同上 */ }
-function selectTimeSlot(el, slot){ /* 同上 */ }
-async function submitReservation(merchantId){ /* 同上 */ }
+function updateActivityDetail(){
+    const sel = document.getElementById('reserve-activity');
+    if(sel && sel.selectedIndex>=0){
+        const loc = sel.options[sel.selectedIndex].getAttribute('data-location');
+        document.getElementById('activity-location').innerText = loc ? `默认地点：${loc}` : '';
+    }
+}
+async function loadTimeSlots(merchantId){
+    const date = document.getElementById('reserve-date').value;
+    const { data: settings } = await sb.from('reservation_settings').select('*').eq('merchant_id', merchantId);
+    const { data: existing } = await sb.from('reservations').select('time_slot_start,status').eq('merchant_id',merchantId).eq('reservation_date',date);
+    const booked = {};
+    existing.forEach(r => { if(r.status!=='rejected') booked[r.time_slot_start] = (booked[r.time_slot_start]||0)+1; });
+    let html = '';
+    settings.forEach(s => {
+        const count = booked[s.time_slot_start] || 0;
+        const full = count >= s.max_teams;
+        html += `<span class="time-slot ${full?'full':''}" onclick="${full?'':'selectTimeSlot(this,\''+s.time_slot_start+'\')'}">${s.time_slot_start}-${s.time_slot_end} (${count}/${s.max_teams})</span>`;
+    });
+    document.getElementById('time-slots').innerHTML = html || '<p>暂无可用时段</p>';
+    window.selectedTimeSlot = null;
+}
+function selectTimeSlot(el, slot){
+    document.querySelectorAll('.time-slot').forEach(s => s.classList.remove('selected'));
+    el.classList.add('selected');
+    window.selectedTimeSlot = slot;
+}
+async function submitReservation(merchantId){
+    const act = document.getElementById('reserve-activity').value;
+    const date = document.getElementById('reserve-date').value;
+    if(!window.selectedTimeSlot){ alert('请选择时段'); return; }
+    const unitSel = document.getElementById('reserve-unit');
+    let unit = unitSel.value;
+    if(unit==='其他') unit = document.getElementById('reserve-unit-other').value.trim() || '其他';
+    const name = document.getElementById('reserve-name').value;
+    const phone = document.getElementById('reserve-phone').value;
+    const count = parseInt(document.getElementById('reserve-count').value);
+    const room = document.getElementById('reserve-room').value;
+    if(!name||!phone||!count){ alert('请填写完整信息'); return; }
+    const uid = getUserId();
+    const { error } = await sb.from('reservations').insert({
+        merchant_id: merchantId, activity_id: act, user_id: uid, name, phone, unit,
+        visitor_count: count, reservation_date: date, time_slot_start: window.selectedTimeSlot,
+        room: room, status:'pending'
+    });
+    if(error) alert('提交失败：'+error.message);
+    else { alert('预约已提交'); closePanel('reservePanel'); }
+}
 
-// 路线推荐
+// 推荐路线
 async function loadRoutes(){
     const { data } = await sb.from('ztj_routes').select('*');
     document.getElementById('routeList').innerHTML = data.map(r => `
@@ -235,8 +290,21 @@ async function loadRoutes(){
         </div>`).join('');
 }
 
-// 自设行程（无子POI）
-let routeLegs = [], mainPoiOptions = [];
+async function showRouteDetail(id){
+    const { data:route } = await sb.from('ztj_routes').select('*').eq('id',id).single();
+    const { data:nodes } = await sb.from('ztj_route_nodes').select('*, poi:poi_id(name)').eq('route_id',id).order('order_num');
+    let html = `<h3>${route.name}</h3>`;
+    nodes.forEach(n => {
+        html += `<div>• ${n.poi?.name||'未知'} (停留${n.duration_min}分钟)</div>`;
+    });
+    const panel = document.createElement('div'); panel.className='panel active'; panel.id='routeDetailPanel';
+    panel.innerHTML = `<div class="panel-header"><h2>路线详情</h2><button onclick="this.parentElement.parentElement.remove()">✕</button></div><div class="panel-body">${html}</div>`;
+    document.body.appendChild(panel);
+}
+
+// ========== 自设行程（无子POI，仅预设耗时） ==========
+let routeLegs = [];
+let mainPoiOptions = [];
 
 async function toggleCustomTripSection(){
     const section = document.getElementById('customTripSection');
@@ -298,7 +366,6 @@ async function generateCustomTrip(){
     let fullNodes = [ { ...routeLegs[0], type:'start' } ];
     for(let i=1; i<routeLegs.length; i++) fullNodes.push({ ...routeLegs[i], type:'poi', visitDuration: allPois.find(p=>p.id==routeLegs[i].id)?.visit_duration || 60 });
 
-    // 检查缺失并反馈
     for(let i=1; i<fullNodes.length; i++){
         const from = fullNodes[i-1], to = fullNodes[i];
         const time = getTransportTime(from.id, to.id);
@@ -335,19 +402,89 @@ async function generateCustomTrip(){
     document.getElementById('trip-warnings').innerHTML = missingList.length ? `<div>部分交通耗时缺失，已自动反馈，请等待数据补充</div>` : '';
 }
 
-function saveGeneratedTrip(){ /* 保持不变 */ }
+function saveGeneratedTrip(){
+    if(!generatedTripData) return;
+    const name = prompt('行程名称', '自设行程');
+    if(!name) return;
+    const trips = JSON.parse(localStorage.getItem('trips')||'[]');
+    trips.push({ ...generatedTripData, name, timestamp: Date.now() });
+    localStorage.setItem('trips', JSON.stringify(trips));
+    alert('行程已保存');
+    document.getElementById('saveGeneratedTripBtn').classList.add('hidden');
+    document.getElementById('generated-trip').innerHTML = '';
+    document.getElementById('trip-warnings').innerHTML = '';
+    resetRouteLegs();
+}
 
-// 我的面板
-function switchMyTab(tab){ /* 保持不变 */ }
-function renderMyTrip(){ /* 保持不变 */ }
-async function loadMyReservations(){ /* 保持不变 */ }
-async function submitFeedback(){ /* 保持不变 */ }
+// ========== 我的面板功能 ==========
+function switchMyTab(tab){
+    document.querySelectorAll('.my-tab').forEach(b => b.classList.remove('active'));
+    document.getElementById('myTripContent').classList.add('hidden');
+    document.getElementById('myReservationContent').classList.add('hidden');
+    document.getElementById('myFeedbackContent').classList.add('hidden');
+    if(tab==='trip'){
+        document.querySelector('.my-tab:nth-child(1)').classList.add('active');
+        document.getElementById('myTripContent').classList.remove('hidden');
+        renderMyTrip();
+    } else if(tab==='reservation'){
+        document.querySelector('.my-tab:nth-child(2)').classList.add('active');
+        document.getElementById('myReservationContent').classList.remove('hidden');
+        loadMyReservations();
+    } else {
+        document.querySelector('.my-tab:nth-child(3)').classList.add('active');
+        document.getElementById('myFeedbackContent').classList.remove('hidden');
+    }
+}
+
+function renderMyTrip(){
+    const trips = JSON.parse(localStorage.getItem('trips')||'[]');
+    document.getElementById('myTripContent').innerHTML = trips.length ? trips.map((t,i)=>`
+        <div class="card">
+            <h4>${t.name}</h4>
+            <p>${t.time || ''} | ${t.mode || ''} | ${t.people || ''}人</p>
+            ${t.nodes.map(n => `<div>• ${n.name} (${n.visitDuration}分钟)</div>`).join('')}
+            <button class="btn btn-danger" onclick="deleteTrip(${i})">删除</button>
+        </div>`).join('') : '<p>暂无保存的行程</p>';
+}
+
+function deleteTrip(idx){
+    const trips = JSON.parse(localStorage.getItem('trips')||'[]');
+    trips.splice(idx,1);
+    localStorage.setItem('trips', JSON.stringify(trips));
+    renderMyTrip();
+}
+
+async function loadMyReservations(){
+    const uid = getUserId();
+    const { data } = await sb.from('reservations').select('*').eq('user_id', uid).order('created_at',false);
+    document.getElementById('myReservationContent').innerHTML = data && data.length ? data.map(r => `
+        <div class="card">
+            <p><b>${r.reservation_date} ${r.time_slot_start}</b> | ${r.visitor_count}人 | ${r.unit}</p>
+            <p>联系人：${r.name} ${r.phone}</p>
+            <p>状态：<span style="color:${r.status==='confirmed'?'green':r.status==='pending'?'orange':'red'}">${r.status}</span></p>
+        </div>`).join('') : '<p>暂无预约</p>';
+}
+
+async function submitFeedback(){
+    const msg = document.getElementById('feedbackMsg').value;
+    if(!msg) return;
+    await sb.from('ztj_feedbacks').insert({ user_id: getUserId(), message: msg });
+    alert('感谢反馈！');
+    document.getElementById('feedbackMsg').value = '';
+}
+
+// 语言切换
+document.getElementById('langSelect')?.addEventListener('change', e => currentLang = e.target.value);
 
 function openPanel(id){ document.getElementById(id).classList.add('active'); if(id==='routesPanel'){ loadRoutes(); } }
 function closePanel(id){ document.getElementById(id).classList.remove('active'); }
 function startSimulation(){ alert('模拟导航功能尚未完整实现'); }
 function toggleVoice(){}
-function getDistance(lat1,lng1,lat2,lng2){ /* 不变 */ }
+function getDistance(lat1,lng1,lat2,lng2){
+    const R=6371000, dLat=(lat2-lat1)*Math.PI/180, dLng=(lng2-lng1)*Math.PI/180;
+    const a=Math.sin(dLat/2)**2+Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLng/2)**2;
+    return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+}
 
 window.onload = initMap;
 </script>

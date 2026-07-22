@@ -25,8 +25,6 @@
         .time-slot-item { display:flex; gap:8px; align-items:center; margin:8px 0; }
         .status-pending { color:#E65100; font-weight:bold; }
         .status-confirmed { color:#2E7D32; font-weight:bold; }
-        .status-rejected { color:#B71C1C; font-weight:bold; }
-        .feedback-reply { background:#fff; padding:8px; border-left:3px solid #2E7D32; margin:4px 0; }
     </style>
 </head>
 <body>
@@ -56,45 +54,33 @@
                 <option value="scenic">景区</option><option value="museum">文博场馆</option><option value="hotel">住宿</option><option value="restaurant">餐饮</option><option value="shop">购物</option><option value="entertainment">娱乐</option><option value="transport">交通</option><option value="other">其他</option>
             </select></div>
             <div class="form-group"><label>营业状态</label><select id="status"><option value="open">营业中</option><option value="closed">休息</option><option value="busy">繁忙</option></select></div>
-            <div class="form-group"><label>联系电话</label><input id="phone"></div>
+            <div class="form-group"><label>电话</label><input id="phone"></div>
             <div class="form-group"><label>地址</label><input id="address"></div>
-            <div class="form-group"><label>停车场余位</label><input type="number" id="parking" min="0"></div>
-            <div class="form-group"><label>简介</label><textarea id="intro" rows="3"></textarea></div>
-            <button class="btn btn-primary" onclick="saveInfo()">保存基本信息</button>
+            <div class="form-group"><label>停车位</label><input type="number" id="parking" min="0"></div>
+            <div class="form-group"><label>简介</label><textarea id="intro"></textarea></div>
+            <button class="btn btn-primary" onclick="saveInfo()">保存</button>
         </div>
 
-        <!-- 业务管理（根据类型动态显示） -->
+        <!-- 业务管理（动态） -->
         <div id="tab-business" class="hidden">
-            <div id="business-hotel" class="hidden">
-                <h3>🏨 房型管理</h3>
-                <div id="room-list"></div>
-                <button class="btn btn-primary" onclick="addRoom()">+ 添加房型</button>
-            </div>
-            <div id="business-restaurant" class="hidden">
-                <h3>🍽️ 菜品管理</h3>
-                <div id="menu-list"></div>
-                <button class="btn btn-primary" onclick="addMenuItem()">+ 添加菜品</button>
-            </div>
-            <div id="business-other" class="hidden">
-                <p>当前业务类型无需额外业务管理，请在基本信息中完善描述。</p>
-            </div>
+            <div id="business-hotel" class="hidden"><h3>房型管理</h3><div id="room-list"></div><button class="btn btn-primary" onclick="addRoom()">+ 房型</button></div>
+            <div id="business-restaurant" class="hidden"><h3>菜品管理</h3><div id="menu-list"></div><button class="btn btn-primary" onclick="addMenuItem()">+ 菜品</button></div>
+            <div id="business-other" class="hidden"><p>当前类型无需额外业务管理</p></div>
         </div>
 
-        <!-- 预约设置 -->
+        <!-- 预约设置（仅红色/博物馆） -->
         <div id="tab-reserve-settings" class="hidden">
             <h3>每日总团队上限</h3><input type="number" id="day-limit" min="1" value="10">
             <h3>每团最大人数</h3><input type="number" id="team-max" min="1" value="50">
-            <h3>可预约时段（整点开始，时长1小时）</h3>
-            <div id="time-slots"></div>
-            <button class="btn btn-default" onclick="addTimeSlot()">+ 添加时段</button>
-            <button class="btn btn-primary" onclick="saveReserveSettings()">保存时段设置</button>
+            <h3>可预约时段</h3><div id="time-slots"></div>
+            <button onclick="addTimeSlot()">+ 时段</button>
+            <button class="btn btn-primary" onclick="saveReserveSettings()">保存</button>
         </div>
 
         <!-- 活动模板 -->
         <div id="tab-activities" class="hidden">
             <div id="activity-list"></div>
-            <button class="btn btn-primary" onclick="addActivity()">+ 新增活动</button>
-            <div id="activity-edit-form" class="hidden card"></div>
+            <button class="btn btn-primary" onclick="addActivity()">+ 活动</button>
         </div>
 
         <!-- 预约列表 -->
@@ -102,7 +88,7 @@
             <div id="reservation-list"></div>
         </div>
 
-        <!-- 留言反馈 -->
+        <!-- 留言 -->
         <div id="tab-feedbacks" class="hidden">
             <div id="feedback-list"></div>
         </div>
@@ -113,20 +99,17 @@
 <script src="config.js"></script>
 <script>
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-let merchant = null;
-let timeSlots = [];
-let serviceData = { rooms: [], menus: [] };
+let merchant = null, timeSlots = [], serviceData = {rooms:[], menus:[]};
 
 async function login(){
-    const account = document.getElementById('account').value.trim();
+    const email = document.getElementById('account').value.trim();
     const pwd = document.getElementById('password').value;
-    if (!account || !pwd) { document.getElementById('login-msg').innerText = '请输入邮箱和密码'; return; }
-    // 直接使用输入的邮箱登录，不再拼接
-    const { data, error } = await sb.auth.signInWithPassword({ email: account, password: pwd });
-    if (error) { document.getElementById('login-msg').innerText = '登录失败：' + error.message; return; }
+    if(!email || !pwd){ document.getElementById('login-msg').innerText = '请输入邮箱和密码'; return; }
+    const { data, error } = await sb.auth.signInWithPassword({ email, password: pwd });
+    if(error){ document.getElementById('login-msg').innerText = '登录失败：'+error.message; return; }
     const userId = data.session.user.id;
     const { data: m } = await sb.from('ztj_merchants').select('*').eq('id', userId).single();
-    if (!m) { alert('非商户账号，请联系管理员'); await sb.auth.signOut(); return; }
+    if(!m){ alert('非商户账号'); await sb.auth.signOut(); return; }
     merchant = m;
     document.getElementById('login-page').classList.add('hidden');
     document.getElementById('main').classList.remove('hidden');
@@ -140,27 +123,22 @@ function logout(){ sb.auth.signOut(); merchant = null; document.getElementById('
 
 function switchTab(tab){
     document.querySelectorAll('#main-tabs button').forEach(b => b.classList.remove('active'));
-    // 根据 tab 名称激活对应按钮（注意部分按钮可能隐藏）
-    const tabButtons = document.querySelectorAll('#main-tabs button');
-    tabButtons.forEach(btn => {
-        if (btn.getAttribute('onclick') && btn.getAttribute('onclick').includes(`'${tab}'`)) btn.classList.add('active');
-    });
+    const tabButtons = [...document.querySelectorAll('#main-tabs button')];
+    const idx = ['info','business','reserve-settings','activities','reservations','feedbacks'].indexOf(tab);
+    if(idx>=0) tabButtons[idx].classList.add('active');
     ['info','business','reserve-settings','activities','reservations','feedbacks'].forEach(t => document.getElementById('tab-'+t).classList.add('hidden'));
     document.getElementById('tab-'+tab).classList.remove('hidden');
-    if (tab === 'business') loadBusinessModule();
-    if (tab === 'reserve-settings') loadReserveSettings();
-    if (tab === 'activities') loadActivities();
-    if (tab === 'reservations') loadReservations();
-    if (tab === 'feedbacks') loadMerchantFeedbacks();
+    if(tab==='business') loadBusinessModule();
+    if(tab==='reserve-settings') loadReserveSettings();
+    if(tab==='activities') loadActivities();
+    if(tab==='reservations') loadReservations();
+    if(tab==='feedbacks') loadMerchantFeedbacks();
 }
 
 function showReserveTabsIfAllowed(){
-    const reserveTabs = document.querySelectorAll('.reserve-tab');
-    if (merchant.allow_reserve) {
-        reserveTabs.forEach(tab => tab.classList.remove('hidden'));
-    } else {
-        reserveTabs.forEach(tab => tab.classList.add('hidden'));
-    }
+    const tabs = document.querySelectorAll('.reserve-tab');
+    if(merchant.allow_reserve) tabs.forEach(t => t.classList.remove('hidden'));
+    else tabs.forEach(t => t.classList.add('hidden'));
 }
 
 function loadInfo(){
@@ -170,8 +148,7 @@ function loadInfo(){
     document.getElementById('parking').value = merchant.parking_spots || 0;
     document.getElementById('intro').value = merchant.intro || '';
     document.getElementById('business_type').value = merchant.business_type || 'other';
-    if (merchant.service_data) serviceData = merchant.service_data;
-    else serviceData = { rooms: [], menus: [] };
+    if(merchant.service_data) serviceData = merchant.service_data;
 }
 
 function onBusinessTypeChange(){
@@ -195,21 +172,15 @@ async function saveInfo(){
     merchant = { ...merchant, ...updates };
 }
 
-// ========== 业务管理 ==========
+// 业务管理 - 房型
 function loadBusinessModule(){
     const type = merchant.business_type || 'other';
     document.getElementById('business-hotel').classList.add('hidden');
     document.getElementById('business-restaurant').classList.add('hidden');
     document.getElementById('business-other').classList.add('hidden');
-    if (type === 'hotel') {
-        document.getElementById('business-hotel').classList.remove('hidden');
-        renderRooms();
-    } else if (type === 'restaurant') {
-        document.getElementById('business-restaurant').classList.remove('hidden');
-        renderMenus();
-    } else {
-        document.getElementById('business-other').classList.remove('hidden');
-    }
+    if(type === 'hotel'){ document.getElementById('business-hotel').classList.remove('hidden'); renderRooms(); }
+    else if(type === 'restaurant'){ document.getElementById('business-restaurant').classList.remove('hidden'); renderMenus(); }
+    else { document.getElementById('business-other').classList.remove('hidden'); }
 }
 
 function renderRooms(){
@@ -240,6 +211,7 @@ async function uploadRoomImage(idx, input){
     renderRooms();
     autoSaveBusiness();
 }
+// 菜品管理
 function renderMenus(){
     const menus = serviceData.menus || [];
     let html = '';
@@ -272,11 +244,11 @@ async function autoSaveBusiness(){
     await sb.from('ztj_merchants').update({ service_data: serviceData }).eq('id', merchant.id);
 }
 
-// ========== 预约设置 ==========
+// 预约设置
 async function loadReserveSettings(){
     const { data } = await sb.from('reservation_settings').select('*').eq('merchant_id', merchant.id);
     timeSlots = data || [];
-    if (timeSlots.length) {
+    if(timeSlots.length){
         document.getElementById('day-limit').value = timeSlots[0].day_total_limit || 10;
         document.getElementById('team-max').value = timeSlots[0].team_max_size || 50;
     }
@@ -296,69 +268,40 @@ function renderTimeSlots(){
 }
 function addTimeSlot(){ timeSlots.push({time_slot_start:'09:00', time_slot_end:'10:00', max_teams:1}); renderTimeSlots(); }
 function updateSlot(idx, field, value){
-    if (field === 'start') timeSlots[idx].time_slot_start = value;
-    else if (field === 'end') timeSlots[idx].time_slot_end = value;
-    else timeSlots[idx].max_teams = parseInt(value) || 1;
+    if(field==='start') timeSlots[idx].time_slot_start = value;
+    else if(field==='end') timeSlots[idx].time_slot_end = value;
+    else timeSlots[idx].max_teams = parseInt(value)||1;
 }
 function removeSlot(idx){ timeSlots.splice(idx,1); renderTimeSlots(); }
 async function saveReserveSettings(){
-    const dayLimit = parseInt(document.getElementById('day-limit').value) || 10;
-    const teamMax = parseInt(document.getElementById('team-max').value) || 50;
+    const dayLimit = parseInt(document.getElementById('day-limit').value)||10;
+    const teamMax = parseInt(document.getElementById('team-max').value)||50;
     await sb.from('reservation_settings').delete().eq('merchant_id', merchant.id);
-    if (timeSlots.length) {
-        const data = timeSlots.map(s => ({
-            merchant_id: merchant.id,
-            time_slot_start: s.time_slot_start,
-            time_slot_end: s.time_slot_end,
-            max_teams: s.max_teams,
-            day_total_limit: dayLimit,
-            team_max_size: teamMax
-        }));
+    if(timeSlots.length){
+        const data = timeSlots.map(s => ({ merchant_id: merchant.id, time_slot_start: s.time_slot_start, time_slot_end: s.time_slot_end, max_teams: s.max_teams, day_total_limit: dayLimit, team_max_size: teamMax }));
         await sb.from('reservation_settings').insert(data);
     }
     alert('时段设置已保存');
 }
 
-// ========== 活动模板 ==========
+// 活动模板
 async function loadActivities(){
     const { data } = await sb.from('reservation_activities').select('*').eq('merchant_id', merchant.id);
     let html = '';
     data.forEach(a => {
-        html += `<div class="card">
-            <b>${a.title}</b> (${a.duration||0}分钟) 地点：${a.location||''}
-            <button class="btn btn-default" onclick="editActivity(${a.id})">编辑</button>
-            <button class="btn btn-danger" onclick="deleteActivity(${a.id})">删除</button>
-        </div>`;
+        html += `<div class="card"><b>${a.title}</b> (${a.duration||0}分钟) 地点：${a.location||''} <button class="btn btn-default" onclick="editActivity(${a.id})">编辑</button> <button class="btn btn-danger" onclick="deleteActivity(${a.id})">删除</button></div>`;
     });
     document.getElementById('activity-list').innerHTML = html || '<p>暂无活动</p>';
 }
 async function addActivity(){
-    document.getElementById('activity-edit-form').classList.remove('hidden');
-    document.getElementById('activity-edit-form').innerHTML = `
-        <div class="form-group"><label>活动名称</label><input id="act-name"></div>
-        <div class="form-group"><label>时长(分钟)</label><input type="number" id="act-duration" value="60"></div>
-        <div class="form-group"><label>地点</label><input id="act-location" placeholder="如：多媒体室、会议室"></div>
-        <div class="form-group"><label>描述</label><textarea id="act-desc"></textarea></div>
-        <button class="btn btn-primary" onclick="saveActivity()">保存</button>
-        <button class="btn btn-default" onclick="document.getElementById('activity-edit-form').classList.add('hidden')">取消</button>
-    `;
-}
-async function saveActivity(){
-    const title = document.getElementById('act-name').value;
-    const duration = parseInt(document.getElementById('act-duration').value) || 60;
-    const location = document.getElementById('act-location').value;
-    const desc = document.getElementById('act-desc').value;
-    if (!title) return;
-    await sb.from('reservation_activities').insert({ merchant_id: merchant.id, title, duration, location, description: desc });
-    document.getElementById('activity-edit-form').classList.add('hidden');
+    const title = prompt('活动名称'), duration = prompt('时长(分钟)'), location = prompt('地点（如：多媒体室）'), desc = prompt('描述');
+    if(!title) return;
+    await sb.from('reservation_activities').insert({ merchant_id: merchant.id, title, duration: parseInt(duration)||60, location: location||'', description: desc||'' });
     loadActivities();
 }
-async function editActivity(id){ /* 简化处理，可自行扩展 */ }
-async function deleteActivity(id){
-    if (confirm('删除活动？')) { await sb.from('reservation_activities').delete().eq('id', id); loadActivities(); }
-}
+async function deleteActivity(id){ if(confirm('删除活动？')){ await sb.from('reservation_activities').delete().eq('id',id); loadActivities(); } }
 
-// ========== 预约列表 ==========
+// 预约列表
 async function loadReservations(){
     const { data } = await sb.from('reservations').select('*').eq('merchant_id', merchant.id).order('created_at', false);
     let html = '';
@@ -366,22 +309,18 @@ async function loadReservations(){
         html += `<div class="card">
             <p><span class="status-${r.status}">${r.status==='pending'?'待确认':r.status==='confirmed'?'已确认':'已拒绝'}</span> | ${r.reservation_date} ${r.time_slot_start}-${r.time_slot_end}</p>
             <p>${r.name} ${r.phone} | 人数：${r.visitor_count} | 单位：${r.unit||''}</p>
-            <p>活动：${r.activity_id} | 备注：${r.remark||''}</p>
             ${r.status==='pending' ? `<button class="btn btn-primary" onclick="updateReservation(${r.id},'confirmed')">确认</button> <button class="btn btn-danger" onclick="updateReservation(${r.id},'rejected')">拒绝</button>` : ''}
         </div>`;
     });
     document.getElementById('reservation-list').innerHTML = html || '<p>暂无预约</p>';
 }
-async function updateReservation(id, status){
-    await sb.from('reservations').update({ status }).eq('id', id);
-    loadReservations();
-}
+async function updateReservation(id, status){ await sb.from('reservations').update({ status }).eq('id', id); loadReservations(); }
 
-// ========== 留言反馈 ==========
+// 留言反馈
 async function loadMerchantFeedbacks(){
     const { data } = await sb.from('ztj_feedbacks').select('*').eq('merchant_id', merchant.id).order('created_at', false);
     let html = '';
-    if (data && data.length) {
+    if(data && data.length){
         data.forEach(f => {
             html += `<div class="card">
                 <p><b>留言：</b>${f.message}</p>
@@ -391,9 +330,7 @@ async function loadMerchantFeedbacks(){
                 <button class="btn btn-primary" onclick="replyToFeedback(${f.id})">回复</button>
             </div>`;
         });
-    } else {
-        html = '<p>暂无留言</p>';
-    }
+    } else { html = '<p>暂无留言</p>'; }
     document.getElementById('feedback-list').innerHTML = html;
 }
 async function replyToFeedback(id){

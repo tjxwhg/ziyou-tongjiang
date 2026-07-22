@@ -30,6 +30,16 @@
         .transport-table th, .transport-table td { border:1px solid #ddd; padding:8px; text-align:center; }
         .category-group { margin-bottom:15px; }
         .category-title { font-size:16px; font-weight:bold; background:#e9f5ea; padding:8px; border-radius:4px; cursor:pointer; }
+
+        /* 交通耗时编辑样式 */
+        .poi-transport-group { margin-bottom:10px; border:1px solid #ccc; border-radius:6px; overflow:hidden; }
+        .poi-transport-header { background:#f9f9f9; padding:10px; cursor:pointer; font-weight:bold; display:flex; justify-content:space-between; }
+        .poi-transport-list { padding:10px; background:white; }
+        .transport-item { display:flex; align-items:center; justify-content:space-between; padding:6px 0; border-bottom:1px solid #eee; }
+        .transport-item:last-child { border-bottom:none; }
+        .transport-item label { width:40%; font-size:14px; }
+        .transport-item input { width:80px; padding:4px; border:1px solid #ccc; border-radius:4px; text-align:center; }
+        .transport-item .save-status { font-size:12px; margin-left:8px; color:#2e7d32; }
     </style>
 </head>
 <body>
@@ -52,11 +62,13 @@
             <button onclick="switchTab('feedbacks')">💬留言反馈</button>
         </div>
 
+        <!-- POI 管理 -->
         <div id="tab-poi">
             <button class="btn btn-primary" onclick="showAddPoi()">+ 新增主景区POI</button>
             <div id="poi-list"></div>
         </div>
 
+        <!-- 路线管理 -->
         <div id="tab-routes" class="hidden">
             <button class="btn btn-primary" onclick="toggleRouteForm()">+ 新增路线</button>
             <div id="route-form" class="inline-edit hidden">
@@ -74,24 +86,20 @@
             <div id="route-list" style="margin-top:20px;"></div>
         </div>
 
+        <!-- 交通耗时管理（新版折叠编辑器） -->
         <div id="tab-transport" class="hidden">
-            <h3>添加POI间耗时</h3>
-            <div class="card">
-                <div class="form-group"><label>方式</label><select id="preset-mode"><option value="auto">自驾</option><option value="bus">公交</option><option value="walk">步行</option></select></div>
-                <div class="form-group"><label>起点</label><select id="preset-from"><option value="0">通江县城</option></select></div>
-                <div class="form-group"><label>终点</label><select id="preset-to"></select></div>
-                <div class="form-group"><label>时间(分钟)</label><input type="number" id="preset-time" min="1" value="30"></div>
-                <button class="btn btn-primary" onclick="addPreset()">添加预设</button>
-            </div>
-            <h4>现有预设</h4>
-            <div id="preset-list"></div>
+            <h3>景点间交通耗时（分钟）</h3>
+            <p style="color:#666;">点击景点展开，修改耗时后自动保存。</p>
+            <div id="transport-editor"></div>
         </div>
 
+        <!-- 商户账号 -->
         <div id="tab-merchants" class="hidden">
             <button class="btn btn-primary" onclick="createMerchant()">创建商户账号</button>
             <p style="color:#666; margin-top:8px;">创建后商户即可登录，业务信息由商户自行维护。</p>
         </div>
 
+        <!-- 留言反馈 -->
         <div id="tab-feedbacks" class="hidden">
             <div id="feedback-list"></div>
         </div>
@@ -106,6 +114,11 @@ let currentUser = null;
 const POI_CATEGORIES = ['自然景区','红色景区','文博场馆','餐饮住宿','交通枢纽','游玩娱乐','特产购物','公共服务'];
 let routeNodes = [];
 
+// 交通耗时相关
+let allTransportPresets = {}; // 映射 fromId -> { toId: time }
+let mainPoisForTransport = []; // 用于交通编辑的景点列表（包含红军广场）
+
+// ---------- 会话管理 ----------
 async function checkSession(){
     const { data: { session } } = await sb.auth.getSession();
     if(session) { currentUser = session.user; showMain(); }
@@ -129,11 +142,11 @@ function switchTab(tab){
     tabs.forEach(t => document.getElementById('tab-'+t).classList.toggle('hidden', t!==tab));
     if(tab==='poi') loadPOIs();
     if(tab==='routes') loadRoutes();
-    if(tab==='transport') { loadPoiSelects(); loadPresetList(); }
+    if(tab==='transport') loadTransportEditor();
     if(tab==='feedbacks') loadFeedbacks();
 }
 
-// ========== POI 管理 ==========
+// ==================== POI 管理 ====================
 async function loadPOIs(){
     const { data } = await sb.from('ztj_poi').select('*').eq('status','active').order('sort_order');
     const grouped = {};
@@ -263,7 +276,7 @@ async function deletePoi(id){
     if(confirm('确定删除？')){ await sb.from('ztj_poi').delete().eq('id', id); loadPOIs(); }
 }
 
-// ========== 路线管理（已修复 transport_time） ==========
+// ==================== 路线管理 ====================
 async function loadPoiOptionsForRoute(){
     const { data } = await sb.from('ztj_poi').select('id,name').order('name');
     window.poiOptions = data || [];
@@ -322,7 +335,7 @@ async function editRoute(id){
     const { data: nodes } = await sb.from('ztj_route_nodes').select('*').eq('route_id',id).order('order_num');
     document.getElementById('edit-route-id').value = id;
     document.getElementById('route-name').value = route.name;
-    document.getElementById('route-start-time').value = route.start_time || '08:30'; // 使用 start_time 列
+    document.getElementById('route-start-time').value = route.start_time || '08:30';
     document.getElementById('route-transport').value = route.transport || '';
     routeNodes = (nodes||[]).map(n => ({ poi_id: n.poi_id, duration_min: n.duration_min }));
     await loadPoiOptionsForRoute();
@@ -351,7 +364,7 @@ async function saveRoute(){
         order_num: i+1,
         duration_min: n.duration_min || 60,
         transport_mode: '步行',
-        transport_time: 0  // 提供默认值
+        transport_time: 0
     }));
     if(nodesPayload.length === 0){ alert('请至少添加一个有效节点'); return; }
     const { error } = await sb.from('ztj_route_nodes').insert(nodesPayload);
@@ -378,51 +391,105 @@ async function loadRoutes(){
     document.getElementById('route-list').innerHTML = html;
 }
 
-// ========== 交通耗时 ==========
-async function loadPoiSelects(){
-    const { data } = await sb.from('ztj_poi').select('id,name').order('name');
-    if(!data) return;
-    const opts = data.map(p => `<option value="${p.id}">${p.name}</option>`).join('');
-    document.getElementById('preset-from').innerHTML = '<option value="0">通江县城</option>' + opts;
-    document.getElementById('preset-to').innerHTML = opts;
+// ==================== 新版交通耗时编辑器 ====================
+async function loadTransportEditor(){
+    // 获取所有主景点（不含子点）和红军广场
+    const { data: pois } = await sb.from('ztj_poi').select('id,name').is('parent_id', null).order('name');
+    mainPoisForTransport = [
+        { id: 0, name: '红军广场' },  // 县城中心
+        ...(pois || [])
+    ];
+    // 加载所有预设
+    const { data: presets } = await sb.from('ztj_transport_presets').select('*');
+    allTransportPresets = {};
+    if(presets) {
+        presets.forEach(p => {
+            const from = p.from_poi_id;
+            const to = p.to_poi_id;
+            if(!allTransportPresets[from]) allTransportPresets[from] = {};
+            allTransportPresets[from][to] = p.time_min;
+        });
+    }
+    renderTransportEditor();
 }
 
-async function loadPresetList(){
-    const { data: presets } = await sb.from('ztj_transport_presets').select('*').order('id');
-    if(!presets || presets.length===0){ document.getElementById('preset-list').innerHTML = '<p>暂无预设</p>'; return; }
-    const poiIds = [...new Set(presets.map(p => p.from_poi_id).concat(presets.map(p => p.to_poi_id)).filter(id => id !== 0))];
-    const { data: pois } = await sb.from('ztj_poi').select('id,name').in('id', poiIds);
-    const poiMap = {}; if(pois) pois.forEach(p => poiMap[p.id] = p.name);
-    let html = '<table class="transport-table"><tr><th>方式</th><th>起点</th><th>终点</th><th>耗时</th><th>操作</th></tr>';
-    presets.forEach(p => {
-        const fromName = p.from_poi_id === 0 ? '通江县城' : (poiMap[p.from_poi_id]||'未知');
-        const toName = poiMap[p.to_poi_id] || '未知';
-        html += `<tr><td>${p.travel_mode}</td><td>${fromName}</td><td>${toName}</td><td>${p.time_min}分钟</td><td><button class="btn btn-danger" onclick="deletePreset(${p.id})">删除</button></td></tr>`;
+function getTransportTime(fromId, toId){
+    if(allTransportPresets[fromId] && allTransportPresets[fromId][toId] !== undefined){
+        return allTransportPresets[fromId][toId];
+    }
+    // 反向也查一下（因为数据库可能存的是单向，但我们希望对称？可配置）
+    if(allTransportPresets[toId] && allTransportPresets[toId][fromId] !== undefined){
+        return allTransportPresets[toId][fromId];
+    }
+    return '';
+}
+
+async function saveTransportTime(fromId, toId, time){
+    if(time === '' || time === null || time === undefined) {
+        // 如果为空，删除这条记录（可选）
+        return;
+    }
+    const timeVal = parseInt(time);
+    if(isNaN(timeVal) || timeVal < 0) return;
+    // 统一使用 travel_mode = 'custom'，upsert
+    const { error } = await sb.from('ztj_transport_presets').upsert({
+        from_poi_id: fromId,
+        to_poi_id: toId,
+        travel_mode: 'custom',
+        time_min: timeVal
+    }, { onConflict: 'from_poi_id,to_poi_id,travel_mode' });
+    if(!error) {
+        // 更新本地缓存
+        if(!allTransportPresets[fromId]) allTransportPresets[fromId] = {};
+        allTransportPresets[fromId][toId] = timeVal;
+    }
+}
+
+function renderTransportEditor(){
+    const container = document.getElementById('transport-editor');
+    let html = '';
+    mainPoisForTransport.forEach(poi => {
+        html += `
+        <div class="poi-transport-group">
+            <div class="poi-transport-header" onclick="this.nextElementSibling.classList.toggle('hidden')">
+                <span>🚩 ${poi.name}</span>
+                <span>▼</span>
+            </div>
+            <div class="poi-transport-list hidden">
+                ${mainPoisForTransport.filter(p => p.id !== poi.id).map(target => {
+                    const currentTime = getTransportTime(poi.id, target.id);
+                    return `
+                    <div class="transport-item">
+                        <label>→ ${target.name}</label>
+                        <div style="display:flex; align-items:center; gap:4px;">
+                            <input type="number" value="${currentTime}" placeholder="分钟" 
+                                data-from="${poi.id}" data-to="${target.id}"
+                                onblur="handleTransportChange(this)">
+                            <span class="save-status"></span>
+                        </div>
+                    </div>`;
+                }).join('')}
+            </div>
+        </div>`;
     });
-    html += '</table>';
-    document.getElementById('preset-list').innerHTML = html;
+    container.innerHTML = html;
 }
 
-async function addPreset(){
-    const from = parseInt(document.getElementById('preset-from').value);
-    const to = parseInt(document.getElementById('preset-to').value);
-    const mode = document.getElementById('preset-mode').value;
-    const time = parseInt(document.getElementById('preset-time').value);
-    if(isNaN(from) || isNaN(to) || !time || time<=0){ alert('请完整填写所有字段'); return; }
-    if(from === to){ alert('起止点不能相同'); return; }
-    const { error } = await sb.from('ztj_transport_presets').upsert(
-        { from_poi_id: from, to_poi_id: to, travel_mode: mode, time_min: time },
-        { onConflict: 'from_poi_id,to_poi_id,travel_mode' }
-    );
-    if(error){ alert('添加失败：'+error.message); return; }
-    loadPresetList();
+async function handleTransportChange(input){
+    const from = parseInt(input.dataset.from);
+    const to = parseInt(input.dataset.to);
+    const val = input.value.trim();
+    const statusEl = input.parentElement.querySelector('.save-status');
+    if(val === '') {
+        statusEl.textContent = '';
+        return;
+    }
+    await saveTransportTime(from, to, val);
+    statusEl.textContent = '✓已保存';
+    setTimeout(() => { statusEl.textContent = ''; }, 1500);
 }
 
-async function deletePreset(id){
-    if(confirm('删除？')){ await sb.from('ztj_transport_presets').delete().eq('id',id); loadPresetList(); }
-}
-
-// ========== 商户账号 ==========
+// ==================== 商户账号 ====================
 async function createMerchant(){
     const email = prompt('商户邮箱'), pwd = prompt('密码'), name = prompt('商户名称'), poiId = prompt('绑定POI ID（可留空）');
     if(!email||!pwd||!name) return;
@@ -432,7 +499,7 @@ async function createMerchant(){
     alert('商户创建成功');
 }
 
-// ========== 留言 ==========
+// ==================== 留言 ====================
 async function loadFeedbacks(){
     const { data } = await sb.from('ztj_feedbacks').select('*').order('created_at', {ascending: false});
     let html = '';

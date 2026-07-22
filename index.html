@@ -122,7 +122,7 @@ let generatedTripData = null;
 const COUNTY = { lat:32.08, lng:107.24, name:'红军广场', id:'county' };
 const poiColors = { '自然景区':'#2E7D32', '红色景区':'#9C27B0', '文博场馆':'#9C27B0', '餐饮住宿':'#FF9800', '停车场':'#00BCD4', '公共服务':'#607D8B' };
 
-// 交通预设映射表
+// 交通预设映射表 (fromId_toId -> 分钟)
 let transportPresets = {};
 
 function getUserId(){ let uid = localStorage.getItem('vid'); if(!uid){ uid='v_'+Date.now()+Math.random().toString(36); localStorage.setItem('vid',uid); } return uid; }
@@ -150,28 +150,31 @@ async function loadAllPOIs(){
             window.subPoisMap[p.parent_id].push(p);
         }
     });
+    // 加载交通预设
+    await loadTransportPresets();
 }
 
-// 加载交通预设数据
+// 加载交通预设（从 ztj_transport_presets 表）
 async function loadTransportPresets(){
     const { data } = await sb.from('ztj_transport_presets').select('*');
     transportPresets = {};
-    if (data) {
+    if(data){
         data.forEach(p => {
-            const key = `${p.from_poi_id}_${p.to_poi_id}_${p.travel_mode}`;
+            const key = `${p.from_poi_id}_${p.to_poi_id}`;
             transportPresets[key] = p.time_min;
         });
     }
 }
 
-// 获取两点间交通耗时（优先使用预设）
+// 获取两点间交通耗时（优先使用预设，无预设则距离估算）
 function getTransportTime(fromId, toId, mode) {
     const fId = fromId === 'county' ? 0 : fromId;
     const tId = toId === 'county' ? 0 : toId;
-    const key = `${fId}_${tId}_${mode}`;
-    if (transportPresets[key] !== undefined) {
-        return transportPresets[key];
-    }
+    const key = `${fId}_${tId}`;
+    if (transportPresets[key] !== undefined) return transportPresets[key];
+    // 反向查找
+    const reverseKey = `${tId}_${fId}`;
+    if (transportPresets[reverseKey] !== undefined) return transportPresets[reverseKey];
     // 回退：距离估算
     const fromPoi = allPois.find(p => p.id == fId) || (fId === 0 ? COUNTY : null);
     const toPoi = allPois.find(p => p.id == tId);
@@ -181,7 +184,7 @@ function getTransportTime(fromId, toId, mode) {
     if (mode === 'auto') timeMin = Math.round(dist / 40000 * 60);
     else if (mode === 'bus') timeMin = Math.round(dist / 20000 * 60);
     else timeMin = Math.round(dist / 5000 * 60);
-    return Math.max(timeMin, 1); // 至少1分钟
+    return Math.max(timeMin, 1);
 }
 
 function renderPOIs(pois){
@@ -318,12 +321,8 @@ async function toggleCustomTripSection(){
     section.classList.toggle('hidden');
     arrow.textContent = section.classList.contains('hidden') ? '▼' : '▲';
     if(!section.classList.contains('hidden')){
-        if(allPois.length===0) {
-            await loadAllPOIs();
-        }
-        if(Object.keys(transportPresets).length===0) {
-            await loadTransportPresets();
-        }
+        if(allPois.length===0) await loadAllPOIs();
+        if(Object.keys(transportPresets).length===0) await loadTransportPresets();
         buildMainPoiOptions();
         resetRouteLegs();
     }
@@ -459,7 +458,7 @@ async function generateCustomTrip(){
             fullNodes.push({ ...sub, visitDuration: sub.visit_duration || 20, type:'sub' });
         });
     });
-    // 使用预设或估算计算交通时间
+    // 使用预设耗时
     for(let i=1; i<fullNodes.length; i++){
         fullNodes[i].transportTime = getTransportTime(fullNodes[i-1].id, fullNodes[i].id, mode);
     }

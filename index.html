@@ -39,14 +39,12 @@
         input, select, textarea { width:100%; padding:8px; border:1px solid #ccc; border-radius:4px; }
         .toggle-section { background:#f0f0f0; border-radius:8px; padding:12px; margin:10px 0; cursor:pointer; }
         .toggle-section h4 { margin:0; display:flex; justify-content:space-between; align-items:center; }
-        .poi-checkbox-list { max-height:200px; overflow-y:auto; border:1px solid #ddd; border-radius:6px; padding:8px; background:white; }
-        .poi-checkbox-item { display:flex; align-items:center; gap:8px; margin:4px 0; }
         .my-tab { padding:8px 16px; border:none; background:#eee; border-radius:20px; cursor:pointer; }
         .my-tab.active { background:#2e7d32; color:white; }
         .route-node { display:flex; gap:8px; align-items:center; margin:8px 0; flex-wrap:wrap; }
         .route-time { font-size:12px; color:#666; margin-left:8px; }
-        .sub-poi-section { margin-left:20px; border-left:2px solid #2e7d32; padding-left:10px; }
-        .sub-poi-item { display:flex; align-items:center; gap:6px; }
+        .sub-poi-section { margin-left:20px; border-left:2px solid #2e7d32; padding-left:10px; margin-top:6px; }
+        .sub-poi-item { display:flex; align-items:center; gap:6px; margin:4px 0; }
     </style>
 </head>
 <body>
@@ -57,7 +55,6 @@
     </select>
     <button class="top-btn" onclick="openPanel('myPanel')">👤 我的</button>
 </div>
-
 <div class="category-wrapper" id="categoryWrapper">
     <div class="category-bar" id="categoryBar">
         <button class="category-btn active" onclick="filterPOI('全部')">📍全部</button>
@@ -69,7 +66,6 @@
     </div>
 </div>
 <div class="expand-tag" id="expandTag" onclick="toggleCategoryBar()">📍</div>
-
 <div class="float-voice" id="voiceBtn" onclick="toggleVoice()">🔊</div>
 <div class="bottom-bar">
     <button class="btn btn-secondary" onclick="openPanel('routesPanel')">📋 路线</button>
@@ -81,13 +77,11 @@
     <div class="panel-header"><h2 id="merchantDetailTitle"></h2><button onclick="closePanel('merchantDetailPanel')">✕</button></div>
     <div class="panel-body" id="merchantDetailContent"></div>
 </div>
-
 <!-- 研学预约面板 -->
 <div class="panel" id="reservePanel">
     <div class="panel-header"><h2>研学预约</h2><button onclick="closePanel('reservePanel')">✕</button></div>
     <div class="panel-body" id="reserveContent"></div>
 </div>
-
 <!-- 路线面板 -->
 <div class="panel" id="routesPanel">
     <div class="panel-header"><h2>路线</h2><button onclick="closePanel('routesPanel')">✕</button></div>
@@ -102,9 +96,7 @@
             <div class="form-group"><label>出行方式</label><select id="trip-mode"><option value="auto">自驾</option><option value="bus">公交</option><option value="walk">步行</option></select></div>
             <div class="form-group"><label>人数</label><input type="number" id="trip-people" min="1" value="2"></div>
             <div class="form-group"><label>行程路线</label>
-                <div id="dynamic-route">
-                    <!-- 起点选择 + 动态景点 -->
-                </div>
+                <div id="dynamic-route"></div>
                 <button class="btn btn-default" onclick="addRouteLeg()">+ 添加景点</button>
             </div>
             <button class="btn btn-primary" onclick="generateCustomTrip()" style="width:100%; margin-top:12px;">生成行程</button>
@@ -138,7 +130,7 @@
 <script src="config.js"></script>
 <script>
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-let map, currentLang='cn', voiceEnabled=true, triggeredPois={}, currentTrip=null;
+let map, currentLang='cn', voiceEnabled=true, triggeredPois={};
 let allPois=[], activeCategory='全部', simPos=null, simMarker=null;
 let generatedTripData = null;
 const COUNTY = { lat:32.08, lng:107.24, name:'红军广场', id:'county' };
@@ -179,12 +171,19 @@ function toggleCategoryBar(){
     }
 }
 
-// POI 数据加载
 async function loadAllPOIs(){
     const { data, error } = await sb.from('ztj_poi').select('*').eq('status','active');
     if(error){ console.error(error); return; }
     allPois = data || [];
     renderPOIs(allPois);
+    // 构建父子关系
+    window.subPoisMap = {};
+    allPois.forEach(p => {
+        if(p.parent_id){
+            if(!window.subPoisMap[p.parent_id]) window.subPoisMap[p.parent_id] = [];
+            window.subPoisMap[p.parent_id].push(p);
+        }
+    });
 }
 
 function renderPOIs(pois){
@@ -203,7 +202,6 @@ function renderPOIs(pois){
 function filterPOI(cat){
     activeCategory = cat;
     document.querySelectorAll('.category-btn').forEach(b => b.classList.remove('active'));
-    // 手动激活对应按钮
     const btns = document.querySelectorAll('.category-btn');
     btns.forEach(b => {
         if(b.innerText.includes(cat) || (cat==='全部' && b.innerText.includes('全部'))) b.classList.add('active');
@@ -213,7 +211,6 @@ function filterPOI(cat){
     toggleCategoryBar();
 }
 
-// 商户详情与研学预约
 async function showPoiDetail(poi){
     const { data: m } = await sb.from('ztj_merchants').select('*').eq('poi_id', poi.id).maybeSingle();
     document.getElementById('merchantDetailTitle').textContent = poi.name;
@@ -254,12 +251,56 @@ async function openReservePanel(merchantId){
     updateActivityDetail();
     openPanel('reservePanel');
 }
-function updateActivityDetail(){ /* 同上 */ }
-async function loadTimeSlots(merchantId){ /* 同上 */ }
-function selectTimeSlot(el, slot){ /* 同上 */ }
-async function submitReservation(merchantId){ /* 同上 */ }
+function updateActivityDetail(){
+    const sel = document.getElementById('reserve-activity');
+    if(sel && sel.selectedIndex>=0){
+        const loc = sel.options[sel.selectedIndex].getAttribute('data-location');
+        document.getElementById('activity-location').innerText = loc ? `默认地点：${loc}` : '';
+    }
+}
+async function loadTimeSlots(merchantId){
+    const date = document.getElementById('reserve-date').value;
+    const { data: settings } = await sb.from('reservation_settings').select('*').eq('merchant_id', merchantId);
+    const { data: existing } = await sb.from('reservations').select('time_slot_start,status').eq('merchant_id',merchantId).eq('reservation_date',date);
+    const booked = {};
+    existing.forEach(r => { if(r.status!=='rejected') booked[r.time_slot_start] = (booked[r.time_slot_start]||0)+1; });
+    let html = '';
+    settings.forEach(s => {
+        const count = booked[s.time_slot_start] || 0;
+        const full = count >= s.max_teams;
+        html += `<span class="time-slot ${full?'full':''}" onclick="${full?'':'selectTimeSlot(this,\''+s.time_slot_start+'\')'}">${s.time_slot_start}-${s.time_slot_end} (${count}/${s.max_teams})</span>`;
+    });
+    document.getElementById('time-slots').innerHTML = html || '<p>暂无可用时段</p>';
+    window.selectedTimeSlot = null;
+}
+function selectTimeSlot(el, slot){
+    document.querySelectorAll('.time-slot').forEach(s => s.classList.remove('selected'));
+    el.classList.add('selected');
+    window.selectedTimeSlot = slot;
+}
+async function submitReservation(merchantId){
+    const act = document.getElementById('reserve-activity').value;
+    const date = document.getElementById('reserve-date').value;
+    if(!window.selectedTimeSlot){ alert('请选择时段'); return; }
+    const unitSel = document.getElementById('reserve-unit');
+    let unit = unitSel.value;
+    if(unit==='其他') unit = document.getElementById('reserve-unit-other').value.trim() || '其他';
+    const name = document.getElementById('reserve-name').value;
+    const phone = document.getElementById('reserve-phone').value;
+    const count = parseInt(document.getElementById('reserve-count').value);
+    const room = document.getElementById('reserve-room').value;
+    if(!name||!phone||!count){ alert('请填写完整信息'); return; }
+    const uid = getUserId();
+    const { error } = await sb.from('reservations').insert({
+        merchant_id: merchantId, activity_id: act, user_id: uid, name, phone, unit,
+        visitor_count: count, reservation_date: date, time_slot_start: window.selectedTimeSlot,
+        room: room, status:'pending'
+    });
+    if(error) alert('提交失败：'+error.message);
+    else { alert('预约已提交'); closePanel('reservePanel'); }
+}
 
-// 路线加载
+// 推荐路线加载
 async function loadRoutes(){
     const { data } = await sb.from('ztj_routes').select('*');
     document.getElementById('routeList').innerHTML = data.map(r => `
@@ -269,9 +310,21 @@ async function loadRoutes(){
         </div>`).join('');
 }
 
-// 自设行程核心
-let routeLegs = []; // [{id, name, lat, lng, subPois:[]}] 起点为COUNTY
-let allPoiOptions = [];
+async function showRouteDetail(id){
+    const { data:route } = await sb.from('ztj_routes').select('*').eq('id',id).single();
+    const { data:nodes } = await sb.from('ztj_route_nodes').select('*, poi:poi_id(name)').eq('route_id',id).order('order_num');
+    let html = `<h3>${route.name}</h3>`;
+    nodes.forEach(n => {
+        html += `<div>• ${n.poi?.name||'未知'} (停留${n.duration_min}分钟)</div>`;
+    });
+    const panel = document.createElement('div'); panel.className='panel active'; panel.id='routeDetailPanel';
+    panel.innerHTML = `<div class="panel-header"><h2>路线详情</h2><button onclick="this.parentElement.parentElement.remove()">✕</button></div><div class="panel-body">${html}</div>`;
+    document.body.appendChild(panel);
+}
+
+// ==================== 自设行程核心（修复版） ====================
+let routeLegs = []; // [{id, name, lat, lng, subPois:[]}]
+let mainPoiOptions = []; // 所有主景区（parent_id为null）
 
 function toggleCustomTripSection(){
     const section = document.getElementById('customTripSection');
@@ -279,14 +332,26 @@ function toggleCustomTripSection(){
     section.classList.toggle('hidden');
     arrow.textContent = section.classList.contains('hidden') ? '▼' : '▲';
     if(!section.classList.contains('hidden')){
-        if(allPoiOptions.length===0) buildPoiOptions();
-        resetRouteLegs();
+        // 确保POI数据已加载
+        if(allPois.length===0) {
+            loadAllPOIs().then(() => {
+                buildMainPoiOptions();
+                resetRouteLegs();
+            });
+        } else {
+            buildMainPoiOptions();
+            resetRouteLegs();
+        }
     }
 }
 
-function buildPoiOptions(){
-    // 包含所有POI，但区分主景区和子点
-    allPoiOptions = allPois.filter(p => p.parent_id === null); // 主景区作为可选景点
+function buildMainPoiOptions(){
+    // 所有 parent_id 为 null 的POI作为可选景点
+    mainPoiOptions = allPois.filter(p => p.parent_id === null);
+    // 同时把红军广场加入（如果不在里面），作为起点默认选项
+    if(!mainPoiOptions.some(p => p.id === 'county')){
+        mainPoiOptions.unshift(COUNTY);
+    }
     // 存储子点关系
     window.subPoisMap = {};
     allPois.forEach(p => {
@@ -298,7 +363,7 @@ function buildPoiOptions(){
 }
 
 function resetRouteLegs(){
-    routeLegs = [ { ...COUNTY, subPois: [] } ]; // 起点固定为红军广场，可修改
+    routeLegs = [ { ...COUNTY, subPois:[] } ];
     renderDynamicRoute();
 }
 
@@ -308,13 +373,13 @@ function addRouteLeg(){
 }
 
 function removeLeg(index){
-    if(index===0) return; // 不能删除起点
+    if(index===0) return;
     routeLegs.splice(index,1);
     renderDynamicRoute();
 }
 
 function updateLeg(index, value){
-    const poi = allPoiOptions.find(p => p.id == value);
+    const poi = mainPoiOptions.find(p => p.id == value);
     if(poi){
         routeLegs[index] = { ...poi, subPois: [] };
         // 默认全选该主景区的子点
@@ -327,9 +392,19 @@ function updateLeg(index, value){
     renderDynamicRoute();
 }
 
+function updateStartPoint(id){
+    if(id === 'county'){
+        routeLegs[0] = { ...COUNTY, subPois:[] };
+    } else {
+        const poi = mainPoiOptions.find(p => p.id == id);
+        if(poi) routeLegs[0] = { ...poi, subPois:[] };
+    }
+    updateAllTimes();
+}
+
 function toggleSubPoiSelection(legIndex, subIndex){
     routeLegs[legIndex].subPois[subIndex].selected = !routeLegs[legIndex].subPois[subIndex].selected;
-    renderDynamicRoute(); // 刷新显示
+    renderDynamicRoute();
 }
 
 function selectAllSubPois(legIndex){
@@ -341,29 +416,28 @@ function selectAllSubPois(legIndex){
 
 function renderDynamicRoute(){
     const container = document.getElementById('dynamic-route');
+    if(!container) return;
     let html = '';
-    // 起点选择器
-    const startOptions = allPois.filter(p => (p.category||'').includes('餐饮住宿') || p.id==='county');
+    // 起点选择器（包含所有主景区）
     html += `<div class="route-node">
         <select onchange="updateStartPoint(this.value)">
-            <option value="county" selected>红军广场</option>
-            ${startOptions.map(p => `<option value="${p.id}">${p.name}</option>`).join('')}
+            ${mainPoiOptions.map(p => `<option value="${p.id}" ${routeLegs[0].id === p.id ? 'selected' : ''}>${p.name}</option>`).join('')}
         </select>
         <span>→</span>
     </div>`;
     // 后续节点
     routeLegs.forEach((leg, idx) => {
-        if(idx===0) return; // 起点已单独渲染
+        if(idx===0) return;
         html += `<div class="route-node">
             <select onchange="updateLeg(${idx}, this.value)">
                 <option value="">--选择景区--</option>
-                ${allPoiOptions.map(p => `<option value="${p.id}" ${leg.id==p.id?'selected':''}>${p.name}</option>`).join('')}
+                ${mainPoiOptions.map(p => `<option value="${p.id}" ${leg.id==p.id?'selected':''}>${p.name}</option>`).join('')}
             </select>
             ${idx < routeLegs.length-1 ? '<span class="route-time" id="time-'+idx+'"></span>' : ''}
             <button class="btn btn-danger" onclick="removeLeg(${idx})">删除</button>
             ${leg.id && window.subPoisMap && window.subPoisMap[leg.id] ? 
                 `<div class="sub-poi-section">
-                    <div><small>子景点（可多选）</small> <button onclick="selectAllSubPois(${idx})">全选</button></div>
+                    <div><small>子景点（可多选）</small> <button class="btn btn-default" onclick="selectAllSubPois(${idx})">全选</button></div>
                     ${window.subPoisMap[leg.id].map((sub, sIdx) => `
                         <div class="sub-poi-item">
                             <input type="checkbox" ${(leg.subPois.find(s=>s.id==sub.id)?.selected!==false)?'checked':''} onchange="toggleSubPoiSelection(${idx}, ${sIdx})">
@@ -376,16 +450,6 @@ function renderDynamicRoute(){
     });
     container.innerHTML = html;
     updateAllTimes();
-}
-
-function updateStartPoint(id){
-    if(id === 'county'){
-        routeLegs[0] = { ...COUNTY, subPois:[] };
-    } else {
-        const poi = allPois.find(p => p.id == id);
-        if(poi) routeLegs[0] = { ...poi, subPois:[] };
-    }
-    // 不需要重新渲染整个，只需更新时间即可
 }
 
 function updateAllTimes(){
@@ -406,7 +470,6 @@ function updateAllTimes(){
 }
 document.getElementById('trip-mode')?.addEventListener('change', updateAllTimes);
 
-// 生成行程（含子点）
 async function generateCustomTrip(){
     const validLegs = routeLegs.filter(l => l.id && l.id!=='county');
     if(validLegs.length === 0){ alert('请至少选择一个景区'); return; }
@@ -417,14 +480,14 @@ async function generateCustomTrip(){
     let fullNodes = [ { ...routeLegs[0], type:'start' } ];
     routeLegs.forEach((leg, idx) => {
         if(idx===0) return;
-        // 添加主景区
-        fullNodes.push({ ...leg, visitDuration: allPoiOptions.find(p=>p.id==leg.id)?.visit_duration || 60, type:'poi' });
-        // 添加选中的子点
+        // 主景区
+        fullNodes.push({ ...leg, visitDuration: mainPoiOptions.find(p=>p.id==leg.id)?.visit_duration || 60, type:'poi' });
+        // 选中的子点
         leg.subPois.filter(s => s.selected).forEach(sub => {
             fullNodes.push({ ...sub, visitDuration: sub.visit_duration || 20, type:'sub' });
         });
     });
-    // 计算交通时间与时间线
+    // 计算交通时间
     for(let i=1; i<fullNodes.length; i++){
         const dist = getDistance(fullNodes[i-1].lat, fullNodes[i-1].lng, fullNodes[i].lat, fullNodes[i].lng);
         fullNodes[i].transportTime = mode==='auto' ? Math.round(dist/40000*60) : (mode==='bus' ? Math.round(dist/20000*60) : Math.round(dist/5000*60));
@@ -490,7 +553,7 @@ function saveGeneratedTrip(){
     resetRouteLegs();
 }
 
-// 我的面板功能
+// 我的面板
 function switchMyTab(tab){
     document.querySelectorAll('.my-tab').forEach(b => b.classList.remove('active'));
     document.getElementById('myTripContent').classList.add('hidden');
@@ -509,7 +572,6 @@ function switchMyTab(tab){
         document.getElementById('myFeedbackContent').classList.remove('hidden');
     }
 }
-
 function renderMyTrip(){
     const trips = JSON.parse(localStorage.getItem('trips')||'[]');
     document.getElementById('myTripContent').innerHTML = trips.length ? trips.map((t,i)=>`
@@ -520,14 +582,12 @@ function renderMyTrip(){
             <button class="btn btn-danger" onclick="deleteTrip(${i})">删除</button>
         </div>`).join('') : '<p>暂无保存的行程</p>';
 }
-
 function deleteTrip(idx){
     const trips = JSON.parse(localStorage.getItem('trips')||'[]');
     trips.splice(idx,1);
     localStorage.setItem('trips', JSON.stringify(trips));
     renderMyTrip();
 }
-
 async function loadMyReservations(){
     const uid = getUserId();
     const { data } = await sb.from('reservations').select('*').eq('user_id', uid).order('created_at',false);
@@ -538,7 +598,6 @@ async function loadMyReservations(){
             <p>状态：<span style="color:${r.status==='confirmed'?'green':r.status==='pending'?'orange':'red'}">${r.status}</span></p>
         </div>`).join('') : '<p>暂无预约</p>';
 }
-
 async function submitFeedback(){
     const msg = document.getElementById('feedbackMsg').value;
     if(!msg) return;
@@ -550,8 +609,8 @@ async function submitFeedback(){
 // 辅助函数
 function openPanel(id){ document.getElementById(id).classList.add('active'); if(id==='routesPanel'){ loadRoutes(); } }
 function closePanel(id){ document.getElementById(id).classList.remove('active'); }
-function startSimulation(){ /* 简化 */ }
-function toggleVoice(){ /* 简化 */ }
+function startSimulation(){ alert('模拟导航尚未完整实现，敬请期待'); }
+function toggleVoice(){}
 function getDistance(lat1,lng1,lat2,lng2){
     const R=6371000, dLat=(lat2-lat1)*Math.PI/180, dLng=(lng2-lng1)*Math.PI/180;
     const a=Math.sin(dLat/2)**2+Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLng/2)**2;

@@ -20,7 +20,7 @@
         .btn-default { background:#e0e0e0; color:#333; }
         .card { border:1px solid #ddd; padding:12px; margin:8px 0; border-radius:8px; background:#fafafa; }
         .hidden { display:none; }
-        .item-row { display:flex; gap:8px; align-items:center; margin:4px 0; }
+        .item-row { display:flex; gap:8px; align-items:center; margin:4px 0; flex-wrap:wrap; }
         .upload-preview { width:120px; height:90px; object-fit:cover; border:1px solid #ccc; border-radius:4px; }
         .time-slot-item { display:flex; gap:8px; align-items:center; margin:8px 0; }
         .status-pending { color:#E65100; font-weight:bold; }
@@ -32,7 +32,7 @@
 <body>
 <div id="login-page" style="max-width:400px; margin:80px auto; background:white; padding:20px; border-radius:8px;">
     <h2>商户登录</h2>
-    <div class="form-group"><input id="account" placeholder="账号 (如 st001)"></div>
+    <div class="form-group"><input id="account" placeholder="邮箱 (如 st001@st.cn)"></div>
     <div class="form-group"><input id="password" type="password" placeholder="密码"></div>
     <button class="btn btn-primary" onclick="login()" style="width:100%">登录</button>
     <p id="login-msg"></p>
@@ -115,17 +115,18 @@
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 let merchant = null;
 let timeSlots = [];
-let serviceData = {}; // 存储业务数据：房型/菜品
+let serviceData = { rooms: [], menus: [] };
 
 async function login(){
     const account = document.getElementById('account').value.trim();
     const pwd = document.getElementById('password').value;
-    const email = account.includes('@') ? account : account + '@zhiyoutongjiang.cn';
-    const { data, error } = await sb.auth.signInWithPassword({email, password:pwd});
-    if(error){ document.getElementById('login-msg').innerText = '登录失败：'+error.message; return; }
+    if (!account || !pwd) { document.getElementById('login-msg').innerText = '请输入邮箱和密码'; return; }
+    // 直接使用输入的邮箱登录，不再拼接
+    const { data, error } = await sb.auth.signInWithPassword({ email: account, password: pwd });
+    if (error) { document.getElementById('login-msg').innerText = '登录失败：' + error.message; return; }
     const userId = data.session.user.id;
     const { data: m } = await sb.from('ztj_merchants').select('*').eq('id', userId).single();
-    if(!m){ alert('非商户账号'); await sb.auth.signOut(); return; }
+    if (!m) { alert('非商户账号，请联系管理员'); await sb.auth.signOut(); return; }
     merchant = m;
     document.getElementById('login-page').classList.add('hidden');
     document.getElementById('main').classList.remove('hidden');
@@ -138,25 +139,24 @@ async function login(){
 function logout(){ sb.auth.signOut(); merchant = null; document.getElementById('main').classList.add('hidden'); document.getElementById('login-page').classList.remove('hidden'); }
 
 function switchTab(tab){
-    const allTabs = ['info','business','reserve-settings','activities','reservations','feedbacks'];
     document.querySelectorAll('#main-tabs button').forEach(b => b.classList.remove('active'));
-    // 激活对应按钮，注意按钮可能隐藏
+    // 根据 tab 名称激活对应按钮（注意部分按钮可能隐藏）
     const tabButtons = document.querySelectorAll('#main-tabs button');
     tabButtons.forEach(btn => {
-        if(btn.getAttribute('onclick') && btn.getAttribute('onclick').includes(`'${tab}'`)) btn.classList.add('active');
+        if (btn.getAttribute('onclick') && btn.getAttribute('onclick').includes(`'${tab}'`)) btn.classList.add('active');
     });
-    allTabs.forEach(t => document.getElementById('tab-'+t).classList.add('hidden'));
+    ['info','business','reserve-settings','activities','reservations','feedbacks'].forEach(t => document.getElementById('tab-'+t).classList.add('hidden'));
     document.getElementById('tab-'+tab).classList.remove('hidden');
-    if(tab==='business') loadBusinessModule();
-    if(tab==='reserve-settings') loadReserveSettings();
-    if(tab==='activities') loadActivities();
-    if(tab==='reservations') loadReservations();
-    if(tab==='feedbacks') loadMerchantFeedbacks();
+    if (tab === 'business') loadBusinessModule();
+    if (tab === 'reserve-settings') loadReserveSettings();
+    if (tab === 'activities') loadActivities();
+    if (tab === 'reservations') loadReservations();
+    if (tab === 'feedbacks') loadMerchantFeedbacks();
 }
 
 function showReserveTabsIfAllowed(){
     const reserveTabs = document.querySelectorAll('.reserve-tab');
-    if(merchant.allow_reserve){
+    if (merchant.allow_reserve) {
         reserveTabs.forEach(tab => tab.classList.remove('hidden'));
     } else {
         reserveTabs.forEach(tab => tab.classList.add('hidden'));
@@ -164,18 +164,17 @@ function showReserveTabsIfAllowed(){
 }
 
 function loadInfo(){
-    document.getElementById('status').value = merchant.status||'open';
-    document.getElementById('phone').value = merchant.phone||'';
-    document.getElementById('address').value = merchant.address||'';
-    document.getElementById('parking').value = merchant.parking_spots||0;
-    document.getElementById('intro').value = merchant.intro||'';
-    document.getElementById('business_type').value = merchant.business_type||'other';
-    if(merchant.service_data) serviceData = merchant.service_data;
+    document.getElementById('status').value = merchant.status || 'open';
+    document.getElementById('phone').value = merchant.phone || '';
+    document.getElementById('address').value = merchant.address || '';
+    document.getElementById('parking').value = merchant.parking_spots || 0;
+    document.getElementById('intro').value = merchant.intro || '';
+    document.getElementById('business_type').value = merchant.business_type || 'other';
+    if (merchant.service_data) serviceData = merchant.service_data;
     else serviceData = { rooms: [], menus: [] };
 }
 
 function onBusinessTypeChange(){
-    // 切换业务类型时自动保存
     const type = document.getElementById('business_type').value;
     merchant.business_type = type;
     sb.from('ztj_merchants').update({ business_type: type }).eq('id', merchant.id);
@@ -187,13 +186,13 @@ async function saveInfo(){
         status: document.getElementById('status').value,
         phone: document.getElementById('phone').value,
         address: document.getElementById('address').value,
-        parking_spots: parseInt(document.getElementById('parking').value)||0,
+        parking_spots: parseInt(document.getElementById('parking').value) || 0,
         intro: document.getElementById('intro').value,
         business_type: document.getElementById('business_type').value
     };
     await sb.from('ztj_merchants').update(updates).eq('id', merchant.id);
     alert('基本信息已保存');
-    merchant = {...merchant, ...updates};
+    merchant = { ...merchant, ...updates };
 }
 
 // ========== 业务管理 ==========
@@ -202,10 +201,10 @@ function loadBusinessModule(){
     document.getElementById('business-hotel').classList.add('hidden');
     document.getElementById('business-restaurant').classList.add('hidden');
     document.getElementById('business-other').classList.add('hidden');
-    if(type==='hotel'){
+    if (type === 'hotel') {
         document.getElementById('business-hotel').classList.remove('hidden');
         renderRooms();
-    } else if(type==='restaurant'){
+    } else if (type === 'restaurant') {
         document.getElementById('business-restaurant').classList.remove('hidden');
         renderMenus();
     } else {
@@ -228,10 +227,9 @@ function renderRooms(){
     });
     document.getElementById('room-list').innerHTML = html || '<p>暂无房型</p>';
 }
-
-function addRoom(){ serviceData.rooms.push({name:'', price:0, stock:0, image:''}); renderRooms(); }
-function updateRoom(idx, field, value){ serviceData.rooms[idx][field] = value; }
-function deleteRoom(idx){ serviceData.rooms.splice(idx,1); renderRooms(); }
+function addRoom(){ serviceData.rooms.push({name:'', price:0, stock:0, image:''}); renderRooms(); autoSaveBusiness(); }
+function updateRoom(idx, field, value){ serviceData.rooms[idx][field] = value; autoSaveBusiness(); }
+function deleteRoom(idx){ serviceData.rooms.splice(idx,1); renderRooms(); autoSaveBusiness(); }
 async function uploadRoomImage(idx, input){
     const file = input.files[0]; if(!file) return;
     const path = `${merchant.account_id}/rooms/${Date.now()}.jpg`;
@@ -240,10 +238,8 @@ async function uploadRoomImage(idx, input){
     const { data: { publicUrl } } = sb.storage.from('merchant-uploads').getPublicUrl(path);
     serviceData.rooms[idx].image = publicUrl;
     renderRooms();
+    autoSaveBusiness();
 }
-
-// 菜品管理类似，略...
-// 为节省篇幅，可复制房间逻辑修改为菜单字段，字段：name, price, stock, image
 function renderMenus(){
     const menus = serviceData.menus || [];
     let html = '';
@@ -259,9 +255,9 @@ function renderMenus(){
     });
     document.getElementById('menu-list').innerHTML = html || '<p>暂无菜品</p>';
 }
-function addMenuItem(){ if(!serviceData.menus) serviceData.menus=[]; serviceData.menus.push({name:'', price:0, stock:0, image:''}); renderMenus(); }
-function updateMenu(idx, field, value){ serviceData.menus[idx][field] = value; }
-function deleteMenu(idx){ serviceData.menus.splice(idx,1); renderMenus(); }
+function addMenuItem(){ if(!serviceData.menus) serviceData.menus=[]; serviceData.menus.push({name:'', price:0, stock:0, image:''}); renderMenus(); autoSaveBusiness(); }
+function updateMenu(idx, field, value){ serviceData.menus[idx][field] = value; autoSaveBusiness(); }
+function deleteMenu(idx){ serviceData.menus.splice(idx,1); renderMenus(); autoSaveBusiness(); }
 async function uploadMenuImage(idx, input){
     const file = input.files[0]; if(!file) return;
     const path = `${merchant.account_id}/menus/${Date.now()}.jpg`;
@@ -270,31 +266,17 @@ async function uploadMenuImage(idx, input){
     const { data: { publicUrl } } = sb.storage.from('merchant-uploads').getPublicUrl(path);
     serviceData.menus[idx].image = publicUrl;
     renderMenus();
+    autoSaveBusiness();
 }
-
-// 保存业务数据到 merchants 表的 service_data 字段
-async function saveBusinessData(){
+async function autoSaveBusiness(){
     await sb.from('ztj_merchants').update({ service_data: serviceData }).eq('id', merchant.id);
 }
-
-// 在退出或定时保存？简单起见，增加一个保存按钮
-// 可在业务管理区加一个“保存业务数据”按钮，或自动保存
-// 此处通过页面离开前提示，但简单实现：在业务数据修改后手动调用 saveBusinessData
-// 为避免丢失，在 add/update/delete 函数最后调用 saveBusinessData
-function autoSaveBusiness(){
-    sb.from('ztj_merchants').update({ service_data: serviceData }).eq('id', merchant.id);
-}
-// 在修改时调用 autoSaveBusiness
-const origRenderRooms = renderRooms;
-renderRooms = function(){ origRenderRooms(); autoSaveBusiness(); };
-const origRenderMenus = renderMenus;
-renderMenus = function(){ origRenderMenus(); autoSaveBusiness(); };
 
 // ========== 预约设置 ==========
 async function loadReserveSettings(){
     const { data } = await sb.from('reservation_settings').select('*').eq('merchant_id', merchant.id);
     timeSlots = data || [];
-    if(timeSlots.length){
+    if (timeSlots.length) {
         document.getElementById('day-limit').value = timeSlots[0].day_total_limit || 10;
         document.getElementById('team-max').value = timeSlots[0].team_max_size || 50;
     }
@@ -314,16 +296,16 @@ function renderTimeSlots(){
 }
 function addTimeSlot(){ timeSlots.push({time_slot_start:'09:00', time_slot_end:'10:00', max_teams:1}); renderTimeSlots(); }
 function updateSlot(idx, field, value){
-    if(field==='start') timeSlots[idx].time_slot_start = value;
-    else if(field==='end') timeSlots[idx].time_slot_end = value;
-    else timeSlots[idx].max_teams = parseInt(value)||1;
+    if (field === 'start') timeSlots[idx].time_slot_start = value;
+    else if (field === 'end') timeSlots[idx].time_slot_end = value;
+    else timeSlots[idx].max_teams = parseInt(value) || 1;
 }
 function removeSlot(idx){ timeSlots.splice(idx,1); renderTimeSlots(); }
 async function saveReserveSettings(){
-    const dayLimit = parseInt(document.getElementById('day-limit').value)||10;
-    const teamMax = parseInt(document.getElementById('team-max').value)||50;
+    const dayLimit = parseInt(document.getElementById('day-limit').value) || 10;
+    const teamMax = parseInt(document.getElementById('team-max').value) || 50;
     await sb.from('reservation_settings').delete().eq('merchant_id', merchant.id);
-    if(timeSlots.length){
+    if (timeSlots.length) {
         const data = timeSlots.map(s => ({
             merchant_id: merchant.id,
             time_slot_start: s.time_slot_start,
@@ -363,22 +345,22 @@ async function addActivity(){
 }
 async function saveActivity(){
     const title = document.getElementById('act-name').value;
-    const duration = parseInt(document.getElementById('act-duration').value)||60;
+    const duration = parseInt(document.getElementById('act-duration').value) || 60;
     const location = document.getElementById('act-location').value;
     const desc = document.getElementById('act-desc').value;
-    if(!title) return;
+    if (!title) return;
     await sb.from('reservation_activities').insert({ merchant_id: merchant.id, title, duration, location, description: desc });
     document.getElementById('activity-edit-form').classList.add('hidden');
     loadActivities();
 }
-async function editActivity(id){ /* 简化：直接删除再添加，或弹窗编辑 */ }
+async function editActivity(id){ /* 简化处理，可自行扩展 */ }
 async function deleteActivity(id){
-    if(confirm('删除活动？')){ await sb.from('reservation_activities').delete().eq('id',id); loadActivities(); }
+    if (confirm('删除活动？')) { await sb.from('reservation_activities').delete().eq('id', id); loadActivities(); }
 }
 
 // ========== 预约列表 ==========
 async function loadReservations(){
-    const { data } = await sb.from('reservations').select('*').eq('merchant_id', merchant.id).order('created_at',false);
+    const { data } = await sb.from('reservations').select('*').eq('merchant_id', merchant.id).order('created_at', false);
     let html = '';
     data.forEach(r => {
         html += `<div class="card">
@@ -399,7 +381,7 @@ async function updateReservation(id, status){
 async function loadMerchantFeedbacks(){
     const { data } = await sb.from('ztj_feedbacks').select('*').eq('merchant_id', merchant.id).order('created_at', false);
     let html = '';
-    if(data && data.length){
+    if (data && data.length) {
         data.forEach(f => {
             html += `<div class="card">
                 <p><b>留言：</b>${f.message}</p>
@@ -420,9 +402,6 @@ async function replyToFeedback(id){
     alert('回复已保存');
     loadMerchantFeedbacks();
 }
-
-// 辅助：保存业务数据时自动触发
-// 自动保存已在业务数据渲染函数中调用
 </script>
 </body>
 </html>

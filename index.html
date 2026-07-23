@@ -33,8 +33,9 @@
         .warn-list { background:#fafafa; padding:10px; border-radius:8px; margin-top:10px; }
         .trip-line { padding:4px 0; border-bottom:1px dotted #eee; }
         .trip-line:last-child { border-bottom:none; }
-        .collapse-header { cursor:pointer; font-weight:bold; }
+        .collapse-header { cursor:pointer; font-weight:bold; padding:8px 0; }
         .collapse-content { padding-left:10px; }
+        .feedback-text { font-size:14px; margin:4px 0; }
     </style>
 </head>
 <body>
@@ -95,7 +96,11 @@
         </div>
         <div id="myTripContent"></div>
         <div id="myReservationContent" class="hidden"></div>
-        <div id="myFeedbackContent" class="hidden"></div>
+        <div id="myFeedbackContent" class="hidden">
+            <textarea id="feedbackMsg" rows="4" placeholder="建议或问题..."></textarea>
+            <button class="btn btn-primary" onclick="submitFeedback()" style="width:100%; margin-top:10px;">提交</button>
+            <div id="feedback-list" style="margin-top:15px;"></div>
+        </div>
     </div>
 </div>
 
@@ -109,8 +114,7 @@ let generatedTripData = null;
 const COUNTY = { lat:32.08, lng:107.24, name:'红军广场', id:'county' };
 const poiColors = { '自然景区':'#2E7D32', '红色景区':'#9C27B0', '文博场馆':'#9C27B0', '餐饮住宿':'#FF9800', '停车场':'#00BCD4', '公共服务':'#607D8B' };
 let transportPresets = {};
-const DAY_START=360, LUNCH_START=690, LUNCH_END=750, DINNER_START=1050, DINNER_END=1110, DAY_END=1200; // 分钟
-
+const DAY_START=360, LUNCH_START=690, LUNCH_END=750, DINNER_START=1050, DINNER_END=1110, DAY_END=1200;
 const NON_VISIT_CATEGORIES = ['交通枢纽','餐饮住宿','公共服务','特产购物','游玩娱乐'];
 
 function getUserId(){ let uid = localStorage.getItem('vid'); if(!uid){ uid='v_'+Date.now()+Math.random().toString(36); localStorage.setItem('vid',uid); } return uid; }
@@ -201,10 +205,7 @@ async function updateAllTimes(){
     }
 }
 
-// 格式化分钟为HH:MM
 function formatTime(minutes){ const h=Math.floor(minutes/60).toString().padStart(2,'0'); const m=(minutes%60).toString().padStart(2,'0'); return `${h}:${m}`; }
-
-// 判断POI是否属于非游览类（不显示游览时长）
 function isNonVisitPoi(poiId){
     if(poiId==='county') return false;
     const poi = allPois.find(p=>p.id==poiId);
@@ -213,7 +214,6 @@ function isNonVisitPoi(poiId){
     return cats.some(c=>NON_VISIT_CATEGORIES.includes(c));
 }
 
-// 处理活动（交通/游览），插入强制就餐时段
 function processActivity(startMin, duration, type, poiName, currentDate, poiId){
     const lines = [];
     let curMin = startMin;
@@ -247,9 +247,7 @@ function processActivity(startMin, duration, type, poiName, currentDate, poiId){
         if(type === 'travel'){
             lines.push({ time: curMin, text: `🚗 ${formatTime(curMin)}-${formatTime(endMin)} 前往 ${poiName} (交通${duration}分钟)`, date: new Date(date) });
         } else {
-            // 游览，非游览类不显示时长
             if(isNonVisitPoi(poiId)){
-                // 不显示游览，仅作为短暂停留，占用时间为0或极少
                 lines.push({ time: curMin, text: `📍 ${formatTime(curMin)} 到达 ${poiName}`, date: new Date(date) });
             } else {
                 lines.push({ time: curMin, text: `⏱️ ${formatTime(curMin)}-${formatTime(endMin)} 游览 ${poiName} (游览${duration}分钟)`, date: new Date(date) });
@@ -274,7 +272,6 @@ async function generateCustomTrip(){
     for(let i=1; i<routeLegs.length; i++){
         const poi = routeLegs[i];
         let duration = allPois.find(p=>p.id==poi.id)?.visit_duration || 0;
-        // 非游览类POI时长为0
         if(isNonVisitPoi(poi.id)) duration = 0;
         nodes.push({ ...poi, type:'poi', visitDuration: duration });
     }
@@ -303,7 +300,6 @@ async function generateCustomTrip(){
             allLines.push({ time: curMin, text: `⚠️ 前往 ${cur.name} 交通耗时未知`, date: new Date(currentDate) });
         }
         if(cur.visitDuration > 0 || isNonVisitPoi(cur.id)){
-            // 非游览类也需要显示到达
             if(isNonVisitPoi(cur.id)){
                 allLines.push({ time: curMin, text: `📍 ${formatTime(curMin)} 到达 ${cur.name}`, date: new Date(currentDate) });
             } else {
@@ -315,7 +311,6 @@ async function generateCustomTrip(){
         }
     }
 
-    // 按天分组
     const days = [];
     let currentDay = null;
     allLines.forEach(line => {
@@ -328,20 +323,17 @@ async function generateCustomTrip(){
     });
     if(currentDay) days.push(currentDay);
 
-    // 生成HTML
     let timelineHtml = '';
     days.forEach((day, idx) => {
         timelineHtml += `<div class="day-header">📅 第${idx+1}天 (${day.date})</div>`;
         day.lines.forEach(l => timelineHtml += `<div class="trip-line">${l.text}</div>`);
     });
 
-    // 温馨提示
     let tips = [];
     let tipIdx=1;
     days.forEach(day => {
-        const lines = day.lines;
         let hasLunch=false, hasDinner=false;
-        lines.forEach(l => {
+        day.lines.forEach(l => {
             if(l.text.includes('午餐')) hasLunch=true;
             if(l.text.includes('晚餐')) hasDinner=true;
         });
@@ -384,7 +376,7 @@ function saveGeneratedTrip(){
     resetRouteLegs();
 }
 
-// 我的行程展示（折叠展开）
+// 我的行程展示
 function renderMyTrip(){
     const trips = JSON.parse(localStorage.getItem('trips')||'[]');
     let html = '';
@@ -420,23 +412,26 @@ function deleteTrip(idx){
     renderMyTrip();
 }
 
-// 留言展示（折叠展开）
-function renderMyFeedbacks(){
-    sb.from('ztj_feedbacks').select('*').order('created_at',{ascending:false}).then(({data}) => {
-        let html = '';
-        if(data) data.forEach((f,idx) => {
+// 留言展示（从数据库加载，折叠展开）
+async function renderMyFeedbacks(){
+    const { data } = await sb.from('ztj_feedbacks').select('*').order('created_at',{ascending:false});
+    let html = '';
+    if(data && data.length){
+        data.forEach((f, idx) => {
             html += `<div class="card">
                 <div class="collapse-header" onclick="toggleFeedbackDetail(${idx})">
-                    💬 ${new Date(f.created_at).toLocaleString()} - ${f.message.substring(0,20)}...
+                    💬 ${new Date(f.created_at).toLocaleString()} - ${f.message.substring(0,30)}...
                 </div>
                 <div id="feedback-detail-${idx}" class="collapse-content hidden">
-                    <p>${f.message}</p>
-                    ${f.reply ? `<p style="color:#2e7d32;">回复：${f.reply}</p>` : '<p style="color:#999;">暂未回复</p>'}
+                    <p class="feedback-text">${f.message}</p>
+                    ${f.reply ? `<p style="color:#2e7d32;">管理员回复：${f.reply}</p>` : '<p style="color:#999;">暂未回复</p>'}
                 </div>
             </div>`;
         });
-        document.getElementById('myFeedbackContent').innerHTML = html || '<p>暂无留言</p>';
-    });
+    } else {
+        html = '<p>暂无留言</p>';
+    }
+    document.getElementById('feedback-list').innerHTML = html;
 }
 window.toggleFeedbackDetail = function(idx){
     const el = document.getElementById(`feedback-detail-${idx}`);
@@ -449,11 +444,12 @@ async function loadMyReservations(){
     document.getElementById('myReservationContent').innerHTML = data?.length ? data.map(r => `<div class="card"><b>${r.reservation_date} ${r.time_slot_start}</b> ${r.visitor_count}人 ${r.name}</div>`).join('') : '<p>暂无预约</p>';
 }
 async function submitFeedback(){
-    const msg = document.getElementById('feedbackMsg')?.value;
+    const msg = document.getElementById('feedbackMsg').value;
     if(!msg) return;
     await sb.from('ztj_feedbacks').insert({ user_id: getUserId(), message: msg });
     alert('感谢反馈');
     document.getElementById('feedbackMsg').value = '';
+    renderMyFeedbacks();
 }
 
 function switchMyTab(tab){

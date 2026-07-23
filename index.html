@@ -7,9 +7,9 @@
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
         * { margin:0; padding:0; box-sizing:border-box; }
-        body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; height:100vh; overflow:hidden; }
+        body { font-family: system-ui, sans-serif; height:100vh; overflow:hidden; }
         #map { height:100vh; width:100vw; z-index:1; }
-        .top-bar { position:fixed; top:20px; right:20px; z-index:1500; display:flex; gap:8px; }
+        .top-bar { position:fixed; top:20px; right:20px; z-index:1500; }
         .top-btn { background:white; border-radius:20px; padding:6px 12px; box-shadow:0 2px 8px rgba(0,0,0,0.2); border:none; font-size:14px; cursor:pointer; }
         .bottom-bar { position:fixed; bottom:20px; left:20px; right:20px; z-index:1500; display:flex; gap:10px; }
         .btn { flex:1; padding:14px; border:none; border-radius:12px; font-weight:bold; cursor:pointer; }
@@ -28,24 +28,18 @@
         .my-tab { padding:8px 16px; border:none; background:#eee; border-radius:20px; cursor:pointer; }
         .my-tab.active { background:#2e7d32; color:white; }
         .route-node { display:flex; gap:8px; align-items:center; margin:8px 0; }
-        .route-time { font-size:12px; color:#666; }
         .day-header { font-weight:bold; background:#e9f5ea; padding:6px; border-radius:4px; margin:12px 0 6px; }
         .warn-list { background:#fafafa; padding:10px; border-radius:8px; margin-top:10px; }
         .trip-line { padding:4px 0; border-bottom:1px dotted #eee; }
-        .trip-line:last-child { border-bottom:none; }
-        .collapse-header { cursor:pointer; font-weight:bold; }
-        .collapse-content { padding-left:10px; }
-        .feedback-card { cursor:pointer; }
+        .collapse-header { cursor:pointer; font-weight:bold; display:flex; justify-content:space-between; }
     </style>
 </head>
 <body>
 <div id="map"></div>
-<div class="top-bar">
-    <button class="top-btn" onclick="openPanel('myPanel')">👤 我的</button>
-</div>
+<div class="top-bar"><button class="top-btn" onclick="openPanel('myPanel')">👤 我的</button></div>
 <div class="bottom-bar">
     <button class="btn btn-secondary" onclick="openPanel('routesPanel')">📋 路线</button>
-    <button class="btn btn-primary" id="navBtn" onclick="startSimulation()">📍 模拟导航</button>
+    <button class="btn btn-primary" onclick="startSimulation()">📍 模拟导航</button>
 </div>
 
 <!-- 商户详情 -->
@@ -64,18 +58,13 @@
     <div class="panel-body">
         <h3>📌 推荐路线</h3>
         <div id="routeList"></div>
-        <div class="toggle-section" onclick="toggleCustomTripSection()">
-            <h4>✏️ 自设行程 <span id="customTripArrow">▼</span></h4>
-        </div>
+        <div class="toggle-section" onclick="toggleCustomTripSection()"><h4>✏️ 自设行程 <span id="customTripArrow">▼</span></h4></div>
         <div id="customTripSection" class="hidden" style="margin-top:10px;">
             <div class="form-group"><label>出发日期</label><input type="date" id="trip-date"></div>
-            <div class="form-group"><label>出发时间</label><select id="trip-time"><option value="06:00">06:00</option><option value="07:00" selected>07:00</option><option value="08:00">08:00</option><option value="09:00">09:00</option><option value="10:00">10:00</option></select></div>
+            <div class="form-group"><label>出发时间</label><select id="trip-time"><option value="06:00">06:00</option><option value="07:00" selected>07:00</option><option value="08:00">08:00</option><option value="09:00">09:00</option></select></div>
             <div class="form-group"><label>出行方式</label><select id="trip-mode"><option value="auto">自驾</option><option value="bus">公交</option><option value="walk">步行</option></select></div>
             <div class="form-group"><label>人数</label><input type="number" id="trip-people" min="1" value="2"></div>
-            <div class="form-group"><label>行程路线</label>
-                <div id="dynamic-route"></div>
-                <button class="btn btn-default" onclick="addRouteLeg()">+ 添加景点</button>
-            </div>
+            <div class="form-group"><label>行程路线</label><div id="dynamic-route"></div><button class="btn btn-default" onclick="addRouteLeg()">+ 添加景点</button></div>
             <button class="btn btn-primary" onclick="generateCustomTrip()" style="width:100%; margin-top:12px;">生成行程</button>
             <div id="generated-trip" style="margin-top:12px;"></div>
             <div id="trip-warnings" style="margin-top:12px;"></div>
@@ -88,7 +77,6 @@
 <div class="panel" id="myPanel">
     <div class="panel-header"><h2>我的</h2><button onclick="closePanel('myPanel')">✕</button></div>
     <div class="panel-body">
-        <div class="lang-select"><label>语言</label><select id="langSelect" style="width:100%"><option value="cn">中文</option></select></div>
         <div style="display:flex; gap:10px; margin-bottom:15px;">
             <button id="my-tab-trip" class="my-tab active" onclick="switchMyTab('trip')">📅 行程</button>
             <button id="my-tab-reservation" class="my-tab" onclick="switchMyTab('reservation')">📋 预约</button>
@@ -97,9 +85,9 @@
         <div id="myTripContent"></div>
         <div id="myReservationContent" class="hidden"></div>
         <div id="myFeedbackContent" class="hidden">
-            <textarea id="feedbackMsg" rows="4" placeholder="建议或问题..."></textarea>
-            <button class="btn btn-primary" onclick="submitFeedback()" style="width:100%; margin-top:10px;">提交留言</button>
-            <div id="feedbackHistory" style="margin-top:15px;"></div>
+            <textarea id="feedbackMsg" rows="3" placeholder="建议或问题..."></textarea>
+            <button class="btn btn-primary" onclick="submitFeedback()" style="width:100%; margin-top:8px;">提交</button>
+            <div id="feedbackHistory" style="margin-top:12px;"></div>
         </div>
     </div>
 </div>
@@ -109,16 +97,25 @@
 <script src="config.js"></script>
 <script>
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-let map, allPois=[], simPos=null;
+let map, allPois=[];
 let generatedTripData = null;
 const COUNTY = { lat:32.08, lng:107.24, name:'红军广场', id:'county' };
 const poiColors = { '自然景区':'#2E7D32', '红色景区':'#9C27B0', '文博场馆':'#9C27B0', '餐饮住宿':'#FF9800', '停车场':'#00BCD4', '公共服务':'#607D8B' };
 let transportPresets = {};
 const DAY_START=360, LUNCH_START=690, LUNCH_END=750, DINNER_START=1050, DINNER_END=1110, DAY_END=1200;
 const NON_VISIT_CATEGORIES = ['交通枢纽','餐饮住宿','公共服务','特产购物','游玩娱乐'];
+let routeLegs=[], mainPoiOptions=[];
 
-function getUserId(){ let uid = localStorage.getItem('vid'); if(!uid){ uid='v_'+Date.now()+Math.random().toString(36); localStorage.setItem('vid',uid); } return uid; }
+function getUserId(){ let uid=localStorage.getItem('vid'); if(!uid){ uid='v_'+Date.now()+Math.random().toString(36); localStorage.setItem('vid',uid); } return uid; }
+function formatTime(m){ return `${Math.floor(m/60).toString().padStart(2,'0')}:${(m%60).toString().padStart(2,'0')}`; }
+function isNonVisitPoi(poiId){
+    if(poiId==='county') return false;
+    const poi=allPois.find(p=>p.id==poiId);
+    if(!poi||!poi.category) return false;
+    return poi.category.split(',').some(c=>NON_VISIT_CATEGORIES.includes(c));
+}
 
+// 地图初始化
 function initMap(){
     map = L.map('map', { zoomControl: false }).setView([32.08,107.18], 12);
     L.tileLayer('https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}',{
@@ -149,9 +146,8 @@ function getTransportTime(fromId, toId){
 function renderPOIs(pois){
     map.eachLayer(l => { if(l instanceof L.Marker) map.removeLayer(l); });
     pois.forEach(p => {
-        const cat = (p.category||'').split(',')[0] || '其他';
-        const color = poiColors[cat]||'#999';
-        const icon = L.divIcon({html:`<div style="background:${color}; width:20px; height:20px; border-radius:50%; border:2px solid white;"></div>`, iconSize:[20,20]});
+        const cat = (p.category||'').split(',')[0]||'其他';
+        const icon = L.divIcon({html:`<div style="background:${poiColors[cat]||'#999'}; width:20px; height:20px; border-radius:50%; border:2px solid white;"></div>`, iconSize:[20,20]});
         L.marker([p.lat,p.lng],{icon}).addTo(map).on('click',()=>showPoiDetail(p));
     });
 }
@@ -160,296 +156,166 @@ async function showPoiDetail(poi){
     document.getElementById('merchantDetailTitle').textContent = poi.name;
     let html = `<p>${poi.description||''}</p>`;
     if(m){
-        html += `<p>📞 ${m.phone||'未提供'} | 状态：${m.status==='open'?'营业':'休息'}</p>`;
+        html += `<p>📞 ${m.phone||'未提供'} | ${m.status==='open'?'营业':'休息'}</p>`;
         if(m.allow_reserve) html += `<button class="btn btn-primary" onclick="openReservePanel('${m.id}')">📋 研学预约</button>`;
     }
     document.getElementById('merchantDetailContent').innerHTML = html;
     openPanel('merchantDetailPanel');
 }
-async function openReservePanel(merchantId){ /* 省略 */ }
+
+// 推荐路线（简化）
 async function loadRoutes(){
     const { data } = await sb.from('ztj_routes').select('*');
     document.getElementById('routeList').innerHTML = data.map(r => `<div class="card"><h3>${r.name}</h3><p>${r.days||1}天</p></div>`).join('');
 }
 
-// 自设行程
-let routeLegs=[], mainPoiOptions=[];
+// 自设行程动态路线
 function toggleCustomTripSection(){ document.getElementById('customTripSection').classList.toggle('hidden'); if(!document.getElementById('customTripSection').classList.contains('hidden')){ buildMainPoiOptions(); resetRouteLegs(); } }
 function buildMainPoiOptions(){ mainPoiOptions=allPois.filter(p=>!p.parent_id); if(!mainPoiOptions.some(p=>String(p.id)==='county')) mainPoiOptions.unshift(COUNTY); }
 function resetRouteLegs(){ routeLegs=[{...COUNTY}]; renderDynamicRoute(); }
 function addRouteLeg(){ routeLegs.push({id:'',name:''}); renderDynamicRoute(); }
-function removeLeg(index){ if(index>0){ routeLegs.splice(index,1); renderDynamicRoute(); } }
-function updateStartPoint(value){ const poi=mainPoiOptions.find(p=>String(p.id)===value); routeLegs[0]=poi||COUNTY; updateAllTimes(); }
-function updateLeg(index,value){ const poi=mainPoiOptions.find(p=>String(p.id)===value); if(poi) routeLegs[index]=poi; else routeLegs[index]={id:'',name:''}; renderDynamicRoute(); }
+function removeLeg(idx){ if(idx>0){ routeLegs.splice(idx,1); renderDynamicRoute(); } }
+function updateStartPoint(v){ const p=mainPoiOptions.find(p=>String(p.id)===v); routeLegs[0]=p||COUNTY; updateAllTimes(); }
+function updateLeg(idx,v){ const p=mainPoiOptions.find(p=>String(p.id)===v); if(p) routeLegs[idx]=p; else routeLegs[idx]={id:'',name:''}; renderDynamicRoute(); }
 function renderDynamicRoute(){
-    const container=document.getElementById('dynamic-route');
-    let html=`<div class="route-node"><select onchange="updateStartPoint(this.value)">${mainPoiOptions.map(p=>`<option value="${p.id}" ${routeLegs[0]?.id==p.id?'selected':''}>${p.name}</option>`).join('')}</select><span>→</span></div>`;
-    routeLegs.forEach((leg,idx)=>{
-        if(idx===0) return;
-        html+=`<div class="route-node">
-            <select onchange="updateLeg(${idx},this.value)"><option value="">--选择--</option>${mainPoiOptions.map(p=>`<option value="${p.id}" ${leg.id==p.id?'selected':''}>${p.name}</option>`).join('')}</select>
-            ${idx<routeLegs.length-1?`<span class="route-time" id="time-${idx}"></span>`:''}
-            <button class="btn btn-danger" onclick="removeLeg(${idx})">删除</button>
-        </div>`;
+    let h=`<div class="route-node"><select onchange="updateStartPoint(this.value)">${mainPoiOptions.map(p=>`<option value="${p.id}" ${routeLegs[0]?.id==p.id?'selected':''}>${p.name}</option>`).join('')}</select><span>→</span></div>`;
+    routeLegs.forEach((l,i)=>{
+        if(i===0) return;
+        h+=`<div class="route-node"><select onchange="updateLeg(${i},this.value)"><option value="">--选择--</option>${mainPoiOptions.map(p=>`<option value="${p.id}" ${l.id==p.id?'selected':''}>${p.name}</option>`).join('')}</select>${i<routeLegs.length-1?`<span class="route-time" id="time-${i}"></span>`:''}<button class="btn btn-danger" onclick="removeLeg(${i})">删除</button></div>`;
     });
-    container.innerHTML=html;
+    document.getElementById('dynamic-route').innerHTML=h;
     updateAllTimes();
 }
 async function updateAllTimes(){
     for(let i=1;i<routeLegs.length;i++){
         const span=document.getElementById(`time-${i}`);
-        if(span&&routeLegs[i-1].id&&routeLegs[i].id){
-            const time=getTransportTime(routeLegs[i-1].id,routeLegs[i].id);
-            span.textContent=time!==null?`⏱️约${time}分钟`:'⏱️暂无数据';
-        }
+        if(span&&routeLegs[i-1].id&&routeLegs[i].id) span.textContent = (getTransportTime(routeLegs[i-1].id,routeLegs[i].id)!==null?`⏱️约${getTransportTime(routeLegs[i-1].id,routeLegs[i].id)}分钟`:'⏱️暂无数据');
     }
 }
 
-function formatTime(minutes){ const h=Math.floor(minutes/60).toString().padStart(2,'0'); const m=(minutes%60).toString().padStart(2,'0'); return `${h}:${m}`; }
-function isNonVisitPoi(poiId){
-    if(poiId==='county') return false;
-    const poi = allPois.find(p=>p.id==poiId);
-    if(!poi || !poi.category) return false;
-    const cats = poi.category.split(',');
-    return cats.some(c=>NON_VISIT_CATEGORIES.includes(c));
-}
-
-function processActivity(startMin, duration, type, poiName, currentDate, poiId){
-    const lines = [];
-    let curMin = startMin;
-    let remaining = duration;
-    let date = new Date(currentDate);
-    while(remaining > 0){
-        if(curMin >= LUNCH_START && curMin < LUNCH_END){
-            lines.push({ time: LUNCH_START, text: `🍽️ 午餐时间 (${formatTime(LUNCH_START)}-${formatTime(LUNCH_END)})`, date: new Date(date) });
-            curMin = LUNCH_END;
-            continue;
-        }
-        if(curMin >= DINNER_START && curMin < DINNER_END){
-            lines.push({ time: DINNER_START, text: `🍽️ 晚餐时间 (${formatTime(DINNER_START)}-${formatTime(DINNER_END)})`, date: new Date(date) });
-            curMin = DINNER_END;
-            continue;
-        }
-        if(curMin >= DAY_END){
-            lines.push({ time: DAY_END, text: `🌙 当天行程结束，住宿休息`, date: new Date(date) });
-            date.setDate(date.getDate()+1);
-            curMin = DAY_START;
-            continue;
-        }
-        let nextBreak = DAY_END;
-        if(curMin < LUNCH_START) nextBreak = LUNCH_START;
-        else if(curMin < DINNER_START) nextBreak = DINNER_START;
-        else nextBreak = DAY_END;
-
-        const timeToBreak = nextBreak - curMin;
-        const spend = Math.min(remaining, timeToBreak);
-        const endMin = curMin + spend;
-        if(type === 'travel'){
-            lines.push({ time: curMin, text: `🚗 ${formatTime(curMin)}-${formatTime(endMin)} 前往 ${poiName} (交通${duration}分钟)`, date: new Date(date) });
-        } else {
-            if(isNonVisitPoi(poiId)){
-                lines.push({ time: curMin, text: `📍 ${formatTime(curMin)} 到达 ${poiName}`, date: new Date(date) });
-            } else {
-                lines.push({ time: curMin, text: `⏱️ ${formatTime(curMin)}-${formatTime(endMin)} 游览 ${poiName} (游览${duration}分钟)`, date: new Date(date) });
-            }
-        }
-        curMin = endMin;
-        remaining -= spend;
+// 行程生成核心
+function processActivity(curMin, duration, type, poiName, currentDate, poiId){
+    const lines=[]; let d=new Date(currentDate), rem=duration;
+    while(rem>0){
+        if(curMin>=LUNCH_START&&curMin<LUNCH_END){ lines.push({time:LUNCH_START, text:`🍽️ 午餐时间 (${formatTime(LUNCH_START)}-${formatTime(LUNCH_END)})`, date:new Date(d)}); curMin=LUNCH_END; continue; }
+        if(curMin>=DINNER_START&&curMin<DINNER_END){ lines.push({time:DINNER_START, text:`🍽️ 晚餐时间 (${formatTime(DINNER_START)}-${formatTime(DINNER_END)})`, date:new Date(d)}); curMin=DINNER_END; continue; }
+        if(curMin>=DAY_END){ lines.push({time:DAY_END, text:`🌙 当天行程结束，住宿休息`, date:new Date(d)}); d.setDate(d.getDate()+1); curMin=DAY_START; continue; }
+        let nb=DAY_END; if(curMin<LUNCH_START) nb=LUNCH_START; else if(curMin<DINNER_START) nb=DINNER_START;
+        const spend=Math.min(rem, nb-curMin), endMin=curMin+spend;
+        if(type==='travel') lines.push({time:curMin, text:`🚗 ${formatTime(curMin)}-${formatTime(endMin)} 前往 ${poiName} (交通${duration}分钟)`, date:new Date(d)});
+        else if(isNonVisitPoi(poiId)) lines.push({time:curMin, text:`📍 ${formatTime(curMin)} 到达 ${poiName}`, date:new Date(d)});
+        else lines.push({time:curMin, text:`⏱️ ${formatTime(curMin)}-${formatTime(endMin)} 游览 ${poiName} (游览${duration}分钟)`, date:new Date(d)});
+        curMin=endMin; rem-=spend;
     }
-    return { curMin, date, lines };
+    return {curMin, date:d, lines};
 }
 
 async function generateCustomTrip(){
-    const valid = routeLegs.filter(l => l.id && l.id!=='county');
+    const valid=routeLegs.filter(l=>l.id&&l.id!=='county');
     if(valid.length===0) return alert('请至少选择一个景区');
-    const dateStr = document.getElementById('trip-date').value;
+    const dateStr=document.getElementById('trip-date').value, startTime=document.getElementById('trip-time').value;
     if(!dateStr) return alert('选择出发日期');
-    const startTime = document.getElementById('trip-time').value;
-    const mode = document.getElementById('trip-mode').value;
-    const people = document.getElementById('trip-people').value;
-
-    let nodes = [ { ...routeLegs[0], type:'start' } ];
-    for(let i=1; i<routeLegs.length; i++){
-        const poi = routeLegs[i];
-        let duration = allPois.find(p=>p.id==poi.id)?.visit_duration || 0;
-        if(isNonVisitPoi(poi.id)) duration = 0;
-        nodes.push({ ...poi, type:'poi', visitDuration: duration });
+    const mode=document.getElementById('trip-mode').value, people=document.getElementById('trip-people').value;
+    let nodes=[{...routeLegs[0], type:'start'}];
+    for(let i=1;i<routeLegs.length;i++){
+        const p=routeLegs[i]; let dur=allPois.find(p2=>p2.id==p.id)?.visit_duration||0;
+        if(isNonVisitPoi(p.id)) dur=0;
+        nodes.push({...p, type:'poi', visitDuration:dur});
     }
-    for(let i=1; i<nodes.length; i++){
-        const t = getTransportTime(nodes[i-1].id, nodes[i].id);
-        nodes[i].transportTime = t;
-    }
+    for(let i=1;i<nodes.length;i++) nodes[i].transportTime=getTransportTime(nodes[i-1].id,nodes[i].id);
 
-    let currentDate = new Date(dateStr);
-    let [h,m] = startTime.split(':').map(Number);
-    let curMin = h*60 + m;
-    if(curMin < DAY_START) curMin = DAY_START;
-    if(curMin >= DAY_END) { currentDate.setDate(currentDate.getDate()+1); curMin = DAY_START; }
-
-    let allLines = [];
-    allLines.push({ time: curMin, text: `🚩 ${formatTime(curMin)} 从 ${nodes[0].name} 出发`, date: new Date(currentDate) });
-
-    for(let i=1; i<nodes.length; i++){
-        const prev = nodes[i-1], cur = nodes[i];
-        if(cur.transportTime !== null && cur.transportTime > 0){
-            const result = processActivity(curMin, cur.transportTime, 'travel', cur.name, currentDate, cur.id);
-            allLines = allLines.concat(result.lines);
-            curMin = result.curMin;
-            currentDate = result.date;
-        } else if(cur.transportTime === null){
-            allLines.push({ time: curMin, text: `⚠️ 前往 ${cur.name} 交通耗时未知`, date: new Date(currentDate) });
-        }
-        if(cur.visitDuration > 0 || isNonVisitPoi(cur.id)){
-            if(isNonVisitPoi(cur.id)){
-                allLines.push({ time: curMin, text: `📍 ${formatTime(curMin)} 到达 ${cur.name}`, date: new Date(currentDate) });
-            } else {
-                const result = processActivity(curMin, cur.visitDuration, 'visit', cur.name, currentDate, cur.id);
-                allLines = allLines.concat(result.lines);
-                curMin = result.curMin;
-                currentDate = result.date;
-            }
+    let curDate=new Date(dateStr), [h,m]=startTime.split(':').map(Number);
+    let curMin=h*60+m; if(curMin<DAY_START) curMin=DAY_START; if(curMin>=DAY_END){ curDate.setDate(curDate.getDate()+1); curMin=DAY_START; }
+    let allLines=[{time:curMin, text:`🚩 ${formatTime(curMin)} 从 ${nodes[0].name} 出发`, date:new Date(curDate)}];
+    for(let i=1;i<nodes.length;i++){
+        const prev=nodes[i-1], cur=nodes[i];
+        if(cur.transportTime!==null&&cur.transportTime>0){
+            const r=processActivity(curMin, cur.transportTime, 'travel', cur.name, curDate, cur.id);
+            allLines=allLines.concat(r.lines); curMin=r.curMin; curDate=r.date;
+        } else if(cur.transportTime===null) allLines.push({time:curMin, text:`⚠️ 前往 ${cur.name} 交通耗时未知`, date:new Date(curDate)});
+        if(cur.visitDuration>0||isNonVisitPoi(cur.id)){
+            if(isNonVisitPoi(cur.id)) allLines.push({time:curMin, text:`📍 ${formatTime(curMin)} 到达 ${cur.name}`, date:new Date(curDate)});
+            else { const r=processActivity(curMin, cur.visitDuration, 'visit', cur.name, curDate, cur.id); allLines=allLines.concat(r.lines); curMin=r.curMin; curDate=r.date; }
         }
     }
-
-    const days = [];
-    let currentDay = null;
-    allLines.forEach(line => {
-        const lineDate = line.date.toLocaleDateString('zh-CN');
-        if(!currentDay || currentDay.date !== lineDate){
-            if(currentDay) days.push(currentDay);
-            currentDay = { date: lineDate, lines: [] };
-        }
-        currentDay.lines.push({ time: line.time, text: line.text });
+    // 按天分组
+    const days=[]; let day=null;
+    allLines.forEach(l=>{
+        const ld=l.date.toLocaleDateString('zh-CN');
+        if(!day||day.date!==ld){ if(day) days.push(day); day={date:ld, lines:[]}; }
+        day.lines.push({time:l.time, text:l.text});
     });
-    if(currentDay) days.push(currentDay);
+    if(day) days.push(day);
 
-    let timelineHtml = '';
-    days.forEach((day, idx) => {
-        timelineHtml += `<div class="day-header">📅 第${idx+1}天 (${day.date})</div>`;
-        day.lines.forEach(l => timelineHtml += `<div class="trip-line">${l.text}</div>`);
-    });
-
-    let tips = [];
-    let tipIdx=1;
-    days.forEach(day => {
-        const lines = day.lines;
-        let hasLunch=false, hasDinner=false;
-        lines.forEach(l => {
-            if(l.text.includes('午餐')) hasLunch=true;
-            if(l.text.includes('晚餐')) hasDinner=true;
-        });
-        if(!hasLunch) tips.push(`${tipIdx++}. ${day.date} 未安排午餐时段，请注意自行安排。`);
-        if(!hasDinner) tips.push(`${tipIdx++}. ${day.date} 未安排晚餐时段，请注意自行安排。`);
-    });
-    if(days.length>1) tips.push(`${tipIdx++}. 行程跨多天，请合理安排住宿。`);
-
-    const tipsHtml = tips.length ? `<div class="warn-list"><strong>温馨提示：</strong>${tips.map(t=>`<div>${t}</div>`).join('')}</div>` : '';
-
-    document.getElementById('generated-trip').innerHTML = `<div class="card">${timelineHtml}</div>`;
-    document.getElementById('trip-warnings').innerHTML = tipsHtml;
+    let html=''; days.forEach((d,i)=> { html+=`<div class="day-header">📅 第${i+1}天 (${d.date})</div>`; d.lines.forEach(l=>html+=`<div class="trip-line">${l.text}</div>`); });
+    let tips=[], ti=1;
+    days.forEach(d=>{ let hasL=false,hasD=false; d.lines.forEach(l=>{ if(l.text.includes('午餐')) hasL=true; if(l.text.includes('晚餐')) hasD=true; }); if(!hasL) tips.push(`${ti++}. ${d.date} 未安排午餐时段，请自行安排。`); if(!hasD) tips.push(`${ti++}. ${d.date} 未安排晚餐时段，请自行安排。`); });
+    if(days.length>1) tips.push(`${ti++}. 行程跨多天，请合理安排住宿。`);
+    document.getElementById('generated-trip').innerHTML=`<div class="card">${html}</div>`;
+    document.getElementById('trip-warnings').innerHTML = tips.length ? `<div class="warn-list"><strong>温馨提示：</strong>${tips.map(t=>`<div>${t}</div>`).join('')}</div>` : '';
     document.getElementById('saveGeneratedTripBtn').classList.remove('hidden');
-
-    generatedTripData = {
-        name: '自设行程',
-        date: dateStr,
-        time: startTime,
-        mode,
-        people,
-        nodes: nodes.map(n => ({ id:n.id, name:n.name, transportTime:n.transportTime, visitDuration:n.visitDuration })),
-        days: days.map(d => ({ date: d.date, lines: d.lines })),
-        tips
-    };
+    generatedTripData={ name:'自设行程', date:dateStr, time:startTime, mode, people, nodes: nodes.map(n=>({id:n.id,name:n.name,transportTime:n.transportTime,visitDuration:n.visitDuration})), days: days.map(d=>({date:d.date, lines:d.lines})), tips };
 }
 
 function saveGeneratedTrip(){
     if(!generatedTripData) return;
-    const name = prompt('行程名称', generatedTripData.name);
-    if(!name) return;
-    generatedTripData.name = name;
-    const trips = JSON.parse(localStorage.getItem('trips')||'[]');
-    trips.push({ ...generatedTripData, timestamp: Date.now() });
+    const name=prompt('行程名称', generatedTripData.name); if(!name) return;
+    generatedTripData.name=name;
+    const trips=JSON.parse(localStorage.getItem('trips')||'[]');
+    trips.push({...generatedTripData, timestamp:Date.now()});
     localStorage.setItem('trips', JSON.stringify(trips));
     alert('行程已保存');
     document.getElementById('saveGeneratedTripBtn').classList.add('hidden');
     document.getElementById('generated-trip').innerHTML='';
     document.getElementById('trip-warnings').innerHTML='';
-    generatedTripData = null;
+    generatedTripData=null;
     resetRouteLegs();
 }
 
-// 我的行程展示
+// 我的行程（折叠展示）
 function renderMyTrip(){
-    const trips = JSON.parse(localStorage.getItem('trips')||'[]');
-    let html = '';
-    trips.forEach((trip, tripIdx) => {
-        html += `<div class="card" style="margin-bottom:10px;">
-            <div class="collapse-header" onclick="toggleTripDetail(${tripIdx})">
-                📅 ${trip.name} | ${trip.date} ${trip.time} | ${trip.mode} | ${trip.people}人
-            </div>
-            <div id="trip-detail-${tripIdx}" class="collapse-content hidden">`;
-        if(trip.days){
-            trip.days.forEach(day => {
-                html += `<div class="day-header">📅 ${day.date}</div>`;
-                day.lines.forEach(l => html += `<div class="trip-line">${l.text}</div>`);
-            });
-        }
-        if(trip.tips && trip.tips.length){
-            html += `<div class="warn-list"><strong>温馨提示：</strong>${trip.tips.map(t=>`<div>${t}</div>`).join('')}</div>`;
-        }
-        html += `<button class="btn btn-danger" onclick="event.stopPropagation(); deleteTrip(${tripIdx})" style="margin-top:8px;">删除</button>
-            </div>
-        </div>`;
+    const trips=JSON.parse(localStorage.getItem('trips')||'[]');
+    let html='';
+    trips.forEach((trip,i)=>{
+        html+=`<div class="card"><div class="collapse-header" onclick="toggleTripDetail(${i})">📅 ${trip.name} | ${trip.date} ${trip.time} | ${trip.mode} | ${trip.people}人</div><div id="trip-detail-${i}" class="hidden" style="margin-top:8px;">`;
+        if(trip.days) trip.days.forEach(day=>{
+            html+=`<div class="day-header">📅 ${day.date}</div>`;
+            day.lines.forEach(l=> html+=`<div class="trip-line">${l.text}</div>`);
+        });
+        if(trip.tips&&trip.tips.length) html+=`<div class="warn-list"><strong>温馨提示：</strong>${trip.tips.map(t=>`<div>${t}</div>`).join('')}</div>`;
+        html+=`<button class="btn btn-danger" onclick="event.stopPropagation(); deleteTrip(${i})" style="margin-top:8px;">删除</button></div></div>`;
     });
-    document.getElementById('myTripContent').innerHTML = html || '<p>暂无保存的行程</p>';
+    document.getElementById('myTripContent').innerHTML=html||'<p>暂无保存的行程</p>';
 }
-window.toggleTripDetail = function(idx){
-    const el = document.getElementById(`trip-detail-${idx}`);
-    if(el) el.classList.toggle('hidden');
-};
+window.toggleTripDetail=function(idx){ document.getElementById('trip-detail-'+idx).classList.toggle('hidden'); };
 function deleteTrip(idx){
-    const trips = JSON.parse(localStorage.getItem('trips')||'[]');
+    const trips=JSON.parse(localStorage.getItem('trips')||'[]');
     trips.splice(idx,1);
     localStorage.setItem('trips', JSON.stringify(trips));
     renderMyTrip();
 }
 
-// 留言功能
-function renderMyFeedbacks(){
-    sb.from('ztj_feedbacks').select('*').order('created_at',{ascending:false}).then(({data}) => {
-        let html = '';
-        if(data && data.length){
-            data.forEach((f,idx) => {
-                html += `<div class="card feedback-card" onclick="toggleFeedbackDetail(${idx})">
-                    <div>💬 ${new Date(f.created_at).toLocaleString()}</div>
-                    <div id="feedback-detail-${idx}" class="collapse-content hidden">
-                        <p>${f.message}</p>
-                        ${f.reply ? `<p style="color:#2e7d32;">回复：${f.reply}</p>` : '<p style="color:#999;">暂未回复</p>'}
-                    </div>
-                </div>`;
-            });
-        } else {
-            html = '<p>暂无留言</p>';
-        }
-        document.getElementById('feedbackHistory').innerHTML = html;
-    });
-}
-window.toggleFeedbackDetail = function(idx){
-    const el = document.getElementById(`feedback-detail-${idx}`);
-    if(el) el.classList.toggle('hidden');
-};
+// 留言
 async function submitFeedback(){
-    const msg = document.getElementById('feedbackMsg').value;
+    const msg=document.getElementById('feedbackMsg').value;
     if(!msg) return;
-    await sb.from('ztj_feedbacks').insert({ user_id: getUserId(), message: msg });
-    alert('感谢反馈');
-    document.getElementById('feedbackMsg').value = '';
-    renderMyFeedbacks();
+    await sb.from('ztj_feedbacks').insert({user_id:getUserId(), message:msg});
+    document.getElementById('feedbackMsg').value='';
+    loadFeedbackHistory();
+}
+async function loadFeedbackHistory(){
+    const {data}=await sb.from('ztj_feedbacks').select('*').order('created_at',{ascending:false});
+    let html='';
+    if(data) data.forEach(f=>{
+        html+=`<div class="card"><div><b>${new Date(f.created_at).toLocaleString()}</b></div><div>${f.message}</div>${f.reply?`<div style="color:#2e7d32;">回复：${f.reply}</div>`:'<div style="color:#999;">暂未回复</div>'}</div>`;
+    });
+    document.getElementById('feedbackHistory').innerHTML=html||'<p>暂无留言</p>';
 }
 
 async function loadMyReservations(){
-    const uid = getUserId();
-    const { data } = await sb.from('reservations').select('*').eq('user_id', uid).order('created_at',false);
-    document.getElementById('myReservationContent').innerHTML = data?.length ? data.map(r => `<div class="card"><b>${r.reservation_date} ${r.time_slot_start}</b> ${r.visitor_count}人 ${r.name}</div>`).join('') : '<p>暂无预约</p>';
+    const uid=getUserId();
+    const {data}=await sb.from('reservations').select('*').eq('user_id',uid).order('created_at',false);
+    document.getElementById('myReservationContent').innerHTML=data?.length?data.map(r=>`<div class="card"><b>${r.reservation_date} ${r.time_slot_start}</b> ${r.visitor_count}人 ${r.name}</div>`).join(''):'<p>暂无预约</p>';
 }
 
 function switchMyTab(tab){
@@ -470,14 +336,14 @@ function switchMyTab(tab){
     } else if(tab==='feedback'){
         document.getElementById('my-tab-feedback').classList.add('active');
         document.getElementById('myFeedbackContent').classList.remove('hidden');
-        renderMyFeedbacks();
+        loadFeedbackHistory();
     }
 }
 
-function openPanel(id){ document.getElementById(id).classList.add('active'); if(id==='routesPanel') loadRoutes(); if(id==='myPanel') switchMyTab('trip'); }
+function openPanel(id){ document.getElementById(id).classList.add('active'); if(id==='routesPanel') loadRoutes(); }
 function closePanel(id){ document.getElementById(id).classList.remove('active'); }
-function startSimulation(){ alert('模拟导航尚未实现'); }
-window.onload = initMap;
+function startSimulation(){ alert('模拟导航功能即将上线'); }
+window.onload=initMap;
 </script>
 </body>
 </html>

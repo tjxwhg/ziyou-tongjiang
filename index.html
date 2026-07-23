@@ -33,9 +33,9 @@
         .warn-list { background:#fafafa; padding:10px; border-radius:8px; margin-top:10px; }
         .trip-line { padding:4px 0; border-bottom:1px dotted #eee; }
         .trip-line:last-child { border-bottom:none; }
-        .collapse-header { cursor:pointer; font-weight:bold; padding:8px 0; }
+        .collapse-header { cursor:pointer; font-weight:bold; }
         .collapse-content { padding-left:10px; }
-        .feedback-text { font-size:14px; margin:4px 0; }
+        .feedback-card { cursor:pointer; }
     </style>
 </head>
 <body>
@@ -98,8 +98,8 @@
         <div id="myReservationContent" class="hidden"></div>
         <div id="myFeedbackContent" class="hidden">
             <textarea id="feedbackMsg" rows="4" placeholder="建议或问题..."></textarea>
-            <button class="btn btn-primary" onclick="submitFeedback()" style="width:100%; margin-top:10px;">提交</button>
-            <div id="feedback-list" style="margin-top:15px;"></div>
+            <button class="btn btn-primary" onclick="submitFeedback()" style="width:100%; margin-top:10px;">提交留言</button>
+            <div id="feedbackHistory" style="margin-top:15px;"></div>
         </div>
     </div>
 </div>
@@ -332,8 +332,9 @@ async function generateCustomTrip(){
     let tips = [];
     let tipIdx=1;
     days.forEach(day => {
+        const lines = day.lines;
         let hasLunch=false, hasDinner=false;
-        day.lines.forEach(l => {
+        lines.forEach(l => {
             if(l.text.includes('午餐')) hasLunch=true;
             if(l.text.includes('晚餐')) hasDinner=true;
         });
@@ -403,7 +404,7 @@ function renderMyTrip(){
 }
 window.toggleTripDetail = function(idx){
     const el = document.getElementById(`trip-detail-${idx}`);
-    el.classList.toggle('hidden');
+    if(el) el.classList.toggle('hidden');
 };
 function deleteTrip(idx){
     const trips = JSON.parse(localStorage.getItem('trips')||'[]');
@@ -412,37 +413,30 @@ function deleteTrip(idx){
     renderMyTrip();
 }
 
-// 留言展示（从数据库加载，折叠展开）
-async function renderMyFeedbacks(){
-    const { data } = await sb.from('ztj_feedbacks').select('*').order('created_at',{ascending:false});
-    let html = '';
-    if(data && data.length){
-        data.forEach((f, idx) => {
-            html += `<div class="card">
-                <div class="collapse-header" onclick="toggleFeedbackDetail(${idx})">
-                    💬 ${new Date(f.created_at).toLocaleString()} - ${f.message.substring(0,30)}...
-                </div>
-                <div id="feedback-detail-${idx}" class="collapse-content hidden">
-                    <p class="feedback-text">${f.message}</p>
-                    ${f.reply ? `<p style="color:#2e7d32;">管理员回复：${f.reply}</p>` : '<p style="color:#999;">暂未回复</p>'}
-                </div>
-            </div>`;
-        });
-    } else {
-        html = '<p>暂无留言</p>';
-    }
-    document.getElementById('feedback-list').innerHTML = html;
+// 留言功能
+function renderMyFeedbacks(){
+    sb.from('ztj_feedbacks').select('*').order('created_at',{ascending:false}).then(({data}) => {
+        let html = '';
+        if(data && data.length){
+            data.forEach((f,idx) => {
+                html += `<div class="card feedback-card" onclick="toggleFeedbackDetail(${idx})">
+                    <div>💬 ${new Date(f.created_at).toLocaleString()}</div>
+                    <div id="feedback-detail-${idx}" class="collapse-content hidden">
+                        <p>${f.message}</p>
+                        ${f.reply ? `<p style="color:#2e7d32;">回复：${f.reply}</p>` : '<p style="color:#999;">暂未回复</p>'}
+                    </div>
+                </div>`;
+            });
+        } else {
+            html = '<p>暂无留言</p>';
+        }
+        document.getElementById('feedbackHistory').innerHTML = html;
+    });
 }
 window.toggleFeedbackDetail = function(idx){
     const el = document.getElementById(`feedback-detail-${idx}`);
-    el.classList.toggle('hidden');
+    if(el) el.classList.toggle('hidden');
 };
-
-async function loadMyReservations(){
-    const uid = getUserId();
-    const { data } = await sb.from('reservations').select('*').eq('user_id', uid).order('created_at',false);
-    document.getElementById('myReservationContent').innerHTML = data?.length ? data.map(r => `<div class="card"><b>${r.reservation_date} ${r.time_slot_start}</b> ${r.visitor_count}人 ${r.name}</div>`).join('') : '<p>暂无预约</p>';
-}
 async function submitFeedback(){
     const msg = document.getElementById('feedbackMsg').value;
     if(!msg) return;
@@ -450,6 +444,12 @@ async function submitFeedback(){
     alert('感谢反馈');
     document.getElementById('feedbackMsg').value = '';
     renderMyFeedbacks();
+}
+
+async function loadMyReservations(){
+    const uid = getUserId();
+    const { data } = await sb.from('reservations').select('*').eq('user_id', uid).order('created_at',false);
+    document.getElementById('myReservationContent').innerHTML = data?.length ? data.map(r => `<div class="card"><b>${r.reservation_date} ${r.time_slot_start}</b> ${r.visitor_count}人 ${r.name}</div>`).join('') : '<p>暂无预约</p>';
 }
 
 function switchMyTab(tab){
@@ -474,7 +474,7 @@ function switchMyTab(tab){
     }
 }
 
-function openPanel(id){ document.getElementById(id).classList.add('active'); if(id==='routesPanel') loadRoutes(); }
+function openPanel(id){ document.getElementById(id).classList.add('active'); if(id==='routesPanel') loadRoutes(); if(id==='myPanel') switchMyTab('trip'); }
 function closePanel(id){ document.getElementById(id).classList.remove('active'); }
 function startSimulation(){ alert('模拟导航尚未实现'); }
 window.onload = initMap;

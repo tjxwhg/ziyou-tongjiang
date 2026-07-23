@@ -129,7 +129,6 @@ const EXCLUDED_TRANSPORT_CATS = ['公共服务','游玩娱乐','特产购物'];
 let routeNodes = [];
 let allTransportPresets = {};
 let mainPoisForTransport = [];
-let allPoiOptionsForRoute = [];
 
 async function checkSession(){
     const { data: { session } } = await sb.auth.getSession();
@@ -176,9 +175,11 @@ async function loadPOIs(){
             <div class="category-content hidden">`;
         pois.forEach(p => {
             const hasParent = p.parent_id ? true : false;
+            // 修正游览时长显示：如果为0或null，显示“0分钟”或“未设”
+            const visitDisplay = (p.visit_duration !== null && p.visit_duration !== undefined) ? p.visit_duration + '分钟' : '未设';
             html += `<div class="card ${hasParent?'sub-poi-card':''}">
                 <div class="poi-name-header">
-                    <span><b>${p.name}</b> [${p.category}] 游览时长：${p.visit_duration||60}分钟</span>
+                    <span><b>${p.name}</b> [${p.category}] 游览时长：${visitDisplay}</span>
                     <div>
                         <button class="btn btn-default" onclick="toggleEditPoi(${p.id})">编辑</button>
                         ${!hasParent ? `<button class="btn btn-default" onclick="manageSubPois(${p.id})">子点管理</button>` : ''}
@@ -216,7 +217,7 @@ async function saveNewPoi(){
     const checks = [...document.querySelectorAll('#new-poi-categories input[type="checkbox"]:checked')].map(cb => cb.value);
     const category = checks.join(',');
     const parent_id = document.getElementById('new-poi-parent').value || null;
-    const visit_duration = parseInt(document.getElementById('new-poi-visit').value) || 60;
+    const visit_duration = parseInt(document.getElementById('new-poi-visit').value) || 0;
     const description = document.getElementById('new-poi-desc').value;
     const { data: inserted, error } = await sb.from('ztj_poi').insert({ name, lat, lng, category, parent_id: parent_id||null, visit_duration, description }).select();
     if(error) { alert('保存失败：'+error.message); return; }
@@ -243,13 +244,15 @@ async function toggleEditPoi(id){
     const { data: parents } = await sb.from('ztj_poi').select('id,name').is('parent_id', null).neq('id', id);
     let parentOpts = '<option value="">无（作为主景区）</option>';
     if(parents) parents.forEach(p => parentOpts += `<option value="${p.id}" ${poi.parent_id==p.id?'selected':''}>${p.name}</option>`);
+    // 游览时长：如果是null或0，显示空字符串
+    const currentVisit = (poi.visit_duration !== null && poi.visit_duration !== undefined) ? poi.visit_duration : '';
     container.innerHTML = `
         <div class="form-group"><label>名称</label><input id="edit-name-${id}" value="${poi.name}"></div>
         <div class="form-group"><label>类别</label>
             <div class="checkbox-group">${POI_CATEGORIES.map(c => `<label><input type="checkbox" value="${c}" ${selectedCats.includes(c)?'checked':''}> ${c}</label>`).join('')}</div>
         </div>
         <div class="form-group"><label>归属主景区</label><select id="edit-parent-${id}">${parentOpts}</select></div>
-        <div class="form-group"><label>游览时长 (分钟)</label><input type="number" id="edit-visit-${id}" value="${poi.visit_duration||60}"></div>
+        <div class="form-group"><label>游览时长 (分钟)</label><input type="number" id="edit-visit-${id}" value="${currentVisit}"></div>
         <div class="form-group"><label>纬度</label><input type="number" step="any" id="edit-lat-${id}" value="${poi.lat}"></div>
         <div class="form-group"><label>经度</label><input type="number" step="any" id="edit-lng-${id}" value="${poi.lng}"></div>
         <div class="form-group"><label>简介</label><textarea id="edit-desc-${id}">${poi.description||''}</textarea></div>
@@ -268,11 +271,12 @@ async function savePoiEdit(id){
     const checks = [...document.querySelectorAll(`#edit-poi-${id} input[type="checkbox"]:checked`)].map(cb => cb.value);
     const category = checks.join(',');
     const parent_id = document.getElementById(`edit-parent-${id}`).value || null;
-    const visit_duration = parseInt(document.getElementById(`edit-visit-${id}`).value) || 0;
+    const visitStr = document.getElementById(`edit-visit-${id}`).value.trim();
+    const visit_duration = visitStr === '' ? null : parseInt(visitStr);
     const description = document.getElementById(`edit-desc-${id}`).value;
-    await sb.from('ztj_poi').update({ name, lat, lng, category, parent_id: parent_id||null, visit_duration, description }).eq('id', id);
-    alert('保存成功');
-    loadPOIs();
+    const { error } = await sb.from('ztj_poi').update({ name, lat, lng, category, parent_id: parent_id||null, visit_duration, description }).eq('id', id);
+    if(error){ alert('保存失败：'+error.message); }
+    else { alert('保存成功'); loadPOIs(); }
 }
 
 async function uploadPoiVoice(poiId, input){
@@ -335,18 +339,16 @@ async function renderRouteNodes(){
     const opts = (window.poiOptions||[]).map(p => `<option value="${p.id}">${p.name}</option>`).join('');
     let html = '';
     routeNodes.forEach((n, i) => {
-        const selectedId = n.poi_id ? String(n.poi_id) : '';
         html += `<div class="route-node">
             <select onchange="updateRouteNode(${i},'poi_id',this.value)">
-                <option value="">--选择--</option>
-                ${opts.replace(`value="${selectedId}"`, `value="${selectedId}" selected`).replace(`value="${selectedId}"`, `value="${selectedId}" selected`)}`;
-        html += `</select>
+                <option value="">--选择--</option>${opts}
+            </select>
             <input type="number" value="${n.duration_min||60}" placeholder="分钟" style="width:80px" onchange="updateRouteNode(${i},'duration_min',this.value)">
             <button class="btn btn-danger" onclick="removeRouteNode(${i})">删除</button>
         </div>`;
     });
     container.innerHTML = html;
-    // 二次确保选中 (解决某些浏览器问题)
+    // 设置选中值
     routeNodes.forEach((n, i) => {
         const sel = container.querySelectorAll('select')[i];
         if(sel && n.poi_id) sel.value = String(n.poi_id);
@@ -435,33 +437,26 @@ async function loadRoutes(){
     document.getElementById('route-list').innerHTML = data.map(r => `<div class="card"><b>${r.name}</b> (${r.start_time||'未设'}) <button class="btn btn-default" onclick="editRoute(${r.id})">编辑</button> <button class="btn btn-danger" onclick="deleteRoute(${r.id})">删除</button></div>`).join('');
 }
 
-// ================== 交通耗时编辑器（过滤公共服务、游玩娱乐、特产购物） ==================
+// ================== 交通耗时编辑器（过滤） ==================
 async function loadTransportEditor(){
     const { data: pois } = await sb.from('ztj_poi').select('id,name,category').is('parent_id', null).order('name');
     mainPoisForTransport = [ { id: 0, name: '红军广场', category: '' } ];
     (pois||[]).forEach(p => {
         if (!p.category) { mainPoisForTransport.push(p); return; }
         const cats = p.category.split(',');
-        if (!cats.some(c => EXCLUDED_TRANSPORT_CATS.includes(c))) {
-            mainPoisForTransport.push(p);
-        }
+        if (!cats.some(c => EXCLUDED_TRANSPORT_CATS.includes(c))) mainPoisForTransport.push(p);
     });
     const { data: presets } = await sb.from('ztj_transport_presets').select('*');
     allTransportPresets = {};
     if(presets) presets.forEach(p => { if(!allTransportPresets[p.from_poi_id]) allTransportPresets[p.from_poi_id] = {}; allTransportPresets[p.from_poi_id][p.to_poi_id] = p.time_min; });
     renderTransportEditor();
 }
-
-function getTransportTimeAdmin(fromId, toId){
-    return (allTransportPresets[fromId]&&allTransportPresets[fromId][toId]) || (allTransportPresets[toId]&&allTransportPresets[toId][fromId]) || '';
-}
-
+function getTransportTimeAdmin(fromId, toId){ return (allTransportPresets[fromId]&&allTransportPresets[fromId][toId]) || (allTransportPresets[toId]&&allTransportPresets[toId][fromId]) || ''; }
 async function saveTransportTime(fromId, toId, time){
     const timeVal = parseInt(time); if(isNaN(timeVal)||timeVal<0) return;
     await sb.from('ztj_transport_presets').upsert({ from_poi_id: fromId, to_poi_id: toId, travel_mode:'auto', time_min: timeVal }, { onConflict:'from_poi_id,to_poi_id' });
     if(!allTransportPresets[fromId]) allTransportPresets[fromId] = {}; allTransportPresets[fromId][toId] = timeVal;
 }
-
 function renderTransportEditor(){
     const container = document.getElementById('transport-editor');
     let html = '';
@@ -478,7 +473,6 @@ function renderTransportEditor(){
     });
     container.innerHTML = html;
 }
-
 async function handleTransportChange(input){
     const from = parseInt(input.dataset.from), to = parseInt(input.dataset.to), val = input.value.trim();
     const statusEl = input.parentElement.querySelector('.save-status');
@@ -497,9 +491,10 @@ async function createMerchant(){
     alert('商户创建成功');
 }
 
-// ================== 留言反馈（删除按钮外置） ==================
+// ================== 留言反馈（删除按钮外置，修复删除失败） ==================
 async function loadFeedbacks(){
-    const { data } = await sb.from('ztj_feedbacks').select('*').order('created_at', {ascending: false});
+    const { data, error } = await sb.from('ztj_feedbacks').select('*').order('created_at', { ascending: false });
+    if(error){ console.error(error); return; }
     let html = '';
     if(data && data.length){
         data.forEach(f => {
@@ -509,7 +504,7 @@ async function loadFeedbacks(){
                 <div class="feedback-header" onclick="this.parentElement.querySelector('.feedback-body').classList.toggle('hidden')">
                     <span>${dateStr} - ${preview}</span>
                     <div class="feedback-actions">
-                        <button class="btn btn-danger" onclick="event.stopPropagation(); deleteFeedback(${f.id})">删除</button>
+                        <button class="btn btn-danger" onclick="event.stopPropagation(); handleDeleteFeedback(${f.id})">删除</button>
                     </div>
                 </div>
                 <div class="feedback-body hidden">
@@ -524,14 +519,18 @@ async function loadFeedbacks(){
     document.getElementById('feedback-list').innerHTML = html;
 }
 
-async function replyFeedback(id){
-    const reply = document.getElementById('reply-'+id).value;
-    await sb.from('ztj_feedbacks').update({ reply }).eq('id', id);
-    loadFeedbacks();
+async function handleDeleteFeedback(id){
+    if(!confirm('确定删除此留言？')) return;
+    const { error } = await sb.from('ztj_feedbacks').delete().eq('id', id);
+    if(error){ alert('删除失败：'+error.message); }
+    else loadFeedbacks();
 }
 
-async function deleteFeedback(id){
-    if(confirm('确定删除此留言？')){ await sb.from('ztj_feedbacks').delete().eq('id', id); loadFeedbacks(); }
+async function replyFeedback(id){
+    const reply = document.getElementById('reply-'+id).value;
+    const { error } = await sb.from('ztj_feedbacks').update({ reply }).eq('id', id);
+    if(error) alert('回复失败：'+error.message);
+    else loadFeedbacks();
 }
 
 window.onload = checkSession;

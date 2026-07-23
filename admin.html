@@ -36,9 +36,10 @@
         .save-status { font-size:12px; margin-left:8px; color:#2e7d32; }
         .category-group { margin-bottom:15px; }
         .category-title { font-size:16px; font-weight:bold; background:#e9f5ea; padding:8px; border-radius:4px; cursor:pointer; }
-        .feedback-card { cursor:pointer; }
-        .feedback-card .feedback-header { display:flex; justify-content:space-between; }
-        .feedback-card .feedback-body { margin-top:8px; }
+        .feedback-card { margin-bottom:10px; }
+        .feedback-header { display:flex; justify-content:space-between; align-items:center; cursor:pointer; }
+        .feedback-body { margin-top:8px; }
+        .feedback-actions { display:flex; gap:8px; }
     </style>
 </head>
 <body>
@@ -101,7 +102,7 @@
         <!-- 交通耗时 -->
         <div id="tab-transport" class="hidden">
             <h3>景点间交通耗时（分钟）</h3>
-            <p style="color:#666;">点击景点展开，修改耗时后自动保存。</p>
+            <p style="color:#666;">点击景点展开，修改耗时后自动保存。已排除公共服务、游玩娱乐、特产购物。</p>
             <div id="transport-editor"></div>
         </div>
 
@@ -124,11 +125,12 @@
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 let currentUser = null;
 const POI_CATEGORIES = ['自然景区','红色景区','文博场馆','餐饮住宿','交通枢纽','游玩娱乐','特产购物','公共服务'];
+const EXCLUDED_TRANSPORT_CATS = ['公共服务','游玩娱乐','特产购物'];
 let routeNodes = [];
 let allTransportPresets = {};
 let mainPoisForTransport = [];
+let allPoiOptionsForRoute = [];
 
-// ====== 会话 ======
 async function checkSession(){
     const { data: { session } } = await sb.auth.getSession();
     if(session) { currentUser = session.user; showMain(); }
@@ -233,7 +235,6 @@ async function saveNewPoi(){
     loadPOIs();
 }
 
-// 编辑POI（折叠式）
 async function toggleEditPoi(id){
     const container = document.getElementById(`edit-poi-${id}`);
     if(!container.classList.contains('hidden')){ container.classList.add('hidden'); return; }
@@ -267,7 +268,7 @@ async function savePoiEdit(id){
     const checks = [...document.querySelectorAll(`#edit-poi-${id} input[type="checkbox"]:checked`)].map(cb => cb.value);
     const category = checks.join(',');
     const parent_id = document.getElementById(`edit-parent-${id}`).value || null;
-    const visit_duration = parseInt(document.getElementById(`edit-visit-${id}`).value) || 60;
+    const visit_duration = parseInt(document.getElementById(`edit-visit-${id}`).value) || 0;
     const description = document.getElementById(`edit-desc-${id}`).value;
     await sb.from('ztj_poi').update({ name, lat, lng, category, parent_id: parent_id||null, visit_duration, description }).eq('id', id);
     alert('保存成功');
@@ -285,7 +286,6 @@ async function uploadPoiVoice(poiId, input){
     alert('语音已更新');
 }
 
-// 子点管理
 async function manageSubPois(poiId){
     const container = document.getElementById(`sub-pois-${poiId}`);
     if(!container.classList.contains('hidden')){ container.classList.add('hidden'); return; }
@@ -323,43 +323,73 @@ async function deletePoi(id){
     if(confirm('确定删除此POI？')){ await sb.from('ztj_poi').delete().eq('id', id); loadPOIs(); }
 }
 
-// ================== 路线管理 ==================
+// ================== 路线管理（修复节点编辑显示） ==================
 async function loadPoiOptionsForRoute(){
     const { data } = await sb.from('ztj_poi').select('id,name').order('name');
     window.poiOptions = data || [];
 }
+
 async function renderRouteNodes(){
     if(!window.poiOptions) await loadPoiOptionsForRoute();
     const container = document.getElementById('route-node-selects');
     const opts = (window.poiOptions||[]).map(p => `<option value="${p.id}">${p.name}</option>`).join('');
     let html = '';
     routeNodes.forEach((n, i) => {
+        const selectedId = n.poi_id ? String(n.poi_id) : '';
         html += `<div class="route-node">
-            <select onchange="updateRouteNode(${i},'poi_id',this.value)"><option value="">--选择--</option>${opts}</select>
+            <select onchange="updateRouteNode(${i},'poi_id',this.value)">
+                <option value="">--选择--</option>
+                ${opts.replace(`value="${selectedId}"`, `value="${selectedId}" selected`).replace(`value="${selectedId}"`, `value="${selectedId}" selected`)}`;
+        html += `</select>
             <input type="number" value="${n.duration_min||60}" placeholder="分钟" style="width:80px" onchange="updateRouteNode(${i},'duration_min',this.value)">
             <button class="btn btn-danger" onclick="removeRouteNode(${i})">删除</button>
         </div>`;
     });
     container.innerHTML = html;
+    // 二次确保选中 (解决某些浏览器问题)
+    routeNodes.forEach((n, i) => {
+        const sel = container.querySelectorAll('select')[i];
+        if(sel && n.poi_id) sel.value = String(n.poi_id);
+    });
 }
-function updateRouteNode(idx, field, value){ if(field==='poi_id') routeNodes[idx].poi_id = value || ''; else routeNodes[idx].duration_min = parseInt(value)||60; }
+
+function updateRouteNode(idx, field, value){
+    if(field === 'poi_id') routeNodes[idx].poi_id = value || '';
+    else routeNodes[idx].duration_min = parseInt(value) || 60;
+}
 function addRouteNode(){ routeNodes.push({ poi_id: '', duration_min: 60 }); renderRouteNodes(); }
 function removeRouteNode(idx){ routeNodes.splice(idx,1); renderRouteNodes(); }
+
 function toggleRouteForm(editMode = false){
     const form = document.getElementById('route-form');
     if(!form.classList.contains('hidden')){ form.classList.add('hidden'); return; }
     form.classList.remove('hidden');
-    if(!editMode){ document.getElementById('edit-route-id').value=''; document.getElementById('route-name').value=''; document.getElementById('route-start-time').value='08:30'; document.getElementById('route-transport').value=''; routeNodes=[]; }
+    if(!editMode){
+        document.getElementById('edit-route-id').value = '';
+        document.getElementById('route-name').value = '';
+        document.getElementById('route-start-time').value = '08:30';
+        document.getElementById('route-transport').value = '';
+        document.getElementById('route-form-title').textContent = '新增路线';
+        routeNodes = [];
+    }
     loadPoiOptionsForRoute().then(renderRouteNodes);
 }
+
 async function editRoute(id){
-    const form = document.getElementById('route-form'); form.classList.remove('hidden');
+    const form = document.getElementById('route-form');
+    form.classList.remove('hidden');
+    document.getElementById('route-form-title').textContent = '编辑路线';
     const { data: route } = await sb.from('ztj_routes').select('*').eq('id',id).single();
     const { data: nodes } = await sb.from('ztj_route_nodes').select('*').eq('route_id',id).order('order_num');
-    document.getElementById('edit-route-id').value=id; document.getElementById('route-name').value=route.name; document.getElementById('route-start-time').value=route.start_time||'08:30'; document.getElementById('route-transport').value=route.transport||'';
+    document.getElementById('edit-route-id').value = id;
+    document.getElementById('route-name').value = route.name;
+    document.getElementById('route-start-time').value = route.start_time || '08:30';
+    document.getElementById('route-transport').value = route.transport || '';
     routeNodes = (nodes||[]).map(n => ({ poi_id: n.poi_id, duration_min: n.duration_min }));
-    await loadPoiOptionsForRoute(); renderRouteNodes();
+    await loadPoiOptionsForRoute();
+    renderRouteNodes();
 }
+
 async function saveRoute(){
     const name = document.getElementById('route-name').value.trim();
     if(!name){ alert('输入路线名称'); return; }
@@ -368,35 +398,70 @@ async function saveRoute(){
     const transport = document.getElementById('route-transport').value;
     const routeData = { name, start_time, transport };
     let routeId = editId;
-    if(editId){ await sb.from('ztj_routes').update(routeData).eq('id',editId); await sb.from('ztj_route_nodes').delete().eq('route_id',editId); }
-    else { const { data, error } = await sb.from('ztj_routes').insert(routeData).select(); if(error){ alert('创建失败'); return; } routeId = data[0].id; }
-    const nodesPayload = routeNodes.filter(n => n.poi_id).map((n,i) => ({ route_id: parseInt(routeId), poi_id: parseInt(n.poi_id), order_num: i+1, duration_min: n.duration_min||60, transport_mode:'步行', transport_time:0 }));
-    if(nodesPayload.length===0){ alert('至少添加一个节点'); return; }
+    if(editId){
+        await sb.from('ztj_routes').update(routeData).eq('id', editId);
+        await sb.from('ztj_route_nodes').delete().eq('route_id', editId);
+    } else {
+        const { data, error } = await sb.from('ztj_routes').insert(routeData).select();
+        if(error){ alert('创建路线失败：'+error.message); return; }
+        routeId = data[0].id;
+    }
+    const nodesPayload = routeNodes.filter(n => n.poi_id).map((n,i) => ({
+        route_id: parseInt(routeId),
+        poi_id: parseInt(n.poi_id),
+        order_num: i+1,
+        duration_min: n.duration_min || 60,
+        transport_mode: '步行',
+        transport_time: 0
+    }));
+    if(nodesPayload.length === 0){ alert('请至少添加一个有效节点'); return; }
     const { error } = await sb.from('ztj_route_nodes').insert(nodesPayload);
     if(error){ alert('保存节点失败：'+error.message); return; }
-    alert('路线已保存'); document.getElementById('route-form').classList.add('hidden'); loadRoutes();
+    alert('路线已保存');
+    document.getElementById('route-form').classList.add('hidden');
+    loadRoutes();
 }
-async function deleteRoute(id){ if(confirm('删除路线？')){ await sb.from('ztj_route_nodes').delete().eq('route_id',id); await sb.from('ztj_routes').delete().eq('id',id); loadRoutes(); } }
+
+async function deleteRoute(id){
+    if(confirm('删除路线？')){
+        await sb.from('ztj_route_nodes').delete().eq('route_id', id);
+        await sb.from('ztj_routes').delete().eq('id', id);
+        loadRoutes();
+    }
+}
+
 async function loadRoutes(){
     const { data } = await sb.from('ztj_routes').select('*');
     document.getElementById('route-list').innerHTML = data.map(r => `<div class="card"><b>${r.name}</b> (${r.start_time||'未设'}) <button class="btn btn-default" onclick="editRoute(${r.id})">编辑</button> <button class="btn btn-danger" onclick="deleteRoute(${r.id})">删除</button></div>`).join('');
 }
 
-// ================== 交通耗时 ==================
+// ================== 交通耗时编辑器（过滤公共服务、游玩娱乐、特产购物） ==================
 async function loadTransportEditor(){
-    const { data: pois } = await sb.from('ztj_poi').select('id,name').is('parent_id', null).order('name');
-    mainPoisForTransport = [ { id: 0, name: '红军广场' }, ...(pois||[]) ];
+    const { data: pois } = await sb.from('ztj_poi').select('id,name,category').is('parent_id', null).order('name');
+    mainPoisForTransport = [ { id: 0, name: '红军广场', category: '' } ];
+    (pois||[]).forEach(p => {
+        if (!p.category) { mainPoisForTransport.push(p); return; }
+        const cats = p.category.split(',');
+        if (!cats.some(c => EXCLUDED_TRANSPORT_CATS.includes(c))) {
+            mainPoisForTransport.push(p);
+        }
+    });
     const { data: presets } = await sb.from('ztj_transport_presets').select('*');
     allTransportPresets = {};
     if(presets) presets.forEach(p => { if(!allTransportPresets[p.from_poi_id]) allTransportPresets[p.from_poi_id] = {}; allTransportPresets[p.from_poi_id][p.to_poi_id] = p.time_min; });
     renderTransportEditor();
 }
-function getTransportTimeAdmin(fromId, toId){ return (allTransportPresets[fromId]&&allTransportPresets[fromId][toId]) || (allTransportPresets[toId]&&allTransportPresets[toId][fromId]) || ''; }
+
+function getTransportTimeAdmin(fromId, toId){
+    return (allTransportPresets[fromId]&&allTransportPresets[fromId][toId]) || (allTransportPresets[toId]&&allTransportPresets[toId][fromId]) || '';
+}
+
 async function saveTransportTime(fromId, toId, time){
     const timeVal = parseInt(time); if(isNaN(timeVal)||timeVal<0) return;
     await sb.from('ztj_transport_presets').upsert({ from_poi_id: fromId, to_poi_id: toId, travel_mode:'auto', time_min: timeVal }, { onConflict:'from_poi_id,to_poi_id' });
     if(!allTransportPresets[fromId]) allTransportPresets[fromId] = {}; allTransportPresets[fromId][toId] = timeVal;
 }
+
 function renderTransportEditor(){
     const container = document.getElementById('transport-editor');
     let html = '';
@@ -413,6 +478,7 @@ function renderTransportEditor(){
     });
     container.innerHTML = html;
 }
+
 async function handleTransportChange(input){
     const from = parseInt(input.dataset.from), to = parseInt(input.dataset.to), val = input.value.trim();
     const statusEl = input.parentElement.querySelector('.save-status');
@@ -431,7 +497,7 @@ async function createMerchant(){
     alert('商户创建成功');
 }
 
-// ================== 留言反馈 ==================
+// ================== 留言反馈（删除按钮外置） ==================
 async function loadFeedbacks(){
     const { data } = await sb.from('ztj_feedbacks').select('*').order('created_at', {ascending: false});
     let html = '';
@@ -441,25 +507,29 @@ async function loadFeedbacks(){
             const preview = f.message.length > 30 ? f.message.substring(0,30)+'...' : f.message;
             html += `<div class="card feedback-card">
                 <div class="feedback-header" onclick="this.parentElement.querySelector('.feedback-body').classList.toggle('hidden')">
-                    <span>${dateStr}</span><span>${preview}</span>
+                    <span>${dateStr} - ${preview}</span>
+                    <div class="feedback-actions">
+                        <button class="btn btn-danger" onclick="event.stopPropagation(); deleteFeedback(${f.id})">删除</button>
+                    </div>
                 </div>
                 <div class="feedback-body hidden">
                     <p style="white-space:pre-wrap;">${f.message}</p>
                     <p style="color:#666;">${f.reply ? '回复：'+f.reply : '暂未回复'}</p>
                     <textarea id="reply-${f.id}" rows="2" placeholder="输入回复">${f.reply||''}</textarea>
                     <button class="btn btn-primary" onclick="replyFeedback(${f.id})">保存回复</button>
-                    <button class="btn btn-danger" onclick="deleteFeedback(${f.id})">删除留言</button>
                 </div>
             </div>`;
         });
     } else html = '<p>暂无留言</p>';
     document.getElementById('feedback-list').innerHTML = html;
 }
+
 async function replyFeedback(id){
     const reply = document.getElementById('reply-'+id).value;
     await sb.from('ztj_feedbacks').update({ reply }).eq('id', id);
     loadFeedbacks();
 }
+
 async function deleteFeedback(id){
     if(confirm('确定删除此留言？')){ await sb.from('ztj_feedbacks').delete().eq('id', id); loadFeedbacks(); }
 }

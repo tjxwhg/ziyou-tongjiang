@@ -27,7 +27,7 @@
         .poi-name-header { display:flex; justify-content:space-between; align-items:center; }
         .route-node { display:flex; gap:8px; align-items:center; margin:8px 0; }
         .poi-transport-group { margin-bottom:10px; border:1px solid #ccc; border-radius:6px; overflow:hidden; }
-        .poi-transport-header { background:#f9f9f9; padding:10px; cursor:pointer; font-weight:bold; display:flex; justify-content:space-between; }
+        .poi-transport-header { background:#f9f9f9; padding:10px; cursor:pointer; font-weight:bold; display:flex; justify-content:space-between; align-items:center; }
         .poi-transport-list { padding:10px; background:white; }
         .transport-item { display:flex; align-items:center; justify-content:space-between; padding:6px 0; border-bottom:1px solid #eee; }
         .transport-item:last-child { border-bottom:none; }
@@ -40,6 +40,7 @@
         .feedback-header { display:flex; justify-content:space-between; align-items:center; cursor:pointer; }
         .feedback-body { margin-top:8px; }
         .feedback-actions { display:flex; gap:8px; }
+        .add-poi-btn { margin-bottom:10px; }
     </style>
 </head>
 <body>
@@ -102,7 +103,8 @@
         <!-- 交通耗时 -->
         <div id="tab-transport" class="hidden">
             <h3>景点间交通耗时（分钟）</h3>
-            <p style="color:#666;">点击景点展开，修改耗时后自动保存。已排除公共服务、游玩娱乐、特产购物。</p>
+            <p style="color:#666;">点击景点展开，修改耗时后自动保存。可添加/移除参与计算的点。</p>
+            <button class="btn btn-primary add-poi-btn" onclick="addTransportPoi()">+ 添加景点</button>
             <div id="transport-editor"></div>
         </div>
 
@@ -128,7 +130,8 @@ const POI_CATEGORIES = ['自然景区','红色景区','文博场馆','餐饮住�
 const EXCLUDED_TRANSPORT_CATS = ['公共服务','游玩娱乐','特产购物'];
 let routeNodes = [];
 let allTransportPresets = {};
-let mainPoisForTransport = [];
+let mainPoisForTransport = []; // 当前参与交通耗时编辑的POI列表
+let allMainPois = []; // 所有可选的POI（用于添加）
 
 async function checkSession(){
     const { data: { session } } = await sb.auth.getSession();
@@ -157,7 +160,7 @@ function switchTab(tab){
     if(tab==='feedbacks') loadFeedbacks();
 }
 
-// ================== POI 管理 (优化：保存后局部更新) ==================
+// ================== POI 管理 ==================
 async function loadPOIs(){
     const { data } = await sb.from('ztj_poi').select('*').eq('status','active').order('sort_order');
     const grouped = {};
@@ -273,17 +276,11 @@ async function savePoiEdit(id){
     const description = document.getElementById(`edit-desc-${id}`).value;
     const { error } = await sb.from('ztj_poi').update({ name, lat, lng, category, parent_id: parent_id||null, visit_duration, description }).eq('id', id);
     if(error) { alert('保存失败：'+error.message); return; }
-    // 局部更新卡片显示，不刷新整个列表
     const card = document.getElementById(`poi-card-${id}`);
     if(card){
-        const nameSpan = card.querySelector('.poi-name-header span b');
-        if(nameSpan) nameSpan.textContent = name;
-        const durationText = card.querySelector('.poi-name-header span');
-        if(durationText) durationText.innerHTML = `<b>${name}</b> [${category}] 游览时长：${visit_duration != null ? visit_duration+'分钟' : '未设置'}`;
+        card.querySelector('span').innerHTML = `<b>${name}</b> [${category}] 游览时长：${visit_duration != null ? visit_duration+'分钟' : '未设置'}`;
     }
-    // 关闭编辑框
-    const editContainer = document.getElementById(`edit-poi-${id}`);
-    if(editContainer) editContainer.classList.add('hidden');
+    document.getElementById(`edit-poi-${id}`).classList.add('hidden');
     alert('保存成功');
 }
 
@@ -435,13 +432,16 @@ async function deleteRoute(id){
 
 async function loadRoutes(){
     const { data, error } = await sb.from('ztj_routes').select('*');
-    if(error) { console.error('加载路线失败', error); document.getElementById('route-list').innerHTML = '<p>加载失败</p>'; return; }
+    if(error) { document.getElementById('route-list').innerHTML = '<p>加载失败</p>'; return; }
     document.getElementById('route-list').innerHTML = data.length ? data.map(r => `<div class="card"><b>${r.name}</b> (${r.start_time||'未设'}) <button class="btn btn-default" onclick="editRoute(${r.id})">编辑</button> <button class="btn btn-danger" onclick="deleteRoute(${r.id})">删除</button></div>`).join('') : '<p>暂无路线</p>';
 }
 
-// ================== 交通耗时编辑器 ==================
+// ================== 交通耗时编辑器（可添加/删除POI） ==================
 async function loadTransportEditor(){
     const { data: pois } = await sb.from('ztj_poi').select('id,name,category').is('parent_id', null).order('name');
+    // 存储所有可选POI（用于添加下拉）
+    allMainPois = pois || [];
+    // 初始化列表：默认排除三类，但包括红军广场
     mainPoisForTransport = [ { id: 0, name: '红军广场', category: '' } ];
     (pois||[]).forEach(p => {
         if (!p.category) { mainPoisForTransport.push(p); return; }
@@ -458,24 +458,32 @@ async function loadTransportEditor(){
     });
     renderTransportEditor();
 }
+
 function getTransportTimeAdmin(fromId, toId){
     if(allTransportPresets[fromId] && allTransportPresets[fromId][toId] !== undefined) return allTransportPresets[fromId][toId];
     if(allTransportPresets[toId] && allTransportPresets[toId][fromId] !== undefined) return allTransportPresets[toId][fromId];
     return '';
 }
+
 async function saveTransportTime(fromId, toId, time){
     const timeVal = parseInt(time); if(isNaN(timeVal)||timeVal<0) return;
     await sb.from('ztj_transport_presets').upsert({ from_poi_id: fromId, to_poi_id: toId, travel_mode:'auto', time_min: timeVal }, { onConflict:'from_poi_id,to_poi_id' });
     if(!allTransportPresets[fromId]) allTransportPresets[fromId] = {};
     allTransportPresets[fromId][toId] = timeVal;
 }
+
 function renderTransportEditor(){
     const container = document.getElementById('transport-editor');
-    if(!mainPoisForTransport.length) { container.innerHTML = '<p>暂无可用景点</p>'; return; }
+    if(!mainPoisForTransport.length) { container.innerHTML = '<p>暂无景点，请添加</p>'; return; }
     let html = '';
-    mainPoisForTransport.forEach(poi => {
+    mainPoisForTransport.forEach((poi, index) => {
         html += `<div class="poi-transport-group">
-            <div class="poi-transport-header" onclick="this.nextElementSibling.classList.toggle('hidden')"><span>🚩 ${poi.name}</span><span>▼</span></div>
+            <div class="poi-transport-header">
+                <span onclick="this.parentElement.nextElementSibling.classList.toggle('hidden')">🚩 ${poi.name}</span>
+                <div>
+                    <button class="btn btn-danger" onclick="event.stopPropagation(); removeTransportPoi('${poi.id}')" style="font-size:12px; padding:2px 8px;">移除</button>
+                </div>
+            </div>
             <div class="poi-transport-list hidden">
                 ${mainPoisForTransport.filter(p => p.id !== poi.id).map(target => {
                     const current = getTransportTimeAdmin(poi.id, target.id);
@@ -486,6 +494,46 @@ function renderTransportEditor(){
     });
     container.innerHTML = html;
 }
+
+// 添加POI到交通耗时列表
+function addTransportPoi(){
+    // 构建可选POI列表（排除已在列表中的）
+    const availablePois = allMainPois.filter(p => !mainPoisForTransport.some(mp => mp.id === p.id));
+    if(availablePois.length === 0){
+        alert('所有POI已添加');
+        return;
+    }
+    // 使用select下拉选择
+    let options = availablePois.map(p => `<option value="${p.id}">${p.name}</option>`).join('');
+    const selHtml = `<select id="add-transport-poi-select" style="width:100%;">${options}</select>`;
+    const div = document.createElement('div');
+    div.innerHTML = selHtml;
+    const sel = div.querySelector('select');
+    // 使用prompt的替代：创建一个简单的对话框
+    const dialog = document.createElement('div');
+    dialog.style.cssText = 'position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); background:white; padding:20px; border-radius:8px; box-shadow:0 0 10px rgba(0,0,0,0.3); z-index:9999;';
+    dialog.innerHTML = `<h3>选择要添加的POI</h3><div id="dialog-content"></div><div style="margin-top:10px; text-align:right;"><button class="btn btn-default" onclick="this.parentElement.parentElement.remove()">取消</button> <button class="btn btn-primary" id="confirm-add-btn">添加</button></div>`;
+    dialog.querySelector('#dialog-content').appendChild(sel);
+    document.body.appendChild(dialog);
+    dialog.querySelector('#confirm-add-btn').onclick = function(){
+        const selectedId = sel.value;
+        if(selectedId){
+            const poi = allMainPois.find(p => p.id == selectedId);
+            if(poi) {
+                mainPoisForTransport.push(poi);
+                renderTransportEditor();
+            }
+        }
+        dialog.remove();
+    };
+}
+
+// 移除POI（不删除数据库中的POI，只从当前编辑列表移除）
+function removeTransportPoi(id){
+    mainPoisForTransport = mainPoisForTransport.filter(p => p.id != id);
+    renderTransportEditor();
+}
+
 async function handleTransportChange(input){
     const from = parseInt(input.dataset.from), to = parseInt(input.dataset.to), val = input.value.trim();
     const statusEl = input.parentElement.querySelector('.save-status');

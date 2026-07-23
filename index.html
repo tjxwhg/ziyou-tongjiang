@@ -10,7 +10,7 @@
         body { font-family: system-ui, sans-serif; height:100vh; overflow:hidden; }
         #map { height:100vh; width:100vw; z-index:1; }
         .top-bar { position:fixed; top:20px; right:20px; z-index:1500; }
-        .top-btn { background:white; border-radius:20px; padding:6px 12px; box-shadow:0 2px 8px rgba(0,0,0,0.2); border:none; font-size:14px; cursor:pointer; }
+        .top-btn { background:white; border-radius:20px; padding:6px 12px; box-shadow:0 2px 8px rgba(0,0,0,0.2); border:none; cursor:pointer; }
         .bottom-bar { position:fixed; bottom:20px; left:20px; right:20px; z-index:1500; display:flex; gap:10px; }
         .btn { flex:1; padding:14px; border:none; border-radius:12px; font-weight:bold; cursor:pointer; }
         .btn-primary { background:#2E7D32; color:white; }
@@ -115,7 +115,6 @@ function isNonVisitPoi(poiId){
     return poi.category.split(',').some(c=>NON_VISIT_CATEGORIES.includes(c));
 }
 
-// 地图初始化
 function initMap(){
     map = L.map('map', { zoomControl: false }).setView([32.08,107.18], 12);
     L.tileLayer('https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}',{
@@ -163,13 +162,12 @@ async function showPoiDetail(poi){
     openPanel('merchantDetailPanel');
 }
 
-// 推荐路线（简化）
 async function loadRoutes(){
     const { data } = await sb.from('ztj_routes').select('*');
     document.getElementById('routeList').innerHTML = data.map(r => `<div class="card"><h3>${r.name}</h3><p>${r.days||1}天</p></div>`).join('');
 }
 
-// 自设行程动态路线
+// 自设行程
 function toggleCustomTripSection(){ document.getElementById('customTripSection').classList.toggle('hidden'); if(!document.getElementById('customTripSection').classList.contains('hidden')){ buildMainPoiOptions(); resetRouteLegs(); } }
 function buildMainPoiOptions(){ mainPoiOptions=allPois.filter(p=>!p.parent_id); if(!mainPoiOptions.some(p=>String(p.id)==='county')) mainPoiOptions.unshift(COUNTY); }
 function resetRouteLegs(){ routeLegs=[{...COUNTY}]; renderDynamicRoute(); }
@@ -189,11 +187,13 @@ function renderDynamicRoute(){
 async function updateAllTimes(){
     for(let i=1;i<routeLegs.length;i++){
         const span=document.getElementById(`time-${i}`);
-        if(span&&routeLegs[i-1].id&&routeLegs[i].id) span.textContent = (getTransportTime(routeLegs[i-1].id,routeLegs[i].id)!==null?`⏱️约${getTransportTime(routeLegs[i-1].id,routeLegs[i].id)}分钟`:'⏱️暂无数据');
+        if(span&&routeLegs[i-1].id&&routeLegs[i].id){
+            const t=getTransportTime(routeLegs[i-1].id,routeLegs[i].id);
+            span.textContent=t!==null?`⏱️约${t}分钟`:'⏱️暂无数据';
+        }
     }
 }
 
-// 行程生成核心
 function processActivity(curMin, duration, type, poiName, currentDate, poiId){
     const lines=[]; let d=new Date(currentDate), rem=duration;
     while(rem>0){
@@ -238,7 +238,6 @@ async function generateCustomTrip(){
             else { const r=processActivity(curMin, cur.visitDuration, 'visit', cur.name, curDate, cur.id); allLines=allLines.concat(r.lines); curMin=r.curMin; curDate=r.date; }
         }
     }
-    // 按天分组
     const days=[]; let day=null;
     allLines.forEach(l=>{
         const ld=l.date.toLocaleDateString('zh-CN');
@@ -259,9 +258,10 @@ async function generateCustomTrip(){
 
 function saveGeneratedTrip(){
     if(!generatedTripData) return;
-    const name=prompt('行程名称', generatedTripData.name); if(!name) return;
-    generatedTripData.name=name;
-    const trips=JSON.parse(localStorage.getItem('trips')||'[]');
+    const name=prompt('行程名称', generatedTripData.name);
+    if(!name) return;
+    generatedTripData.name = name;
+    const trips = JSON.parse(localStorage.getItem('trips')||'[]');
     trips.push({...generatedTripData, timestamp:Date.now()});
     localStorage.setItem('trips', JSON.stringify(trips));
     alert('行程已保存');
@@ -272,50 +272,58 @@ function saveGeneratedTrip(){
     resetRouteLegs();
 }
 
-// 我的行程（折叠展示）
 function renderMyTrip(){
-    const trips=JSON.parse(localStorage.getItem('trips')||'[]');
-    let html='';
+    const trips = JSON.parse(localStorage.getItem('trips')||'[]');
+    let html = '';
     trips.forEach((trip,i)=>{
-        html+=`<div class="card"><div class="collapse-header" onclick="toggleTripDetail(${i})">📅 ${trip.name} | ${trip.date} ${trip.time} | ${trip.mode} | ${trip.people}人</div><div id="trip-detail-${i}" class="hidden" style="margin-top:8px;">`;
+        html += `<div class="card">
+            <div class="collapse-header" onclick="toggleTripDetail(${i})">
+                📅 ${trip.name} | ${trip.date} ${trip.time} | ${trip.mode} | ${trip.people}人
+            </div>
+            <div id="trip-detail-${i}" class="hidden" style="margin-top:8px;">`;
         if(trip.days) trip.days.forEach(day=>{
-            html+=`<div class="day-header">📅 ${day.date}</div>`;
-            day.lines.forEach(l=> html+=`<div class="trip-line">${l.text}</div>`);
+            html += `<div class="day-header">📅 ${day.date}</div>`;
+            day.lines.forEach(l=> html += `<div class="trip-line">${l.text}</div>`);
         });
-        if(trip.tips&&trip.tips.length) html+=`<div class="warn-list"><strong>温馨提示：</strong>${trip.tips.map(t=>`<div>${t}</div>`).join('')}</div>`;
-        html+=`<button class="btn btn-danger" onclick="event.stopPropagation(); deleteTrip(${i})" style="margin-top:8px;">删除</button></div></div>`;
+        if(trip.tips && trip.tips.length) html += `<div class="warn-list"><strong>温馨提示：</strong>${trip.tips.map(t=>`<div>${t}</div>`).join('')}</div>`;
+        html += `<button class="btn btn-danger" onclick="event.stopPropagation(); deleteTrip(${i})" style="margin-top:8px;">删除</button>
+            </div>
+        </div>`;
     });
-    document.getElementById('myTripContent').innerHTML=html||'<p>暂无保存的行程</p>';
+    document.getElementById('myTripContent').innerHTML = html || '<p>暂无保存的行程</p>';
 }
-window.toggleTripDetail=function(idx){ document.getElementById('trip-detail-'+idx).classList.toggle('hidden'); };
+window.toggleTripDetail = function(idx){ document.getElementById('trip-detail-'+idx).classList.toggle('hidden'); };
 function deleteTrip(idx){
-    const trips=JSON.parse(localStorage.getItem('trips')||'[]');
+    const trips = JSON.parse(localStorage.getItem('trips')||'[]');
     trips.splice(idx,1);
     localStorage.setItem('trips', JSON.stringify(trips));
     renderMyTrip();
 }
 
-// 留言
 async function submitFeedback(){
-    const msg=document.getElementById('feedbackMsg').value;
+    const msg = document.getElementById('feedbackMsg').value.trim();
     if(!msg) return;
     await sb.from('ztj_feedbacks').insert({user_id:getUserId(), message:msg});
-    document.getElementById('feedbackMsg').value='';
+    document.getElementById('feedbackMsg').value = '';
     loadFeedbackHistory();
 }
 async function loadFeedbackHistory(){
-    const {data}=await sb.from('ztj_feedbacks').select('*').order('created_at',{ascending:false});
-    let html='';
+    const {data} = await sb.from('ztj_feedbacks').select('*').order('created_at',{ascending:false});
+    let html = '';
     if(data) data.forEach(f=>{
-        html+=`<div class="card"><div><b>${new Date(f.created_at).toLocaleString()}</b></div><div>${f.message}</div>${f.reply?`<div style="color:#2e7d32;">回复：${f.reply}</div>`:'<div style="color:#999;">暂未回复</div>'}</div>`;
+        html += `<div class="card">
+            <div><b>${new Date(f.created_at).toLocaleString()}</b></div>
+            <div>${f.message}</div>
+            ${f.reply?`<div style="color:#2e7d32;">回复：${f.reply}</div>`:'<div style="color:#999;">暂未回复</div>'}
+        </div>`;
     });
-    document.getElementById('feedbackHistory').innerHTML=html||'<p>暂无留言</p>';
+    document.getElementById('feedbackHistory').innerHTML = html || '<p>暂无留言</p>';
 }
 
 async function loadMyReservations(){
-    const uid=getUserId();
-    const {data}=await sb.from('reservations').select('*').eq('user_id',uid).order('created_at',false);
-    document.getElementById('myReservationContent').innerHTML=data?.length?data.map(r=>`<div class="card"><b>${r.reservation_date} ${r.time_slot_start}</b> ${r.visitor_count}人 ${r.name}</div>`).join(''):'<p>暂无预约</p>';
+    const uid = getUserId();
+    const {data} = await sb.from('reservations').select('*').eq('user_id',uid).order('created_at',false);
+    document.getElementById('myReservationContent').innerHTML = data?.length ? data.map(r=>`<div class="card"><b>${r.reservation_date} ${r.time_slot_start}</b> ${r.visitor_count}人 ${r.name}</div>`).join('') : '<p>暂无预约</p>';
 }
 
 function switchMyTab(tab){
@@ -343,7 +351,7 @@ function switchMyTab(tab){
 function openPanel(id){ document.getElementById(id).classList.add('active'); if(id==='routesPanel') loadRoutes(); }
 function closePanel(id){ document.getElementById(id).classList.remove('active'); }
 function startSimulation(){ alert('模拟导航功能即将上线'); }
-window.onload=initMap;
+window.onload = initMap;
 </script>
 </body>
 </html>

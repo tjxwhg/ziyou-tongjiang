@@ -262,7 +262,7 @@ function saveGeneratedTrip(){
     if(!name) return;
     generatedTripData.name = name;
     const trips = JSON.parse(localStorage.getItem('trips')||'[]');
-    trips.push({...generatedTripData, timestamp:Date.now()});
+    trips.push(JSON.parse(JSON.stringify(generatedTripData))); // 深拷贝避免引用问题
     localStorage.setItem('trips', JSON.stringify(trips));
     alert('行程已保存');
     document.getElementById('saveGeneratedTripBtn').classList.add('hidden');
@@ -281,10 +281,14 @@ function renderMyTrip(){
                 📅 ${trip.name} | ${trip.date} ${trip.time} | ${trip.mode} | ${trip.people}人
             </div>
             <div id="trip-detail-${i}" class="hidden" style="margin-top:8px;">`;
-        if(trip.days) trip.days.forEach(day=>{
-            html += `<div class="day-header">📅 ${day.date}</div>`;
-            day.lines.forEach(l=> html += `<div class="trip-line">${l.text}</div>`);
-        });
+        if(trip.days && trip.days.length){
+            trip.days.forEach(day=>{
+                html += `<div class="day-header">📅 ${day.date}</div>`;
+                day.lines.forEach(l=> html += `<div class="trip-line">${l.text}</div>`);
+            });
+        } else {
+            html += '<p>行程数据异常</p>';
+        }
         if(trip.tips && trip.tips.length) html += `<div class="warn-list"><strong>温馨提示：</strong>${trip.tips.map(t=>`<div>${t}</div>`).join('')}</div>`;
         html += `<button class="btn btn-danger" onclick="event.stopPropagation(); deleteTrip(${i})" style="margin-top:8px;">删除</button>
             </div>
@@ -300,6 +304,7 @@ function deleteTrip(idx){
     renderMyTrip();
 }
 
+// 留言（仅显示普通用户留言，排除 system）
 async function submitFeedback(){
     const msg = document.getElementById('feedbackMsg').value.trim();
     if(!msg) return;
@@ -308,16 +313,21 @@ async function submitFeedback(){
     loadFeedbackHistory();
 }
 async function loadFeedbackHistory(){
-    const {data} = await sb.from('ztj_feedbacks').select('*').order('created_at',{ascending:false});
+    // 只获取 user_id 不为 'system' 的留言
+    const {data} = await sb.from('ztj_feedbacks').select('*').neq('user_id','system').order('created_at',{ascending:false});
     let html = '';
-    if(data) data.forEach(f=>{
-        html += `<div class="card">
-            <div><b>${new Date(f.created_at).toLocaleString()}</b></div>
-            <div>${f.message}</div>
-            ${f.reply?`<div style="color:#2e7d32;">回复：${f.reply}</div>`:'<div style="color:#999;">暂未回复</div>'}
-        </div>`;
-    });
-    document.getElementById('feedbackHistory').innerHTML = html || '<p>暂无留言</p>';
+    if(data && data.length){
+        data.forEach(f=>{
+            html += `<div class="card">
+                <div><b>${new Date(f.created_at).toLocaleString()}</b></div>
+                <div>${f.message}</div>
+                ${f.reply?`<div style="color:#2e7d32;">回复：${f.reply}</div>`:'<div style="color:#999;">暂未回复</div>'}
+            </div>`;
+        });
+    } else {
+        html = '<p>暂无留言</p>';
+    }
+    document.getElementById('feedbackHistory').innerHTML = html;
 }
 
 async function loadMyReservations(){

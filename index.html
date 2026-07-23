@@ -216,7 +216,7 @@ async function updateAllTimes(){
     }
 }
 
-// ========== 核心时间线生成（修正版） ==========
+// ========== 核心时间线生成（交通不截断，游览可暂停就餐） ==========
 function generateTimeline(nodes, startDate, startTime) {
     let curDate = new Date(startDate);
     let [h,m] = startTime.split(':').map(Number);
@@ -224,15 +224,11 @@ function generateTimeline(nodes, startDate, startTime) {
     const lines = [];
     let lunchDone = false, dinnerDone = false;
 
-    // 出发
-    lines.push({time: curMin, text: `🚩 ${formatTime(curMin)} 从 ${nodes[0].name} 出发`, date: new Date(curDate)});
-
     function addLine(time, text) {
         lines.push({time, text, date: new Date(curDate)});
     }
-
-    // 处理跨天与就餐插入的通用函数
-    function handleNewDay() {
+    // 跨天辅助：如果当前时间>=18:00，增加住宿行并跳到次日8:00
+    function gotoNextDayIfNeeded() {
         if (curMin >= DAY_END) {
             addLine(DAY_END, `🌙 当天行程结束，住宿休息`);
             curDate.setDate(curDate.getDate()+1);
@@ -242,7 +238,7 @@ function generateTimeline(nodes, startDate, startTime) {
         }
     }
 
-    // 检查并插入午餐（如果未吃且时间已触发）
+    // 检查并插入午餐（如果未吃且时间已过触发点）
     function tryInsertLunch() {
         if (!lunchDone && curMin >= LUNCH_TRIGGER) {
             addLine(curMin, `🍽️ 午餐时间 (${formatTime(curMin)}-${formatTime(curMin+MEAL_DURATION)})`);
@@ -252,7 +248,6 @@ function generateTimeline(nodes, startDate, startTime) {
         }
         return false;
     }
-
     // 检查并插入晚餐
     function tryInsertDinner() {
         if (!dinnerDone && curMin >= DINNER_TRIGGER) {
@@ -264,69 +259,72 @@ function generateTimeline(nodes, startDate, startTime) {
         return false;
     }
 
+    // 出发
+    addLine(curMin, `🚩 ${formatTime(curMin)} 从 ${nodes[0].name} 出发`);
+
     for(let i=1; i<nodes.length; i++){
         const prev = nodes[i-1], cur = nodes[i];
 
-        // --- 交通 ---
+        // --- 交通（不受18:00限制，只要开始就不截断）---
         let travelTime = cur.transportTime || 0;
         if(travelTime > 0){
-            let remainingTravel = travelTime;
-            while(remainingTravel > 0){
-                handleNewDay();
-                if(curMin >= DAY_END) continue; // 重新开始一天
-                let timeToEnd = DAY_END - curMin;
-                if(timeToEnd <= 0) continue;
-                let spend = Math.min(remainingTravel, timeToEnd);
-                let endMin = curMin + spend;
-                addLine(curMin, `🚗 ${formatTime(curMin)}-${formatTime(endMin)} 前往 ${cur.name} (交通${travelTime}分钟)`);
-                curMin = endMin;
-                remainingTravel -= spend;
-                if(curMin >= DAY_END) {
+            // 如果当前时间已经超过当天18:00（一般不会，因为游览后可能已经跨天），先跳到次日8:00
+            while(curMin >= DAY_END){
+                addLine(DAY_END, `🌙 当天行程结束，住宿休息`);
+                curDate.setDate(curDate.getDate()+1);
+                curMin = DAY_START;
+                lunchDone = false;
+                dinnerDone = false;
+            }
+            // 开始交通，不截断，直接消耗全部travelTime
+            let endMin = curMin + travelTime;
+            // 检查交通过程中是否跨越了就餐触发点？规则：交通途中不插入就餐，结束后再补。因此不需要分段。
+            addLine(curMin, `🚗 ${formatTime(curMin)}-${formatTime(endMin)} 前往 ${cur.name} (交通${travelTime}分钟)`);
+            curMin = endMin;
+            // 交通结束后，尝试插入可能错过的午餐/晚餐
+            tryInsertLunch();
+            tryInsertDinner();
+            // 如果交通结束后时间已过18:00，在补就餐后无需额外操作，后续游览会处理
+        } else if(cur.transportTime === null){
+            addLine(curMin, `⚠️ 前往 ${cur.name} 交通耗时未知`);
+        }
+
+        // --- 游览（必须8:00-18:00，可被就餐暂停）---
+        if(cur.visitDuration > 0 && !isNonVisitPoi(cur.id)){
+            let visitLeft = cur.visitDuration;
+            while(visitLeft > 0){
+                // 如果当前时间<8:00，等待
+                if(curMin < DAY_START) curMin = DAY_START;
+                // 如果当前时间>=18:00，跨天
+                while(curMin >= DAY_END){
                     addLine(DAY_END, `🌙 当天行程结束，住宿休息`);
                     curDate.setDate(curDate.getDate()+1);
                     curMin = DAY_START;
                     lunchDone = false;
                     dinnerDone = false;
                 }
-            }
-            // 交通结束后立即尝试插入午餐/晚餐
-            tryInsertLunch();
-            tryInsertDinner();
-        } else if(cur.transportTime === null){
-            addLine(curMin, `⚠️ 前往 ${cur.name} 交通耗时未知`);
-        }
+                // 尝试插入午餐/晚餐（会暂停游览）
+                if(tryInsertLunch() || tryInsertDinner()) continue;
 
-        // --- 游览 ---
-        if(cur.visitDuration > 0 && !isNonVisitPoi(cur.id)){
-            let visitLeft = cur.visitDuration;
-            while(visitLeft > 0){
-                handleNewDay();
-                if(curMin < DAY_START) curMin = DAY_START; // 等待游览时间
-                if(curMin >= DAY_END) continue; // 已跨天
-
-                // 1. 先检查是否立即需要插入午餐/晚餐（比如刚好在触发时段）
-                if(tryInsertLunch() || tryInsertDinner()) continue; // 插入后继续循环
-
-                // 2. 计算到下一个强制中断点（就餐触发或当天结束）
+                // 计算到下一个中断点（午餐触发、晚餐触发、当天结束）
                 let nextBreak = DAY_END;
                 if(!lunchDone && curMin < LUNCH_TRIGGER) nextBreak = LUNCH_TRIGGER;
-                else if(!lunchDone && curMin >= LUNCH_TRIGGER) nextBreak = curMin; // 理论上不会到这里，因为上面已经插入
+                else if(!lunchDone && curMin >= LUNCH_TRIGGER) nextBreak = curMin; // 不会发生，因为上面已经插入了
                 if(!dinnerDone && curMin < DINNER_TRIGGER && (nextBreak > DINNER_TRIGGER || nextBreak === DAY_END)) nextBreak = DINNER_TRIGGER;
 
                 let timeToBreak = nextBreak - curMin;
-                if(timeToBreak <= 0) timeToBreak = 1; // 防止死循环
-
+                if(timeToBreak <= 0) timeToBreak = 1;
                 let spend = Math.min(visitLeft, timeToBreak);
                 let endMin = curMin + spend;
                 addLine(curMin, `⏱️ ${formatTime(curMin)}-${formatTime(endMin)} 游览 ${cur.name} (游览${cur.visitDuration}分钟)`);
                 curMin = endMin;
                 visitLeft -= spend;
 
-                // 再次尝试插入（如果刚好跨过触发点）
+                // 游览后尝试插入就餐
                 tryInsertLunch();
                 tryInsertDinner();
 
-                // 如果游览因当天结束中断，跨天循环
+                // 如果游览因当天结束而中断，循环会自动处理跨天
                 if(curMin >= DAY_END && visitLeft > 0) {
                     addLine(DAY_END, `🌙 当天行程结束，住宿休息`);
                     curDate.setDate(curDate.getDate()+1);
@@ -339,7 +337,7 @@ function generateTimeline(nodes, startDate, startTime) {
             addLine(curMin, `📍 ${formatTime(curMin)} 到达 ${cur.name}`);
         }
 
-        // 节点结束后补漏（保证每天至少一次，如果还没触发）
+        // 节点结束后补漏就餐
         tryInsertLunch();
         tryInsertDinner();
     }

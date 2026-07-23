@@ -112,7 +112,7 @@ const LUNCH_TRIGGER = 690; // 11:30
 const LUNCH_END = 750;     // 12:30
 const DINNER_TRIGGER = 1050; // 17:30
 const DINNER_END = 1110;   // 18:30
-const MEAL_DURATION = 60;  // 1小时
+const MEAL_DURATION = 60;
 
 const EXCLUDED_FROM_TRIP = ['游戏娱乐','公共服务','特产购物'];
 const NON_VISIT_CATEGORIES = ['交通枢纽','餐饮住宿','公共服务','特产购物','游玩娱乐'];
@@ -173,14 +173,13 @@ async function showPoiDetail(poi){
     document.getElementById('merchantDetailContent').innerHTML = html;
     openPanel('merchantDetailPanel');
 }
-async function openReservePanel(merchantId){ /* 简化，保留原有功能 */ }
 
 async function loadRoutes(){
     const { data } = await sb.from('ztj_routes').select('*');
     document.getElementById('routeList').innerHTML = data.map(r => `<div class="card"><h3>${r.name}</h3><p>${r.days||1}天</p></div>`).join('');
 }
 
-// 自设行程动态选择
+// 自设行程
 function toggleCustomTripSection(){ document.getElementById('customTripSection').classList.toggle('hidden'); if(!document.getElementById('customTripSection').classList.contains('hidden')){ buildMainPoiOptions(); resetRouteLegs(); } }
 function buildMainPoiOptions(){
     const allMain = allPois.filter(p => !p.parent_id);
@@ -217,7 +216,7 @@ async function updateAllTimes(){
     }
 }
 
-// ========== 核心：严格按照新规则生成时间线 ==========
+// ========== 核心时间线生成（修正版） ==========
 function generateTimeline(nodes, startDate, startTime) {
     let curDate = new Date(startDate);
     let [h,m] = startTime.split(':').map(Number);
@@ -228,85 +227,108 @@ function generateTimeline(nodes, startDate, startTime) {
     // 出发
     lines.push({time: curMin, text: `🚩 ${formatTime(curMin)} 从 ${nodes[0].name} 出发`, date: new Date(curDate)});
 
+    function addLine(time, text) {
+        lines.push({time, text, date: new Date(curDate)});
+    }
+
+    // 处理跨天与就餐插入的通用函数
+    function handleNewDay() {
+        if (curMin >= DAY_END) {
+            addLine(DAY_END, `🌙 当天行程结束，住宿休息`);
+            curDate.setDate(curDate.getDate()+1);
+            curMin = DAY_START;
+            lunchDone = false;
+            dinnerDone = false;
+        }
+    }
+
+    // 检查并插入午餐（如果未吃且时间已触发）
+    function tryInsertLunch() {
+        if (!lunchDone && curMin >= LUNCH_TRIGGER) {
+            addLine(curMin, `🍽️ 午餐时间 (${formatTime(curMin)}-${formatTime(curMin+MEAL_DURATION)})`);
+            curMin += MEAL_DURATION;
+            lunchDone = true;
+            return true;
+        }
+        return false;
+    }
+
+    // 检查并插入晚餐
+    function tryInsertDinner() {
+        if (!dinnerDone && curMin >= DINNER_TRIGGER) {
+            addLine(curMin, `🍽️ 晚餐时间 (${formatTime(curMin)}-${formatTime(curMin+MEAL_DURATION)})`);
+            curMin += MEAL_DURATION;
+            dinnerDone = true;
+            return true;
+        }
+        return false;
+    }
+
     for(let i=1; i<nodes.length; i++){
         const prev = nodes[i-1], cur = nodes[i];
-        // 交通
+
+        // --- 交通 ---
         let travelTime = cur.transportTime || 0;
         if(travelTime > 0){
-            // 交通连续，不中断，跨天正常处理
             let remainingTravel = travelTime;
             while(remainingTravel > 0){
-                if(curMin >= DAY_END){
-                    lines.push({time: DAY_END, text: `🌙 当天行程结束，住宿休息`, date: new Date(curDate)});
-                    curDate.setDate(curDate.getDate()+1);
-                    curMin = DAY_START;
-                    lunchDone = false;
-                    dinnerDone = false;
-                }
+                handleNewDay();
+                if(curMin >= DAY_END) continue; // 重新开始一天
                 let timeToEnd = DAY_END - curMin;
                 if(timeToEnd <= 0) continue;
                 let spend = Math.min(remainingTravel, timeToEnd);
                 let endMin = curMin + spend;
-                lines.push({time: curMin, text: `🚗 ${formatTime(curMin)}-${formatTime(endMin)} 前往 ${cur.name} (交通${travelTime}分钟)`, date: new Date(curDate)});
+                addLine(curMin, `🚗 ${formatTime(curMin)}-${formatTime(endMin)} 前往 ${cur.name} (交通${travelTime}分钟)`);
                 curMin = endMin;
                 remainingTravel -= spend;
-                if(curMin >= DAY_END){
-                    lines.push({time: DAY_END, text: `🌙 当天行程结束，住宿休息`, date: new Date(curDate)});
+                if(curMin >= DAY_END) {
+                    addLine(DAY_END, `🌙 当天行程结束，住宿休息`);
                     curDate.setDate(curDate.getDate()+1);
                     curMin = DAY_START;
                     lunchDone = false;
                     dinnerDone = false;
                 }
             }
-            // 交通结束后，检查是否需要插入就餐（基于当前时间）
-            if(!lunchDone && curMin >= LUNCH_TRIGGER){
-                lines.push({time: curMin, text: `🍽️ 午餐时间 (${formatTime(curMin)}-${formatTime(curMin+MEAL_DURATION)})`, date: new Date(curDate)});
-                curMin += MEAL_DURATION;
-                lunchDone = true;
-            }
-            if(!dinnerDone && curMin >= DINNER_TRIGGER){
-                lines.push({time: curMin, text: `🍽️ 晚餐时间 (${formatTime(curMin)}-${formatTime(curMin+MEAL_DURATION)})`, date: new Date(curDate)});
-                curMin += MEAL_DURATION;
-                dinnerDone = true;
-            }
+            // 交通结束后立即尝试插入午餐/晚餐
+            tryInsertLunch();
+            tryInsertDinner();
         } else if(cur.transportTime === null){
-            lines.push({time: curMin, text: `⚠️ 前往 ${cur.name} 交通耗时未知`, date: new Date(curDate)});
+            addLine(curMin, `⚠️ 前往 ${cur.name} 交通耗时未知`);
         }
 
-        // 游览 (仅非餐饮住宿等)
+        // --- 游览 ---
         if(cur.visitDuration > 0 && !isNonVisitPoi(cur.id)){
             let visitLeft = cur.visitDuration;
             while(visitLeft > 0){
+                handleNewDay();
                 if(curMin < DAY_START) curMin = DAY_START; // 等待游览时间
-                if(curMin >= DAY_END){
-                    lines.push({time: DAY_END, text: `🌙 当天行程结束，住宿休息`, date: new Date(curDate)});
-                    curDate.setDate(curDate.getDate()+1);
-                    curMin = DAY_START;
-                    lunchDone = false;
-                    dinnerDone = false;
-                    continue;
-                }
-                // 检查就餐触发
-                if(!lunchDone && curMin >= LUNCH_TRIGGER && curMin < LUNCH_END){
-                    lines.push({time: curMin, text: `🍽️ 午餐时间 (${formatTime(curMin)}-${formatTime(curMin+MEAL_DURATION)})`, date: new Date(curDate)});
-                    curMin += MEAL_DURATION;
-                    lunchDone = true;
-                    continue;
-                }
-                if(!dinnerDone && curMin >= DINNER_TRIGGER && curMin < DINNER_END){
-                    lines.push({time: curMin, text: `🍽️ 晚餐时间 (${formatTime(curMin)}-${formatTime(curMin+MEAL_DURATION)})`, date: new Date(curDate)});
-                    curMin += MEAL_DURATION;
-                    dinnerDone = true;
-                    continue;
-                }
-                let timeLeft = DAY_END - curMin;
-                let spend = Math.min(visitLeft, timeLeft);
+                if(curMin >= DAY_END) continue; // 已跨天
+
+                // 1. 先检查是否立即需要插入午餐/晚餐（比如刚好在触发时段）
+                if(tryInsertLunch() || tryInsertDinner()) continue; // 插入后继续循环
+
+                // 2. 计算到下一个强制中断点（就餐触发或当天结束）
+                let nextBreak = DAY_END;
+                if(!lunchDone && curMin < LUNCH_TRIGGER) nextBreak = LUNCH_TRIGGER;
+                else if(!lunchDone && curMin >= LUNCH_TRIGGER) nextBreak = curMin; // 理论上不会到这里，因为上面已经插入
+                if(!dinnerDone && curMin < DINNER_TRIGGER && (nextBreak > DINNER_TRIGGER || nextBreak === DAY_END)) nextBreak = DINNER_TRIGGER;
+
+                let timeToBreak = nextBreak - curMin;
+                if(timeToBreak <= 0) timeToBreak = 1; // 防止死循环
+
+                let spend = Math.min(visitLeft, timeToBreak);
                 let endMin = curMin + spend;
-                lines.push({time: curMin, text: `⏱️ ${formatTime(curMin)}-${formatTime(endMin)} 游览 ${cur.name} (游览${cur.visitDuration}分钟)`, date: new Date(curDate)});
+                addLine(curMin, `⏱️ ${formatTime(curMin)}-${formatTime(endMin)} 游览 ${cur.name} (游览${cur.visitDuration}分钟)`);
                 curMin = endMin;
                 visitLeft -= spend;
-                if(curMin >= DAY_END && visitLeft > 0){
-                    lines.push({time: DAY_END, text: `🌙 当天行程结束，住宿休息`, date: new Date(curDate)});
+
+                // 再次尝试插入（如果刚好跨过触发点）
+                tryInsertLunch();
+                tryInsertDinner();
+
+                // 如果游览因当天结束中断，跨天循环
+                if(curMin >= DAY_END && visitLeft > 0) {
+                    addLine(DAY_END, `🌙 当天行程结束，住宿休息`);
                     curDate.setDate(curDate.getDate()+1);
                     curMin = DAY_START;
                     lunchDone = false;
@@ -314,20 +336,14 @@ function generateTimeline(nodes, startDate, startTime) {
                 }
             }
         } else if(isNonVisitPoi(cur.id)){
-            lines.push({time: curMin, text: `📍 ${formatTime(curMin)} 到达 ${cur.name}`, date: new Date(curDate)});
+            addLine(curMin, `📍 ${formatTime(curMin)} 到达 ${cur.name}`);
         }
-        // 节点结束后再次补漏就餐
-        if(!lunchDone && curMin >= LUNCH_TRIGGER){
-            lines.push({time: curMin, text: `🍽️ 午餐时间 (${formatTime(curMin)}-${formatTime(curMin+MEAL_DURATION)})`, date: new Date(curDate)});
-            curMin += MEAL_DURATION;
-            lunchDone = true;
-        }
-        if(!dinnerDone && curMin >= DINNER_TRIGGER){
-            lines.push({time: curMin, text: `🍽️ 晚餐时间 (${formatTime(curMin)}-${formatTime(curMin+MEAL_DURATION)})`, date: new Date(curDate)});
-            curMin += MEAL_DURATION;
-            dinnerDone = true;
-        }
+
+        // 节点结束后补漏（保证每天至少一次，如果还没触发）
+        tryInsertLunch();
+        tryInsertDinner();
     }
+
     return lines;
 }
 

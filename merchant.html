@@ -167,6 +167,13 @@ function showMain(){
     loadActivityCategories();
     switchTab('business'); 
     showReserveTabsIfAllowed(); 
+    // 加载基本信息到表单
+    document.getElementById('business_type').value = merchant.business_type || 'other';
+    document.getElementById('status').value = merchant.status || 'open';
+    document.getElementById('phone').value = merchant.phone || '';
+    document.getElementById('address').value = merchant.address || '';
+    document.getElementById('parking').value = merchant.parking_spots || 0;
+    document.getElementById('intro').value = merchant.intro || '';
 }
 async function login(){
     const email = document.getElementById('account').value.trim();
@@ -340,26 +347,25 @@ async function addBusinessItem(){
     renderBusinessList();
 }
 
-// ---------- 预约列表（修复 activity_id） ----------
+// ---------- 预约列表（修复 activity_id 与 time_slot_end） ----------
 async function loadReservations(){
     const { data } = await sb.from('reservations').select('*').eq('merchant_id', merchant.id).order('created_at', false);
     let html = '';
     if(data && data.length){
         data.forEach((r, idx) => {
-            // 从 remark 中提取类别信息
             let category = '';
-            if(r.remark && r.remark.startsWith('类别：')) {
-                category = r.remark.replace('类别：', '').split('|')[0];
+            if(r.remark && r.remark.includes('类别：')) {
+                category = r.remark.split('类别：')[1]?.split('|')[0] || '';
             }
             html += `<div class="reservation-card card">
                 <div class="item-header" onclick="toggleReservationDetail(${idx})">
-                    <span>${idx+1}. ${r.reservation_date} ${r.time_slot_start} | ${r.visitor_count}人 | ${r.unit||''} | ${r.name}</span>
+                    <span>${idx+1}. ${r.reservation_date} ${r.time_slot_start}-${r.time_slot_end||''} | ${r.visitor_count}人 | ${r.unit||''} | ${r.name}</span>
                 </div>
                 <div id="res-detail-${idx}" class="item-detail hidden">
                     <p><b>活动类别：</b>${category||'未指定'} <b>地点：</b>${r.room||''}</p>
                     <p><b>联系人：</b>${r.name} ${r.phone}</p>
                     <p><b>单位：</b>${r.unit||''} <b>人数：</b>${r.visitor_count}</p>
-                    <p><b>备注：</b>${r.remark ? r.remark.replace('类别：'+category+'|', '') : ''}</p>
+                    <p><b>备注：</b>${r.remark ? r.remark.replace('类别：'+category+'|', '').replace('类别：'+category, '') : ''}</p>
                     ${r.image ? `<img src="${r.image}" class="upload-preview">` : ''}
                     <p><b>状态：</b>${r.status}</p>
                     <div style="display:flex; gap:6px; flex-wrap:wrap;">
@@ -382,7 +388,8 @@ function toggleAddReservationForm(){
 }
 async function addReservation(){
     const date = document.getElementById('new-res-date').value;
-    const time = document.getElementById('new-res-time').value;
+    const timeRange = document.getElementById('new-res-time').value; // 如 "08:00-09:00"
+    const [startTime, endTime] = timeRange.split('-');
     const name = document.getElementById('new-res-name').value.trim();
     const phone = document.getElementById('new-res-phone').value.trim();
     const unit = document.getElementById('new-res-unit').value.trim();
@@ -390,15 +397,15 @@ async function addReservation(){
     const activity = document.getElementById('new-res-activity').value;
     const room = document.getElementById('new-res-room').value.trim();
     const remarkBase = document.getElementById('new-res-remark').value.trim();
-    // 将活动类别编码进备注：类别：xxx|原始备注
     let finalRemark = '';
     if(activity) finalRemark += `类别：${activity}`;
     if(remarkBase) finalRemark += (finalRemark ? '|' : '') + remarkBase;
-    if(!date||!time||!name||!phone){ alert('请填写必填项'); return; }
+    if(!date||!timeRange||!name||!phone){ alert('请填写必填项'); return; }
     const { error } = await sb.from('reservations').insert({
         merchant_id: merchant.id,
         reservation_date: date,
-        time_slot_start: time,
+        time_slot_start: startTime,
+        time_slot_end: endTime,
         name, phone, unit, visitor_count: count,
         remark: finalRemark,
         room: room,
@@ -406,6 +413,7 @@ async function addReservation(){
         user_id: 'manual'
     });
     if(error){ alert('保存失败：'+error.message); return; }
+    // 清空表单
     document.getElementById('new-res-date').value='';
     document.getElementById('new-res-time').value='08:00-09:00';
     document.getElementById('new-res-name').value='';
@@ -419,7 +427,7 @@ async function addReservation(){
     loadReservations();
 }
 
-// ---------- 预约设置（同之前完整版） ----------
+// ---------- 预约设置 ----------
 async function loadReserveSettings(){
     const { data } = await sb.from('reservation_settings').select('*').eq('merchant_id', merchant.id);
     timeSlots = data || [];

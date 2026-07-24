@@ -157,12 +157,11 @@ function renderPOIs(pois){
     });
 }
 
-// ---------- 商户详情（业务项目按序号，预约按钮，基本信息） ----------
+// ---------- 商户详情 ----------
 async function showPoiDetail(poi){
     const { data: m } = await sb.from('ztj_merchants').select('*').eq('poi_id', poi.id).maybeSingle();
     document.getElementById('merchantDetailTitle').textContent = poi.name;
     let html = '';
-    // 业务项目
     if(m && m.service_data && m.service_data.items && Array.isArray(m.service_data.items)){
         const items = m.service_data.items.filter(item => item.name);
         items.forEach((item, idx) => {
@@ -173,12 +172,10 @@ async function showPoiDetail(poi){
             html += `<div class="card">${idx+1}. <b>${item.name}</b>${priceStr}${durationStr}${descStr}${imgStr}</div>`;
         });
     }
-    // 预约按钮
     if(m && m.allow_reserve){
         html += `<button class="reserve-btn" onclick="toggleReserveForm('${m.id}')">📋 研学预约</button>`;
         html += `<div id="reserve-form-${m.id}" class="hidden" style="margin-top:10px;"></div>`;
     }
-    // 基本信息
     let phone = m?.phone || '未提供';
     let status = m?.status === 'open' ? '营业中' : (m?.status === 'closed' ? '休息' : '繁忙');
     let parking = m?.parking_spots ?? 0;
@@ -270,7 +267,7 @@ async function showRouteDetail(id){
     document.body.appendChild(panel);
 }
 
-// ---------- 自设行程（完整） ----------
+// ---------- 自设行程 ----------
 function toggleCustomTripSection(){ document.getElementById('customTripSection').classList.toggle('hidden'); if(!document.getElementById('customTripSection').classList.contains('hidden')){ buildMainPoiOptions(); resetRouteLegs(); } }
 function buildMainPoiOptions(){
     const allMain = allPois.filter(p => !p.parent_id);
@@ -475,19 +472,36 @@ function deleteTrip(idx){
     renderMyTrip();
 }
 
-// 我的预约
+// ---------- 我的预约（折叠展示） ----------
 async function loadMyReservations(){
     const uid = getUserId();
     const { data } = await sb.from('reservations').select('*').eq('user_id', uid).order('created_at', false);
     let html = '';
     if(data && data.length){
-        data.forEach(r => {
-            const statusMap = { pending:'预约中', confirmed:'已确认', rejected:'已拒绝' };
-            html += `<div class="card"><b>${r.reservation_date} ${r.time_slot_start}-${r.time_slot_end||''}</b> | ${r.visitor_count}人 | ${r.unit}<p>联系人：${r.name} ${r.phone}</p><p>地点：${r.room||''}</p><p>状态：${statusMap[r.status]||r.status}</p></div>`;
+        data.forEach((r, idx) => {
+            let category = '';
+            if(r.remark && r.remark.includes('类别：')) {
+                category = r.remark.split('类别：')[1]?.split('|')[0] || '';
+            }
+            html += `<div class="card">
+                <div class="collapse-header" onclick="toggleMyReservationDetail(${idx})">
+                    <span>${r.reservation_date} | ${r.time_slot_start}-${r.time_slot_end||''} | ${category||'未分类'} | 联系人：${r.name}</span>
+                </div>
+                <div id="my-res-detail-${idx}" class="hidden">
+                    <p><b>单位：</b>${r.unit||''} <b>人数：</b>${r.visitor_count}</p>
+                    <p><b>电话：</b>${r.phone}</p>
+                    <p><b>地点：</b>${r.room||''}</p>
+                    <p><b>状态：</b>${ {pending:'预约中', confirmed:'已确认', rejected:'已拒绝'}[r.status]||r.status }</p>
+                    ${r.remark ? '<p><b>备注：</b>'+r.remark.replace('类别：'+category+'|', '').replace('类别：'+category, '')+'</p>' : ''}
+                </div>
+            </div>`;
         });
     } else html = '<p>暂无预约</p>';
     document.getElementById('myReservationContent').innerHTML = html;
 }
+window.toggleMyReservationDetail = function(idx){
+    document.getElementById('my-res-detail-'+idx).classList.toggle('hidden');
+};
 
 // 留言
 async function submitFeedback(){

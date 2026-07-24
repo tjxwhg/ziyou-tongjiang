@@ -347,7 +347,7 @@ async function addBusinessItem(){
     renderBusinessList();
 }
 
-// ---------- 预约列表（修复 activity_id 与 time_slot_end） ----------
+// ---------- 预约列表 ----------
 async function loadReservations(){
     const { data } = await sb.from('reservations').select('*').eq('merchant_id', merchant.id).order('created_at', false);
     let html = '';
@@ -388,7 +388,7 @@ function toggleAddReservationForm(){
 }
 async function addReservation(){
     const date = document.getElementById('new-res-date').value;
-    const timeRange = document.getElementById('new-res-time').value; // 如 "08:00-09:00"
+    const timeRange = document.getElementById('new-res-time').value;
     const [startTime, endTime] = timeRange.split('-');
     const name = document.getElementById('new-res-name').value.trim();
     const phone = document.getElementById('new-res-phone').value.trim();
@@ -413,7 +413,6 @@ async function addReservation(){
         user_id: 'manual'
     });
     if(error){ alert('保存失败：'+error.message); return; }
-    // 清空表单
     document.getElementById('new-res-date').value='';
     document.getElementById('new-res-time').value='08:00-09:00';
     document.getElementById('new-res-name').value='';

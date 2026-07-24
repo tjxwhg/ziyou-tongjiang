@@ -5,11 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>商户管理 - 通江文旅</title>
     <style>
-        body { font-family: system-ui; background:#f5f5f5; margin:0; }
-        .header { background:#1B5E20; color:white; padding:12px; display:flex; justify-content:space-between; align-items:center; }
+        body { font-family: system-ui, -apple-system, sans-serif; background:#f5f5f5; margin:0; }
+        .header { background:#1B5E20; color:white; padding:12px 20px; display:flex; justify-content:space-between; align-items:center; }
         .container { max-width:1000px; margin:20px auto; background:white; padding:20px; border-radius:8px; }
         .tab { display:flex; gap:8px; margin-bottom:20px; flex-wrap:wrap; }
-        .tab button { padding:10px 16px; border:none; background:#e0e0e0; border-radius:4px; cursor:pointer; }
+        .tab button { padding:10px 16px; border:none; background:#e0e0e0; border-radius:4px; cursor:pointer; font-size:14px; }
         .tab button.active { background:#2E7D32; color:white; }
         .form-group { margin:8px 0; }
         label { display:block; margin-bottom:4px; font-weight:500; }
@@ -20,9 +20,13 @@
         .btn-default { background:#e0e0e0; color:#333; }
         .card { border:1px solid #ddd; padding:12px; margin:8px 0; border-radius:8px; background:#fafafa; }
         .hidden { display:none; }
-        .item-row { display:flex; gap:8px; align-items:center; margin:4px 0; flex-wrap:wrap; }
-        .upload-preview { max-width:200px; max-height:150px; margin-top:4px; }
-        .reservation-card { background:white; border:1px solid #ddd; padding:12px; margin:8px 0; border-radius:8px; }
+        .item-collapse { margin-bottom:6px; }
+        .item-header { display:flex; align-items:center; gap:10px; cursor:pointer; font-weight:500; padding:8px; background:#f0f0f0; border-radius:4px; }
+        .item-header span { flex:1; }
+        .item-detail { padding:10px; border:1px solid #eee; border-radius:4px; margin-top:4px; background:white; }
+        .upload-preview { max-width:200px; max-height:150px; margin-top:4px; border-radius:4px; border:1px solid #ddd; }
+        .reservation-card { margin-bottom:8px; }
+        .time-slot-item { display:flex; gap:8px; align-items:center; margin:8px 0; }
     </style>
 </head>
 <body>
@@ -48,15 +52,38 @@
 
         <!-- 业务管理 -->
         <div id="tab-business">
-            <div id="business-container"></div>
-            <button class="btn btn-primary" onclick="addBusinessItem()" style="margin-top:10px;">+ 添加项目</button>
-            <button class="btn btn-primary" onclick="saveBusinessData()" style="margin-top:10px;">保存业务数据</button>
+            <div id="business-list"></div>
+            <button class="btn btn-primary" onclick="toggleAddBusinessForm()" style="margin-top:10px;">+ 添加项目</button>
+            <div id="add-business-form" class="hidden card" style="margin-top:8px;">
+                <h4>新增业务项目</h4>
+                <div class="form-group"><label>名称</label><input id="new-biz-name"></div>
+                <div class="form-group"><label>价格 (¥)</label><input type="number" id="new-biz-price"></div>
+                <div class="form-group"><label>时限/时长</label><input id="new-biz-duration"></div>
+                <div class="form-group"><label>描述</label><textarea id="new-biz-desc" rows="2"></textarea></div>
+                <div class="form-group"><label>图片</label><input type="file" accept="image/*" id="new-biz-image"></div>
+                <button class="btn btn-primary" onclick="addBusinessItem()">保存</button>
+                <button class="btn btn-default" onclick="toggleAddBusinessForm()">取消</button>
+            </div>
         </div>
 
         <!-- 预约列表 -->
         <div id="tab-reservations" class="hidden">
-            <button class="btn btn-primary" onclick="addReservation()">+ 新增预约</button>
-            <div id="reservation-list" style="margin-top:10px;"></div>
+            <div id="reservation-list"></div>
+            <button class="btn btn-primary" onclick="toggleAddReservationForm()" style="margin-top:10px;">+ 新增预约</button>
+            <div id="add-reservation-form" class="hidden card" style="margin-top:8px;">
+                <h4>新增预约</h4>
+                <div class="form-group"><label>预约日期</label><input type="date" id="new-res-date"></div>
+                <div class="form-group"><label>时段</label><input id="new-res-time" placeholder="如 09:00-10:00"></div>
+                <div class="form-group"><label>联系人</label><input id="new-res-name"></div>
+                <div class="form-group"><label>电话</label><input id="new-res-phone"></div>
+                <div class="form-group"><label>单位</label><input id="new-res-unit"></div>
+                <div class="form-group"><label>人数</label><input type="number" id="new-res-count" min="1"></div>
+                <div class="form-group"><label>活动类别</label><input id="new-res-activity" placeholder="如 主题党日"></div>
+                <div class="form-group"><label>地点/场地</label><input id="new-res-room"></div>
+                <div class="form-group"><label>备注</label><textarea id="new-res-remark" rows="2"></textarea></div>
+                <button class="btn btn-primary" onclick="addReservation()">保存预约</button>
+                <button class="btn btn-default" onclick="toggleAddReservationForm()">取消</button>
+            </div>
         </div>
 
         <!-- 预约设置 -->
@@ -81,7 +108,9 @@
 
         <!-- 基本信息 -->
         <div id="tab-info" class="hidden">
-            <div class="form-group"><label>业务类型</label><select id="business_type"><option value="scenic">景区</option><option value="museum">文博场馆</option><option value="hotel">住宿</option><option value="restaurant">餐饮</option><option value="shop">购物</option><option value="entertainment">娱乐</option><option value="transport">交通</option><option value="other">其他</option></select></div>
+            <div class="form-group"><label>业务类型</label><select id="business_type">
+                <option value="scenic">景区</option><option value="museum">文博场馆</option><option value="hotel">住宿</option><option value="restaurant">餐饮</option><option value="shop">购物</option><option value="entertainment">娱乐</option><option value="transport">交通</option><option value="other">其他</option>
+            </select></div>
             <div class="form-group"><label>营业状态</label><select id="status"><option value="open">营业中</option><option value="closed">休息</option></select></div>
             <div class="form-group"><label>电话</label><input id="phone"></div>
             <div class="form-group"><label>地址</label><input id="address"></div>
@@ -100,6 +129,7 @@ let merchant = null;
 let timeSlots = [];
 let businessItems = [];
 
+// ---------- 会话 ----------
 async function checkSession(){
     const { data: { session } } = await sb.auth.getSession();
     if(session){
@@ -108,7 +138,10 @@ async function checkSession(){
         else { await sb.auth.signOut(); showLogin(); }
     } else showLogin();
 }
-sb.auth.onAuthStateChange((event, session) => { if(event==='SIGNED_IN') checkSession(); else if(event==='SIGNED_OUT') showLogin(); });
+sb.auth.onAuthStateChange((event, session) => {
+    if(event==='SIGNED_IN') checkSession();
+    else if(event==='SIGNED_OUT') showLogin();
+});
 function showLogin(){ document.getElementById('login-page').classList.remove('hidden'); document.getElementById('main').classList.add('hidden'); }
 function showMain(){ document.getElementById('login-page').classList.add('hidden'); document.getElementById('main').classList.remove('hidden'); document.getElementById('merchant-name').innerText = merchant.display_name; switchTab('business'); }
 async function login(){
@@ -122,9 +155,10 @@ async function logout(){ await sb.auth.signOut(); showLogin(); }
 
 function switchTab(tab){
     document.querySelectorAll('#main-tabs button').forEach(b => b.classList.remove('active'));
-    const idx = ['business','reservations','reserve-settings','activities','feedbacks','info'].indexOf(tab);
+    const tabs = ['business','reservations','reserve-settings','activities','feedbacks','info'];
+    const idx = tabs.indexOf(tab);
     if(idx>=0) document.querySelectorAll('#main-tabs button')[idx].classList.add('active');
-    ['business','reservations','reserve-settings','activities','feedbacks','info'].forEach(t => document.getElementById('tab-'+t).classList.add('hidden'));
+    tabs.forEach(t => document.getElementById('tab-'+t).classList.add('hidden'));
     document.getElementById('tab-'+tab).classList.remove('hidden');
     if(tab==='business') loadBusinessTab();
     if(tab==='reservations') loadReservations();
@@ -133,105 +167,267 @@ function switchTab(tab){
     if(tab==='feedbacks') loadMerchantFeedbacks();
 }
 
-// ========== 业务管理 ==========
+// ---------- 业务管理（折叠带序号） ----------
 function loadBusinessTab(){
-    businessItems = (merchant.service_data && merchant.service_data.items) ? JSON.parse(JSON.stringify(merchant.service_data.items)) : [];
-    renderBusinessItems();
+    const data = merchant.service_data && merchant.service_data.items ? merchant.service_data.items : [];
+    businessItems = JSON.parse(JSON.stringify(data)); // 深拷贝
+    renderBusinessList();
 }
-function getBusinessFields(type){
-    const common = [
-        {label:'名称',key:'name',type:'text'},
-        {label:'价格 (¥)',key:'price',type:'number'},
-        {label:'时限/时长',key:'duration',type:'text'},
-        {label:'描述',key:'description',type:'textarea'},
-        {label:'图片',key:'image',type:'image'}
-    ];
-    return common;
-}
-function renderBusinessItems(){
-    const container = document.getElementById('business-container');
-    const fields = getBusinessFields();
+function renderBusinessList(){
+    const container = document.getElementById('business-list');
+    if(!businessItems.length){ container.innerHTML = '<p>暂无业务项目，请添加</p>'; return; }
     let html = '';
     businessItems.forEach((item, idx) => {
-        html += '<div class="card">';
-        fields.forEach(f => {
-            const val = item[f.key] || '';
-            if(f.type === 'textarea') html += `<div class="form-group"><label>${f.label}</label><textarea onchange="updateBusinessItem(${idx},'${f.key}',this.value)">${val}</textarea></div>`;
-            else if(f.type === 'image') html += `<div class="form-group"><label>${f.label}</label><input type="file" accept="image/*" onchange="handleBusinessImage(${idx},this)">${val?`<img src="${val}" class="upload-preview">`:''}</div>`;
-            else html += `<div class="form-group"><label>${f.label}</label><input type="${f.type}" value="${val}" onchange="updateBusinessItem(${idx},'${f.key}',this.value)"></div>`;
-        });
-        html += `<button class="btn btn-danger" onclick="deleteBusinessItem(${idx})">删除此项</button></div>`;
+        html += `<div class="item-collapse">
+            <div class="item-header" onclick="toggleBusinessDetail(${idx})">
+                <span>${idx+1}. ${item.name||'未命名'} ${item.image ? '<img src="'+item.image+'" style="height:30px; vertical-align:middle; margin-left:5px;">' : ''} - ¥${item.price||'0'} ${item.duration||''}</span>
+                <span style="font-size:12px; color:#666;">点击展开编辑</span>
+            </div>
+            <div id="biz-detail-${idx}" class="item-detail hidden">
+                <div class="form-group"><label>名称</label><input id="biz-name-${idx}" value="${item.name||''}"></div>
+                <div class="form-group"><label>价格</label><input type="number" id="biz-price-${idx}" value="${item.price||''}"></div>
+                <div class="form-group"><label>时限/时长</label><input id="biz-duration-${idx}" value="${item.duration||''}"></div>
+                <div class="form-group"><label>描述</label><textarea id="biz-desc-${idx}" rows="2">${item.description||''}</textarea></div>
+                <div class="form-group"><label>图片</label><input type="file" accept="image/*" onchange="handleBizImageChange(${idx}, this)">
+                ${item.image ? '<img src="'+item.image+'" class="upload-preview">' : ''}</div>
+                <button class="btn btn-primary" onclick="saveBusinessItem(${idx})">保存修改</button>
+                <button class="btn btn-danger" onclick="deleteBusinessItem(${idx})">删除</button>
+            </div>
+        </div>`;
     });
-    container.innerHTML = html || '<p>暂无项目，请添加</p>';
+    container.innerHTML = html;
 }
-function addBusinessItem(){ businessItems.push({name:'',price:'',duration:'',description:'',image:''}); renderBusinessItems(); }
-function updateBusinessItem(idx, key, value){ businessItems[idx][key] = value; }
-function deleteBusinessItem(idx){ businessItems.splice(idx,1); renderBusinessItems(); }
-async function handleBusinessImage(idx, input){
+window.toggleBusinessDetail = function(idx){
+    document.getElementById('biz-detail-'+idx).classList.toggle('hidden');
+};
+async function handleBizImageChange(idx, input){
     const file = input.files[0]; if(!file) return;
     const path = `merchant-${merchant.id}/business/${Date.now()}.jpg`;
     const { error } = await sb.storage.from('merchant-uploads').upload(path, file);
     if(error){ alert('上传失败'); return; }
     const { data: { publicUrl } } = sb.storage.from('merchant-uploads').getPublicUrl(path);
     businessItems[idx].image = publicUrl;
-    renderBusinessItems();
+    renderBusinessList();
+    // 重新打开折叠可能丢失，简单处理：刷新后自动展开该条？为简化，直接提示保存后再展开。
 }
-async function saveBusinessData(){
+function saveBusinessItem(idx){
+    businessItems[idx].name = document.getElementById(`biz-name-${idx}`).value;
+    businessItems[idx].price = document.getElementById(`biz-price-${idx}`).value;
+    businessItems[idx].duration = document.getElementById(`biz-duration-${idx}`).value;
+    businessItems[idx].description = document.getElementById(`biz-desc-${idx}`).value;
+    // 图片通过单独的上传更新，已保存到对象
+    updateMerchantServiceData();
+    renderBusinessList();
+    alert('项目已更新');
+}
+function deleteBusinessItem(idx){
+    if(!confirm('删除此项目？')) return;
+    businessItems.splice(idx, 1);
+    updateMerchantServiceData();
+    renderBusinessList();
+}
+async function updateMerchantServiceData(){
     await sb.from('ztj_merchants').update({ service_data: { items: businessItems } }).eq('id', merchant.id);
-    alert('业务数据已保存');
-    loadBusinessTab();
 }
 
-// ========== 预约列表 ==========
+function toggleAddBusinessForm(){
+    document.getElementById('add-business-form').classList.toggle('hidden');
+}
+async function addBusinessItem(){
+    const name = document.getElementById('new-biz-name').value.trim();
+    const price = document.getElementById('new-biz-price').value.trim();
+    const duration = document.getElementById('new-biz-duration').value.trim();
+    const desc = document.getElementById('new-biz-desc').value.trim();
+    if(!name){ alert('名称必填'); return; }
+    let image = '';
+    const file = document.getElementById('new-biz-image').files[0];
+    if(file){
+        const path = `merchant-${merchant.id}/business/${Date.now()}.jpg`;
+        const { error } = await sb.storage.from('merchant-uploads').upload(path, file);
+        if(!error){
+            const { data: { publicUrl } } = sb.storage.from('merchant-uploads').getPublicUrl(path);
+            image = publicUrl;
+        }
+    }
+    businessItems.push({ name, price, duration, description: desc, image });
+    await updateMerchantServiceData();
+    document.getElementById('new-biz-name').value='';
+    document.getElementById('new-biz-price').value='';
+    document.getElementById('new-biz-duration').value='';
+    document.getElementById('new-biz-desc').value='';
+    document.getElementById('new-biz-image').value='';
+    toggleAddBusinessForm();
+    renderBusinessList();
+}
+
+// ---------- 预约列表（折叠+内嵌新增） ----------
 async function loadReservations(){
     const { data } = await sb.from('reservations').select('*').eq('merchant_id', merchant.id).order('created_at', false);
     let html = '';
     if(data && data.length){
-        data.forEach(r => {
-            html += `<div class="reservation-card">
-                <p><b>${r.reservation_date} ${r.time_slot_start}</b> | ${r.visitor_count}人 | ${r.unit}</p>
-                <p>活动ID：${r.activity_id} | 地点：${r.room||''}</p>
-                <p>联系人：${r.name} ${r.phone}</p>
-                <p>状态：${r.status}</p>
-                ${r.image ? `<img src="${r.image}" style="max-width:100%; max-height:120px;">` : ''}
-                <p>备注：${r.remark||''}</p>
-                ${r.status==='pending' ? `<button class="btn btn-primary" onclick="updateReservation(${r.id},'confirmed')">确认</button> <button class="btn btn-danger" onclick="updateReservation(${r.id},'rejected')">拒绝</button>` : ''}
-                <button class="btn btn-default" onclick="editReservation(${r.id})">编辑</button>
-                <button class="btn btn-danger" onclick="deleteReservation(${r.id})">删除</button>
+        data.forEach((r, idx) => {
+            html += `<div class="reservation-card card">
+                <div class="item-header" onclick="toggleReservationDetail(${idx})">
+                    <span>${idx+1}. ${r.reservation_date} ${r.time_slot_start} | ${r.visitor_count}人 | ${r.unit||''} | ${r.name}</span>
+                </div>
+                <div id="res-detail-${idx}" class="item-detail hidden">
+                    <p><b>活动：</b>${r.activity_id||'未指定'} <b>地点：</b>${r.room||''}</p>
+                    <p><b>联系人：</b>${r.name} ${r.phone}</p>
+                    <p><b>单位：</b>${r.unit||''} <b>人数：</b>${r.visitor_count}</p>
+                    <p><b>备注：</b>${r.remark||''}</p>
+                    ${r.image ? `<img src="${r.image}" class="upload-preview">` : ''}
+                    <p><b>状态：</b>${r.status}</p>
+                    <div style="display:flex; gap:6px; flex-wrap:wrap;">
+                        ${r.status==='pending' ? `<button class="btn btn-primary" onclick="updateReservation(${r.id},'confirmed')">确认</button><button class="btn btn-danger" onclick="updateReservation(${r.id},'rejected')">拒绝</button>` : ''}
+                        <button class="btn btn-default" onclick="editReservationInline(${idx}, ${r.id})">编辑</button>
+                        <button class="btn btn-danger" onclick="deleteReservation(${r.id})">删除</button>
+                    </div>
+                    <div id="res-edit-${idx}" class="hidden" style="margin-top:8px;"></div>
+                </div>
             </div>`;
         });
     } else html = '<p>暂无预约</p>';
     document.getElementById('reservation-list').innerHTML = html;
 }
+window.toggleReservationDetail = function(idx){
+    document.getElementById('res-detail-'+idx).classList.toggle('hidden');
+};
+async function updateReservation(id, status){
+    await sb.from('reservations').update({status}).eq('id',id);
+    loadReservations();
+}
+async function deleteReservation(id){
+    if(confirm('确定删除此预约？')){ await sb.from('reservations').delete().eq('id',id); loadReservations(); }
+}
+
+function toggleAddReservationForm(){
+    document.getElementById('add-reservation-form').classList.toggle('hidden');
+}
 async function addReservation(){
-    const date = prompt('预约日期 (YYYY-MM-DD)');
-    const time = prompt('时段 (如 09:00-10:00)');
-    const name = prompt('联系人');
-    const phone = prompt('电话');
-    const unit = prompt('单位');
-    const count = prompt('人数');
-    if(!date||!time||!name||!phone) return;
+    const date = document.getElementById('new-res-date').value;
+    const time = document.getElementById('new-res-time').value;
+    const name = document.getElementById('new-res-name').value.trim();
+    const phone = document.getElementById('new-res-phone').value.trim();
+    const unit = document.getElementById('new-res-unit').value.trim();
+    const count = parseInt(document.getElementById('new-res-count').value) || 0;
+    const activity = document.getElementById('new-res-activity').value.trim();
+    const room = document.getElementById('new-res-room').value.trim();
+    const remark = document.getElementById('new-res-remark').value.trim();
+    if(!date||!time||!name||!phone){ alert('请填写必填项'); return; }
     const { error } = await sb.from('reservations').insert({
         merchant_id: merchant.id,
         reservation_date: date,
         time_slot_start: time,
-        name, phone, unit, visitor_count: parseInt(count)||0,
+        name, phone, unit, visitor_count: count,
+        activity_id: activity, room, remark,
         status: 'pending'
     });
-    if(error) alert('新增失败');
-    else loadReservations();
-}
-async function updateReservation(id, status){ await sb.from('reservations').update({status}).eq('id',id); loadReservations(); }
-async function editReservation(id){
-    const remark = prompt('修改备注');
-    if(remark !== null) await sb.from('reservations').update({remark}).eq('id',id);
+    if(error){ alert('保存失败：'+error.message); return; }
+    // 清空表单
+    document.getElementById('new-res-date').value='';
+    document.getElementById('new-res-time').value='';
+    document.getElementById('new-res-name').value='';
+    document.getElementById('new-res-phone').value='';
+    document.getElementById('new-res-unit').value='';
+    document.getElementById('new-res-count').value='';
+    document.getElementById('new-res-activity').value='';
+    document.getElementById('new-res-room').value='';
+    document.getElementById('new-res-remark').value='';
+    toggleAddReservationForm();
     loadReservations();
 }
-async function deleteReservation(id){ if(confirm('删除此预约？')){ await sb.from('reservations').delete().eq('id',id); loadReservations(); } }
 
-// 预约设置、活动模板、留言、基本信息省略（保持之前版本）
-// ... 请将之前提供过的 loadReserveSettings, loadActivities, loadMerchantFeedbacks, saveInfo 等函数补充完整
+// ---------- 预约设置、活动模板、留言、基本信息 (保持之前稳定代码) ----------
+// 以下是预留函数，请将之前可用的对应功能粘贴至此
+async function loadReserveSettings(){
+    const { data } = await sb.from('reservation_settings').select('*').eq('merchant_id', merchant.id);
+    timeSlots = data || [];
+    if(timeSlots.length){
+        document.getElementById('day-limit').value = timeSlots[0].day_total_limit || 10;
+        document.getElementById('team-max').value = timeSlots[0].team_max_size || 50;
+    }
+    renderTimeSlots();
+}
+function renderTimeSlots(){
+    let html = '';
+    timeSlots.forEach((s,i)=>{
+        html += `<div class="time-slot-item">
+            <input type="time" value="${s.time_slot_start}" onchange="updateSlot(${i},'start',this.value)"> 至
+            <input type="time" value="${s.time_slot_end}" onchange="updateSlot(${i},'end',this.value)">
+            最多团队 <input type="number" value="${s.max_teams}" style="width:60px" onchange="updateSlot(${i},'max_teams',this.value)">
+            <button class="btn btn-danger" onclick="removeSlot(${i})">删除</button>
+        </div>`;
+    });
+    document.getElementById('time-slots').innerHTML = html || '<p>暂无时段</p>';
+}
+function addTimeSlot(){ timeSlots.push({time_slot_start:'09:00', time_slot_end:'10:00', max_teams:1}); renderTimeSlots(); }
+function updateSlot(idx, field, value){
+    if(field==='start') timeSlots[idx].time_slot_start = value;
+    else if(field==='end') timeSlots[idx].time_slot_end = value;
+    else timeSlots[idx].max_teams = parseInt(value)||1;
+}
+function removeSlot(idx){ timeSlots.splice(idx,1); renderTimeSlots(); }
+async function saveReserveSettings(){
+    const dayLimit = parseInt(document.getElementById('day-limit').value)||10;
+    const teamMax = parseInt(document.getElementById('team-max').value)||50;
+    await sb.from('reservation_settings').delete().eq('merchant_id', merchant.id);
+    if(timeSlots.length){
+        const data = timeSlots.map(s=>({
+            merchant_id: merchant.id,
+            time_slot_start: s.time_slot_start,
+            time_slot_end: s.time_slot_end,
+            max_teams: s.max_teams,
+            day_total_limit: dayLimit,
+            team_max_size: teamMax
+        }));
+        await sb.from('reservation_settings').insert(data);
+    }
+    alert('已保存');
+}
+async function loadActivities(){
+    const { data } = await sb.from('reservation_activities').select('*').eq('merchant_id', merchant.id);
+    let html = '';
+    data.forEach(a=>{
+        html += `<div class="card"><b>${a.title}</b> (${a.duration||0}分钟) 地点：${a.location||''}<button class="btn btn-default" onclick="editActivity(${a.id})">编辑</button><button class="btn btn-danger" onclick="deleteActivity(${a.id})">删除</button></div>`;
+    });
+    document.getElementById('activity-list').innerHTML = html || '<p>暂无活动</p>';
+}
+async function addActivity(){
+    const title = prompt('活动名称'), loc = prompt('地点'), dur = prompt('时长(分钟)'), desc = prompt('描述');
+    if(!title) return;
+    await sb.from('reservation_activities').insert({merchant_id: merchant.id, title, location: loc, duration: parseInt(dur)||60, description: desc});
+    loadActivities();
+}
+async function deleteActivity(id){ if(confirm('删除？')){ await sb.from('reservation_activities').delete().eq('id',id); loadActivities(); } }
 
+async function loadMerchantFeedbacks(){
+    const { data } = await sb.from('ztj_feedbacks').select('*').eq('merchant_id', merchant.id).order('created_at', false);
+    let html = '';
+    data.forEach(f=>{
+        html += `<div class="card"><p>${f.message}</p><small>${new Date(f.created_at).toLocaleString()}</small><p>${f.reply||'暂未回复'}</p><textarea id="reply-${f.id}">${f.reply||''}</textarea><button class="btn btn-primary" onclick="replyFeedback(${f.id})">回复</button></div>`;
+    });
+    document.getElementById('feedback-list').innerHTML = html || '<p>暂无留言</p>';
+}
+async function replyFeedback(id){
+    const reply = document.getElementById('reply-'+id).value;
+    await sb.from('ztj_feedbacks').update({reply}).eq('id',id);
+    loadMerchantFeedbacks();
+}
+
+async function saveInfo(){
+    const updates = {
+        status: document.getElementById('status').value,
+        phone: document.getElementById('phone').value,
+        address: document.getElementById('address').value,
+        parking_spots: parseInt(document.getElementById('parking').value)||0,
+        intro: document.getElementById('intro').value,
+        business_type: document.getElementById('business_type').value
+    };
+    await sb.from('ztj_merchants').update(updates).eq('id', merchant.id);
+    alert('基本信息已保存');
+}
+
+// 初始化
 checkSession();
 </script>
 </body>

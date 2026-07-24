@@ -106,7 +106,7 @@
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="config.js"></script>
+<script src="config.js?v=20260724"></script>
 <script>
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 let map, allPois=[], generatedTripData=null;
@@ -165,11 +165,12 @@ function renderPOIs(pois){
     });
 }
 
-// ---------- 商户详情（完全从数据库实时查询） ----------
+// ---------- 商户详情（实时查询 + 业务展示 + 预约入口） ----------
 async function showPoiDetail(poi){
-    // 每次点击都重新查询最新的商户信息
+    console.log('正在加载商户信息，POI ID:', poi.id);
     const { data: m, error } = await sb.from('ztj_merchants').select('*').eq('poi_id', poi.id).maybeSingle();
-    if(error) console.error(error);
+    if(error) console.error('商户查询错误：', error);
+    console.log('商户数据：', m);
     document.getElementById('merchantDetailTitle').textContent = poi.name;
     let html = '';
 
@@ -196,7 +197,7 @@ async function showPoiDetail(poi){
              <p>📞 ${phone} | 状态：${status} | 停车位：${parking}</p>
              <p>${poi.description||''}</p>`;
 
-    // 预约按钮（如果允许预约）
+    // 预约按钮
     if(m && m.allow_reserve){
         html += `<button class="reserve-btn" onclick="openReservePanel('${m.id}')">📋 研学预约</button>`;
     }
@@ -204,13 +205,10 @@ async function showPoiDetail(poi){
     openPanel('merchantDetailPanel');
 }
 
-// ---------- 红色研学预约（卡片式活动选择） ----------
+// ---------- 红色研学预约（卡片式） ----------
 async function openReservePanel(merchantId){
     const { data: activities } = await sb.from('reservation_activities').select('*').eq('merchant_id', merchantId);
-    if(!activities || activities.length===0){
-        alert('该景区暂无活动');
-        return;
-    }
+    if(!activities || activities.length===0){ alert('该景区暂无活动'); return; }
     let html = '<div style="display:flex; flex-wrap:wrap; gap:10px;">';
     activities.forEach(a => {
         html += `<div class="card" style="width:45%; cursor:pointer; padding:10px;" onclick="selectActivity('${merchantId}', ${a.id})">
@@ -221,7 +219,6 @@ async function openReservePanel(merchantId){
     document.getElementById('reserveContent').innerHTML = html;
     openPanel('reservePanel');
 }
-
 async function selectActivity(merchantId, activityId){
     const { data: activity } = await sb.from('reservation_activities').select('*').eq('id', activityId).single();
     if(!activity) return;
@@ -295,7 +292,7 @@ async function showRouteDetail(id){
     document.body.appendChild(panel);
 }
 
-// ---------- 自设行程（完整逻辑，同上） ----------
+// ---------- 自设行程（完整逻辑，已稳定） ----------
 function toggleCustomTripSection(){ document.getElementById('customTripSection').classList.toggle('hidden'); if(!document.getElementById('customTripSection').classList.contains('hidden')){ buildMainPoiOptions(); resetRouteLegs(); } }
 function buildMainPoiOptions(){
     const allMain = allPois.filter(p => !p.parent_id);

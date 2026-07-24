@@ -178,25 +178,27 @@ function renderPOIs(pois){
     });
 }
 
-// ---------- 商户详情（业务 + 基本信息 + 预约入口） ----------
+// ---------- 商户详情（优先业务项目、基本信息、预约入口） ----------
 async function showPoiDetail(poi){
     const { data: m } = await sb.from('ztj_merchants').select('*').eq('poi_id', poi.id).maybeSingle();
     document.getElementById('merchantDetailTitle').textContent = poi.name;
     let html = '';
+    // 业务项目
     if(m && m.service_data && m.service_data.items && m.service_data.items.length){
         html += '<h4 style="margin-bottom:10px;">📦 业务项目</h4>';
         m.service_data.items.forEach(item => {
             if(!item.name) return;
-            html += `<div class="card"><b>${item.name}</b> ${item.price ? item.price : ''} ${item.duration||''} ${item.description ? '<p>'+item.description+'</p>' : ''} ${item.image ? '<img src="'+item.image+'" style="max-width:100%; max-height:120px; border-radius:4px;">' : ''}</div>`;
+            html += `<div class="card"><b>${item.name}</b> ${item.price||''} ${item.duration||''} ${item.description ? '<p>'+item.description+'</p>' : ''} ${item.image ? '<img src="'+item.image+'" style="max-width:100%; max-height:120px; border-radius:4px;">' : ''}</div>`;
         });
     }
-    html += `<hr><p>📞 ${m?.phone||'未提供'} | 状态：${m?.status==='open'?'营业':'休息'} | 停车位：${m?.parking_spots||0}</p><p>${poi.description||''}</p>`;
+    html += `<hr><p>📞 ${m?.phone||'未提供'} | 状态：${m?.status==='open'?'营业':'休息'} | 停车位：${m?.parking_spots||0}</p>`;
+    html += `<p>${poi.description||''}</p>`;
     if(m && m.allow_reserve) html += `<button class="reserve-btn" onclick="openReservePanel('${m.id}')">📋 研学预约</button>`;
     document.getElementById('merchantDetailContent').innerHTML = html;
     openPanel('merchantDetailPanel');
 }
 
-// ---------- 红色研学预约 ----------
+// ---------- 红色研学预约（卡片式） ----------
 async function openReservePanel(merchantId){
     const { data: activities } = await sb.from('reservation_activities').select('*').eq('merchant_id', merchantId);
     if(!activities || activities.length===0){ alert('该景区暂无活动'); return; }
@@ -283,7 +285,7 @@ async function showRouteDetail(id){
     document.body.appendChild(panel);
 }
 
-// ---------- 自设行程 ----------
+// ---------- 自设行程（完整稳定版） ----------
 function toggleCustomTripSection(){ document.getElementById('customTripSection').classList.toggle('hidden'); if(!document.getElementById('customTripSection').classList.contains('hidden')){ buildMainPoiOptions(); resetRouteLegs(); } }
 function buildMainPoiOptions(){
     const allMain = allPois.filter(p => !p.parent_id);
@@ -320,7 +322,7 @@ async function updateAllTimes(){
     }
 }
 
-// 时间线生成（完整版：交通不截断、游览8-18点、就餐插入）
+// 时间线生成（交通不截断、游览8-18点、就餐插入）
 function generateTimeline(nodes, startDate, startTime){
     let curDate = new Date(startDate);
     let [h,m] = startTime.split(':').map(Number);

@@ -34,6 +34,9 @@
         .my-tab.active { background:#2e7d32; color:white; }
         .route-node { display:flex; gap:8px; align-items:center; margin:8px 0; flex-wrap:wrap; }
         .route-time { font-size:12px; color:#666; margin-left:8px; }
+        .sub-poi-section { margin-left:20px; border-left:2px solid #2e7d32; padding-left:10px; margin-top:6px; }
+        .sub-poi-item { display:flex; align-items:center; gap:6px; margin:4px 0; }
+        .lang-select { margin-bottom:15px; }
         .day-header { font-weight:bold; background:#e9f5ea; padding:6px; border-radius:4px; margin:12px 0 6px; }
         .warn-list { background:#fafafa; padding:10px; border-radius:8px; margin-top:10px; }
         .trip-line { padding:4px 0; border-bottom:1px dotted #eee; }
@@ -175,45 +178,25 @@ function renderPOIs(pois){
     });
 }
 
-// ---------- 商户详情（完整展示业务、基本信息、预约入口） ----------
+// ---------- 商户详情（业务 + 基本信息 + 预约入口） ----------
 async function showPoiDetail(poi){
     const { data: m } = await sb.from('ztj_merchants').select('*').eq('poi_id', poi.id).maybeSingle();
     document.getElementById('merchantDetailTitle').textContent = poi.name;
     let html = '';
-
-    // 1. 业务项目
     if(m && m.service_data && m.service_data.items && m.service_data.items.length){
         html += '<h4 style="margin-bottom:10px;">📦 业务项目</h4>';
         m.service_data.items.forEach(item => {
             if(!item.name) return;
-            let parts = [item.name];
-            if(item.price) parts.push(item.price);
-            if(item.duration) parts.push(item.duration);
-            let desc = item.description || '';
-            let img = item.image ? `<img src="${item.image}" style="max-width:100%; max-height:120px; border-radius:4px; margin-top:4px;">` : '';
-            html += `<div class="card">
-                <b>${parts.join(' - ')}</b>
-                ${desc ? `<p>${desc}</p>` : ''}
-                ${img}
-            </div>`;
+            html += `<div class="card"><b>${item.name}</b> ${item.price ? item.price : ''} ${item.duration||''} ${item.description ? '<p>'+item.description+'</p>' : ''} ${item.image ? '<img src="'+item.image+'" style="max-width:100%; max-height:120px; border-radius:4px;">' : ''}</div>`;
         });
     }
-
-    // 2. 基本信息
-    html += '<hr style="margin:10px 0;">';
-    html += `<p>📞 ${m?.phone||'未提供'} | 状态：${m?.status==='open'?'营业':m?.status==='closed'?'休息':'繁忙'} | 停车位：${m?.parking_spots||0}</p>`;
-    html += `<p>${poi.description||''}</p>`;
-
-    // 3. 预约入口（仅当商户允许预约）
-    if(m && m.allow_reserve) {
-        html += `<button class="reserve-btn" onclick="openReservePanel('${m.id}')">📋 研学预约</button>`;
-    }
-
+    html += `<hr><p>📞 ${m?.phone||'未提供'} | 状态：${m?.status==='open'?'营业':'休息'} | 停车位：${m?.parking_spots||0}</p><p>${poi.description||''}</p>`;
+    if(m && m.allow_reserve) html += `<button class="reserve-btn" onclick="openReservePanel('${m.id}')">📋 研学预约</button>`;
     document.getElementById('merchantDetailContent').innerHTML = html;
     openPanel('merchantDetailPanel');
 }
 
-// ---------- 红色研学预约（卡片式选择活动） ----------
+// ---------- 红色研学预约 ----------
 async function openReservePanel(merchantId){
     const { data: activities } = await sb.from('reservation_activities').select('*').eq('merchant_id', merchantId);
     if(!activities || activities.length===0){ alert('该景区暂无活动'); return; }
@@ -227,51 +210,36 @@ async function openReservePanel(merchantId){
     document.getElementById('reserveContent').innerHTML = html;
     openPanel('reservePanel');
 }
-
 async function selectActivity(merchantId, activityId){
     const { data: activity } = await sb.from('reservation_activities').select('*').eq('id', activityId).single();
     if(!activity) return;
+    const { data: settings } = await sb.from('reservation_settings').select('*').eq('merchant_id', merchantId);
     let html = `<h4>${activity.title}</h4>
-        <div class="form-group"><label>活动地点</label><select id="reserve-room">
-            <option>广场</option><option>园区</option><option>核心区</option><option>英烈墙</option><option>会议室</option>
-        </select></div>
+        <div class="form-group"><label>活动地点</label><select id="reserve-room"><option>广场</option><option>园区</option><option>核心区</option><option>英烈墙</option><option>会议室</option></select></div>
         <div class="form-group"><label>单位（团队）名称</label><input id="reserve-unit"></div>
         <div class="form-group"><label>联系人</label><input id="reserve-name"></div>
         <div class="form-group"><label>联系电话</label><input id="reserve-phone"></div>
         <div class="form-group"><label>人数</label><input type="number" id="reserve-count" min="1"></div>
         <div class="form-group"><label>预约日期</label><input type="date" id="reserve-date" min="${new Date().toISOString().split('T')[0]}"></div>
-        <div class="form-group"><label>时段</label><div id="time-slots"></div></div>
+        <div class="form-group"><label>时段</label><div id="time-slots">${settings.map(s => `<span class="time-slot" onclick="selectTimeSlot(this,'${s.time_slot_start}','${s.time_slot_end}')">${s.time_slot_start}-${s.time_slot_end}</span>`).join('')}</div></div>
         <div class="form-group"><label>介绍/备注</label><textarea id="reserve-remark" rows="2"></textarea></div>
         <div class="form-group"><label>上传图片</label><input type="file" accept="image/*" id="reserve-image"></div>
-        <button class="btn btn-primary" onclick="submitReservation('${merchantId}', ${activityId})" style="margin-top:12px;">提交预约</button>`;
+        <button class="btn btn-primary" onclick="submitReservation('${merchantId}', '${activityId}')" style="margin-top:12px;">提交预约</button>`;
     document.getElementById('reserveContent').innerHTML = html;
-    document.getElementById('reserve-date').onchange = ()=> loadTimeSlots(merchantId);
+    window.selectedTimeSlotStart = null;
+    window.selectedTimeSlotEnd = null;
     openPanel('reservePanel');
 }
-
-async function loadTimeSlots(merchantId){
-    const date = document.getElementById('reserve-date').value;
-    const { data: settings } = await sb.from('reservation_settings').select('*').eq('merchant_id', merchantId);
-    const { data: existing } = await sb.from('reservations').select('time_slot_start,status').eq('merchant_id',merchantId).eq('reservation_date',date);
-    const booked = {};
-    existing.forEach(r => { if(r.status!=='rejected') booked[r.time_slot_start] = (booked[r.time_slot_start]||0)+1; });
-    let html = '';
-    settings.forEach(s => {
-        const count = booked[s.time_slot_start] || 0;
-        const full = count >= s.max_teams;
-        html += `<span class="time-slot ${full?'full':''}" onclick="${full?'':'selectTimeSlot(this,\''+s.time_slot_start+'\')'}">${s.time_slot_start}-${s.time_slot_end} (${count}/${s.max_teams})</span>`;
-    });
-    document.getElementById('time-slots').innerHTML = html || '<p>暂无可用时段</p>';
-    window.selectedTimeSlot = null;
-}
-function selectTimeSlot(el, slot){
+function selectTimeSlot(el, start, end){
     document.querySelectorAll('.time-slot').forEach(s => s.classList.remove('selected'));
     el.classList.add('selected');
-    window.selectedTimeSlot = slot;
+    window.selectedTimeSlotStart = start;
+    window.selectedTimeSlotEnd = end;
 }
 async function submitReservation(merchantId, activityId){
+    if(!window.selectedTimeSlotStart){ alert('请选择时段'); return; }
     const date = document.getElementById('reserve-date').value;
-    if(!window.selectedTimeSlot){ alert('请选择时段'); return; }
+    if(!date){ alert('请选择日期'); return; }
     const unit = document.getElementById('reserve-unit').value.trim();
     const name = document.getElementById('reserve-name').value.trim();
     const phone = document.getElementById('reserve-phone').value.trim();
@@ -292,11 +260,12 @@ async function submitReservation(merchantId, activityId){
         user_id: getUserId(),
         name, phone, unit, visitor_count: count,
         reservation_date: date,
-        time_slot_start: window.selectedTimeSlot,
+        time_slot_start: window.selectedTimeSlotStart,
+        time_slot_end: window.selectedTimeSlotEnd,
         room, remark, image: imageUrl, status:'pending'
     });
     if(error) alert('提交失败：'+error.message);
-    else { alert('预约已提交'); closePanel('reservePanel'); }
+    else { alert('预约已提交，请等待商户确认'); closePanel('reservePanel'); }
 }
 
 // ---------- 推荐路线 ----------
@@ -314,7 +283,7 @@ async function showRouteDetail(id){
     document.body.appendChild(panel);
 }
 
-// ---------- 自设行程（完整逻辑） ----------
+// ---------- 自设行程 ----------
 function toggleCustomTripSection(){ document.getElementById('customTripSection').classList.toggle('hidden'); if(!document.getElementById('customTripSection').classList.contains('hidden')){ buildMainPoiOptions(); resetRouteLegs(); } }
 function buildMainPoiOptions(){
     const allMain = allPois.filter(p => !p.parent_id);
@@ -351,6 +320,7 @@ async function updateAllTimes(){
     }
 }
 
+// 时间线生成（完整版：交通不截断、游览8-18点、就餐插入）
 function generateTimeline(nodes, startDate, startTime){
     let curDate = new Date(startDate);
     let [h,m] = startTime.split(':').map(Number);
@@ -394,6 +364,7 @@ function generateTimeline(nodes, startDate, startTime){
 
     for(let i=1; i<nodes.length; i++){
         const cur = nodes[i];
+        // 交通
         let travelTime = cur.transportTime || 0;
         if(travelTime > 0){
             let remainingTravel = travelTime;
@@ -412,6 +383,7 @@ function generateTimeline(nodes, startDate, startTime){
             addLine(curMin, `⚠️ 前往 ${cur.name} 交通耗时未知`);
         }
 
+        // 游览
         if(cur.visitDuration > 0 && !isNonVisitPoi(cur.id)){
             let visitLeft = cur.visitDuration;
             while(visitLeft > 0){
@@ -514,7 +486,7 @@ function renderMyTrip(){
         if(trip.tips) html += `<div class="warn-list">${trip.tips.map(t=>`<div>${t}</div>`).join('')}</div>`;
         html += `<button class="btn btn-danger" onclick="event.stopPropagation(); deleteTrip(${i})">删除</button></div></div>`;
     });
-    document.getElementById('myTripContent').innerHTML = html || '<p>暂无行程</p>';
+    document.getElementById('myTripContent').innerHTML = html || '<p>暂无保存的行程</p>';
 }
 window.toggleTripDetail = function(idx){ document.getElementById('trip-detail-'+idx).classList.toggle('hidden'); };
 function deleteTrip(idx){
@@ -531,7 +503,8 @@ async function loadMyReservations(){
     let html = '';
     if(data && data.length){
         data.forEach(r => {
-            html += `<div class="card"><b>${r.reservation_date} ${r.time_slot_start}</b> | ${r.visitor_count}人 | ${r.unit}<p>联系人：${r.name} ${r.phone}</p><p>地点：${r.room||''}</p><p>状态：${r.status}</p></div>`;
+            const statusMap = { pending:'预约中', confirmed:'已确认', rejected:'已拒绝' };
+            html += `<div class="card"><b>${r.reservation_date} ${r.time_slot_start}-${r.time_slot_end||''}</b> | ${r.visitor_count}人 | ${r.unit}<p>联系人：${r.name} ${r.phone}</p><p>地点：${r.room||''}</p><p>状态：${statusMap[r.status]||r.status}</p></div>`;
         });
     } else html = '<p>暂无预约</p>';
     document.getElementById('myReservationContent').innerHTML = html;

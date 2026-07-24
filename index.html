@@ -165,30 +165,21 @@ function renderPOIs(pois){
     });
 }
 
-// ---------- 商户详情（实时查询 + 业务展示 + 预约入口） ----------
+// ---------- 商户详情（业务 + 基本信息 + 预约入口） ----------
 async function showPoiDetail(poi){
-    console.log('正在加载商户信息，POI ID:', poi.id);
-    const { data: m, error } = await sb.from('ztj_merchants').select('*').eq('poi_id', poi.id).maybeSingle();
-    if(error) console.error('商户查询错误：', error);
-    console.log('商户数据：', m);
+    const { data: m } = await sb.from('ztj_merchants').select('*').eq('poi_id', poi.id).maybeSingle();
     document.getElementById('merchantDetailTitle').textContent = poi.name;
     let html = '';
-
-    // 业务项目（优先显示）
+    // 业务项目
     if(m && m.service_data && m.service_data.items && Array.isArray(m.service_data.items)){
         const items = m.service_data.items.filter(item => item.name);
         if(items.length > 0){
             html += '<h4 style="margin-bottom:10px;">📦 业务项目</h4>';
             items.forEach(item => {
-                let priceStr = item.price ? item.price : '';
-                let durationStr = item.duration ? item.duration : '';
-                let descStr = item.description ? `<p>${item.description}</p>` : '';
-                let imgStr = item.image ? `<img src="${item.image}" style="max-width:100%; max-height:120px; border-radius:4px; margin-top:4px;">` : '';
-                html += `<div class="card"><b>${item.name}</b> ${priceStr} ${durationStr} ${descStr} ${imgStr}</div>`;
+                html += `<div class="card"><b>${item.name}</b> ${item.price||''} ${item.duration||''} ${item.description ? '<p>'+item.description+'</p>' : ''} ${item.image ? '<img src="'+item.image+'" style="max-width:100%; max-height:120px; border-radius:4px;">' : ''}</div>`;
             });
         }
     }
-
     // 基本信息
     let phone = m?.phone || '未提供';
     let status = m?.status === 'open' ? '营业中' : (m?.status === 'closed' ? '休息' : '繁忙');
@@ -196,7 +187,6 @@ async function showPoiDetail(poi){
     html += `<hr style="margin:10px 0;">
              <p>📞 ${phone} | 状态：${status} | 停车位：${parking}</p>
              <p>${poi.description||''}</p>`;
-
     // 预约按钮
     if(m && m.allow_reserve){
         html += `<button class="reserve-btn" onclick="openReservePanel('${m.id}')">📋 研学预约</button>`;
@@ -292,7 +282,7 @@ async function showRouteDetail(id){
     document.body.appendChild(panel);
 }
 
-// ---------- 自设行程（完整逻辑，已稳定） ----------
+// ---------- 自设行程（完整稳定版） ----------
 function toggleCustomTripSection(){ document.getElementById('customTripSection').classList.toggle('hidden'); if(!document.getElementById('customTripSection').classList.contains('hidden')){ buildMainPoiOptions(); resetRouteLegs(); } }
 function buildMainPoiOptions(){
     const allMain = allPois.filter(p => !p.parent_id);

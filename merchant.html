@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>商户管理 - 通江文旅</title>
     <style>
-        body { font-family: system-ui, -apple-system, sans-serif; background:#f5f5f5; margin:0; }
+        body { font-family: system-ui, sans-serif; background:#f5f5f5; margin:0; }
         .header { background:#1B5E20; color:white; padding:12px 20px; display:flex; justify-content:space-between; align-items:center; }
         .container { max-width:1000px; margin:20px auto; background:white; padding:20px; border-radius:8px; }
         .tab { display:flex; gap:8px; margin-bottom:20px; flex-wrap:wrap; }
@@ -45,8 +45,6 @@
         <div class="tab" id="main-tabs">
             <button class="active" onclick="switchTab('business')">📦 业务管理</button>
             <button onclick="switchTab('reservations')">📅 预约列表</button>
-            <button onclick="switchTab('reserve-settings')" class="reserve-tab hidden">⚙️ 预约设置</button>
-            <button onclick="switchTab('activities')" class="reserve-tab hidden">📋 活动模板</button>
             <button onclick="switchTab('feedbacks')">💬 留言</button>
             <button onclick="switchTab('info')">🏪 基本信息</button>
         </div>
@@ -58,7 +56,7 @@
             <div id="add-business-form" class="hidden card" style="margin-top:8px;">
                 <h4>新增业务项目</h4>
                 <div class="form-group"><label>名称</label><input id="new-biz-name"></div>
-                <div class="form-group"><label>价格</label><input type="number" id="new-biz-price" placeholder="数字，如 220"></div>
+                <div class="form-group"><label>价格</label><input type="number" id="new-biz-price" placeholder="数字"></div>
                 <div class="form-group"><label>时限/时长</label><input id="new-biz-duration" placeholder="如 24小时"></div>
                 <div class="form-group"><label>描述</label><textarea id="new-biz-desc" rows="2"></textarea></div>
                 <div class="form-group"><label>图片</label><input type="file" accept="image/*" id="new-biz-image"></div>
@@ -67,8 +65,20 @@
             </div>
         </div>
 
-        <!-- 预约列表 -->
+        <!-- 预约列表（含活动类别管理） -->
         <div id="tab-reservations" class="hidden">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+                <h3>预约记录</h3>
+                <button class="btn btn-default" onclick="toggleCategoryManager()">管理活动类别</button>
+            </div>
+            <div id="category-manager" class="hidden card" style="margin-bottom:10px;">
+                <h4>活动类别</h4>
+                <div id="activity-category-list"></div>
+                <div class="activity-manage">
+                    <input id="new-category-name" placeholder="新类别名称" style="width:70%; display:inline-block;">
+                    <button class="btn btn-primary" onclick="addActivityCategory()">添加</button>
+                </div>
+            </div>
             <div id="reservation-list"></div>
             <button class="btn btn-primary" onclick="toggleAddReservationForm()" style="margin-top:10px;">+ 新增预约</button>
             <div id="add-reservation-form" class="hidden card" style="margin-top:8px;">
@@ -87,34 +97,6 @@
                 <button class="btn btn-primary" onclick="addReservation()">保存预约</button>
                 <button class="btn btn-default" onclick="toggleAddReservationForm()">取消</button>
             </div>
-        </div>
-
-        <!-- 预约设置 -->
-        <div id="tab-reserve-settings" class="hidden">
-            <h3>每日总团队上限</h3><input type="number" id="day-limit" min="1" value="10">
-            <h3>每团最大人数</h3><input type="number" id="team-max" min="1" value="50">
-            <h3>可预约时段（每小时一段，8:00-17:00）</h3>
-            <div id="time-slots"></div>
-            <button onclick="addTimeSlot()">+ 时段</button>
-            <button class="btn btn-primary" onclick="saveReserveSettings()">保存</button>
-        </div>
-
-        <!-- 活动模板（管理活动类别） -->
-        <div id="tab-activities" class="hidden">
-            <h3>活动类别管理</h3>
-            <div id="activity-category-list"></div>
-            <div class="activity-manage">
-                <button class="btn btn-primary" onclick="toggleAddActivityCategory()">+ 添加类别</button>
-                <div id="add-activity-category-form" class="hidden card" style="margin-top:8px;">
-                    <div class="form-group"><label>类别名称</label><input id="new-category-name"></div>
-                    <button class="btn btn-primary" onclick="addActivityCategory()">添加</button>
-                    <button class="btn btn-default" onclick="toggleAddActivityCategory()">取消</button>
-                </div>
-            </div>
-            <hr style="margin:20px 0;">
-            <h3>活动模板</h3>
-            <div id="activity-list"></div>
-            <button class="btn btn-primary" onclick="addActivity()">+ 添加活动</button>
         </div>
 
         <!-- 留言 -->
@@ -142,11 +124,9 @@
 <script>
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 let merchant = null;
-let timeSlots = [];
 let businessItems = [];
 let activityCategories = [];
 
-// ---------- 会话 ----------
 async function checkSession(){
     const { data: { session } } = await sb.auth.getSession();
     if(session){
@@ -160,20 +140,12 @@ sb.auth.onAuthStateChange((event, session) => {
     else if(event==='SIGNED_OUT') showLogin();
 });
 function showLogin(){ document.getElementById('login-page').classList.remove('hidden'); document.getElementById('main').classList.add('hidden'); }
-function showMain(){ 
-    document.getElementById('login-page').classList.add('hidden'); 
-    document.getElementById('main').classList.remove('hidden'); 
-    document.getElementById('merchant-name').innerText = merchant.display_name; 
+function showMain(){
+    document.getElementById('login-page').classList.add('hidden');
+    document.getElementById('main').classList.remove('hidden');
+    document.getElementById('merchant-name').innerText = merchant.display_name;
     loadActivityCategories();
-    switchTab('business'); 
-    showReserveTabsIfAllowed(); 
-    // 加载基本信息到表单
-    document.getElementById('business_type').value = merchant.business_type || 'other';
-    document.getElementById('status').value = merchant.status || 'open';
-    document.getElementById('phone').value = merchant.phone || '';
-    document.getElementById('address').value = merchant.address || '';
-    document.getElementById('parking').value = merchant.parking_spots || 0;
-    document.getElementById('intro').value = merchant.intro || '';
+    switchTab('business');
 }
 async function login(){
     const email = document.getElementById('account').value.trim();
@@ -186,21 +158,15 @@ async function logout(){ await sb.auth.signOut(); showLogin(); }
 
 function switchTab(tab){
     document.querySelectorAll('#main-tabs button').forEach(b => b.classList.remove('active'));
-    const tabs = ['business','reservations','reserve-settings','activities','feedbacks','info'];
+    const tabs = ['business','reservations','feedbacks','info'];
     const idx = tabs.indexOf(tab);
     if(idx>=0) document.querySelectorAll('#main-tabs button')[idx].classList.add('active');
     tabs.forEach(t => document.getElementById('tab-'+t).classList.add('hidden'));
     document.getElementById('tab-'+tab).classList.remove('hidden');
     if(tab==='business') loadBusinessTab();
     if(tab==='reservations') { loadActivityCategoriesForSelect(); loadReservations(); }
-    if(tab==='reserve-settings') loadReserveSettings();
-    if(tab==='activities') { loadActivityCategories(); loadActivities(); }
     if(tab==='feedbacks') loadMerchantFeedbacks();
-}
-function showReserveTabsIfAllowed(){
-    const tabs = document.querySelectorAll('.reserve-tab');
-    if(merchant && merchant.allow_reserve) tabs.forEach(t => t.classList.remove('hidden'));
-    else tabs.forEach(t => t.classList.add('hidden'));
+    if(tab==='info') loadInfo();
 }
 
 // ---------- 活动类别管理 ----------
@@ -214,7 +180,7 @@ async function loadActivityCategories(){
 }
 function renderActivityCategories(){
     const container = document.getElementById('activity-category-list');
-    if(!activityCategories.length){ container.innerHTML = '<p>暂无活动类别</p>'; return; }
+    if(!activityCategories.length){ container.innerHTML = '<p>暂无类别</p>'; return; }
     let html = '<ul>';
     activityCategories.forEach((cat, idx) => {
         html += `<li>${cat} <button class="btn btn-danger" onclick="deleteActivityCategory(${idx})">删除</button></li>`;
@@ -222,17 +188,17 @@ function renderActivityCategories(){
     html += '</ul>';
     container.innerHTML = html;
 }
-function toggleAddActivityCategory(){
-    document.getElementById('add-activity-category-form').classList.toggle('hidden');
+function toggleCategoryManager(){
+    document.getElementById('category-manager').classList.toggle('hidden');
+    loadActivityCategories();
 }
 async function addActivityCategory(){
     const name = document.getElementById('new-category-name').value.trim();
     if(!name) return;
-    if(activityCategories.includes(name)){ alert('类别已存在'); return; }
+    if(activityCategories.includes(name)){ alert('已存在'); return; }
     activityCategories.push(name);
     await updateMerchantCategories();
     document.getElementById('new-category-name').value = '';
-    toggleAddActivityCategory();
     renderActivityCategories();
 }
 async function deleteActivityCategory(idx){
@@ -265,7 +231,7 @@ function loadBusinessTab(){
 }
 function renderBusinessList(){
     const container = document.getElementById('business-list');
-    if(!businessItems.length){ container.innerHTML = '<p>暂无业务项目，请添加</p>'; return; }
+    if(!businessItems.length){ container.innerHTML = '<p>暂无业务项目</p>'; return; }
     let html = '';
     businessItems.forEach((item, idx) => {
         if(!item.name) return;
@@ -305,10 +271,10 @@ function saveBusinessItem(idx){
     businessItems[idx].description = document.getElementById(`biz-desc-${idx}`).value;
     updateMerchantServiceData();
     renderBusinessList();
-    alert('项目已更新');
+    alert('已更新');
 }
 function deleteBusinessItem(idx){
-    if(!confirm('删除此项目？')) return;
+    if(!confirm('删除？')) return;
     businessItems.splice(idx, 1);
     updateMerchantServiceData();
     renderBusinessList();
@@ -380,7 +346,7 @@ async function loadReservations(){
 }
 window.toggleReservationDetail = function(idx){ document.getElementById('res-detail-'+idx).classList.toggle('hidden'); };
 async function updateReservation(id, status){ await sb.from('reservations').update({status}).eq('id',id); loadReservations(); }
-async function deleteReservation(id){ if(confirm('确定删除？')){ await sb.from('reservations').delete().eq('id',id); loadReservations(); } }
+async function deleteReservation(id){ if(confirm('删除？')){ await sb.from('reservations').delete().eq('id',id); loadReservations(); } }
 
 function toggleAddReservationForm(){
     document.getElementById('add-reservation-form').classList.toggle('hidden');
@@ -389,7 +355,7 @@ function toggleAddReservationForm(){
 async function addReservation(){
     const date = document.getElementById('new-res-date').value;
     const timeRange = document.getElementById('new-res-time').value;
-    const [startTime, endTime] = timeRange.split('-');
+    const [start, end] = timeRange.split('-');
     const name = document.getElementById('new-res-name').value.trim();
     const phone = document.getElementById('new-res-phone').value.trim();
     const unit = document.getElementById('new-res-unit').value.trim();
@@ -404,8 +370,8 @@ async function addReservation(){
     const { error } = await sb.from('reservations').insert({
         merchant_id: merchant.id,
         reservation_date: date,
-        time_slot_start: startTime,
-        time_slot_end: endTime,
+        time_slot_start: start,
+        time_slot_end: end,
         name, phone, unit, visitor_count: count,
         remark: finalRemark,
         room: room,
@@ -426,83 +392,6 @@ async function addReservation(){
     loadReservations();
 }
 
-// ---------- 预约设置 ----------
-async function loadReserveSettings(){
-    const { data } = await sb.from('reservation_settings').select('*').eq('merchant_id', merchant.id);
-    timeSlots = data || [];
-    if(timeSlots.length){
-        document.getElementById('day-limit').value = timeSlots[0].day_total_limit || 10;
-        document.getElementById('team-max').value = timeSlots[0].team_max_size || 50;
-    }
-    renderTimeSlots();
-}
-function renderTimeSlots(){
-    let html = '';
-    if(!timeSlots.length){
-        for(let h=8; h<17; h++){
-            const startStr = `${h.toString().padStart(2,'0')}:00`;
-            const endStr = `${(h+1).toString().padStart(2,'0')}:00`;
-            timeSlots.push({time_slot_start:startStr, time_slot_end:endStr, max_teams:1});
-        }
-    }
-    timeSlots.forEach((s,i)=>{
-        html += `<div class="time-slot-item">
-            <input type="time" value="${s.time_slot_start}" onchange="updateSlot(${i},'start',this.value)"> 至
-            <input type="time" value="${s.time_slot_end}" onchange="updateSlot(${i},'end',this.value)">
-            最多团队 <input type="number" value="${s.max_teams}" style="width:60px" onchange="updateSlot(${i},'max_teams',this.value)">
-            <button class="btn btn-danger" onclick="removeSlot(${i})">删除</button>
-        </div>`;
-    });
-    document.getElementById('time-slots').innerHTML = html || '<p>暂无时段</p>';
-}
-function addTimeSlot(){ timeSlots.push({time_slot_start:'09:00', time_slot_end:'10:00', max_teams:1}); renderTimeSlots(); }
-function updateSlot(idx, field, value){
-    if(field==='start') timeSlots[idx].time_slot_start = value;
-    else if(field==='end') timeSlots[idx].time_slot_end = value;
-    else timeSlots[idx].max_teams = parseInt(value)||1;
-}
-function removeSlot(idx){ timeSlots.splice(idx,1); renderTimeSlots(); }
-async function saveReserveSettings(){
-    const dayLimit = parseInt(document.getElementById('day-limit').value)||10;
-    const teamMax = parseInt(document.getElementById('team-max').value)||50;
-    await sb.from('reservation_settings').delete().eq('merchant_id', merchant.id);
-    if(timeSlots.length){
-        const data = timeSlots.map(s=>({
-            merchant_id: merchant.id,
-            time_slot_start: s.time_slot_start,
-            time_slot_end: s.time_slot_end,
-            max_teams: s.max_teams,
-            day_total_limit: dayLimit,
-            team_max_size: teamMax
-        }));
-        await sb.from('reservation_settings').insert(data);
-    }
-    alert('已保存');
-}
-
-// ---------- 活动模板 ----------
-async function loadActivities(){
-    const { data } = await sb.from('reservation_activities').select('*').eq('merchant_id', merchant.id);
-    let html = '';
-    data.forEach(a=>{
-        html += `<div class="card"><b>${a.title}</b> (${a.duration||0}分钟) 地点：${a.location||''}<button class="btn btn-default" onclick="editActivity(${a.id})">编辑</button><button class="btn btn-danger" onclick="deleteActivity(${a.id})">删除</button></div>`;
-    });
-    document.getElementById('activity-list').innerHTML = html || '<p>暂无活动</p>';
-}
-async function addActivity(){
-    const title = prompt('活动名称'), loc = prompt('地点'), dur = prompt('时长(分钟)'), desc = prompt('描述');
-    if(!title) return;
-    await sb.from('reservation_activities').insert({merchant_id: merchant.id, title, location: loc, duration: parseInt(dur)||60, description: desc});
-    loadActivities();
-}
-async function deleteActivity(id){ if(confirm('删除？')){ await sb.from('reservation_activities').delete().eq('id',id); loadActivities(); } }
-async function editActivity(id){
-    const { data: a } = await sb.from('reservation_activities').select().eq('id',id).single();
-    const title = prompt('名称', a.title), loc = prompt('地点', a.location), dur = prompt('时长', a.duration), desc = prompt('描述', a.description);
-    if(title) await sb.from('reservation_activities').update({title, location: loc, duration: dur, description: desc}).eq('id',id);
-    loadActivities();
-}
-
 // ---------- 留言 ----------
 async function loadMerchantFeedbacks(){
     const { data } = await sb.from('ztj_feedbacks').select('*').eq('merchant_id', merchant.id).order('created_at', false);
@@ -519,25 +408,28 @@ async function replyFeedback(id){
 }
 
 // ---------- 基本信息 ----------
+function loadInfo(){
+    document.getElementById('business_type').value = merchant.business_type || 'other';
+    document.getElementById('status').value = merchant.status || 'open';
+    document.getElementById('phone').value = merchant.phone || '';
+    document.getElementById('address').value = merchant.address || '';
+    document.getElementById('parking').value = merchant.parking_spots || 0;
+    document.getElementById('intro').value = merchant.intro || '';
+}
 async function saveInfo(){
     const updates = {
+        business_type: document.getElementById('business_type').value,
         status: document.getElementById('status').value,
         phone: document.getElementById('phone').value,
         address: document.getElementById('address').value,
         parking_spots: parseInt(document.getElementById('parking').value)||0,
-        intro: document.getElementById('intro').value,
-        business_type: document.getElementById('business_type').value
+        intro: document.getElementById('intro').value
     };
     const { error } = await sb.from('ztj_merchants').update(updates).eq('id', merchant.id);
-    if(!error) {
-        Object.assign(merchant, updates);
-        alert('基本信息已保存');
-    } else {
-        alert('保存失败：'+error.message);
-    }
+    if(!error) { Object.assign(merchant, updates); alert('已保存'); }
+    else alert('保存失败：'+error.message);
 }
 
-// 初始化
 checkSession();
 </script>
 </body>

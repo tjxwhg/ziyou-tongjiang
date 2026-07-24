@@ -325,15 +325,15 @@ async function loadReservations(){
             }
             html += `<div class="reservation-card card">
                 <div class="item-header" onclick="toggleReservationDetail(${idx})">
-                    <span>${idx+1}. ${r.reservation_date} ${r.time_slot_start}-${r.time_slot_end||''} | ${r.visitor_count}人 | ${r.unit||''} | ${r.name}</span>
+                    <span>${r.reservation_date} | ${r.time_slot_start}-${r.time_slot_end||''} | ${category||'未分类'} | ${r.name}</span>
                 </div>
                 <div id="res-detail-${idx}" class="item-detail hidden">
-                    <p><b>活动类别：</b>${category||'未指定'} <b>地点：</b>${r.room||''}</p>
-                    <p><b>联系人：</b>${r.name} ${r.phone}</p>
                     <p><b>单位：</b>${r.unit||''} <b>人数：</b>${r.visitor_count}</p>
-                    <p><b>备注：</b>${r.remark ? r.remark.replace('类别：'+category+'|', '').replace('类别：'+category, '') : ''}</p>
-                    ${r.image ? `<img src="${r.image}" class="upload-preview">` : ''}
+                    <p><b>电话：</b>${r.phone}</p>
+                    <p><b>地点：</b>${r.room||''}</p>
                     <p><b>状态：</b>${r.status}</p>
+                    ${r.remark ? '<p><b>备注：</b>'+r.remark.replace('类别：'+category+'|', '').replace('类别：'+category, '')+'</p>' : ''}
+                    ${r.image ? `<img src="${r.image}" class="upload-preview">` : ''}
                     <div style="display:flex; gap:6px; flex-wrap:wrap;">
                         ${r.status==='pending' ? `<button class="btn btn-primary" onclick="updateReservation(${r.id},'confirmed')">确认</button><button class="btn btn-danger" onclick="updateReservation(${r.id},'rejected')">拒绝</button>` : ''}
                         <button class="btn btn-danger" onclick="deleteReservation(${r.id})">删除</button>

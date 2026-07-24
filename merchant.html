@@ -57,8 +57,8 @@
             <div id="add-business-form" class="hidden card" style="margin-top:8px;">
                 <h4>新增业务项目</h4>
                 <div class="form-group"><label>名称</label><input id="new-biz-name"></div>
-                <div class="form-group"><label>价格 (¥)</label><input type="number" id="new-biz-price"></div>
-                <div class="form-group"><label>时限/时长</label><input id="new-biz-duration"></div>
+                <div class="form-group"><label>价格</label><input type="number" id="new-biz-price" placeholder="数字，如 220"></div>
+                <div class="form-group"><label>时限/时长</label><input id="new-biz-duration" placeholder="如 24小时"></div>
                 <div class="form-group"><label>描述</label><textarea id="new-biz-desc" rows="2"></textarea></div>
                 <div class="form-group"><label>图片</label><input type="file" accept="image/*" id="new-biz-image"></div>
                 <button class="btn btn-primary" onclick="addBusinessItem()">保存</button>
@@ -78,7 +78,7 @@
                 <div class="form-group"><label>电话</label><input id="new-res-phone"></div>
                 <div class="form-group"><label>单位</label><input id="new-res-unit"></div>
                 <div class="form-group"><label>人数</label><input type="number" id="new-res-count" min="1"></div>
-                <div class="form-group"><label>活动类别</label><input id="new-res-activity" placeholder="如 主题党日"></div>
+                <div class="form-group"><label>活动类别</label><input id="new-res-activity"></div>
                 <div class="form-group"><label>地点/场地</label><input id="new-res-room"></div>
                 <div class="form-group"><label>备注</label><textarea id="new-res-remark" rows="2"></textarea></div>
                 <button class="btn btn-primary" onclick="addReservation()">保存预约</button>
@@ -143,7 +143,7 @@ sb.auth.onAuthStateChange((event, session) => {
     else if(event==='SIGNED_OUT') showLogin();
 });
 function showLogin(){ document.getElementById('login-page').classList.remove('hidden'); document.getElementById('main').classList.add('hidden'); }
-function showMain(){ document.getElementById('login-page').classList.add('hidden'); document.getElementById('main').classList.remove('hidden'); document.getElementById('merchant-name').innerText = merchant.display_name; switchTab('business'); }
+function showMain(){ document.getElementById('login-page').classList.add('hidden'); document.getElementById('main').classList.remove('hidden'); document.getElementById('merchant-name').innerText = merchant.display_name; switchTab('business'); showReserveTabsIfAllowed(); }
 async function login(){
     const email = document.getElementById('account').value.trim();
     const pwd = document.getElementById('password').value;
@@ -166,11 +166,16 @@ function switchTab(tab){
     if(tab==='activities') loadActivities();
     if(tab==='feedbacks') loadMerchantFeedbacks();
 }
+function showReserveTabsIfAllowed(){
+    const tabs = document.querySelectorAll('.reserve-tab');
+    if(merchant && merchant.allow_reserve) tabs.forEach(t => t.classList.remove('hidden'));
+    else tabs.forEach(t => t.classList.add('hidden'));
+}
 
-// ---------- 业务管理（折叠带序号） ----------
+// ---------- 业务管理 ----------
 function loadBusinessTab(){
     const data = merchant.service_data && merchant.service_data.items ? merchant.service_data.items : [];
-    businessItems = JSON.parse(JSON.stringify(data)); // 深拷贝
+    businessItems = JSON.parse(JSON.stringify(data));
     renderBusinessList();
 }
 function renderBusinessList(){
@@ -178,9 +183,10 @@ function renderBusinessList(){
     if(!businessItems.length){ container.innerHTML = '<p>暂无业务项目，请添加</p>'; return; }
     let html = '';
     businessItems.forEach((item, idx) => {
+        if(!item.name) return;
         html += `<div class="item-collapse">
             <div class="item-header" onclick="toggleBusinessDetail(${idx})">
-                <span>${idx+1}. ${item.name||'未命名'} ${item.image ? '<img src="'+item.image+'" style="height:30px; vertical-align:middle; margin-left:5px;">' : ''} - ¥${item.price||'0'} ${item.duration||''}</span>
+                <span>${idx+1}. ${item.name} ${item.image ? '<img src="'+item.image+'" style="height:30px; vertical-align:middle; margin-left:5px;">' : ''} - ${item.price||'0'} ${item.duration||''}</span>
                 <span style="font-size:12px; color:#666;">点击展开编辑</span>
             </div>
             <div id="biz-detail-${idx}" class="item-detail hidden">
@@ -197,9 +203,7 @@ function renderBusinessList(){
     });
     container.innerHTML = html;
 }
-window.toggleBusinessDetail = function(idx){
-    document.getElementById('biz-detail-'+idx).classList.toggle('hidden');
-};
+window.toggleBusinessDetail = function(idx){ document.getElementById('biz-detail-'+idx).classList.toggle('hidden'); };
 async function handleBizImageChange(idx, input){
     const file = input.files[0]; if(!file) return;
     const path = `merchant-${merchant.id}/business/${Date.now()}.jpg`;
@@ -208,14 +212,12 @@ async function handleBizImageChange(idx, input){
     const { data: { publicUrl } } = sb.storage.from('merchant-uploads').getPublicUrl(path);
     businessItems[idx].image = publicUrl;
     renderBusinessList();
-    // 重新打开折叠可能丢失，简单处理：刷新后自动展开该条？为简化，直接提示保存后再展开。
 }
 function saveBusinessItem(idx){
     businessItems[idx].name = document.getElementById(`biz-name-${idx}`).value;
     businessItems[idx].price = document.getElementById(`biz-price-${idx}`).value;
     businessItems[idx].duration = document.getElementById(`biz-duration-${idx}`).value;
     businessItems[idx].description = document.getElementById(`biz-desc-${idx}`).value;
-    // 图片通过单独的上传更新，已保存到对象
     updateMerchantServiceData();
     renderBusinessList();
     alert('项目已更新');
@@ -229,10 +231,7 @@ function deleteBusinessItem(idx){
 async function updateMerchantServiceData(){
     await sb.from('ztj_merchants').update({ service_data: { items: businessItems } }).eq('id', merchant.id);
 }
-
-function toggleAddBusinessForm(){
-    document.getElementById('add-business-form').classList.toggle('hidden');
-}
+function toggleAddBusinessForm(){ document.getElementById('add-business-form').classList.toggle('hidden'); }
 async function addBusinessItem(){
     const name = document.getElementById('new-biz-name').value.trim();
     const price = document.getElementById('new-biz-price').value.trim();
@@ -260,7 +259,7 @@ async function addBusinessItem(){
     renderBusinessList();
 }
 
-// ---------- 预约列表（折叠+内嵌新增） ----------
+// ---------- 预约列表 ----------
 async function loadReservations(){
     const { data } = await sb.from('reservations').select('*').eq('merchant_id', merchant.id).order('created_at', false);
     let html = '';
@@ -279,30 +278,19 @@ async function loadReservations(){
                     <p><b>状态：</b>${r.status}</p>
                     <div style="display:flex; gap:6px; flex-wrap:wrap;">
                         ${r.status==='pending' ? `<button class="btn btn-primary" onclick="updateReservation(${r.id},'confirmed')">确认</button><button class="btn btn-danger" onclick="updateReservation(${r.id},'rejected')">拒绝</button>` : ''}
-                        <button class="btn btn-default" onclick="editReservationInline(${idx}, ${r.id})">编辑</button>
                         <button class="btn btn-danger" onclick="deleteReservation(${r.id})">删除</button>
                     </div>
-                    <div id="res-edit-${idx}" class="hidden" style="margin-top:8px;"></div>
                 </div>
             </div>`;
         });
     } else html = '<p>暂无预约</p>';
     document.getElementById('reservation-list').innerHTML = html;
 }
-window.toggleReservationDetail = function(idx){
-    document.getElementById('res-detail-'+idx).classList.toggle('hidden');
-};
-async function updateReservation(id, status){
-    await sb.from('reservations').update({status}).eq('id',id);
-    loadReservations();
-}
-async function deleteReservation(id){
-    if(confirm('确定删除此预约？')){ await sb.from('reservations').delete().eq('id',id); loadReservations(); }
-}
+window.toggleReservationDetail = function(idx){ document.getElementById('res-detail-'+idx).classList.toggle('hidden'); };
+async function updateReservation(id, status){ await sb.from('reservations').update({status}).eq('id',id); loadReservations(); }
+async function deleteReservation(id){ if(confirm('确定删除？')){ await sb.from('reservations').delete().eq('id',id); loadReservations(); } }
 
-function toggleAddReservationForm(){
-    document.getElementById('add-reservation-form').classList.toggle('hidden');
-}
+function toggleAddReservationForm(){ document.getElementById('add-reservation-form').classList.toggle('hidden'); }
 async function addReservation(){
     const date = document.getElementById('new-res-date').value;
     const time = document.getElementById('new-res-time').value;
@@ -323,7 +311,6 @@ async function addReservation(){
         status: 'pending'
     });
     if(error){ alert('保存失败：'+error.message); return; }
-    // 清空表单
     document.getElementById('new-res-date').value='';
     document.getElementById('new-res-time').value='';
     document.getElementById('new-res-name').value='';
@@ -337,8 +324,7 @@ async function addReservation(){
     loadReservations();
 }
 
-// ---------- 预约设置、活动模板、留言、基本信息 (保持之前稳定代码) ----------
-// 以下是预留函数，请将之前可用的对应功能粘贴至此
+// ---------- 预约设置 ----------
 async function loadReserveSettings(){
     const { data } = await sb.from('reservation_settings').select('*').eq('merchant_id', merchant.id);
     timeSlots = data || [];
@@ -384,6 +370,8 @@ async function saveReserveSettings(){
     }
     alert('已保存');
 }
+
+// ---------- 活动模板 ----------
 async function loadActivities(){
     const { data } = await sb.from('reservation_activities').select('*').eq('merchant_id', merchant.id);
     let html = '';
@@ -399,7 +387,14 @@ async function addActivity(){
     loadActivities();
 }
 async function deleteActivity(id){ if(confirm('删除？')){ await sb.from('reservation_activities').delete().eq('id',id); loadActivities(); } }
+async function editActivity(id){
+    const { data: a } = await sb.from('reservation_activities').select().eq('id',id).single();
+    const title = prompt('名称', a.title), loc = prompt('地点', a.location), dur = prompt('时长', a.duration), desc = prompt('描述', a.description);
+    if(title) await sb.from('reservation_activities').update({title, location: loc, duration: dur, description: desc}).eq('id',id);
+    loadActivities();
+}
 
+// ---------- 留言 ----------
 async function loadMerchantFeedbacks(){
     const { data } = await sb.from('ztj_feedbacks').select('*').eq('merchant_id', merchant.id).order('created_at', false);
     let html = '';
@@ -414,6 +409,7 @@ async function replyFeedback(id){
     loadMerchantFeedbacks();
 }
 
+// ---------- 基本信息 ----------
 async function saveInfo(){
     const updates = {
         status: document.getElementById('status').value,

@@ -34,9 +34,6 @@
         .my-tab.active { background:#2e7d32; color:white; }
         .route-node { display:flex; gap:8px; align-items:center; margin:8px 0; flex-wrap:wrap; }
         .route-time { font-size:12px; color:#666; margin-left:8px; }
-        .sub-poi-section { margin-left:20px; border-left:2px solid #2e7d32; padding-left:10px; margin-top:6px; }
-        .sub-poi-item { display:flex; align-items:center; gap:6px; margin:4px 0; }
-        .lang-select { margin-bottom:15px; }
         .day-header { font-weight:bold; background:#e9f5ea; padding:6px; border-radius:4px; margin:12px 0 6px; }
         .warn-list { background:#fafafa; padding:10px; border-radius:8px; margin-top:10px; }
         .trip-line { padding:4px 0; border-bottom:1px dotted #eee; }
@@ -178,33 +175,45 @@ function renderPOIs(pois){
     });
 }
 
-// ---------- 商户详情（优先显示业务，无数据不显示） ----------
+// ---------- 商户详情（完整展示业务、基本信息、预约入口） ----------
 async function showPoiDetail(poi){
     const { data: m } = await sb.from('ztj_merchants').select('*').eq('poi_id', poi.id).maybeSingle();
     document.getElementById('merchantDetailTitle').textContent = poi.name;
     let html = '';
+
+    // 1. 业务项目
     if(m && m.service_data && m.service_data.items && m.service_data.items.length){
         html += '<h4 style="margin-bottom:10px;">📦 业务项目</h4>';
         m.service_data.items.forEach(item => {
             if(!item.name) return;
-            let priceStr = item.price ? ` ${item.price}` : '';
-            let durationStr = item.duration ? ` ${item.duration}` : '';
-            let descStr = item.description ? `<p>${item.description}</p>` : '';
+            let parts = [item.name];
+            if(item.price) parts.push(item.price);
+            if(item.duration) parts.push(item.duration);
+            let desc = item.description || '';
+            let img = item.image ? `<img src="${item.image}" style="max-width:100%; max-height:120px; border-radius:4px; margin-top:4px;">` : '';
             html += `<div class="card">
-                <b>${item.name}</b> ${priceStr} ${durationStr}
-                ${descStr}
-                ${item.image ? `<img src="${item.image}" style="max-width:100%; max-height:120px; border-radius:4px;">` : ''}
+                <b>${parts.join(' - ')}</b>
+                ${desc ? `<p>${desc}</p>` : ''}
+                ${img}
             </div>`;
         });
     }
-    html += `<hr><p>📞 ${m?.phone||'未提供'} | 状态：${m?.status==='open'?'营业':'休息'} | 停车位：${m?.parking_spots||0}</p>`;
+
+    // 2. 基本信息
+    html += '<hr style="margin:10px 0;">';
+    html += `<p>📞 ${m?.phone||'未提供'} | 状态：${m?.status==='open'?'营业':m?.status==='closed'?'休息':'繁忙'} | 停车位：${m?.parking_spots||0}</p>`;
     html += `<p>${poi.description||''}</p>`;
-    if(m && m.allow_reserve) html += `<button class="reserve-btn" onclick="openReservePanel('${m.id}')">📋 研学预约</button>`;
+
+    // 3. 预约入口（仅当商户允许预约）
+    if(m && m.allow_reserve) {
+        html += `<button class="reserve-btn" onclick="openReservePanel('${m.id}')">📋 研学预约</button>`;
+    }
+
     document.getElementById('merchantDetailContent').innerHTML = html;
     openPanel('merchantDetailPanel');
 }
 
-// ---------- 红色研学预约（卡片式） ----------
+// ---------- 红色研学预约（卡片式选择活动） ----------
 async function openReservePanel(merchantId){
     const { data: activities } = await sb.from('reservation_activities').select('*').eq('merchant_id', merchantId);
     if(!activities || activities.length===0){ alert('该景区暂无活动'); return; }
@@ -218,6 +227,7 @@ async function openReservePanel(merchantId){
     document.getElementById('reserveContent').innerHTML = html;
     openPanel('reservePanel');
 }
+
 async function selectActivity(merchantId, activityId){
     const { data: activity } = await sb.from('reservation_activities').select('*').eq('id', activityId).single();
     if(!activity) return;
@@ -238,6 +248,7 @@ async function selectActivity(merchantId, activityId){
     document.getElementById('reserve-date').onchange = ()=> loadTimeSlots(merchantId);
     openPanel('reservePanel');
 }
+
 async function loadTimeSlots(merchantId){
     const date = document.getElementById('reserve-date').value;
     const { data: settings } = await sb.from('reservation_settings').select('*').eq('merchant_id', merchantId);
@@ -303,7 +314,7 @@ async function showRouteDetail(id){
     document.body.appendChild(panel);
 }
 
-// ---------- 自设行程（完整版，严格按规则生成时间线） ----------
+// ---------- 自设行程（完整逻辑） ----------
 function toggleCustomTripSection(){ document.getElementById('customTripSection').classList.toggle('hidden'); if(!document.getElementById('customTripSection').classList.contains('hidden')){ buildMainPoiOptions(); resetRouteLegs(); } }
 function buildMainPoiOptions(){
     const allMain = allPois.filter(p => !p.parent_id);
@@ -340,7 +351,6 @@ async function updateAllTimes(){
     }
 }
 
-// 生成时间线核心函数（严格遵循8-18点游览，交通不截断，就餐插入规则）
 function generateTimeline(nodes, startDate, startTime){
     let curDate = new Date(startDate);
     let [h,m] = startTime.split(':').map(Number);
@@ -369,6 +379,7 @@ function generateTimeline(nodes, startDate, startTime){
         }
         return false;
     }
+
     function tryInsertDinner(){
         if(!dinnerDone && curMin >= DINNER_TRIGGER){
             addLine(curMin, `🍽️ 晚餐时间 (${formatTime(curMin)}-${formatTime(curMin+MEAL_DURATION)})`);
@@ -383,7 +394,6 @@ function generateTimeline(nodes, startDate, startTime){
 
     for(let i=1; i<nodes.length; i++){
         const cur = nodes[i];
-        // 交通（不截断，可跨天）
         let travelTime = cur.transportTime || 0;
         if(travelTime > 0){
             let remainingTravel = travelTime;
@@ -402,7 +412,6 @@ function generateTimeline(nodes, startDate, startTime){
             addLine(curMin, `⚠️ 前往 ${cur.name} 交通耗时未知`);
         }
 
-        // 游览（8:00-18:00，可被就餐暂停，未完成则次日继续）
         if(cur.visitDuration > 0 && !isNonVisitPoi(cur.id)){
             let visitLeft = cur.visitDuration;
             while(visitLeft > 0){
@@ -478,11 +487,7 @@ async function generateCustomTrip(){
     document.getElementById('trip-warnings').innerHTML = tips.length ? `<div class="warn-list"><strong>温馨提示：</strong>${tips.map(t=>`<div>${t}</div>`).join('')}</div>` : '';
     document.getElementById('saveGeneratedTripBtn').classList.remove('hidden');
 
-    generatedTripData = {
-        name:'自设行程', date:dateStr, time:startTime, mode, people,
-        nodes: nodes.map(n => ({id:n.id, name:n.name, transportTime:n.transportTime, visitDuration:n.visitDuration})),
-        days: days.map(d => ({date:d.date, lines:d.lines})), tips
-    };
+    generatedTripData = { name:'自设行程', date:dateStr, time:startTime, mode, people, nodes: nodes.map(n => ({id:n.id, name:n.name, transportTime:n.transportTime, visitDuration:n.visitDuration})), days: days.map(d => ({date:d.date, lines:d.lines})), tips };
 }
 
 function saveGeneratedTrip(){
@@ -500,7 +505,6 @@ function saveGeneratedTrip(){
     resetRouteLegs();
 }
 
-// 我的行程（折叠展示）
 function renderMyTrip(){
     const trips = JSON.parse(localStorage.getItem('trips')||'[]');
     let html = '';
@@ -510,7 +514,7 @@ function renderMyTrip(){
         if(trip.tips) html += `<div class="warn-list">${trip.tips.map(t=>`<div>${t}</div>`).join('')}</div>`;
         html += `<button class="btn btn-danger" onclick="event.stopPropagation(); deleteTrip(${i})">删除</button></div></div>`;
     });
-    document.getElementById('myTripContent').innerHTML = html || '<p>暂无保存的行程</p>';
+    document.getElementById('myTripContent').innerHTML = html || '<p>暂无行程</p>';
 }
 window.toggleTripDetail = function(idx){ document.getElementById('trip-detail-'+idx).classList.toggle('hidden'); };
 function deleteTrip(idx){

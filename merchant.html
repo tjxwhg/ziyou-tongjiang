@@ -30,10 +30,10 @@
 <body>
 <div id="login-page" style="max-width:400px; margin:80px auto; background:white; padding:20px; border-radius:8px;">
     <h2>商户登录</h2>
-    <div class="form-group"><input id="account" placeholder="邮箱 (完整邮箱)"></div>
+    <div class="form-group"><input id="account" placeholder="邮箱 (如 st001@st.cn)"></div>
     <div class="form-group"><input id="password" type="password" placeholder="密码"></div>
     <button class="btn btn-primary" onclick="login()" style="width:100%">登录</button>
-    <p id="login-msg" style="color:red; margin-top:8px;"></p>
+    <p id="login-msg"></p>
 </div>
 
 <div id="main" class="hidden">
@@ -102,15 +102,14 @@ const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 let merchant = null, timeSlots = [], serviceData = {rooms:[], menus:[]};
 
 async function login(){
-    const email = document.getElementById('account').value.trim();
+    const email = document.getElementById('account').value.trim();   // 直接使用输入邮箱，不再拼接
     const pwd = document.getElementById('password').value;
     if(!email || !pwd){ document.getElementById('login-msg').innerText = '请输入邮箱和密码'; return; }
-    // 直接使用输入的完整邮箱登录，不再拼接域名
     const { data, error } = await sb.auth.signInWithPassword({ email, password: pwd });
-    if(error) { document.getElementById('login-msg').innerText = '登录失败：' + error.message; return; }
+    if(error){ document.getElementById('login-msg').innerText = '登录失败：'+error.message; return; }
     const userId = data.session.user.id;
     const { data: m } = await sb.from('ztj_merchants').select('*').eq('id', userId).single();
-    if(!m) { alert('非商户账号，请联系管理员'); await sb.auth.signOut(); return; }
+    if(!m){ alert('非商户账号，请联系管理员'); await sb.auth.signOut(); return; }
     merchant = m;
     document.getElementById('login-page').classList.add('hidden');
     document.getElementById('main').classList.remove('hidden');
@@ -123,20 +122,24 @@ async function login(){
 function logout(){ sb.auth.signOut(); merchant = null; document.getElementById('main').classList.add('hidden'); document.getElementById('login-page').classList.remove('hidden'); }
 
 function switchTab(tab){
+    const tabs = ['info','business','reserve-settings','activities','reservations','feedbacks'];
     document.querySelectorAll('#main-tabs button').forEach(b => b.classList.remove('active'));
-    const idx = ['info','business','reserve-settings','activities','reservations','feedbacks'].indexOf(tab);
-    if(idx>=0) document.querySelectorAll('#main-tabs button')[idx].classList.add('active');
-    ['info','business','reserve-settings','activities','reservations','feedbacks'].forEach(t => document.getElementById('tab-'+t).classList.add('hidden'));
+    const tabButtons = [...document.querySelectorAll('#main-tabs button')];
+    const idx = tabs.indexOf(tab);
+    if(idx >= 0) tabButtons[idx].classList.add('active');
+    tabs.forEach(t => document.getElementById('tab-'+t).classList.add('hidden'));
     document.getElementById('tab-'+tab).classList.remove('hidden');
-    if(tab==='business') loadBusinessModule();
-    if(tab==='reserve-settings') loadReserveSettings();
-    if(tab==='activities') loadActivities();
-    if(tab==='reservations') loadReservations();
-    if(tab==='feedbacks') loadMerchantFeedbacks();
+    if(tab === 'business') loadBusinessModule();
+    if(tab === 'reserve-settings') loadReserveSettings();
+    if(tab === 'activities') loadActivities();
+    if(tab === 'reservations') loadReservations();
+    if(tab === 'feedbacks') loadMerchantFeedbacks();
 }
 
 function showReserveTabsIfAllowed(){
-    document.querySelectorAll('.reserve-tab').forEach(t => t.classList.toggle('hidden', !merchant.allow_reserve));
+    const tabs = document.querySelectorAll('.reserve-tab');
+    if(merchant.allow_reserve) tabs.forEach(t => t.classList.remove('hidden'));
+    else tabs.forEach(t => t.classList.add('hidden'));
 }
 
 function loadInfo(){
@@ -147,11 +150,13 @@ function loadInfo(){
     document.getElementById('intro').value = merchant.intro || '';
     document.getElementById('business_type').value = merchant.business_type || 'other';
     if(merchant.service_data) serviceData = merchant.service_data;
+    else serviceData = { rooms: [], menus: [] };
 }
 
 function onBusinessTypeChange(){
-    merchant.business_type = document.getElementById('business_type').value;
-    sb.from('ztj_merchants').update({ business_type: merchant.business_type }).eq('id', merchant.id);
+    const type = document.getElementById('business_type').value;
+    merchant.business_type = type;
+    sb.from('ztj_merchants').update({ business_type: type }).eq('id', merchant.id);
     loadBusinessModule();
 }
 
@@ -166,16 +171,186 @@ async function saveInfo(){
     };
     await sb.from('ztj_merchants').update(updates).eq('id', merchant.id);
     alert('基本信息已保存');
-    Object.assign(merchant, updates);
+    merchant = { ...merchant, ...updates };
 }
 
-// 业务管理（房型/菜品）
-function loadBusinessModule(){ /* 保持原有 */ }
-function renderRooms(){ /* 保持原有 */ }
-function addRoom(){ /* 保持原有 */ }
-// ... 其他函数保持完整（篇幅限制，未列出全部，实际部署需包含之前版本中的完整业务逻辑）
+// ========== 业务管理 ==========
+function loadBusinessModule(){
+    const type = merchant.business_type || 'other';
+    document.getElementById('business-hotel').classList.add('hidden');
+    document.getElementById('business-restaurant').classList.add('hidden');
+    document.getElementById('business-other').classList.add('hidden');
+    if(type === 'hotel'){ document.getElementById('business-hotel').classList.remove('hidden'); renderRooms(); }
+    else if(type === 'restaurant'){ document.getElementById('business-restaurant').classList.remove('hidden'); renderMenus(); }
+    else { document.getElementById('business-other').classList.remove('hidden'); }
+}
 
-// 预约设置、活动模板、预约列表、留言等函数同样需要保留完整
+function renderRooms(){
+    const rooms = serviceData.rooms || [];
+    let html = '';
+    rooms.forEach((room, idx) => {
+        html += `<div class="card item-row">
+            <input value="${room.name||''}" placeholder="房型名称" onchange="updateRoom(${idx},'name',this.value)">
+            <input type="number" value="${room.price||0}" placeholder="价格" onchange="updateRoom(${idx},'price',parseFloat(this.value))">
+            <input type="number" value="${room.stock||0}" placeholder="余量" onchange="updateRoom(${idx},'stock',parseInt(this.value))">
+            <input type="file" accept="image/*" onchange="uploadRoomImage(${idx}, this)">
+            ${room.image ? `<img src="${room.image}" class="upload-preview">` : ''}
+            <button class="btn btn-danger" onclick="deleteRoom(${idx})">删除</button>
+        </div>`;
+    });
+    document.getElementById('room-list').innerHTML = html || '<p>暂无房型</p>';
+}
+function addRoom(){ serviceData.rooms.push({name:'', price:0, stock:0, image:''}); renderRooms(); autoSaveBusiness(); }
+function updateRoom(idx, field, value){ serviceData.rooms[idx][field] = value; autoSaveBusiness(); }
+function deleteRoom(idx){ serviceData.rooms.splice(idx,1); renderRooms(); autoSaveBusiness(); }
+async function uploadRoomImage(idx, input){
+    const file = input.files[0]; if(!file) return;
+    const path = `${merchant.account_id}/rooms/${Date.now()}.jpg`;
+    const { error } = await sb.storage.from('merchant-uploads').upload(path, file);
+    if(error){ alert('上传失败'); return; }
+    const { data: { publicUrl } } = sb.storage.from('merchant-uploads').getPublicUrl(path);
+    serviceData.rooms[idx].image = publicUrl;
+    renderRooms();
+    autoSaveBusiness();
+}
+
+function renderMenus(){
+    const menus = serviceData.menus || [];
+    let html = '';
+    menus.forEach((item, idx) => {
+        html += `<div class="card item-row">
+            <input value="${item.name||''}" placeholder="菜品名称" onchange="updateMenu(${idx},'name',this.value)">
+            <input type="number" value="${item.price||0}" placeholder="价格" onchange="updateMenu(${idx},'price',parseFloat(this.value))">
+            <input type="number" value="${item.stock||0}" placeholder="余量/份" onchange="updateMenu(${idx},'stock',parseInt(this.value))">
+            <input type="file" accept="image/*" onchange="uploadMenuImage(${idx}, this)">
+            ${item.image ? `<img src="${item.image}" class="upload-preview">` : ''}
+            <button class="btn btn-danger" onclick="deleteMenu(${idx})">删除</button>
+        </div>`;
+    });
+    document.getElementById('menu-list').innerHTML = html || '<p>暂无菜品</p>';
+}
+function addMenuItem(){ if(!serviceData.menus) serviceData.menus=[]; serviceData.menus.push({name:'', price:0, stock:0, image:''}); renderMenus(); autoSaveBusiness(); }
+function updateMenu(idx, field, value){ serviceData.menus[idx][field] = value; autoSaveBusiness(); }
+function deleteMenu(idx){ serviceData.menus.splice(idx,1); renderMenus(); autoSaveBusiness(); }
+async function uploadMenuImage(idx, input){
+    const file = input.files[0]; if(!file) return;
+    const path = `${merchant.account_id}/menus/${Date.now()}.jpg`;
+    const { error } = await sb.storage.from('merchant-uploads').upload(path, file);
+    if(error){ alert('上传失败'); return; }
+    const { data: { publicUrl } } = sb.storage.from('merchant-uploads').getPublicUrl(path);
+    serviceData.menus[idx].image = publicUrl;
+    renderMenus();
+    autoSaveBusiness();
+}
+async function autoSaveBusiness(){
+    await sb.from('ztj_merchants').update({ service_data: serviceData }).eq('id', merchant.id);
+}
+
+// ========== 预约设置 ==========
+async function loadReserveSettings(){
+    const { data } = await sb.from('reservation_settings').select('*').eq('merchant_id', merchant.id);
+    timeSlots = data || [];
+    if(timeSlots.length){
+        document.getElementById('day-limit').value = timeSlots[0].day_total_limit || 10;
+        document.getElementById('team-max').value = timeSlots[0].team_max_size || 50;
+    }
+    renderTimeSlots();
+}
+function renderTimeSlots(){
+    let html = '';
+    timeSlots.forEach((s,i) => {
+        html += `<div class="time-slot-item">
+            <input type="time" value="${s.time_slot_start}" onchange="updateSlot(${i},'start',this.value)"> 至 
+            <input type="time" value="${s.time_slot_end}" onchange="updateSlot(${i},'end',this.value)"> 
+            最多团队 <input type="number" value="${s.max_teams}" style="width:60px" onchange="updateSlot(${i},'max_teams',this.value)">
+            <button class="btn btn-danger" onclick="removeSlot(${i})">删除</button>
+        </div>`;
+    });
+    document.getElementById('time-slots').innerHTML = html || '<p>暂无时段</p>';
+}
+function addTimeSlot(){ timeSlots.push({time_slot_start:'09:00', time_slot_end:'10:00', max_teams:1}); renderTimeSlots(); }
+function updateSlot(idx, field, value){
+    if(field === 'start') timeSlots[idx].time_slot_start = value;
+    else if(field === 'end') timeSlots[idx].time_slot_end = value;
+    else timeSlots[idx].max_teams = parseInt(value) || 1;
+}
+function removeSlot(idx){ timeSlots.splice(idx,1); renderTimeSlots(); }
+async function saveReserveSettings(){
+    const dayLimit = parseInt(document.getElementById('day-limit').value) || 10;
+    const teamMax = parseInt(document.getElementById('team-max').value) || 50;
+    await sb.from('reservation_settings').delete().eq('merchant_id', merchant.id);
+    if(timeSlots.length){
+        const data = timeSlots.map(s => ({
+            merchant_id: merchant.id,
+            time_slot_start: s.time_slot_start,
+            time_slot_end: s.time_slot_end,
+            max_teams: s.max_teams,
+            day_total_limit: dayLimit,
+            team_max_size: teamMax
+        }));
+        await sb.from('reservation_settings').insert(data);
+    }
+    alert('时段设置已保存');
+}
+
+// ========== 活动模板 ==========
+async function loadActivities(){
+    const { data } = await sb.from('reservation_activities').select('*').eq('merchant_id', merchant.id);
+    let html = '';
+    data.forEach(a => {
+        html += `<div class="card"><b>${a.title}</b> (${a.duration||0}分钟) 地点：${a.location||''} <button class="btn btn-default" onclick="editActivity(${a.id})">编辑</button> <button class="btn btn-danger" onclick="deleteActivity(${a.id})">删除</button></div>`;
+    });
+    document.getElementById('activity-list').innerHTML = html || '<p>暂无活动</p>';
+}
+async function addActivity(){
+    const title = prompt('活动名称'), duration = prompt('时长(分钟)'), location = prompt('地点（如：多媒体室）'), desc = prompt('描述');
+    if(!title) return;
+    await sb.from('reservation_activities').insert({ merchant_id: merchant.id, title, duration: parseInt(duration)||60, location: location||'', description: desc||'' });
+    loadActivities();
+}
+async function editActivity(id){ /* 可后续扩展 */ }
+async function deleteActivity(id){
+    if(confirm('删除活动？')){ await sb.from('reservation_activities').delete().eq('id',id); loadActivities(); }
+}
+
+// ========== 预约列表 ==========
+async function loadReservations(){
+    const { data } = await sb.from('reservations').select('*').eq('merchant_id', merchant.id).order('created_at', false);
+    let html = '';
+    data.forEach(r => {
+        html += `<div class="card">
+            <p><span class="status-${r.status}">${r.status==='pending'?'待确认':r.status==='confirmed'?'已确认':'已拒绝'}</span> | ${r.reservation_date} ${r.time_slot_start}-${r.time_slot_end}</p>
+            <p>${r.name} ${r.phone} | 人数：${r.visitor_count} | 单位：${r.unit||''}</p>
+            ${r.status==='pending' ? `<button class="btn btn-primary" onclick="updateReservation(${r.id},'confirmed')">确认</button> <button class="btn btn-danger" onclick="updateReservation(${r.id},'rejected')">拒绝</button>` : ''}
+        </div>`;
+    });
+    document.getElementById('reservation-list').innerHTML = html || '<p>暂无预约</p>';
+}
+async function updateReservation(id, status){ await sb.from('reservations').update({ status }).eq('id', id); loadReservations(); }
+
+// ========== 留言反馈 ==========
+async function loadMerchantFeedbacks(){
+    const { data } = await sb.from('ztj_feedbacks').select('*').eq('merchant_id', merchant.id).order('created_at', false);
+    let html = '';
+    if(data && data.length){
+        data.forEach(f => {
+            html += `<div class="card">
+                <p><b>留言：</b>${f.message}</p>
+                <p style="font-size:12px;">${new Date(f.created_at).toLocaleString()}</p>
+                <p><b>回复：</b>${f.reply||'暂未回复'}</p>
+                <textarea id="reply-${f.id}" rows="2" placeholder="输入回复">${f.reply||''}</textarea>
+                <button class="btn btn-primary" onclick="replyToFeedback(${f.id})">回复</button>
+            </div>`;
+        });
+    } else { html = '<p>暂无留言</p>'; }
+    document.getElementById('feedback-list').innerHTML = html;
+}
+async function replyToFeedback(id){
+    const reply = document.getElementById('reply-'+id).value;
+    await sb.from('ztj_feedbacks').update({ reply }).eq('id', id);
+    alert('回复已保存');
+    loadMerchantFeedbacks();
+}
 </script>
 </body>
 </html>

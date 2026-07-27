@@ -162,6 +162,7 @@ async function showPoiDetail(poi){
     const { data: m } = await sb.from('ztj_merchants').select('*').eq('poi_id', poi.id).maybeSingle();
     document.getElementById('merchantDetailTitle').textContent = poi.name;
     let html = '';
+    // 业务项目（有则显示，无则跳过）
     if(m && m.service_data && m.service_data.items && Array.isArray(m.service_data.items)){
         const items = m.service_data.items.filter(item => item.name);
         items.forEach((item, idx) => {
@@ -172,10 +173,12 @@ async function showPoiDetail(poi){
             html += `<div class="card">${idx+1}. <b>${item.name}</b>${priceStr}${durationStr}${descStr}${imgStr}</div>`;
         });
     }
+    // 预约按钮（仅当 allow_reserve 为真时显示）
     if(m && m.allow_reserve){
         html += `<button class="reserve-btn" onclick="toggleReserveForm('${m.id}')">📋 研学预约</button>`;
         html += `<div id="reserve-form-${m.id}" class="hidden" style="margin-top:10px;"></div>`;
     }
+    // 基本信息（始终显示）
     let phone = m?.phone || '未提供';
     let status = m?.status === 'open' ? '营业中' : (m?.status === 'closed' ? '休息' : '繁忙');
     let parking = m?.parking_spots ?? 0;
@@ -186,7 +189,7 @@ async function showPoiDetail(poi){
     openPanel('merchantDetailPanel');
 }
 
-// ---------- 切换预约表单 ----------
+// ---------- 预约表单切换 ----------
 async function toggleReserveForm(merchantId){
     const formDiv = document.getElementById(`reserve-form-${merchantId}`);
     if(!formDiv.classList.contains('hidden')){
@@ -267,7 +270,7 @@ async function showRouteDetail(id){
     document.body.appendChild(panel);
 }
 
-// ---------- 自设行程 ----------
+// ---------- 自设行程（完整逻辑） ----------
 function toggleCustomTripSection(){ document.getElementById('customTripSection').classList.toggle('hidden'); if(!document.getElementById('customTripSection').classList.contains('hidden')){ buildMainPoiOptions(); resetRouteLegs(); } }
 function buildMainPoiOptions(){
     const allMain = allPois.filter(p => !p.parent_id);
@@ -310,7 +313,6 @@ function generateTimeline(nodes, startDate, startTime){
     let curMin = h*60 + m;
     const lines = [];
     let lunchDone = false, dinnerDone = false;
-
     function addLine(time, text){ lines.push({time, text, date: new Date(curDate)}); }
     function gotoNextDayIfNeeded(){
         if(curMin >= DAY_END){
@@ -339,9 +341,7 @@ function generateTimeline(nodes, startDate, startTime){
         }
         return false;
     }
-
     addLine(curMin, `🚩 ${formatTime(curMin)} 从 ${nodes[0].name} 出发`);
-
     for(let i=1; i<nodes.length; i++){
         const cur = nodes[i];
         let travelTime = cur.transportTime || 0;
@@ -472,7 +472,7 @@ function deleteTrip(idx){
     renderMyTrip();
 }
 
-// ---------- 我的预约（折叠展示） ----------
+// 我的预约（折叠显示）
 async function loadMyReservations(){
     const uid = getUserId();
     const { data } = await sb.from('reservations').select('*').eq('user_id', uid).order('created_at', false);

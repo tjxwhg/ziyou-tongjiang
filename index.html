@@ -44,7 +44,7 @@
         .category-items { padding:0 12px; }
         .category-items .card { border:none; border-bottom:1px dotted #ddd; margin:0; border-radius:0; }
         .category-items .card:last-child { border-bottom:none; }
-        /* 业务图片框：手机端全宽，PC端限制宽度并保持4:3 */
+        /* 业务图片框 */
         .biz-image-box {
             width: 100%;
             aspect-ratio: 4 / 3;
@@ -185,7 +185,7 @@ function renderPOIs(pois){
     });
 }
 
-// ========== 商户详情（分类折叠，图片上下布局，预约管理） ==========
+// ========== 商户详情（所有POI均显示预约管理） ==========
 async function showPoiDetail(poi){
     const { data: m } = await sb.from('ztj_merchants').select('*').eq('poi_id', poi.id).maybeSingle();
     document.getElementById('merchantDetailTitle').textContent = poi.name;
@@ -241,10 +241,9 @@ async function showPoiDetail(poi){
             }
         }
 
-        if (m.allow_reserve) {
-            html += `<button class="reserve-btn" onclick="toggleReserveForm('${m.id}')">📋 预约管理</button>`;
-            html += `<div id="reserve-form-${m.id}" class="hidden" style="margin-top:10px;"></div>`;
-        }
+        // 只要商户存在，就显示预约管理按钮
+        html += `<button class="reserve-btn" onclick="toggleReserveForm('${m.id}')">📋 预约管理</button>`;
+        html += `<div id="reserve-form-${m.id}" class="hidden" style="margin-top:10px;"></div>`;
 
         let phone = m.phone || '未提供';
         let status = m.status === 'open' ? '营业中' : (m.status === 'closed' ? '休息' : '繁忙');
@@ -342,7 +341,7 @@ async function showRouteDetail(id){
     document.body.appendChild(panel);
 }
 
-// ---------- 自设行程（完整逻辑） ----------
+// ---------- 自设行程（完整逻辑，保持不变） ----------
 function toggleCustomTripSection(){ document.getElementById('customTripSection').classList.toggle('hidden'); if(!document.getElementById('customTripSection').classList.contains('hidden')){ buildMainPoiOptions(); resetRouteLegs(); } }
 function buildMainPoiOptions(){
     const allMain = allPois.filter(p => !p.parent_id);

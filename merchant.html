@@ -55,12 +55,12 @@
         <div id="tab-business">
             <div style="display:flex; justify-content:space-between; align-items:center;">
                 <h3>业务分类与项目</h3>
-                <button class="btn btn-default" onclick="toggleCategoryManager()">管理分类</button>
+                <button class="btn btn-default" onclick="toggleCategoryManager('business')">管理分类</button>
             </div>
             <div id="category-manager-panel" class="hidden card" style="margin-bottom:10px;">
                 <div style="display:flex; gap:10px;">
                     <input id="new-category-name-input" placeholder="新分类名称" style="flex:1;">
-                    <button class="btn btn-primary" onclick="addBusinessCategory()">添加</button>
+                    <button class="btn btn-primary" id="add-category-btn" onclick="addCurrentCategory()">添加</button>
                 </div>
                 <div id="category-list" style="margin-top:8px;"></div>
             </div>
@@ -73,7 +73,7 @@
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
                 <button class="btn btn-primary" onclick="toggleAddReservationForm()">+ 新增预约</button>
                 <div>
-                    <button class="btn btn-default" onclick="toggleCategoryManagerForReserve()">活动类别</button>
+                    <button class="btn btn-default" onclick="toggleCategoryManager('activity')">活动类别</button>
                     <button class="btn btn-export" onclick="exportReservations()">导出全部</button>
                 </div>
             </div>
@@ -121,9 +121,10 @@
 <script>
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 let merchant = null;
-let businessCategories = [];   // 业务分类名称数组
-let businessItems = [];        // { category, name, price, duration, description, image }
-let activityCategories = [];   // 预约活动类别
+let businessCategories = [];   // 业务分类
+let businessItems = [];        // 业务项目
+let activityCategories = [];   // 活动类别（预约用）
+let currentCategoryType = 'business'; // 当前管理的分类类型：'business' 或 'activity'
 
 // ========== 会话 ==========
 async function checkSession(){
@@ -169,7 +170,7 @@ function switchTab(tab){
     if(tab==='info') loadInfo();
 }
 
-// ========== 业务管理（数据修复） ==========
+// ========== 业务数据 ==========
 function loadBusinessData(){
     const sd = merchant.service_data || {};
     businessCategories = sd.businessCategories ? [...sd.businessCategories] : [];
@@ -299,35 +300,63 @@ async function confirmAddItem(){
     renderBusiness();
 }
 
-// 分类管理
-function toggleCategoryManager(){
-    document.getElementById('category-manager-panel').classList.toggle('hidden');
-    renderCategoryList();
+// ========== 分类管理（业务 / 活动） ==========
+function toggleCategoryManager(type){
+    currentCategoryType = type;
+    const panel = document.getElementById('category-manager-panel');
+    panel.classList.toggle('hidden');
+    if(!panel.classList.contains('hidden')){
+        document.getElementById('new-category-name-input').value = '';
+        document.getElementById('add-category-btn').onclick = addCurrentCategory; // 绑定添加函数
+        if(type === 'business'){
+            renderCategoryList(businessCategories, deleteBusinessCategoryFromManager);
+        } else {
+            renderActivityCategoryList();
+        }
+    }
 }
-function renderCategoryList(){
+
+function renderCategoryList(cats, deleteFn){
     const container = document.getElementById('category-list');
-    if(!businessCategories.length){
+    if(!cats || !cats.length){
         container.innerHTML = '<p>暂无分类</p>';
         return;
     }
-    container.innerHTML = businessCategories.map((cat, idx) => `
+    container.innerHTML = cats.map((cat, idx) => `
         <div style="display:flex; justify-content:space-between; margin:4px 0;">
             <span>${cat}</span>
-            <button class="btn btn-danger" onclick="deleteCategory(${idx})">删除</button>
+            <button class="btn btn-danger" onclick="(${deleteFn.toString()})(${idx})">删除</button>
         </div>
     `).join('');
 }
-async function addBusinessCategory(){
+
+function renderActivityCategoryList(){
+    renderCategoryList(activityCategories, deleteActivityCategoryFromManager);
+}
+
+async function addCurrentCategory(){
     const name = document.getElementById('new-category-name-input').value.trim();
     if(!name) return;
-    if(businessCategories.includes(name)){ alert('已存在'); return; }
-    businessCategories.push(name);
+    if(currentCategoryType === 'business'){
+        if(businessCategories.includes(name)){ alert('已存在'); return; }
+        businessCategories.push(name);
+    } else {
+        if(activityCategories.includes(name)){ alert('已存在'); return; }
+        activityCategories.push(name);
+    }
     await updateMerchantServiceData();
     document.getElementById('new-category-name-input').value = '';
-    renderCategoryList();
-    renderBusiness();
+    // 刷新面板
+    if(currentCategoryType === 'business'){
+        renderCategoryList(businessCategories, deleteBusinessCategoryFromManager);
+    } else {
+        renderActivityCategoryList();
+    }
+    if(currentCategoryType === 'activity') loadActivityCategoriesForSelect();
+    if(currentCategoryType === 'business') renderBusiness();
 }
-async function deleteCategory(idx){
+
+async function deleteBusinessCategoryFromManager(idx){
     const cat = businessCategories[idx];
     if(!confirm(`删除分类“${cat}”？该分类下的项目将归入“默认”分类。`)) return;
     if(!businessCategories.includes('默认')){
@@ -338,8 +367,15 @@ async function deleteCategory(idx){
     });
     businessCategories.splice(idx, 1);
     await updateMerchantServiceData();
-    renderCategoryList();
+    renderCategoryList(businessCategories, deleteBusinessCategoryFromManager);
     renderBusiness();
+}
+
+async function deleteActivityCategoryFromManager(idx){
+    activityCategories.splice(idx, 1);
+    await updateMerchantServiceData();
+    renderActivityCategoryList();
+    loadActivityCategoriesForSelect();
 }
 
 // ========== 保存核心 ==========
@@ -364,7 +400,7 @@ async function updateMerchantServiceData(){
     }
 }
 
-// ========== 预约相关 ==========
+// ========== 活动类别（预约用） ==========
 async function loadActivityCategories(){
     if(merchant.service_data && merchant.service_data.categories){
         activityCategories = [...merchant.service_data.categories];
@@ -372,42 +408,7 @@ async function loadActivityCategories(){
         activityCategories = [];
     }
 }
-function toggleCategoryManagerForReserve(){
-    const panel = document.getElementById('category-manager-panel');
-    panel.classList.toggle('hidden');
-    if(!panel.classList.contains('hidden')){
-        renderActivityCategoryList();
-    }
-}
-function renderActivityCategoryList(){
-    const container = document.getElementById('category-list');
-    if(!activityCategories.length){
-        container.innerHTML = '<p>暂无活动类别</p>';
-        return;
-    }
-    container.innerHTML = activityCategories.map((cat, idx) => `
-        <div style="display:flex; justify-content:space-between; margin:4px 0;">
-            <span>${cat}</span>
-            <button class="btn btn-danger" onclick="deleteActivityCategory(${idx})">删除</button>
-        </div>
-    `).join('');
-}
-async function addActivityCategory(){
-    const name = document.getElementById('new-category-name-input').value.trim();
-    if(!name) return;
-    if(activityCategories.includes(name)){ alert('已存在'); return; }
-    activityCategories.push(name);
-    await updateMerchantServiceData();
-    document.getElementById('new-category-name-input').value = '';
-    renderActivityCategoryList();
-    loadActivityCategoriesForSelect();
-}
-async function deleteActivityCategory(idx){
-    activityCategories.splice(idx, 1);
-    await updateMerchantServiceData();
-    renderActivityCategoryList();
-    loadActivityCategoriesForSelect();
-}
+
 async function loadActivityCategoriesForSelect(){
     await loadActivityCategories();
     const sel = document.getElementById('new-res-activity');

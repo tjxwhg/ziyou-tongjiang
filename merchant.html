@@ -18,6 +18,7 @@
         .btn-primary { background:#2E7D32; color:white; }
         .btn-danger { background:#B71C1C; color:white; }
         .btn-default { background:#e0e0e0; color:#333; }
+        .btn-export { background:#ff9800; color:white; }
         .card { border:1px solid #ddd; padding:12px; margin:8px 0; border-radius:8px; background:#fafafa; }
         .hidden { display:none; }
         .item-collapse { margin-bottom:6px; }
@@ -26,8 +27,9 @@
         .item-detail { padding:10px; border:1px solid #eee; border-radius:4px; margin-top:4px; background:white; }
         .upload-preview { max-width:200px; max-height:150px; margin-top:4px; border-radius:4px; border:1px solid #ddd; }
         .reservation-card { margin-bottom:8px; }
-        .time-slot-item { display:flex; gap:8px; align-items:center; margin:8px 0; }
-        .activity-manage { margin-top:10px; }
+        .month-group { margin:10px 0; }
+        .month-title { font-weight:bold; background:#e9f5ea; padding:8px; cursor:pointer; }
+        .category-header { cursor:pointer; background:#f9f9f9; padding:8px; margin:4px 0; border:1px solid #ddd; border-radius:4px; display:flex; justify-content:space-between; }
     </style>
 </head>
 <body>
@@ -51,37 +53,31 @@
 
         <!-- 业务管理 -->
         <div id="tab-business">
-            <div id="business-list"></div>
-            <button class="btn btn-primary" onclick="toggleAddBusinessForm()" style="margin-top:10px;">+ 添加项目</button>
-            <div id="add-business-form" class="hidden card" style="margin-top:8px;">
-                <h4>新增业务项目</h4>
-                <div class="form-group"><label>名称</label><input id="new-biz-name"></div>
-                <div class="form-group"><label>价格</label><input type="number" id="new-biz-price" placeholder="数字"></div>
-                <div class="form-group"><label>时限/时长</label><input id="new-biz-duration" placeholder="如 24小时"></div>
-                <div class="form-group"><label>描述</label><textarea id="new-biz-desc" rows="2"></textarea></div>
-                <div class="form-group"><label>图片</label><input type="file" accept="image/*" id="new-biz-image"></div>
-                <button class="btn btn-primary" onclick="addBusinessItem()">保存</button>
-                <button class="btn btn-default" onclick="toggleAddBusinessForm()">取消</button>
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+                <h3>业务分类与项目</h3>
+                <button class="btn btn-default" onclick="toggleCategoryManager()">管理分类</button>
             </div>
+            <div id="category-manager-panel" class="hidden card" style="margin-bottom:10px;">
+                <div style="display:flex; gap:10px;">
+                    <input id="new-category-name-input" placeholder="新分类名称" style="flex:1;">
+                    <button class="btn btn-primary" onclick="addBusinessCategory()">添加</button>
+                </div>
+                <div id="category-list" style="margin-top:8px;"></div>
+            </div>
+            <div id="business-container"></div>
+            <button class="btn btn-primary" onclick="showAddItemForm()" style="margin-top:10px;">+ 添加项目</button>
         </div>
 
-        <!-- 预约列表（含活动类别管理） -->
+        <!-- 预约列表 -->
         <div id="tab-reservations" class="hidden">
-            <div style="display:flex; justify-content:space-between; align-items:center;">
-                <h3>预约记录</h3>
-                <button class="btn btn-default" onclick="toggleCategoryManager()">管理活动类别</button>
-            </div>
-            <div id="category-manager" class="hidden card" style="margin-bottom:10px;">
-                <h4>活动类别</h4>
-                <div id="activity-category-list"></div>
-                <div class="activity-manage">
-                    <input id="new-category-name" placeholder="新类别名称" style="width:70%; display:inline-block;">
-                    <button class="btn btn-primary" onclick="addActivityCategory()">添加</button>
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+                <button class="btn btn-primary" onclick="toggleAddReservationForm()">+ 新增预约</button>
+                <div>
+                    <button class="btn btn-default" onclick="toggleCategoryManagerForReserve()">活动类别</button>
+                    <button class="btn btn-export" onclick="exportReservations()">导出全部</button>
                 </div>
             </div>
-            <div id="reservation-list"></div>
-            <button class="btn btn-primary" onclick="toggleAddReservationForm()" style="margin-top:10px;">+ 新增预约</button>
-            <div id="add-reservation-form" class="hidden card" style="margin-top:8px;">
+            <div id="add-reservation-form" class="hidden card" style="margin-bottom:10px;">
                 <h4>新增预约</h4>
                 <div class="form-group"><label>预约日期</label><input type="date" id="new-res-date"></div>
                 <div class="form-group"><label>时段</label><select id="new-res-time">
@@ -97,6 +93,7 @@
                 <button class="btn btn-primary" onclick="addReservation()">保存预约</button>
                 <button class="btn btn-default" onclick="toggleAddReservationForm()">取消</button>
             </div>
+            <div id="reservation-list"></div>
         </div>
 
         <!-- 留言 -->
@@ -124,9 +121,11 @@
 <script>
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 let merchant = null;
-let businessItems = [];
-let activityCategories = [];
+let businessCategories = [];   // 分类名称数组
+let businessItems = [];        // { category: '分类名', name: '', price: '', duration: '', description: '', image: '' }
+let activityCategories = [];   // 活动类别（预约用）
 
+// ---------- 会话 ----------
 async function checkSession(){
     const { data: { session } } = await sb.auth.getSession();
     if(session){
@@ -144,6 +143,7 @@ function showMain(){
     document.getElementById('login-page').classList.add('hidden');
     document.getElementById('main').classList.remove('hidden');
     document.getElementById('merchant-name').innerText = merchant.display_name;
+    loadBusinessData();
     loadActivityCategories();
     switchTab('business');
 }
@@ -163,54 +163,250 @@ function switchTab(tab){
     if(idx>=0) document.querySelectorAll('#main-tabs button')[idx].classList.add('active');
     tabs.forEach(t => document.getElementById('tab-'+t).classList.add('hidden'));
     document.getElementById('tab-'+tab).classList.remove('hidden');
-    if(tab==='business') loadBusinessTab();
+    if(tab==='business') renderBusiness();
     if(tab==='reservations') { loadActivityCategoriesForSelect(); loadReservations(); }
     if(tab==='feedbacks') loadMerchantFeedbacks();
     if(tab==='info') loadInfo();
 }
 
-// ---------- 活动类别管理 ----------
+// ---------- 业务管理（多分类） ----------
+async function loadBusinessData(){
+    // 从 service_data 中读取 categories 和 items
+    const sd = merchant.service_data || {};
+    businessCategories = sd.businessCategories || [];
+    businessItems = sd.businessItems || [];
+    // 兼容旧数据：若没有 categories 但存在 items（无分类），则归入“默认分类”
+    if(!businessCategories.length && businessItems.length){
+        businessCategories = ['默认'];
+        businessItems.forEach(item => item.category = '默认');
+    }
+    renderBusiness();
+}
+
+function renderBusiness(){
+    const container = document.getElementById('business-container');
+    if(!businessCategories.length){
+        container.innerHTML = '<p>暂无业务分类，请添加分类和项目</p>';
+        return;
+    }
+    let html = '';
+    businessCategories.forEach(cat => {
+        const itemsInCat = businessItems.filter(item => item.category === cat);
+        html += `<div class="card">
+            <div class="category-header" onclick="this.nextElementSibling.classList.toggle('hidden')">
+                <span>📁 ${cat} (${itemsInCat.length})</span>
+                <span>▼</span>
+            </div>
+            <div class="hidden" style="margin-top:8px;">`;
+        if(itemsInCat.length === 0){
+            html += '<p>暂无项目</p>';
+        } else {
+            itemsInCat.forEach((item, idx) => {
+                const globalIdx = businessItems.indexOf(item);
+                html += `<div class="item-collapse">
+                    <div class="item-header" onclick="toggleBusinessItemEdit(${globalIdx})">
+                        <span>${item.name||'未命名'} ${item.price ? ' '+item.price : ''} ${item.duration||''}</span>
+                    </div>
+                    <div id="biz-item-edit-${globalIdx}" class="item-detail hidden">
+                        <div class="form-group"><label>名称</label><input id="biz-name-${globalIdx}" value="${item.name||''}"></div>
+                        <div class="form-group"><label>价格</label><input type="number" id="biz-price-${globalIdx}" value="${item.price||''}"></div>
+                        <div class="form-group"><label>时限/时长</label><input id="biz-duration-${globalIdx}" value="${item.duration||''}"></div>
+                        <div class="form-group"><label>描述</label><textarea id="biz-desc-${globalIdx}">${item.description||''}</textarea></div>
+                        <div class="form-group"><label>图片</label><input type="file" accept="image/*" onchange="handleBizImageChange(${globalIdx}, this)">
+                        ${item.image ? '<img src="'+item.image+'" class="upload-preview">' : ''}</div>
+                        <button class="btn btn-primary" onclick="saveBusinessItemEdit(${globalIdx})">保存</button>
+                        <button class="btn btn-danger" onclick="deleteBusinessItem(${globalIdx})">删除</button>
+                    </div>
+                </div>`;
+            });
+        }
+        html += `<button class="btn btn-default" onclick="showAddItemForm('${cat}')" style="margin-top:6px;">+ 添加项目</button>`;
+        html += `</div></div>`;
+    });
+    container.innerHTML = html;
+}
+
+function toggleBusinessItemEdit(idx){
+    document.getElementById('biz-item-edit-'+idx).classList.toggle('hidden');
+}
+
+async function handleBizImageChange(idx, input){
+    const file = input.files[0]; if(!file) return;
+    const path = `merchant-${merchant.id}/business/${Date.now()}.jpg`;
+    const { error } = await sb.storage.from('merchant-uploads').upload(path, file);
+    if(error){ alert('上传失败'); return; }
+    const { data: { publicUrl } } = sb.storage.from('merchant-uploads').getPublicUrl(path);
+    businessItems[idx].image = publicUrl;
+    renderBusiness();
+}
+function saveBusinessItemEdit(idx){
+    const item = businessItems[idx];
+    item.name = document.getElementById('biz-name-'+idx).value;
+    item.price = document.getElementById('biz-price-'+idx).value;
+    item.duration = document.getElementById('biz-duration-'+idx).value;
+    item.description = document.getElementById('biz-desc-'+idx).value;
+    // 图片已在 handleBizImageChange 中更新
+    updateMerchantServiceData();
+    renderBusiness();
+    alert('已保存');
+}
+function deleteBusinessItem(idx){
+    if(!confirm('删除该项目？')) return;
+    businessItems.splice(idx, 1);
+    updateMerchantServiceData();
+    renderBusiness();
+}
+
+function showAddItemForm(category){
+    // 弹出一个简单的对话框，选择分类后填写项目信息
+    const cat = category || (businessCategories.length ? businessCategories[0] : '');
+    const html = `
+        <div style="position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); background:white; padding:20px; border-radius:8px; box-shadow:0 0 10px rgba(0,0,0,0.3); z-index:9999; min-width:350px;">
+            <h4>新增业务项目</h4>
+            <div class="form-group"><label>分类</label><select id="add-item-category">${businessCategories.map(c => `<option value="${c}" ${c===cat?'selected':''}>${c}</option>`).join('')}</select></div>
+            <div class="form-group"><label>名称</label><input id="add-item-name"></div>
+            <div class="form-group"><label>价格</label><input type="number" id="add-item-price"></div>
+            <div class="form-group"><label>时限/时长</label><input id="add-item-duration"></div>
+            <div class="form-group"><label>描述</label><textarea id="add-item-desc"></textarea></div>
+            <div class="form-group"><label>图片</label><input type="file" accept="image/*" id="add-item-image"></div>
+            <button class="btn btn-primary" onclick="confirmAddItem()">添加</button>
+            <button class="btn btn-default" onclick="document.getElementById('temp-dialog').remove()">取消</button>
+        </div>
+    `;
+    const div = document.createElement('div');
+    div.id = 'temp-dialog';
+    div.innerHTML = html;
+    document.body.appendChild(div);
+}
+
+async function confirmAddItem(){
+    const category = document.getElementById('add-item-category').value;
+    const name = document.getElementById('add-item-name').value.trim();
+    if(!name){ alert('名称必填'); return; }
+    const price = document.getElementById('add-item-price').value;
+    const duration = document.getElementById('add-item-duration').value;
+    const desc = document.getElementById('add-item-desc').value;
+    let image = '';
+    const file = document.getElementById('add-item-image').files[0];
+    if(file){
+        const path = `merchant-${merchant.id}/business/${Date.now()}.jpg`;
+        const { error } = await sb.storage.from('merchant-uploads').upload(path, file);
+        if(!error){
+            const { data: { publicUrl } } = sb.storage.from('merchant-uploads').getPublicUrl(path);
+            image = publicUrl;
+        }
+    }
+    businessItems.push({ category, name, price, duration, description: desc, image });
+    await updateMerchantServiceData();
+    document.getElementById('temp-dialog').remove();
+    renderBusiness();
+}
+
+// 分类管理
+function toggleCategoryManager(){
+    document.getElementById('category-manager-panel').classList.toggle('hidden');
+    renderCategoryList();
+}
+function renderCategoryList(){
+    const container = document.getElementById('category-list');
+    if(!businessCategories.length){
+        container.innerHTML = '<p>暂无分类</p>';
+        return;
+    }
+    container.innerHTML = businessCategories.map((cat, idx) => `
+        <div style="display:flex; justify-content:space-between; margin:4px 0;">
+            <span>${cat}</span>
+            <button class="btn btn-danger" onclick="deleteCategory(${idx})">删除</button>
+        </div>
+    `).join('');
+}
+async function addBusinessCategory(){
+    const name = document.getElementById('new-category-name-input').value.trim();
+    if(!name) return;
+    if(businessCategories.includes(name)){ alert('已存在'); return; }
+    businessCategories.push(name);
+    await updateMerchantServiceData();
+    document.getElementById('new-category-name-input').value = '';
+    renderCategoryList();
+    renderBusiness();
+}
+async function deleteCategory(idx){
+    const cat = businessCategories[idx];
+    if(!confirm(`删除分类“${cat}”？该分类下的项目将归入“默认”分类。`)) return;
+    // 迁移项目到“默认”
+    if(!businessCategories.includes('默认')){
+        businessCategories.push('默认');
+    }
+    businessItems.forEach(item => {
+        if(item.category === cat) item.category = '默认';
+    });
+    businessCategories.splice(idx, 1);
+    await updateMerchantServiceData();
+    renderCategoryList();
+    renderBusiness();
+}
+
+async function updateMerchantServiceData(){
+    const sd = merchant.service_data || {};
+    sd.businessCategories = businessCategories;
+    sd.businessItems = businessItems;
+    // 同时保留旧版 items 和 categories 兼容游客端（游客端只读 items）
+    sd.items = businessItems.map(item => ({
+        name: item.name,
+        price: item.price,
+        duration: item.duration,
+        description: item.description,
+        image: item.image
+    }));
+    sd.categories = activityCategories; // 活动类别（预约用）
+    const { error } = await sb.from('ztj_merchants').update({ service_data: sd }).eq('id', merchant.id);
+    if(!error) merchant.service_data = sd;
+}
+
+// ---------- 活动类别（预约用） ----------
 async function loadActivityCategories(){
     if(merchant.service_data && merchant.service_data.categories){
         activityCategories = merchant.service_data.categories;
     } else {
         activityCategories = [];
     }
-    renderActivityCategories();
 }
-function renderActivityCategories(){
-    const container = document.getElementById('activity-category-list');
-    if(!activityCategories.length){ container.innerHTML = '<p>暂无类别</p>'; return; }
-    let html = '<ul>';
-    activityCategories.forEach((cat, idx) => {
-        html += `<li>${cat} <button class="btn btn-danger" onclick="deleteActivityCategory(${idx})">删除</button></li>`;
-    });
-    html += '</ul>';
-    container.innerHTML = html;
+function toggleCategoryManagerForReserve(){
+    // 简单折叠管理，复用界面
+    const panel = document.getElementById('category-manager-panel');
+    panel.classList.toggle('hidden');
+    if(!panel.classList.contains('hidden')){
+        renderActivityCategoryList();
+    }
 }
-function toggleCategoryManager(){
-    document.getElementById('category-manager').classList.toggle('hidden');
-    loadActivityCategories();
+function renderActivityCategoryList(){
+    const container = document.getElementById('category-list');
+    if(!activityCategories.length){
+        container.innerHTML = '<p>暂无活动类别</p>';
+        return;
+    }
+    container.innerHTML = activityCategories.map((cat, idx) => `
+        <div style="display:flex; justify-content:space-between; margin:4px 0;">
+            <span>${cat}</span>
+            <button class="btn btn-danger" onclick="deleteActivityCategory(${idx})">删除</button>
+        </div>
+    `).join('');
 }
 async function addActivityCategory(){
-    const name = document.getElementById('new-category-name').value.trim();
+    const name = document.getElementById('new-category-name-input').value.trim();
     if(!name) return;
     if(activityCategories.includes(name)){ alert('已存在'); return; }
     activityCategories.push(name);
-    await updateMerchantCategories();
-    document.getElementById('new-category-name').value = '';
-    renderActivityCategories();
+    await updateMerchantServiceData();
+    document.getElementById('new-category-name-input').value = '';
+    renderActivityCategoryList();
+    loadActivityCategoriesForSelect();
 }
 async function deleteActivityCategory(idx){
     activityCategories.splice(idx, 1);
-    await updateMerchantCategories();
-    renderActivityCategories();
-}
-async function updateMerchantCategories(){
-    const currentService = merchant.service_data || {};
-    currentService.categories = activityCategories;
-    const { error } = await sb.from('ztj_merchants').update({ service_data: currentService }).eq('id', merchant.id);
-    if(!error) merchant.service_data = currentService;
+    await updateMerchantServiceData();
+    renderActivityCategoryList();
+    loadActivityCategoriesForSelect();
 }
 async function loadActivityCategoriesForSelect(){
     await loadActivityCategories();
@@ -223,130 +419,59 @@ async function loadActivityCategoriesForSelect(){
     }
 }
 
-// ---------- 业务管理 ----------
-function loadBusinessTab(){
-    const data = merchant.service_data && merchant.service_data.items ? merchant.service_data.items : [];
-    businessItems = JSON.parse(JSON.stringify(data));
-    renderBusinessList();
-}
-function renderBusinessList(){
-    const container = document.getElementById('business-list');
-    if(!businessItems.length){ container.innerHTML = '<p>暂无业务项目</p>'; return; }
-    let html = '';
-    businessItems.forEach((item, idx) => {
-        if(!item.name) return;
-        html += `<div class="item-collapse">
-            <div class="item-header" onclick="toggleBusinessDetail(${idx})">
-                <span>${idx+1}. ${item.name} ${item.image ? '<img src="'+item.image+'" style="height:30px; vertical-align:middle; margin-left:5px;">' : ''} - ${item.price||''} ${item.duration||''}</span>
-                <span style="font-size:12px; color:#666;">点击展开编辑</span>
-            </div>
-            <div id="biz-detail-${idx}" class="item-detail hidden">
-                <div class="form-group"><label>名称</label><input id="biz-name-${idx}" value="${item.name||''}"></div>
-                <div class="form-group"><label>价格</label><input type="number" id="biz-price-${idx}" value="${item.price||''}"></div>
-                <div class="form-group"><label>时限/时长</label><input id="biz-duration-${idx}" value="${item.duration||''}"></div>
-                <div class="form-group"><label>描述</label><textarea id="biz-desc-${idx}" rows="2">${item.description||''}</textarea></div>
-                <div class="form-group"><label>图片</label><input type="file" accept="image/*" onchange="handleBizImageChange(${idx}, this)">
-                ${item.image ? '<img src="'+item.image+'" class="upload-preview">' : ''}</div>
-                <button class="btn btn-primary" onclick="saveBusinessItem(${idx})">保存修改</button>
-                <button class="btn btn-danger" onclick="deleteBusinessItem(${idx})">删除</button>
-            </div>
-        </div>`;
-    });
-    container.innerHTML = html;
-}
-window.toggleBusinessDetail = function(idx){ document.getElementById('biz-detail-'+idx).classList.toggle('hidden'); };
-async function handleBizImageChange(idx, input){
-    const file = input.files[0]; if(!file) return;
-    const path = `merchant-${merchant.id}/business/${Date.now()}.jpg`;
-    const { error } = await sb.storage.from('merchant-uploads').upload(path, file);
-    if(error){ alert('上传失败'); return; }
-    const { data: { publicUrl } } = sb.storage.from('merchant-uploads').getPublicUrl(path);
-    businessItems[idx].image = publicUrl;
-    renderBusinessList();
-}
-function saveBusinessItem(idx){
-    businessItems[idx].name = document.getElementById(`biz-name-${idx}`).value;
-    businessItems[idx].price = document.getElementById(`biz-price-${idx}`).value;
-    businessItems[idx].duration = document.getElementById(`biz-duration-${idx}`).value;
-    businessItems[idx].description = document.getElementById(`biz-desc-${idx}`).value;
-    updateMerchantServiceData();
-    renderBusinessList();
-    alert('已更新');
-}
-function deleteBusinessItem(idx){
-    if(!confirm('删除？')) return;
-    businessItems.splice(idx, 1);
-    updateMerchantServiceData();
-    renderBusinessList();
-}
-async function updateMerchantServiceData(){
-    const currentService = merchant.service_data || {};
-    currentService.items = businessItems;
-    const { error } = await sb.from('ztj_merchants').update({ service_data: currentService }).eq('id', merchant.id);
-    if(!error) merchant.service_data = currentService;
-}
-function toggleAddBusinessForm(){ document.getElementById('add-business-form').classList.toggle('hidden'); }
-async function addBusinessItem(){
-    const name = document.getElementById('new-biz-name').value.trim();
-    const price = document.getElementById('new-biz-price').value.trim();
-    const duration = document.getElementById('new-biz-duration').value.trim();
-    const desc = document.getElementById('new-biz-desc').value.trim();
-    if(!name){ alert('名称必填'); return; }
-    let image = '';
-    const file = document.getElementById('new-biz-image').files[0];
-    if(file){
-        const path = `merchant-${merchant.id}/business/${Date.now()}.jpg`;
-        const { error } = await sb.storage.from('merchant-uploads').upload(path, file);
-        if(!error){
-            const { data: { publicUrl } } = sb.storage.from('merchant-uploads').getPublicUrl(path);
-            image = publicUrl;
-        }
-    }
-    businessItems.push({ name, price, duration, description: desc, image });
-    await updateMerchantServiceData();
-    document.getElementById('new-biz-name').value='';
-    document.getElementById('new-biz-price').value='';
-    document.getElementById('new-biz-duration').value='';
-    document.getElementById('new-biz-desc').value='';
-    document.getElementById('new-biz-image').value='';
-    toggleAddBusinessForm();
-    renderBusinessList();
-}
-
-// ---------- 预约列表 ----------
+// ---------- 预约列表（月分组，最新在上） ----------
 async function loadReservations(){
     const { data } = await sb.from('reservations').select('*').eq('merchant_id', merchant.id).order('created_at', false);
+    const container = document.getElementById('reservation-list');
+    if(!data || data.length === 0){
+        container.innerHTML = '<p>暂无预约</p>';
+        return;
+    }
+    // 按月分组
+    const grouped = {};
+    data.forEach(r => {
+        const date = new Date(r.created_at);
+        const key = `${date.getFullYear()}年${date.getMonth()+1}月`;
+        if(!grouped[key]) grouped[key] = [];
+        grouped[key].push(r);
+    });
     let html = '';
-    if(data && data.length){
-        data.forEach((r, idx) => {
+    for(const [month, records] of Object.entries(grouped)){
+        html += `<div class="month-group">
+            <div class="month-title" onclick="this.nextElementSibling.classList.toggle('hidden')">
+                📅 ${month} (${records.length}条) <span>▼</span>
+            </div>
+            <div class="hidden">`;
+        records.forEach((r, idx) => {
             let category = '';
             if(r.remark && r.remark.includes('类别：')) {
                 category = r.remark.split('类别：')[1]?.split('|')[0] || '';
             }
             html += `<div class="reservation-card card">
-                <div class="item-header" onclick="toggleReservationDetail(${idx})">
-                    <span>${r.reservation_date} | ${r.time_slot_start}-${r.time_slot_end||''} | ${category||'未分类'} | ${r.name}</span>
+                <div class="item-header" onclick="toggleReservationDetail(${r.id})">
+                    <span>${r.reservation_date} | ${r.time_slot_start}-${r.time_slot_end||''} | ${category||'未分类'} | 联系人：${r.name}</span>
                 </div>
-                <div id="res-detail-${idx}" class="item-detail hidden">
+                <div id="res-detail-${r.id}" class="item-detail hidden">
+                    <p><b>活动类别：</b>${category||'未指定'} <b>地点：</b>${r.room||''}</p>
+                    <p><b>联系人：</b>${r.name} ${r.phone}</p>
                     <p><b>单位：</b>${r.unit||''} <b>人数：</b>${r.visitor_count}</p>
-                    <p><b>电话：</b>${r.phone}</p>
-                    <p><b>地点：</b>${r.room||''}</p>
-                    <p><b>状态：</b>${r.status}</p>
-                    ${r.remark ? '<p><b>备注：</b>'+r.remark.replace('类别：'+category+'|', '').replace('类别：'+category, '')+'</p>' : ''}
+                    <p><b>备注：</b>${r.remark ? r.remark.replace('类别：'+category+'|', '').replace('类别：'+category, '') : ''}</p>
                     ${r.image ? `<img src="${r.image}" class="upload-preview">` : ''}
+                    <p><b>状态：</b>${r.status}</p>
                     <div style="display:flex; gap:6px; flex-wrap:wrap;">
                         ${r.status==='pending' ? `<button class="btn btn-primary" onclick="updateReservation(${r.id},'confirmed')">确认</button><button class="btn btn-danger" onclick="updateReservation(${r.id},'rejected')">拒绝</button>` : ''}
-                        <button class="btn btn-danger" onclick="deleteReservation(${r.id})">删除</button>
                     </div>
                 </div>
             </div>`;
         });
-    } else html = '<p>暂无预约</p>';
-    document.getElementById('reservation-list').innerHTML = html;
+        html += `</div></div>`;
+    }
+    container.innerHTML = html;
 }
-window.toggleReservationDetail = function(idx){ document.getElementById('res-detail-'+idx).classList.toggle('hidden'); };
+window.toggleReservationDetail = function(id){
+    document.getElementById('res-detail-'+id).classList.toggle('hidden');
+};
 async function updateReservation(id, status){ await sb.from('reservations').update({status}).eq('id',id); loadReservations(); }
-async function deleteReservation(id){ if(confirm('删除？')){ await sb.from('reservations').delete().eq('id',id); loadReservations(); } }
 
 function toggleAddReservationForm(){
     document.getElementById('add-reservation-form').classList.toggle('hidden');
@@ -390,6 +515,30 @@ async function addReservation(){
     document.getElementById('new-res-remark').value='';
     toggleAddReservationForm();
     loadReservations();
+}
+
+// 导出 CSV
+function exportReservations(){
+    sb.from('reservations').select('*').eq('merchant_id', merchant.id).order('created_at', false).then(({ data }) => {
+        if(!data || data.length===0){ alert('无预约记录'); return; }
+        const header = '日期,时段,单位,联系人,电话,人数,活动类别,地点,状态,备注\n';
+        const csv = data.map(r => {
+            let category = '';
+            let remark = r.remark || '';
+            if(remark.includes('类别：')){
+                category = remark.split('类别：')[1]?.split('|')[0] || '';
+                remark = remark.replace('类别：'+category+'|', '').replace('类别：'+category, '');
+            }
+            return `${r.reservation_date},"${r.time_slot_start}${r.time_slot_end ? '~'+r.time_slot_end : ''}","${r.unit||''}","${r.name}","${r.phone}",${r.visitor_count},"${category}","${r.room||''}",${r.status},"${remark}"`;
+        }).join('\n');
+        const blob = new Blob([header + csv], {type:'text/csv;charset=utf-8;'});
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `预约记录_${new Date().toISOString().slice(0,10)}.csv`;
+        a.click();
+        URL.revokeObjectURL(url);
+    });
 }
 
 // ---------- 留言 ----------

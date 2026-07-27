@@ -38,12 +38,29 @@
         .toggle-section { background:#f0f0f0; border-radius:8px; padding:12px; margin:10px 0; cursor:pointer; }
         .route-time { font-size:12px; color:#666; margin-left:8px; }
         .lang-select { margin-bottom:15px; }
-        /* 分组折叠样式 */
+        /* 分类折叠样式 */
         .category-group { margin-bottom:10px; border:1px solid #eee; border-radius:8px; overflow:hidden; }
         .category-title { background:#f5f5f5; padding:12px; font-weight:bold; cursor:pointer; display:flex; justify-content:space-between; align-items:center; }
         .category-items { padding:0 12px; }
         .category-items .card { border:none; border-bottom:1px dotted #ddd; margin:0; border-radius:0; }
         .category-items .card:last-child { border-bottom:none; }
+        /* 业务图片框 */
+        .biz-image-box {
+            width: 100%;
+            height: 200px;
+            margin-top: 8px;
+            border-radius: 4px;
+            overflow: hidden;
+            background: #f0f0f0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .biz-image-box img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
     </style>
 </head>
 <body>
@@ -163,7 +180,7 @@ function renderPOIs(pois){
     });
 }
 
-// ========== 商户详情（分类折叠显示） ==========
+// ========== 商户详情（分类折叠，图片上下布局） ==========
 async function showPoiDetail(poi){
     const { data: m } = await sb.from('ztj_merchants').select('*').eq('poi_id', poi.id).maybeSingle();
     document.getElementById('merchantDetailTitle').textContent = poi.name;
@@ -174,7 +191,6 @@ async function showPoiDetail(poi){
         const categories = sd.businessCategories || [];
         const items = sd.businessItems || [];
         
-        // 如果有分类数据，按类别分组显示
         if (categories.length > 0 && items.length > 0) {
             categories.forEach(cat => {
                 const catItems = items.filter(item => item.category === cat);
@@ -190,32 +206,41 @@ async function showPoiDetail(poi){
                     let priceStr = item.price ? ` ${item.price}` : '';
                     let durationStr = item.duration ? ` ${item.duration}` : '';
                     let descStr = item.description ? `<p>${item.description}</p>` : '';
-                    let imgStr = item.image ? `<img src="${item.image}" style="max-width:100%; max-height:120px; border-radius:4px; margin-top:4px;">` : '';
-                    html += `<div class="card">${idx+1}. <b>${item.name}</b>${priceStr}${durationStr}${descStr}${imgStr}</div>`;
+                    let imgHtml = '';
+                    if (item.image) {
+                        imgHtml = `<div class="biz-image-box"><img src="${item.image}" alt="${item.name}"></div>`;
+                    }
+                    html += `<div class="card">
+                        <div><b>${idx+1}. ${item.name}</b>${priceStr}${durationStr}${descStr}</div>
+                        ${imgHtml}
+                    </div>`;
                 });
                 html += `</div></div>`;
             });
         } else {
-            // 兼容旧数据：无分类时平铺显示
             const flatItems = sd.items || [];
             if (flatItems.length > 0) {
                 flatItems.filter(item => item.name).forEach((item, idx) => {
                     let priceStr = item.price ? ` ${item.price}` : '';
                     let durationStr = item.duration ? ` ${item.duration}` : '';
                     let descStr = item.description ? `<p>${item.description}</p>` : '';
-                    let imgStr = item.image ? `<img src="${item.image}" style="max-width:100%; max-height:120px; border-radius:4px; margin-top:4px;">` : '';
-                    html += `<div class="card">${idx+1}. <b>${item.name}</b>${priceStr}${durationStr}${descStr}${imgStr}</div>`;
+                    let imgHtml = '';
+                    if (item.image) {
+                        imgHtml = `<div class="biz-image-box"><img src="${item.image}" alt="${item.name}"></div>`;
+                    }
+                    html += `<div class="card">
+                        <div><b>${idx+1}. ${item.name}</b>${priceStr}${durationStr}${descStr}</div>
+                        ${imgHtml}
+                    </div>`;
                 });
             }
         }
 
-        // 预约按钮
         if (m.allow_reserve) {
             html += `<button class="reserve-btn" onclick="toggleReserveForm('${m.id}')">📋 研学预约</button>`;
             html += `<div id="reserve-form-${m.id}" class="hidden" style="margin-top:10px;"></div>`;
         }
 
-        // 基本信息
         let phone = m.phone || '未提供';
         let status = m.status === 'open' ? '营业中' : (m.status === 'closed' ? '休息' : '繁忙');
         let parking = m.parking_spots ?? 0;
@@ -312,7 +337,7 @@ async function showRouteDetail(id){
     document.body.appendChild(panel);
 }
 
-// ---------- 自设行程（完整逻辑，保持不变） ----------
+// ---------- 自设行程（完整逻辑） ----------
 function toggleCustomTripSection(){ document.getElementById('customTripSection').classList.toggle('hidden'); if(!document.getElementById('customTripSection').classList.contains('hidden')){ buildMainPoiOptions(); resetRouteLegs(); } }
 function buildMainPoiOptions(){
     const allMain = allPois.filter(p => !p.parent_id);

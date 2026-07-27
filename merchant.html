@@ -143,7 +143,7 @@ function showMain(){
     document.getElementById('login-page').classList.add('hidden');
     document.getElementById('main').classList.remove('hidden');
     document.getElementById('merchant-name').innerText = merchant.display_name;
-    loadBusinessData();      // 加载业务数据
+    loadBusinessData();
     loadActivityCategories();
     switchTab('business');
 }
@@ -174,9 +174,7 @@ function loadBusinessData(){
     const sd = merchant.service_data || {};
     businessCategories = sd.businessCategories ? [...sd.businessCategories] : [];
     businessItems = sd.businessItems ? JSON.parse(JSON.stringify(sd.businessItems)) : [];
-    // 如果还没有分类，尝试兼容旧版数据
     if(businessCategories.length === 0 && businessItems.length === 0 && sd.items && sd.items.length){
-        // 旧版 items 无分类，全部归入“默认”
         businessCategories = ['默认'];
         businessItems = sd.items.map(item => ({ ...item, category: '默认' }));
     }
@@ -209,7 +207,7 @@ function renderBusiness(){
                     </div>
                     <div id="biz-item-edit-${globalIdx}" class="item-detail hidden">
                         <div class="form-group"><label>名称</label><input id="biz-name-${globalIdx}" value="${item.name||''}"></div>
-                        <div class="form-group"><label>价格</label><input type="number" id="biz-price-${globalIdx}" value="${item.price||''}"></div>
+                        <div class="form-group"><label>价格</label><input type="text" id="biz-price-${globalIdx}" value="${item.price||''}" placeholder="如 220元"></div>
                         <div class="form-group"><label>时限/时长</label><input id="biz-duration-${globalIdx}" value="${item.duration||''}"></div>
                         <div class="form-group"><label>描述</label><textarea id="biz-desc-${globalIdx}">${item.description||''}</textarea></div>
                         <div class="form-group"><label>图片</label><input type="file" accept="image/*" onchange="handleBizImageChange(${globalIdx}, this)">
@@ -237,9 +235,8 @@ async function handleBizImageChange(idx, input){
     if(error){ alert('上传失败'); return; }
     const { data: { publicUrl } } = sb.storage.from('merchant-uploads').getPublicUrl(path);
     businessItems[idx].image = publicUrl;
-    // 实时更新界面图片预览
     renderBusiness();
-    await updateMerchantServiceData(); // 立即保存到数据库
+    await updateMerchantServiceData();
 }
 function saveBusinessItemEdit(idx){
     const item = businessItems[idx];
@@ -247,7 +244,6 @@ function saveBusinessItemEdit(idx){
     item.price = document.getElementById('biz-price-'+idx).value;
     item.duration = document.getElementById('biz-duration-'+idx).value;
     item.description = document.getElementById('biz-desc-'+idx).value;
-    // 图片已单独处理，此处不需
     updateMerchantServiceData();
     renderBusiness();
     alert('已保存');
@@ -266,7 +262,7 @@ function showAddItemForm(category){
             <h4>新增业务项目</h4>
             <div class="form-group"><label>分类</label><select id="add-item-category">${businessCategories.map(c => `<option value="${c}" ${c===cat?'selected':''}>${c}</option>`).join('')}</select></div>
             <div class="form-group"><label>名称</label><input id="add-item-name"></div>
-            <div class="form-group"><label>价格</label><input type="number" id="add-item-price"></div>
+            <div class="form-group"><label>价格</label><input type="text" id="add-item-price" placeholder="如 220元"></div>
             <div class="form-group"><label>时限/时长</label><input id="add-item-duration"></div>
             <div class="form-group"><label>描述</label><textarea id="add-item-desc"></textarea></div>
             <div class="form-group"><label>图片</label><input type="file" accept="image/*" id="add-item-image"></div>
@@ -346,12 +342,11 @@ async function deleteCategory(idx){
     renderBusiness();
 }
 
-// ========== 保存核心：更新 merchant.service_data 并同步本地 ==========
+// ========== 保存核心 ==========
 async function updateMerchantServiceData(){
     const sd = {
         businessCategories: businessCategories,
         businessItems: businessItems,
-        // 同时保留兼容旧字段（游客端需要）
         items: businessItems.map(item => ({
             name: item.name,
             price: item.price,
@@ -363,7 +358,7 @@ async function updateMerchantServiceData(){
     };
     const { error } = await sb.from('ztj_merchants').update({ service_data: sd }).eq('id', merchant.id);
     if(!error) {
-        merchant.service_data = sd;   // 关键：同步本地对象，防止刷新后丢失
+        merchant.service_data = sd;
     } else {
         alert('保存失败：'+error.message);
     }
@@ -424,17 +419,142 @@ async function loadActivityCategoriesForSelect(){
     }
 }
 
-// ---------- 预约列表（保持原有月分组逻辑） ----------
-async function loadReservations(){ /* 与之前相同，省略 */ }
-async function addReservation(){ /* 与之前相同，省略 */ }
-async function updateReservation(id, status){ /* 与之前相同，省略 */ }
-function exportReservations(){ /* 与之前相同，省略 */ }
+// ---------- 预约列表 ----------
+async function loadReservations(){
+    const { data } = await sb.from('reservations').select('*').eq('merchant_id', merchant.id).order('created_at', false);
+    const container = document.getElementById('reservation-list');
+    if(!data || data.length === 0){
+        container.innerHTML = '<p>暂无预约</p>';
+        return;
+    }
+    const grouped = {};
+    data.forEach(r => {
+        const date = new Date(r.created_at);
+        const key = `${date.getFullYear()}年${date.getMonth()+1}月`;
+        if(!grouped[key]) grouped[key] = [];
+        grouped[key].push(r);
+    });
+    let html = '';
+    for(const [month, records] of Object.entries(grouped)){
+        html += `<div class="month-group">
+            <div class="month-title" onclick="this.nextElementSibling.classList.toggle('hidden')">
+                📅 ${month} (${records.length}条) <span>▼</span>
+            </div>
+            <div class="hidden">`;
+        records.forEach((r, idx) => {
+            let category = '';
+            if(r.remark && r.remark.includes('类别：')) {
+                category = r.remark.split('类别：')[1]?.split('|')[0] || '';
+            }
+            html += `<div class="reservation-card card">
+                <div class="item-header" onclick="toggleReservationDetail(${r.id})">
+                    <span>${r.reservation_date} | ${r.time_slot_start}-${r.time_slot_end||''} | ${category||'未分类'} | 联系人：${r.name}</span>
+                </div>
+                <div id="res-detail-${r.id}" class="item-detail hidden">
+                    <p><b>活动类别：</b>${category||'未指定'} <b>地点：</b>${r.room||''}</p>
+                    <p><b>联系人：</b>${r.name} ${r.phone}</p>
+                    <p><b>单位：</b>${r.unit||''} <b>人数：</b>${r.visitor_count}</p>
+                    <p><b>备注：</b>${r.remark ? r.remark.replace('类别：'+category+'|', '').replace('类别：'+category, '') : ''}</p>
+                    ${r.image ? `<img src="${r.image}" class="upload-preview">` : ''}
+                    <p><b>状态：</b>${r.status}</p>
+                    <div style="display:flex; gap:6px; flex-wrap:wrap;">
+                        ${r.status==='pending' ? `<button class="btn btn-primary" onclick="updateReservation(${r.id},'confirmed')">确认</button><button class="btn btn-danger" onclick="updateReservation(${r.id},'rejected')">拒绝</button>` : ''}
+                    </div>
+                </div>
+            </div>`;
+        });
+        html += `</div></div>`;
+    }
+    container.innerHTML = html;
+}
+window.toggleReservationDetail = function(id){
+    document.getElementById('res-detail-'+id).classList.toggle('hidden');
+};
+async function updateReservation(id, status){ await sb.from('reservations').update({status}).eq('id',id); loadReservations(); }
 
-// ========== 留言 ==========
-async function loadMerchantFeedbacks(){ /* 与之前相同，省略 */ }
-async function replyFeedback(id){ /* 与之前相同，省略 */ }
+function toggleAddReservationForm(){
+    document.getElementById('add-reservation-form').classList.toggle('hidden');
+    loadActivityCategoriesForSelect();
+}
+async function addReservation(){
+    const date = document.getElementById('new-res-date').value;
+    const timeRange = document.getElementById('new-res-time').value;
+    const [start, end] = timeRange.split('-');
+    const name = document.getElementById('new-res-name').value.trim();
+    const phone = document.getElementById('new-res-phone').value.trim();
+    const unit = document.getElementById('new-res-unit').value.trim();
+    const count = parseInt(document.getElementById('new-res-count').value) || 0;
+    const activity = document.getElementById('new-res-activity').value;
+    const room = document.getElementById('new-res-room').value.trim();
+    const remarkBase = document.getElementById('new-res-remark').value.trim();
+    let finalRemark = '';
+    if(activity) finalRemark += `类别：${activity}`;
+    if(remarkBase) finalRemark += (finalRemark ? '|' : '') + remarkBase;
+    if(!date||!timeRange||!name||!phone){ alert('请填写必填项'); return; }
+    const { error } = await sb.from('reservations').insert({
+        merchant_id: merchant.id,
+        reservation_date: date,
+        time_slot_start: start,
+        time_slot_end: end,
+        name, phone, unit, visitor_count: count,
+        remark: finalRemark,
+        room: room,
+        status: 'pending',
+        user_id: 'manual'
+    });
+    if(error){ alert('保存失败：'+error.message); return; }
+    document.getElementById('new-res-date').value='';
+    document.getElementById('new-res-time').value='08:00-09:00';
+    document.getElementById('new-res-name').value='';
+    document.getElementById('new-res-phone').value='';
+    document.getElementById('new-res-unit').value='';
+    document.getElementById('new-res-count').value='';
+    document.getElementById('new-res-activity').value='';
+    document.getElementById('new-res-room').value='';
+    document.getElementById('new-res-remark').value='';
+    toggleAddReservationForm();
+    loadReservations();
+}
 
-// ========== 基本信息 ==========
+function exportReservations(){
+    sb.from('reservations').select('*').eq('merchant_id', merchant.id).order('created_at', false).then(({ data }) => {
+        if(!data || data.length===0){ alert('无预约记录'); return; }
+        const header = '日期,时段,单位,联系人,电话,人数,活动类别,地点,状态,备注\n';
+        const csv = data.map(r => {
+            let category = '';
+            let remark = r.remark || '';
+            if(remark.includes('类别：')){
+                category = remark.split('类别：')[1]?.split('|')[0] || '';
+                remark = remark.replace('类别：'+category+'|', '').replace('类别：'+category, '');
+            }
+            return `${r.reservation_date},"${r.time_slot_start}${r.time_slot_end ? '~'+r.time_slot_end : ''}","${r.unit||''}","${r.name}","${r.phone}",${r.visitor_count},"${category}","${r.room||''}",${r.status},"${remark}"`;
+        }).join('\n');
+        const blob = new Blob([header + csv], {type:'text/csv;charset=utf-8;'});
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `预约记录_${new Date().toISOString().slice(0,10)}.csv`;
+        a.click();
+        URL.revokeObjectURL(url);
+    });
+}
+
+// ---------- 留言 ----------
+async function loadMerchantFeedbacks(){
+    const { data } = await sb.from('ztj_feedbacks').select('*').eq('merchant_id', merchant.id).order('created_at', false);
+    let html = '';
+    data.forEach(f=>{
+        html += `<div class="card"><p>${f.message}</p><small>${new Date(f.created_at).toLocaleString()}</small><p>${f.reply||'暂未回复'}</p><textarea id="reply-${f.id}">${f.reply||''}</textarea><button class="btn btn-primary" onclick="replyFeedback(${f.id})">回复</button></div>`;
+    });
+    document.getElementById('feedback-list').innerHTML = html || '<p>暂无留言</p>';
+}
+async function replyFeedback(id){
+    const reply = document.getElementById('reply-'+id).value;
+    await sb.from('ztj_feedbacks').update({reply}).eq('id',id);
+    loadMerchantFeedbacks();
+}
+
+// ---------- 基本信息 ----------
 function loadInfo(){
     document.getElementById('business_type').value = merchant.business_type || 'other';
     document.getElementById('status').value = merchant.status || 'open';

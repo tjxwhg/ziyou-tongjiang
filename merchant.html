@@ -55,14 +55,14 @@
         <div id="tab-business">
             <div style="display:flex; justify-content:space-between; align-items:center;">
                 <h3>业务分类与项目</h3>
-                <button class="btn btn-default" onclick="toggleCategoryManager('business')">管理分类</button>
+                <button class="btn btn-default" onclick="toggleBusinessCategoryManager()">管理分类</button>
             </div>
-            <div id="category-manager-panel" class="hidden card" style="margin-bottom:10px;">
+            <div id="business-category-panel" class="hidden card" style="margin-bottom:10px;">
                 <div style="display:flex; gap:10px;">
-                    <input id="new-category-name-input" placeholder="新分类名称" style="flex:1;">
-                    <button class="btn btn-primary" id="add-category-btn" onclick="addCurrentCategory()">添加</button>
+                    <input id="new-business-category-input" placeholder="新分类名称" style="flex:1;">
+                    <button class="btn btn-primary" onclick="addBusinessCategory()">添加</button>
                 </div>
-                <div id="category-list" style="margin-top:8px;"></div>
+                <div id="business-category-list" style="margin-top:8px;"></div>
             </div>
             <div id="business-container"></div>
             <button class="btn btn-primary" onclick="showAddItemForm()" style="margin-top:10px;">+ 添加项目</button>
@@ -73,9 +73,16 @@
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
                 <button class="btn btn-primary" onclick="toggleAddReservationForm()">+ 新增预约</button>
                 <div>
-                    <button class="btn btn-default" onclick="toggleCategoryManager('activity')">活动类别</button>
+                    <button class="btn btn-default" onclick="toggleActivityCategoryManager()">活动类别</button>
                     <button class="btn btn-export" onclick="exportReservations()">导出全部</button>
                 </div>
+            </div>
+            <div id="activity-category-panel" class="hidden card" style="margin-bottom:10px;">
+                <div style="display:flex; gap:10px;">
+                    <input id="new-activity-category-input" placeholder="新活动类别" style="flex:1;">
+                    <button class="btn btn-primary" onclick="addActivityCategory()">添加</button>
+                </div>
+                <div id="activity-category-list" style="margin-top:8px;"></div>
             </div>
             <div id="add-reservation-form" class="hidden card" style="margin-bottom:10px;">
                 <h4>新增预约</h4>
@@ -121,10 +128,9 @@
 <script>
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 let merchant = null;
-let businessCategories = [];   // 业务分类
-let businessItems = [];        // 业务项目
-let activityCategories = [];   // 活动类别（预约用）
-let currentCategoryType = 'business'; // 当前管理的分类类型：'business' 或 'activity'
+let businessCategories = [];
+let businessItems = [];
+let activityCategories = [];
 
 // ========== 会话 ==========
 async function checkSession(){
@@ -170,7 +176,7 @@ function switchTab(tab){
     if(tab==='info') loadInfo();
 }
 
-// ========== 业务数据 ==========
+// ==================== 业务管理 ====================
 function loadBusinessData(){
     const sd = merchant.service_data || {};
     businessCategories = sd.businessCategories ? [...sd.businessCategories] : [];
@@ -225,9 +231,7 @@ function renderBusiness(){
     container.innerHTML = html;
 }
 
-function toggleBusinessItemEdit(idx){
-    document.getElementById('biz-item-edit-'+idx).classList.toggle('hidden');
-}
+function toggleBusinessItemEdit(idx){ document.getElementById('biz-item-edit-'+idx).classList.toggle('hidden'); }
 
 async function handleBizImageChange(idx, input){
     const file = input.files[0]; if(!file) return;
@@ -300,107 +304,74 @@ async function confirmAddItem(){
     renderBusiness();
 }
 
-// ========== 分类管理（业务 / 活动） ==========
-function toggleCategoryManager(type){
-    currentCategoryType = type;
-    const panel = document.getElementById('category-manager-panel');
-    panel.classList.toggle('hidden');
-    if(!panel.classList.contains('hidden')){
-        document.getElementById('new-category-name-input').value = '';
-        document.getElementById('add-category-btn').onclick = addCurrentCategory; // 绑定添加函数
-        if(type === 'business'){
-            renderCategoryList(businessCategories, deleteBusinessCategoryFromManager);
-        } else {
-            renderActivityCategoryList();
-        }
-    }
+// ==================== 分类管理 ====================
+function toggleBusinessCategoryManager(){
+    document.getElementById('business-category-panel').classList.toggle('hidden');
+    renderBusinessCategoryList();
 }
-
-function renderCategoryList(cats, deleteFn){
-    const container = document.getElementById('category-list');
-    if(!cats || !cats.length){
-        container.innerHTML = '<p>暂无分类</p>';
-        return;
-    }
-    container.innerHTML = cats.map((cat, idx) => `
+function renderBusinessCategoryList(){
+    const container = document.getElementById('business-category-list');
+    if(!businessCategories.length){ container.innerHTML = '<p>暂无分类</p>'; return; }
+    container.innerHTML = businessCategories.map((cat, idx) => `
         <div style="display:flex; justify-content:space-between; margin:4px 0;">
             <span>${cat}</span>
-            <button class="btn btn-danger" onclick="(${deleteFn.toString()})(${idx})">删除</button>
+            <button class="btn btn-danger" onclick="deleteBusinessCategory(${idx})">删除</button>
         </div>
     `).join('');
 }
-
-function renderActivityCategoryList(){
-    renderCategoryList(activityCategories, deleteActivityCategoryFromManager);
-}
-
-async function addCurrentCategory(){
-    const name = document.getElementById('new-category-name-input').value.trim();
+async function addBusinessCategory(){
+    const name = document.getElementById('new-business-category-input').value.trim();
     if(!name) return;
-    if(currentCategoryType === 'business'){
-        if(businessCategories.includes(name)){ alert('已存在'); return; }
-        businessCategories.push(name);
-    } else {
-        if(activityCategories.includes(name)){ alert('已存在'); return; }
-        activityCategories.push(name);
-    }
+    if(businessCategories.includes(name)){ alert('已存在'); return; }
+    businessCategories.push(name);
     await updateMerchantServiceData();
-    document.getElementById('new-category-name-input').value = '';
-    // 刷新面板
-    if(currentCategoryType === 'business'){
-        renderCategoryList(businessCategories, deleteBusinessCategoryFromManager);
-    } else {
-        renderActivityCategoryList();
-    }
-    if(currentCategoryType === 'activity') loadActivityCategoriesForSelect();
-    if(currentCategoryType === 'business') renderBusiness();
+    document.getElementById('new-business-category-input').value = '';
+    renderBusinessCategoryList();
+    renderBusiness();
 }
-
-async function deleteBusinessCategoryFromManager(idx){
+async function deleteBusinessCategory(idx){
     const cat = businessCategories[idx];
     if(!confirm(`删除分类“${cat}”？该分类下的项目将归入“默认”分类。`)) return;
-    if(!businessCategories.includes('默认')){
-        businessCategories.push('默认');
-    }
-    businessItems.forEach(item => {
-        if(item.category === cat) item.category = '默认';
-    });
+    if(!businessCategories.includes('默认')) businessCategories.push('默认');
+    businessItems.forEach(item => { if(item.category === cat) item.category = '默认'; });
     businessCategories.splice(idx, 1);
     await updateMerchantServiceData();
-    renderCategoryList(businessCategories, deleteBusinessCategoryFromManager);
+    renderBusinessCategoryList();
     renderBusiness();
 }
 
-async function deleteActivityCategoryFromManager(idx){
+// 活动类别管理
+function toggleActivityCategoryManager(){
+    document.getElementById('activity-category-panel').classList.toggle('hidden');
+    renderActivityCategoryList();
+}
+function renderActivityCategoryList(){
+    const container = document.getElementById('activity-category-list');
+    if(!activityCategories.length){ container.innerHTML = '<p>暂无活动类别</p>'; return; }
+    container.innerHTML = activityCategories.map((cat, idx) => `
+        <div style="display:flex; justify-content:space-between; margin:4px 0;">
+            <span>${cat}</span>
+            <button class="btn btn-danger" onclick="deleteActivityCategory(${idx})">删除</button>
+        </div>
+    `).join('');
+}
+async function addActivityCategory(){
+    const name = document.getElementById('new-activity-category-input').value.trim();
+    if(!name) return;
+    if(activityCategories.includes(name)){ alert('已存在'); return; }
+    activityCategories.push(name);
+    await updateMerchantServiceData();
+    document.getElementById('new-activity-category-input').value = '';
+    renderActivityCategoryList();
+    loadActivityCategoriesForSelect();
+}
+async function deleteActivityCategory(idx){
     activityCategories.splice(idx, 1);
     await updateMerchantServiceData();
     renderActivityCategoryList();
     loadActivityCategoriesForSelect();
 }
 
-// ========== 保存核心 ==========
-async function updateMerchantServiceData(){
-    const sd = {
-        businessCategories: businessCategories,
-        businessItems: businessItems,
-        items: businessItems.map(item => ({
-            name: item.name,
-            price: item.price,
-            duration: item.duration,
-            description: item.description,
-            image: item.image
-        })),
-        categories: activityCategories
-    };
-    const { error } = await sb.from('ztj_merchants').update({ service_data: sd }).eq('id', merchant.id);
-    if(!error) {
-        merchant.service_data = sd;
-    } else {
-        alert('保存失败：'+error.message);
-    }
-}
-
-// ========== 活动类别（预约用） ==========
 async function loadActivityCategories(){
     if(merchant.service_data && merchant.service_data.categories){
         activityCategories = [...merchant.service_data.categories];
@@ -408,26 +379,34 @@ async function loadActivityCategories(){
         activityCategories = [];
     }
 }
-
 async function loadActivityCategoriesForSelect(){
     await loadActivityCategories();
     const sel = document.getElementById('new-res-activity');
     if(sel){
         sel.innerHTML = '<option value="">--选择--</option>';
-        activityCategories.forEach(cat => {
-            sel.innerHTML += `<option value="${cat}">${cat}</option>`;
-        });
+        activityCategories.forEach(cat => sel.innerHTML += `<option value="${cat}">${cat}</option>`);
     }
 }
 
-// ---------- 预约列表 ----------
+// ==================== 保存核心 ====================
+async function updateMerchantServiceData(){
+    const sd = {
+        businessCategories: businessCategories,
+        businessItems: businessItems,
+        items: businessItems.map(item => ({
+            name: item.name, price: item.price, duration: item.duration, description: item.description, image: item.image
+        })),
+        categories: activityCategories
+    };
+    const { error } = await sb.from('ztj_merchants').update({ service_data: sd }).eq('id', merchant.id);
+    if(!error) merchant.service_data = sd;
+}
+
+// ==================== 预约列表 ====================
 async function loadReservations(){
     const { data } = await sb.from('reservations').select('*').eq('merchant_id', merchant.id).order('created_at', false);
     const container = document.getElementById('reservation-list');
-    if(!data || data.length === 0){
-        container.innerHTML = '<p>暂无预约</p>';
-        return;
-    }
+    if(!data || data.length === 0){ container.innerHTML = '<p>暂无预约</p>'; return; }
     const grouped = {};
     data.forEach(r => {
         const date = new Date(r.created_at);
@@ -442,7 +421,7 @@ async function loadReservations(){
                 📅 ${month} (${records.length}条) <span>▼</span>
             </div>
             <div class="hidden">`;
-        records.forEach((r, idx) => {
+        records.forEach((r) => {
             let category = '';
             if(r.remark && r.remark.includes('类别：')) {
                 category = r.remark.split('类别：')[1]?.split('|')[0] || '';
@@ -468,9 +447,7 @@ async function loadReservations(){
     }
     container.innerHTML = html;
 }
-window.toggleReservationDetail = function(id){
-    document.getElementById('res-detail-'+id).classList.toggle('hidden');
-};
+window.toggleReservationDetail = function(id){ document.getElementById('res-detail-'+id).classList.toggle('hidden'); };
 async function updateReservation(id, status){ await sb.from('reservations').update({status}).eq('id',id); loadReservations(); }
 
 function toggleAddReservationForm(){
@@ -540,7 +517,7 @@ function exportReservations(){
     });
 }
 
-// ---------- 留言 ----------
+// ==================== 留言 ====================
 async function loadMerchantFeedbacks(){
     const { data } = await sb.from('ztj_feedbacks').select('*').eq('merchant_id', merchant.id).order('created_at', false);
     let html = '';
@@ -555,7 +532,7 @@ async function replyFeedback(id){
     loadMerchantFeedbacks();
 }
 
-// ---------- 基本信息 ----------
+// ==================== 基本信息 ====================
 function loadInfo(){
     document.getElementById('business_type').value = merchant.business_type || 'other';
     document.getElementById('status').value = merchant.status || 'open';

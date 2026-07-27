@@ -2,314 +2,476 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>智游通江</title>
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>商户管理 - 通江文旅</title>
     <style>
-        * { margin:0; padding:0; box-sizing:border-box; }
-        body { font-family: system-ui, sans-serif; height:100vh; overflow:hidden; }
-        #map { height:100vh; width:100vw; z-index:1; }
-        .top-bar { position:fixed; top:20px; right:20px; z-index:1500; }
-        .top-btn { background:white; border-radius:20px; padding:6px 12px; box-shadow:0 2px 8px rgba(0,0,0,0.2); border:none; font-size:14px; cursor:pointer; }
-        .bottom-bar { position:fixed; bottom:20px; left:20px; right:20px; z-index:1500; display:flex; gap:10px; }
-        .btn { flex:1; padding:14px; border:none; border-radius:12px; font-size:16px; font-weight:bold; box-shadow:0 4px 12px rgba(0,0,0,0.15); cursor:pointer; }
-        .btn-primary { background:#2E7D32; color:white; }
-        .btn-secondary { background:white; color:#2E7D32; }
-        .panel { position:fixed; top:0; left:0; right:0; bottom:0; background:white; z-index:2000; transform:translateY(100%); transition:transform 0.3s; overflow-y:auto; display:flex; flex-direction:column; }
-        .panel.active { transform:translateY(0); }
-        .panel-header { padding:16px; border-bottom:1px solid #eee; display:flex; justify-content:space-between; align-items:center; }
-        .panel-body { flex:1; padding:16px; overflow-y:auto; }
-        .reserve-btn { background:#1565C0; color:white; border:none; padding:10px 20px; border-radius:20px; width:100%; margin-top:12px; cursor:pointer; }
-        .time-slot { display:inline-block; padding:6px 12px; margin:4px; border:1px solid #ccc; border-radius:20px; cursor:pointer; }
-        .time-slot.full { background:#eee; color:#999; cursor:not-allowed; }
-        .time-slot.selected { background:#2E7D32; color:white; }
-        .card { border:1px solid #eee; border-radius:8px; padding:12px; margin:8px 0; background:#fafafa; }
-        .hidden { display:none; }
+        body { font-family: system-ui, sans-serif; background:#f5f5f5; margin:0; }
+        .header { background:#1B5E20; color:white; padding:12px 20px; display:flex; justify-content:space-between; align-items:center; }
+        .container { max-width:1000px; margin:20px auto; background:white; padding:20px; border-radius:8px; }
+        .tab { display:flex; gap:8px; margin-bottom:20px; flex-wrap:wrap; }
+        .tab button { padding:10px 16px; border:none; background:#e0e0e0; border-radius:4px; cursor:pointer; font-size:14px; }
+        .tab button.active { background:#2E7D32; color:white; }
         .form-group { margin:8px 0; }
         label { display:block; margin-bottom:4px; font-weight:500; }
         input, select, textarea { width:100%; padding:8px; border:1px solid #ccc; border-radius:4px; }
-        .my-tab { padding:8px 16px; border:none; background:#eee; border-radius:20px; cursor:pointer; }
-        .my-tab.active { background:#2e7d32; color:white; }
-        .route-node { display:flex; gap:8px; align-items:center; margin:8px 0; }
-        .day-header { font-weight:bold; background:#e9f5ea; padding:6px; border-radius:4px; margin:12px 0 6px; }
-        .trip-line { padding:4px 0; border-bottom:1px dotted #eee; }
-        .collapse-header { cursor:pointer; font-weight:bold; display:flex; justify-content:space-between; }
-        .warn-list { background:#fafafa; padding:10px; border-radius:8px; margin-top:10px; }
-        .toggle-section { background:#f0f0f0; border-radius:8px; padding:12px; margin:10px 0; cursor:pointer; }
-        .route-time { font-size:12px; color:#666; margin-left:8px; }
-        .lang-select { margin-bottom:15px; }
-        /* 分类折叠样式 */
-        .category-group { margin-bottom:10px; border:1px solid #eee; border-radius:8px; overflow:hidden; }
-        .category-title { background:#f5f5f5; padding:12px; font-weight:bold; cursor:pointer; display:flex; justify-content:space-between; align-items:center; }
-        .category-items { padding:0 12px; }
-        .category-items .card { border:none; border-bottom:1px dotted #ddd; margin:0; border-radius:0; }
-        .category-items .card:last-child { border-bottom:none; }
-        /* 业务图片框 */
-        .biz-image-box {
-            width: 100%;
-            aspect-ratio: 4 / 3;
-            margin-top: 8px;
-            border-radius: 4px;
-            overflow: hidden;
-            background: #f0f0f0;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-        .biz-image-box img {
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
-        }
-        @media (min-width: 768px) {
-            .biz-image-box {
-                max-width: 400px;
-            }
-        }
+        .btn { padding:6px 14px; border:none; border-radius:4px; cursor:pointer; font-size:14px; margin:2px; }
+        .btn-primary { background:#2E7D32; color:white; }
+        .btn-danger { background:#B71C1C; color:white; }
+        .btn-default { background:#e0e0e0; color:#333; }
+        .btn-export { background:#ff9800; color:white; }
+        .card { border:1px solid #ddd; padding:12px; margin:8px 0; border-radius:8px; background:#fafafa; }
+        .hidden { display:none; }
+        .item-collapse { margin-bottom:6px; }
+        .item-header { display:flex; align-items:center; gap:10px; cursor:pointer; font-weight:500; padding:8px; background:#f0f0f0; border-radius:4px; }
+        .item-header span { flex:1; }
+        .item-detail { padding:10px; border:1px solid #eee; border-radius:4px; margin-top:4px; background:white; }
+        .upload-preview { max-width:200px; max-height:150px; margin-top:4px; border-radius:4px; border:1px solid #ddd; }
+        .reservation-card { margin-bottom:8px; }
+        .month-group { margin:10px 0; }
+        .month-title { font-weight:bold; background:#e9f5ea; padding:8px; cursor:pointer; }
+        .category-header { cursor:pointer; background:#f9f9f9; padding:8px; margin:4px 0; border:1px solid #ddd; border-radius:4px; display:flex; justify-content:space-between; }
     </style>
 </head>
 <body>
-<div id="map"></div>
-<div class="top-bar">
-    <button class="top-btn" onclick="openPanel('myPanel')">👤 我的</button>
-</div>
-<div class="bottom-bar">
-    <button class="btn btn-secondary" onclick="openPanel('routesPanel')">📋 路线</button>
-    <button class="btn btn-primary" id="navBtn" onclick="startSimulation()">📍 模拟导航</button>
+<div id="login-page" style="max-width:400px; margin:80px auto; background:white; padding:20px; border-radius:8px;">
+    <h2>商户登录</h2>
+    <div class="form-group"><input id="account" placeholder="邮箱 (如 st001@st.cn)"></div>
+    <div class="form-group"><input id="password" type="password" placeholder="密码"></div>
+    <button class="btn btn-primary" onclick="login()" style="width:100%">登录</button>
+    <p id="login-msg"></p>
 </div>
 
-<!-- 商户详情面板 -->
-<div class="panel" id="merchantDetailPanel">
-    <div class="panel-header"><h2 id="merchantDetailTitle"></h2><button onclick="closePanel('merchantDetailPanel')">✕</button></div>
-    <div class="panel-body" id="merchantDetailContent"></div>
-</div>
-<!-- 路线面板 -->
-<div class="panel" id="routesPanel">
-    <div class="panel-header"><h2>路线</h2><button onclick="closePanel('routesPanel')">✕</button></div>
-    <div class="panel-body">
-        <h3>📌 推荐路线</h3>
-        <div id="routeList"></div>
-        <div class="toggle-section" onclick="toggleCustomTripSection()"><h4>✏️ 自设行程 <span id="customTripArrow">▼</span></h4></div>
-        <div id="customTripSection" class="hidden" style="margin-top:10px;">
-            <div class="form-group"><label>出发日期</label><input type="date" id="trip-date"></div>
-            <div class="form-group"><label>出发时间</label><select id="trip-time"><option value="07:00" selected>07:00</option><option value="08:00">08:00</option><option value="09:00">09:00</option></select></div>
-            <div class="form-group"><label>出行方式</label><select id="trip-mode"><option value="auto">自驾</option><option value="bus">公交</option><option value="walk">步行</option></select></div>
-            <div class="form-group"><label>人数</label><input type="number" id="trip-people" min="1" value="2"></div>
-            <div class="form-group"><label>行程路线</label><div id="dynamic-route"></div><button class="btn btn-default" onclick="addRouteLeg()">+ 添加景点</button></div>
-            <button class="btn btn-primary" onclick="generateCustomTrip()" style="width:100%; margin-top:12px;">生成行程</button>
-            <div id="generated-trip" style="margin-top:12px;"></div>
-            <div id="trip-warnings" style="margin-top:12px;"></div>
-            <button class="btn btn-primary hidden" id="saveGeneratedTripBtn" onclick="saveGeneratedTrip()" style="width:100%; margin-top:8px;">保存至我的行程</button>
+<div id="main" class="hidden">
+    <div class="header"><span id="merchant-name"></span><button class="btn btn-default" onclick="logout()">退出</button></div>
+    <div class="container">
+        <div class="tab" id="main-tabs">
+            <button class="active" onclick="switchTab('business')">📦 业务管理</button>
+            <button onclick="switchTab('reservations')">📅 预约列表</button>
+            <button onclick="switchTab('feedbacks')">💬 留言</button>
+            <button onclick="switchTab('info')">🏪 基本信息</button>
+        </div>
+
+        <!-- 业务管理 -->
+        <div id="tab-business">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+                <h3>业务分类与项目</h3>
+                <button class="btn btn-default" onclick="toggleBusinessCategoryManager()">管理分类</button>
+            </div>
+            <div id="business-category-panel" class="hidden card" style="margin-bottom:10px;">
+                <div style="display:flex; gap:10px;">
+                    <input id="new-business-category-input" placeholder="新分类名称" style="flex:1;">
+                    <button class="btn btn-primary" onclick="addBusinessCategory()">添加</button>
+                </div>
+                <div id="business-category-list" style="margin-top:8px;"></div>
+            </div>
+            <div id="business-container"></div>
+            <button class="btn btn-primary" onclick="showAddItemForm()" style="margin-top:10px;">+ 添加项目</button>
+        </div>
+
+        <!-- 预约列表 -->
+        <div id="tab-reservations" class="hidden">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+                <button class="btn btn-primary" onclick="toggleAddReservationForm()">+ 新增预约</button>
+                <div>
+                    <button class="btn btn-default" onclick="toggleActivityCategoryManager()">活动类别</button>
+                    <button class="btn btn-export" onclick="exportReservations()">导出全部</button>
+                </div>
+            </div>
+            <div id="activity-category-panel" class="hidden card" style="margin-bottom:10px;">
+                <div style="display:flex; gap:10px;">
+                    <input id="new-activity-category-input" placeholder="新活动类别" style="flex:1;">
+                    <button class="btn btn-primary" onclick="addActivityCategory()">添加</button>
+                </div>
+                <div id="activity-category-list" style="margin-top:8px;"></div>
+            </div>
+            <!-- 微调后的新增预约表单 -->
+            <div id="add-reservation-form" class="hidden card" style="margin-bottom:10px;">
+                <h4>新增预约</h4>
+                <div class="form-group"><label>预约日期</label><input type="date" id="new-res-date"></div>
+                <div class="form-group"><label>时段</label><select id="new-res-time">
+                    <option value="08:00-09:00">08:00-09:00</option><option value="09:00-10:00">09:00-10:00</option><option value="10:00-11:00">10:00-11:00</option><option value="11:00-12:00">11:00-12:00</option><option value="13:00-14:00">13:00-14:00</option><option value="14:00-15:00">14:00-15:00</option><option value="15:00-16:00">15:00-16:00</option><option value="16:00-17:00">16:00-17:00</option>
+                </select></div>
+                <div class="form-group"><label>活动类别</label><select id="new-res-activity"></select></div>
+                <div class="form-group"><label>单位名称（团队或个人）</label><input id="new-res-unit"></div>
+                <div class="form-group"><label>人数</label><input type="number" id="new-res-count" min="1"></div>
+                <div class="form-group"><label>联系人</label><input id="new-res-name"></div>
+                <div class="form-group"><label>联系电话</label><input id="new-res-phone"></div>
+                <div class="form-group"><label>活动地点</label><input id="new-res-room"></div>
+                <div class="form-group"><label>备注</label><textarea id="new-res-remark" rows="2"></textarea></div>
+                <button class="btn btn-primary" onclick="addReservation()">保存预约</button>
+                <button class="btn btn-default" onclick="toggleAddReservationForm()">取消</button>
+            </div>
+            <div id="reservation-list"></div>
+        </div>
+
+        <!-- 留言 -->
+        <div id="tab-feedbacks" class="hidden">
+            <div id="feedback-list"></div>
+        </div>
+
+        <!-- 基本信息 -->
+        <div id="tab-info" class="hidden">
+            <div class="form-group"><label>业务类型</label><select id="business_type">
+                <option value="scenic">景区</option><option value="museum">文博场馆</option><option value="hotel">住宿</option><option value="restaurant">餐饮</option><option value="shop">购物</option><option value="entertainment">娱乐</option><option value="transport">交通</option><option value="other">其他</option>
+            </select></div>
+            <div class="form-group"><label>营业状态</label><select id="status"><option value="open">营业中</option><option value="closed">休息</option></select></div>
+            <div class="form-group"><label>电话</label><input id="phone"></div>
+            <div class="form-group"><label>地址</label><input id="address"></div>
+            <div class="form-group"><label>停车位</label><input type="number" id="parking" min="0"></div>
+            <div class="form-group"><label>简介</label><textarea id="intro"></textarea></div>
+            <button class="btn btn-primary" onclick="saveInfo()">保存</button>
         </div>
     </div>
 </div>
 
-<!-- 我的面板 -->
-<div class="panel" id="myPanel">
-    <div class="panel-header"><h2>我的</h2><button onclick="closePanel('myPanel')">✕</button></div>
-    <div class="panel-body">
-        <div class="lang-select"><label>语言</label><select id="langSelect" style="width:100%"><option value="cn">中文</option></select></div>
-        <div style="display:flex; gap:10px; margin-bottom:15px;">
-            <button id="my-tab-trip" class="my-tab active" onclick="switchMyTab('trip')">📅 行程</button>
-            <button id="my-tab-reservation" class="my-tab" onclick="switchMyTab('reservation')">📋 预约</button>
-            <button id="my-tab-feedback" class="my-tab" onclick="switchMyTab('feedback')">💬 留言</button>
-        </div>
-        <div id="myTripContent"></div>
-        <div id="myReservationContent" class="hidden"></div>
-        <div id="myFeedbackContent" class="hidden">
-            <textarea id="feedbackMsg" rows="3" placeholder="建议或问题..."></textarea>
-            <button class="btn btn-primary" onclick="submitFeedback()" style="width:100%; margin-top:8px;">提交</button>
-            <div id="feedbackHistory" style="margin-top:12px;"></div>
-        </div>
-    </div>
-</div>
-
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="config.js"></script>
 <script>
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-let map, allPois=[], generatedTripData=null;
-const COUNTY = { lat:32.08, lng:107.24, name:'红军广场', id:'county' };
-const poiColors = { '自然景区':'#2E7D32', '红色景区':'#9C27B0', '文博场馆':'#9C27B0', '餐饮住宿':'#FF9800', '停车场':'#00BCD4', '公共服务':'#607D8B' };
-let transportPresets = {};
-const DAY_START=480, DAY_END=1080, LUNCH_TRIGGER=690, LUNCH_END=750, DINNER_TRIGGER=1050, DINNER_END=1110, MEAL_DURATION=60;
-const EXCLUDED_FROM_TRIP = ['游戏娱乐','公共服务','特产购物'];
-const NON_VISIT_CATEGORIES = ['交通枢纽','餐饮住宿','公共服务','特产购物','游玩娱乐'];
-let routeLegs=[], mainPoiOptions=[], allowedPoiOptions=[];
+let merchant = null;
+let businessCategories = [];
+let businessItems = [];
+let activityCategories = [];
 
-function getUserId(){ let uid=localStorage.getItem('vid'); if(!uid){ uid='v_'+Date.now()+Math.random().toString(36); localStorage.setItem('vid',uid); } return uid; }
-function formatTime(m){ return `${Math.floor(m/60).toString().padStart(2,'0')}:${(m%60).toString().padStart(2,'0')}`; }
-function isNonVisitPoi(poiId){
-    if(poiId==='county') return false;
-    const poi=allPois.find(p=>p.id==poiId);
-    if(!poi||!poi.category) return false;
-    return poi.category.split(',').some(c=>NON_VISIT_CATEGORIES.includes(c));
+// ========== 会话 ==========
+async function checkSession(){
+    const { data: { session } } = await sb.auth.getSession();
+    if(session){
+        const { data: m } = await sb.from('ztj_merchants').select('*').eq('id', session.user.id).single();
+        if(m){ merchant = m; showMain(); }
+        else { await sb.auth.signOut(); showLogin(); }
+    } else showLogin();
+}
+sb.auth.onAuthStateChange((event, session) => {
+    if(event==='SIGNED_IN') checkSession();
+    else if(event==='SIGNED_OUT') showLogin();
+});
+function showLogin(){ document.getElementById('login-page').classList.remove('hidden'); document.getElementById('main').classList.add('hidden'); }
+function showMain(){
+    document.getElementById('login-page').classList.add('hidden');
+    document.getElementById('main').classList.remove('hidden');
+    document.getElementById('merchant-name').innerText = merchant.display_name;
+    loadBusinessData();
+    loadActivityCategories();
+    switchTab('business');
+}
+async function login(){
+    const email = document.getElementById('account').value.trim();
+    const pwd = document.getElementById('password').value;
+    if(!email||!pwd) return;
+    const { error } = await sb.auth.signInWithPassword({email, password:pwd});
+    if(error) document.getElementById('login-msg').innerText = '登录失败：'+error.message;
+}
+async function logout(){ await sb.auth.signOut(); showLogin(); }
+
+function switchTab(tab){
+    document.querySelectorAll('#main-tabs button').forEach(b => b.classList.remove('active'));
+    const tabs = ['business','reservations','feedbacks','info'];
+    const idx = tabs.indexOf(tab);
+    if(idx>=0) document.querySelectorAll('#main-tabs button')[idx].classList.add('active');
+    tabs.forEach(t => document.getElementById('tab-'+t).classList.add('hidden'));
+    document.getElementById('tab-'+tab).classList.remove('hidden');
+    if(tab==='business') renderBusiness();
+    if(tab==='reservations') { loadActivityCategoriesForSelect(); loadReservations(); }
+    if(tab==='feedbacks') loadMerchantFeedbacks();
+    if(tab==='info') loadInfo();
 }
 
-function initMap(){
-    map = L.map('map', { zoomControl: false }).setView([32.08,107.18], 12);
-    L.tileLayer('https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}',{
-        subdomains:['1','2','3','4'], maxZoom:18
-    }).addTo(map);
-    L.control.zoom({ position: 'topright' }).addTo(map);
-    loadAllPOIs();
-    map.on('click', e => { if(simPos) setSimulatedPosition(e.latlng.lat, e.latlng.lng); });
-}
-
-async function loadAllPOIs(){
-    const { data } = await sb.from('ztj_poi').select('*').eq('status','active');
-    allPois = data || [];
-    renderPOIs(allPois);
-    window.subPoisMap = {};
-    allPois.forEach(p => { if(p.parent_id){ if(!window.subPoisMap[p.parent_id]) window.subPoisMap[p.parent_id]=[]; window.subPoisMap[p.parent_id].push(p); } });
-    await loadTransportPresets();
-}
-async function loadTransportPresets(){
-    const { data } = await sb.from('ztj_transport_presets').select('*');
-    transportPresets = {};
-    if(data) data.forEach(p => { transportPresets[`${p.from_poi_id}_${p.to_poi_id}`] = p.time_min; });
-}
-function getTransportTime(fromId, toId){
-    const fId=fromId==='county'?0:fromId, tId=toId==='county'?0:toId;
-    let t=transportPresets[`${fId}_${tId}`]; if(t!==undefined) return t;
-    t=transportPresets[`${tId}_${fId}`]; return t!==undefined?t:null;
-}
-function renderPOIs(pois){
-    map.eachLayer(l => { if(l instanceof L.Marker) map.removeLayer(l); });
-    pois.forEach(p => {
-        const cat = (p.category||'').split(',')[0]||'其他';
-        const color = poiColors[cat]||'#999';
-        const icon = L.divIcon({html:`<div style="background:${color}; width:20px; height:20px; border-radius:50%; border:2px solid white;"></div>`, iconSize:[20,20]});
-        L.marker([p.lat,p.lng],{icon}).addTo(map).on('click', ()=> showPoiDetail(p));
-    });
-}
-
-// ========== 商户详情（所有POI均显示预约管理） ==========
-async function showPoiDetail(poi){
-    const { data: m } = await sb.from('ztj_merchants').select('*').eq('poi_id', poi.id).maybeSingle();
-    document.getElementById('merchantDetailTitle').textContent = poi.name;
-    let html = '';
-
-    if (m) {
-        const sd = m.service_data || {};
-        const categories = sd.businessCategories || [];
-        const items = sd.businessItems || [];
-        
-        if (categories.length > 0 && items.length > 0) {
-            categories.forEach(cat => {
-                const catItems = items.filter(item => item.category === cat);
-                if (catItems.length === 0) return;
-                html += `<div class="category-group">
-                    <div class="category-title" onclick="this.nextElementSibling.classList.toggle('hidden')">
-                        <span>📁 ${cat} (${catItems.length})</span>
-                        <span>▼</span>
-                    </div>
-                    <div class="category-items hidden">`;
-                catItems.forEach((item, idx) => {
-                    if (!item.name) return;
-                    let priceStr = item.price ? ` ${item.price}` : '';
-                    let durationStr = item.duration ? ` ${item.duration}` : '';
-                    let descStr = item.description ? `<p>${item.description}</p>` : '';
-                    let imgHtml = '';
-                    if (item.image) {
-                        imgHtml = `<div class="biz-image-box"><img src="${item.image}" alt="${item.name}"></div>`;
-                    }
-                    html += `<div class="card">
-                        <div><b>${idx+1}. ${item.name}</b>${priceStr}${durationStr}${descStr}</div>
-                        ${imgHtml}
-                    </div>`;
-                });
-                html += `</div></div>`;
-            });
-        } else {
-            const flatItems = sd.items || [];
-            if (flatItems.length > 0) {
-                flatItems.filter(item => item.name).forEach((item, idx) => {
-                    let priceStr = item.price ? ` ${item.price}` : '';
-                    let durationStr = item.duration ? ` ${item.duration}` : '';
-                    let descStr = item.description ? `<p>${item.description}</p>` : '';
-                    let imgHtml = '';
-                    if (item.image) {
-                        imgHtml = `<div class="biz-image-box"><img src="${item.image}" alt="${item.name}"></div>`;
-                    }
-                    html += `<div class="card">
-                        <div><b>${idx+1}. ${item.name}</b>${priceStr}${durationStr}${descStr}</div>
-                        ${imgHtml}
-                    </div>`;
-                });
-            }
-        }
-
-        // 只要商户存在，就显示预约管理按钮
-        html += `<button class="reserve-btn" onclick="toggleReserveForm('${m.id}')">📋 预约管理</button>`;
-        html += `<div id="reserve-form-${m.id}" class="hidden" style="margin-top:10px;"></div>`;
-
-        let phone = m.phone || '未提供';
-        let status = m.status === 'open' ? '营业中' : (m.status === 'closed' ? '休息' : '繁忙');
-        let parking = m.parking_spots ?? 0;
-        html += `<hr style="margin:10px 0;">
-                 <p>📞 ${phone} | 状态：${status} | 停车位：${parking}</p>
-                 <p>${poi.description||''}</p>`;
-    } else {
-        html += '<p style="color:#999;">该商户信息暂未录入，请稍后再来。</p>';
-        html += `<hr style="margin:10px 0;"><p>📞 未提供 | 状态：未知 | 停车位：0</p><p>${poi.description||''}</p>`;
+// ==================== 业务管理 ====================
+function loadBusinessData(){
+    const sd = merchant.service_data || {};
+    businessCategories = sd.businessCategories ? [...sd.businessCategories] : [];
+    businessItems = sd.businessItems ? JSON.parse(JSON.stringify(sd.businessItems)) : [];
+    if(businessCategories.length === 0 && businessItems.length === 0 && sd.items && sd.items.length){
+        businessCategories = ['默认'];
+        businessItems = sd.items.map(item => ({ ...item, category: '默认' }));
     }
-
-    document.getElementById('merchantDetailContent').innerHTML = html;
-    openPanel('merchantDetailPanel');
+    renderBusiness();
 }
 
-// ========== 预约表单切换 ==========
-async function toggleReserveForm(merchantId){
-    const formDiv = document.getElementById(`reserve-form-${merchantId}`);
-    if(!formDiv.classList.contains('hidden')){
-        formDiv.classList.add('hidden');
+function renderBusiness(){
+    const container = document.getElementById('business-container');
+    if(!businessCategories.length){
+        container.innerHTML = '<p>暂无业务分类，请添加分类和项目</p>';
         return;
     }
-    const { data: m } = await sb.from('ztj_merchants').select('service_data').eq('id', merchantId).single();
-    const categories = (m && m.service_data && m.service_data.categories) ? m.service_data.categories : [];
-    let catOptions = categories.map(c => `<option value="${c}">${c}</option>`).join('');
-    let timeOptions = '';
-    for(let h=8; h<17; h++){
-        const start = `${h.toString().padStart(2,'0')}:00`;
-        const end = `${(h+1).toString().padStart(2,'0')}:00`;
-        timeOptions += `<option value="${start}-${end}">${start}-${end}</option>`;
-    }
-    formDiv.innerHTML = `
-        <div class="form-group"><label>预约日期</label><input type="date" id="res-date-${merchantId}"></div>
-        <div class="form-group"><label>时段</label><select id="res-time-${merchantId}">${timeOptions}</select></div>
-        <div class="form-group"><label>单位（团队）名称</label><input id="res-unit-${merchantId}"></div>
-        <div class="form-group"><label>联系人</label><input id="res-name-${merchantId}"></div>
-        <div class="form-group"><label>联系电话</label><input id="res-phone-${merchantId}"></div>
-        <div class="form-group"><label>人数</label><input type="number" id="res-count-${merchantId}" min="1"></div>
-        <div class="form-group"><label>活动类别</label><select id="res-cat-${merchantId}">${catOptions}</select></div>
-        <div class="form-group"><label>地点/场地</label><input id="res-room-${merchantId}"></div>
-        <div class="form-group"><label>备注</label><textarea id="res-remark-${merchantId}" rows="2"></textarea></div>
-        <button class="btn btn-primary" onclick="submitReservationDirect('${merchantId}')">提交预约</button>
-        <button class="btn btn-default" onclick="toggleReserveForm('${merchantId}')">取消</button>
-    `;
-    formDiv.classList.remove('hidden');
+    let html = '';
+    businessCategories.forEach(cat => {
+        const itemsInCat = businessItems.filter(item => item.category === cat);
+        html += `<div class="card">
+            <div class="category-header" onclick="this.nextElementSibling.classList.toggle('hidden')">
+                <span>📁 ${cat} (${itemsInCat.length})</span>
+                <span>▼</span>
+            </div>
+            <div class="hidden" style="margin-top:8px;">`;
+        if(itemsInCat.length === 0){
+            html += '<p>暂无项目</p>';
+        } else {
+            itemsInCat.forEach((item, idx) => {
+                const globalIdx = businessItems.indexOf(item);
+                html += `<div class="item-collapse">
+                    <div class="item-header" onclick="toggleBusinessItemEdit(${globalIdx})">
+                        <span>${item.name||'未命名'} ${item.price ? ' '+item.price : ''} ${item.duration||''}</span>
+                    </div>
+                    <div id="biz-item-edit-${globalIdx}" class="item-detail hidden">
+                        <div class="form-group"><label>名称</label><input id="biz-name-${globalIdx}" value="${item.name||''}"></div>
+                        <div class="form-group"><label>价格</label><input type="text" id="biz-price-${globalIdx}" value="${item.price||''}" placeholder="如 220元"></div>
+                        <div class="form-group"><label>时限/时长</label><input id="biz-duration-${globalIdx}" value="${item.duration||''}"></div>
+                        <div class="form-group"><label>描述</label><textarea id="biz-desc-${globalIdx}">${item.description||''}</textarea></div>
+                        <div class="form-group"><label>图片</label><input type="file" accept="image/*" onchange="handleBizImageChange(${globalIdx}, this)">
+                        ${item.image ? '<img src="'+item.image+'" class="upload-preview">' : ''}</div>
+                        <button class="btn btn-primary" onclick="saveBusinessItemEdit(${globalIdx})">保存</button>
+                        <button class="btn btn-danger" onclick="deleteBusinessItem(${globalIdx})">删除</button>
+                    </div>
+                </div>`;
+            });
+        }
+        html += `<button class="btn btn-default" onclick="showAddItemForm('${cat}')" style="margin-top:6px;">+ 添加项目</button>`;
+        html += `</div></div>`;
+    });
+    container.innerHTML = html;
 }
 
-async function submitReservationDirect(merchantId){
-    const date = document.getElementById(`res-date-${merchantId}`).value;
-    const timeRange = document.getElementById(`res-time-${merchantId}`).value;
-    if(!date||!timeRange){ alert('请选择日期和时段'); return; }
+function toggleBusinessItemEdit(idx){ document.getElementById('biz-item-edit-'+idx).classList.toggle('hidden'); }
+
+async function handleBizImageChange(idx, input){
+    const file = input.files[0]; if(!file) return;
+    const path = `merchant-${merchant.id}/business/${Date.now()}.jpg`;
+    const { error } = await sb.storage.from('merchant-uploads').upload(path, file);
+    if(error){ alert('上传失败'); return; }
+    const { data: { publicUrl } } = sb.storage.from('merchant-uploads').getPublicUrl(path);
+    businessItems[idx].image = publicUrl;
+    renderBusiness();
+    await updateMerchantServiceData();
+}
+function saveBusinessItemEdit(idx){
+    const item = businessItems[idx];
+    item.name = document.getElementById('biz-name-'+idx).value;
+    item.price = document.getElementById('biz-price-'+idx).value;
+    item.duration = document.getElementById('biz-duration-'+idx).value;
+    item.description = document.getElementById('biz-desc-'+idx).value;
+    updateMerchantServiceData();
+    renderBusiness();
+    alert('已保存');
+}
+function deleteBusinessItem(idx){
+    if(!confirm('删除该项目？')) return;
+    businessItems.splice(idx, 1);
+    updateMerchantServiceData();
+    renderBusiness();
+}
+
+function showAddItemForm(category){
+    const cat = category || (businessCategories.length ? businessCategories[0] : '');
+    const html = `
+        <div style="position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); background:white; padding:20px; border-radius:8px; box-shadow:0 0 10px rgba(0,0,0,0.3); z-index:9999; min-width:350px;">
+            <h4>新增业务项目</h4>
+            <div class="form-group"><label>分类</label><select id="add-item-category">${businessCategories.map(c => `<option value="${c}" ${c===cat?'selected':''}>${c}</option>`).join('')}</select></div>
+            <div class="form-group"><label>名称</label><input id="add-item-name"></div>
+            <div class="form-group"><label>价格</label><input type="text" id="add-item-price" placeholder="如 220元"></div>
+            <div class="form-group"><label>时限/时长</label><input id="add-item-duration"></div>
+            <div class="form-group"><label>描述</label><textarea id="add-item-desc"></textarea></div>
+            <div class="form-group"><label>图片</label><input type="file" accept="image/*" id="add-item-image"></div>
+            <button class="btn btn-primary" onclick="confirmAddItem()">添加</button>
+            <button class="btn btn-default" onclick="document.getElementById('temp-dialog').remove()">取消</button>
+        </div>
+    `;
+    const div = document.createElement('div');
+    div.id = 'temp-dialog';
+    div.innerHTML = html;
+    document.body.appendChild(div);
+}
+
+async function confirmAddItem(){
+    const category = document.getElementById('add-item-category').value;
+    const name = document.getElementById('add-item-name').value.trim();
+    if(!name){ alert('名称必填'); return; }
+    const price = document.getElementById('add-item-price').value;
+    const duration = document.getElementById('add-item-duration').value;
+    const desc = document.getElementById('add-item-desc').value;
+    let image = '';
+    const file = document.getElementById('add-item-image').files[0];
+    if(file){
+        const path = `merchant-${merchant.id}/business/${Date.now()}.jpg`;
+        const { error } = await sb.storage.from('merchant-uploads').upload(path, file);
+        if(!error){
+            const { data: { publicUrl } } = sb.storage.from('merchant-uploads').getPublicUrl(path);
+            image = publicUrl;
+        }
+    }
+    businessItems.push({ category, name, price, duration, description: desc, image });
+    await updateMerchantServiceData();
+    document.getElementById('temp-dialog').remove();
+    renderBusiness();
+}
+
+// ==================== 分类管理 ====================
+function toggleBusinessCategoryManager(){
+    document.getElementById('business-category-panel').classList.toggle('hidden');
+    renderBusinessCategoryList();
+}
+function renderBusinessCategoryList(){
+    const container = document.getElementById('business-category-list');
+    if(!businessCategories.length){ container.innerHTML = '<p>暂无分类</p>'; return; }
+    container.innerHTML = businessCategories.map((cat, idx) => `
+        <div style="display:flex; justify-content:space-between; margin:4px 0;">
+            <span>${cat}</span>
+            <button class="btn btn-danger" onclick="deleteBusinessCategory(${idx})">删除</button>
+        </div>
+    `).join('');
+}
+async function addBusinessCategory(){
+    const name = document.getElementById('new-business-category-input').value.trim();
+    if(!name) return;
+    if(businessCategories.includes(name)){ alert('已存在'); return; }
+    businessCategories.push(name);
+    await updateMerchantServiceData();
+    document.getElementById('new-business-category-input').value = '';
+    renderBusinessCategoryList();
+    renderBusiness();
+}
+async function deleteBusinessCategory(idx){
+    const cat = businessCategories[idx];
+    if(!confirm(`删除分类“${cat}”？该分类下的项目将归入“默认”分类。`)) return;
+    if(!businessCategories.includes('默认')) businessCategories.push('默认');
+    businessItems.forEach(item => { if(item.category === cat) item.category = '默认'; });
+    businessCategories.splice(idx, 1);
+    await updateMerchantServiceData();
+    renderBusinessCategoryList();
+    renderBusiness();
+}
+
+// 活动类别管理
+function toggleActivityCategoryManager(){
+    document.getElementById('activity-category-panel').classList.toggle('hidden');
+    renderActivityCategoryList();
+}
+function renderActivityCategoryList(){
+    const container = document.getElementById('activity-category-list');
+    if(!activityCategories.length){ container.innerHTML = '<p>暂无活动类别</p>'; return; }
+    container.innerHTML = activityCategories.map((cat, idx) => `
+        <div style="display:flex; justify-content:space-between; margin:4px 0;">
+            <span>${cat}</span>
+            <button class="btn btn-danger" onclick="deleteActivityCategory(${idx})">删除</button>
+        </div>
+    `).join('');
+}
+async function addActivityCategory(){
+    const name = document.getElementById('new-activity-category-input').value.trim();
+    if(!name) return;
+    if(activityCategories.includes(name)){ alert('已存在'); return; }
+    activityCategories.push(name);
+    await updateMerchantServiceData();
+    document.getElementById('new-activity-category-input').value = '';
+    renderActivityCategoryList();
+    loadActivityCategoriesForSelect();
+}
+async function deleteActivityCategory(idx){
+    activityCategories.splice(idx, 1);
+    await updateMerchantServiceData();
+    renderActivityCategoryList();
+    loadActivityCategoriesForSelect();
+}
+
+async function loadActivityCategories(){
+    if(merchant.service_data && merchant.service_data.categories){
+        activityCategories = [...merchant.service_data.categories];
+    } else {
+        activityCategories = [];
+    }
+}
+async function loadActivityCategoriesForSelect(){
+    await loadActivityCategories();
+    const sel = document.getElementById('new-res-activity');
+    if(sel){
+        sel.innerHTML = '<option value="">--选择--</option>';
+        activityCategories.forEach(cat => sel.innerHTML += `<option value="${cat}">${cat}</option>`);
+    }
+}
+
+// ==================== 保存核心 ====================
+async function updateMerchantServiceData(){
+    const sd = {
+        businessCategories: businessCategories,
+        businessItems: businessItems,
+        items: businessItems.map(item => ({
+            name: item.name, price: item.price, duration: item.duration, description: item.description, image: item.image
+        })),
+        categories: activityCategories
+    };
+    const { error } = await sb.from('ztj_merchants').update({ service_data: sd }).eq('id', merchant.id);
+    if(!error) merchant.service_data = sd;
+}
+
+// ==================== 预约列表 ====================
+async function loadReservations(){
+    const { data } = await sb.from('reservations').select('*').eq('merchant_id', merchant.id).order('created_at', false);
+    const container = document.getElementById('reservation-list');
+    if(!data || data.length === 0){ container.innerHTML = '<p>暂无预约</p>'; return; }
+    const grouped = {};
+    data.forEach(r => {
+        const date = new Date(r.created_at);
+        const key = `${date.getFullYear()}年${date.getMonth()+1}月`;
+        if(!grouped[key]) grouped[key] = [];
+        grouped[key].push(r);
+    });
+    let html = '';
+    for(const [month, records] of Object.entries(grouped)){
+        html += `<div class="month-group">
+            <div class="month-title" onclick="this.nextElementSibling.classList.toggle('hidden')">
+                📅 ${month} (${records.length}条) <span>▼</span>
+            </div>
+            <div class="hidden">`;
+        records.forEach((r) => {
+            let category = '';
+            if(r.remark && r.remark.includes('类别：')) {
+                category = r.remark.split('类别：')[1]?.split('|')[0] || '';
+            }
+            html += `<div class="reservation-card card">
+                <div class="item-header" onclick="toggleReservationDetail(${r.id})">
+                    <span>${r.reservation_date} | ${r.time_slot_start}-${r.time_slot_end||''} | ${category||'未分类'} | 联系人：${r.name}</span>
+                </div>
+                <div id="res-detail-${r.id}" class="item-detail hidden">
+                    <p><b>活动类别：</b>${category||'未指定'} <b>地点：</b>${r.room||''}</p>
+                    <p><b>联系人：</b>${r.name} ${r.phone}</p>
+                    <p><b>单位：</b>${r.unit||''} <b>人数：</b>${r.visitor_count}</p>
+                    <p><b>备注：</b>${r.remark ? r.remark.replace('类别：'+category+'|', '').replace('类别：'+category, '') : ''}</p>
+                    ${r.image ? `<img src="${r.image}" class="upload-preview">` : ''}
+                    <p><b>状态：</b>${r.status}</p>
+                    <div style="display:flex; gap:6px; flex-wrap:wrap;">
+                        ${r.status==='pending' ? `<button class="btn btn-primary" onclick="updateReservation(${r.id},'confirmed')">确认</button><button class="btn btn-danger" onclick="updateReservation(${r.id},'rejected')">拒绝</button>` : ''}
+                    </div>
+                </div>
+            </div>`;
+        });
+        html += `</div></div>`;
+    }
+    container.innerHTML = html;
+}
+window.toggleReservationDetail = function(id){ document.getElementById('res-detail-'+id).classList.toggle('hidden'); };
+async function updateReservation(id, status){ await sb.from('reservations').update({status}).eq('id',id); loadReservations(); }
+
+function toggleAddReservationForm(){
+    document.getElementById('add-reservation-form').classList.toggle('hidden');
+    loadActivityCategoriesForSelect();
+}
+async function addReservation(){
+    const date = document.getElementById('new-res-date').value;
+    const timeRange = document.getElementById('new-res-time').value;
     const [start, end] = timeRange.split('-');
-    const unit = document.getElementById(`res-unit-${merchantId}`).value.trim();
-    const name = document.getElementById(`res-name-${merchantId}`).value.trim();
-    const phone = document.getElementById(`res-phone-${merchantId}`).value.trim();
-    const count = parseInt(document.getElementById(`res-count-${merchantId}`).value);
-    const category = document.getElementById(`res-cat-${merchantId}`).value;
-    const room = document.getElementById(`res-room-${merchantId}`).value.trim();
-    const remark = document.getElementById(`res-remark-${merchantId}`).value.trim();
-    if(!name||!phone||!count){ alert('请填写完整信息'); return; }
+    const unit = document.getElementById('new-res-unit').value.trim();
+    const name = document.getElementById('new-res-name').value.trim();
+    const phone = document.getElementById('new-res-phone').value.trim();
+    const count = parseInt(document.getElementById('new-res-count').value) || 0;
+    const activity = document.getElementById('new-res-activity').value;
+    const room = document.getElementById('new-res-room').value.trim();
+    const remarkBase = document.getElementById('new-res-remark').value.trim();
     let finalRemark = '';
-    if(category) finalRemark += `类别：${category}`;
-    if(remark) finalRemark += (finalRemark ? '|' : '') + remark;
+    if(activity) finalRemark += `类别：${activity}`;
+    if(remarkBase) finalRemark += (finalRemark ? '|' : '') + remarkBase;
+    if(!date||!timeRange||!name||!phone){ alert('请填写必填项'); return; }
     const { error } = await sb.from('reservations').insert({
-        merchant_id: merchantId,
+        merchant_id: merchant.id,
         reservation_date: date,
         time_slot_start: start,
         time_slot_end: end,
@@ -317,300 +479,84 @@ async function submitReservationDirect(merchantId){
         remark: finalRemark,
         room: room,
         status: 'pending',
-        user_id: getUserId()
+        user_id: 'manual'
     });
-    if(error) alert('提交失败：'+error.message);
-    else {
-        alert('预约已提交');
-        document.getElementById(`reserve-form-${merchantId}`).classList.add('hidden');
-    }
+    if(error){ alert('保存失败：'+error.message); return; }
+    document.getElementById('new-res-date').value='';
+    document.getElementById('new-res-time').value='08:00-09:00';
+    document.getElementById('new-res-activity').value='';
+    document.getElementById('new-res-unit').value='';
+    document.getElementById('new-res-count').value='';
+    document.getElementById('new-res-name').value='';
+    document.getElementById('new-res-phone').value='';
+    document.getElementById('new-res-room').value='';
+    document.getElementById('new-res-remark').value='';
+    toggleAddReservationForm();
+    loadReservations();
 }
 
-// ---------- 推荐路线 ----------
-async function loadRoutes(){
-    const { data } = await sb.from('ztj_routes').select('*');
-    document.getElementById('routeList').innerHTML = data.map(r => `<div class="card"><h3>${r.name}</h3><p>${r.days||1}天 | ${r.transport||'自驾'}</p><button class="btn btn-primary" onclick="showRouteDetail(${r.id})">查看详情</button></div>`).join('');
-}
-async function showRouteDetail(id){
-    const { data:route } = await sb.from('ztj_routes').select('*').eq('id',id).single();
-    const { data:nodes } = await sb.from('ztj_route_nodes').select('*, poi:poi_id(name)').eq('route_id',id).order('order_num');
-    let html = `<h3>${route.name}</h3>`;
-    nodes.forEach(n => html += `<div>• ${n.poi?.name||'未知'} (停留${n.duration_min}分钟)</div>`);
-    const panel = document.createElement('div'); panel.className='panel active'; panel.id='routeDetailPanel';
-    panel.innerHTML = `<div class="panel-header"><h2>路线详情</h2><button onclick="this.parentElement.parentElement.remove()">✕</button></div><div class="panel-body">${html}</div>`;
-    document.body.appendChild(panel);
-}
-
-// ---------- 自设行程（完整逻辑，保持不变） ----------
-function toggleCustomTripSection(){ document.getElementById('customTripSection').classList.toggle('hidden'); if(!document.getElementById('customTripSection').classList.contains('hidden')){ buildMainPoiOptions(); resetRouteLegs(); } }
-function buildMainPoiOptions(){
-    const allMain = allPois.filter(p => !p.parent_id);
-    mainPoiOptions = allMain.filter(p => p.id !== 'county');
-    mainPoiOptions.unshift(COUNTY);
-    allowedPoiOptions = allMain.filter(p => {
-        if(!p.category) return false;
-        const cats = p.category.split(',');
-        return !cats.some(c => EXCLUDED_FROM_TRIP.includes(c));
-    });
-    if(!allowedPoiOptions.some(p => p.id === 'county')) allowedPoiOptions.unshift(COUNTY);
-}
-function resetRouteLegs(){ routeLegs=[{...COUNTY}]; renderDynamicRoute(); }
-function addRouteLeg(){ routeLegs.push({id:'',name:''}); renderDynamicRoute(); }
-function removeLeg(idx){ if(idx>0){ routeLegs.splice(idx,1); renderDynamicRoute(); } }
-function updateStartPoint(v){ const p=mainPoiOptions.find(p=>String(p.id)===v); routeLegs[0]=p||COUNTY; updateAllTimes(); }
-function updateLeg(idx,v){ const p=allowedPoiOptions.find(p=>String(p.id)===v); if(p) routeLegs[idx]=p; else routeLegs[idx]={id:'',name:''}; renderDynamicRoute(); }
-function renderDynamicRoute(){
-    let h=`<div class="route-node"><select onchange="updateStartPoint(this.value)">${mainPoiOptions.map(p=>`<option value="${p.id}" ${routeLegs[0]?.id==p.id?'selected':''}>${p.name}</option>`).join('')}</select><span>→</span></div>`;
-    routeLegs.forEach((l,i)=>{
-        if(i===0) return;
-        h+=`<div class="route-node"><select onchange="updateLeg(${i},this.value)"><option value="">--选择--</option>${allowedPoiOptions.map(p=>`<option value="${p.id}" ${l.id==p.id?'selected':''}>${p.name}</option>`).join('')}</select>${i<routeLegs.length-1?`<span class="route-time" id="time-${i}"></span>`:''}<button class="btn btn-danger" onclick="removeLeg(${i})">删除</button></div>`;
-    });
-    document.getElementById('dynamic-route').innerHTML=h;
-    updateAllTimes();
-}
-async function updateAllTimes(){
-    for(let i=1;i<routeLegs.length;i++){
-        const span=document.getElementById(`time-${i}`);
-        if(span&&routeLegs[i-1].id&&routeLegs[i].id){
-            const t=getTransportTime(routeLegs[i-1].id,routeLegs[i].id);
-            span.textContent=t!==null?`⏱️约${t}分钟`:'⏱️暂无数据';
-        }
-    }
-}
-
-function generateTimeline(nodes, startDate, startTime){
-    let curDate = new Date(startDate);
-    let [h,m] = startTime.split(':').map(Number);
-    let curMin = h*60 + m;
-    const lines = [];
-    let lunchDone = false, dinnerDone = false;
-    function addLine(time, text){ lines.push({time, text, date: new Date(curDate)}); }
-    function gotoNextDayIfNeeded(){
-        if(curMin >= DAY_END){
-            addLine(DAY_END, `🌙 当天行程结束，住宿休息`);
-            curDate.setDate(curDate.getDate()+1);
-            curMin = DAY_START;
-            lunchDone = false;
-            dinnerDone = false;
-        }
-    }
-    function tryInsertLunch(){
-        if(!lunchDone && curMin >= LUNCH_TRIGGER){
-            addLine(curMin, `🍽️ 午餐时间 (${formatTime(curMin)}-${formatTime(curMin+MEAL_DURATION)})`);
-            curMin += MEAL_DURATION;
-            lunchDone = true;
-            return true;
-        }
-        return false;
-    }
-    function tryInsertDinner(){
-        if(!dinnerDone && curMin >= DINNER_TRIGGER){
-            addLine(curMin, `🍽️ 晚餐时间 (${formatTime(curMin)}-${formatTime(curMin+MEAL_DURATION)})`);
-            curMin += MEAL_DURATION;
-            dinnerDone = true;
-            return true;
-        }
-        return false;
-    }
-    addLine(curMin, `🚩 ${formatTime(curMin)} 从 ${nodes[0].name} 出发`);
-    for(let i=1; i<nodes.length; i++){
-        const cur = nodes[i];
-        let travelTime = cur.transportTime || 0;
-        if(travelTime > 0){
-            let remainingTravel = travelTime;
-            while(remainingTravel > 0){
-                gotoNextDayIfNeeded();
-                if(curMin >= DAY_END) continue;
-                let spend = Math.min(remainingTravel, DAY_END - curMin);
-                let endMin = curMin + spend;
-                addLine(curMin, `🚗 ${formatTime(curMin)}-${formatTime(endMin)} 前往 ${cur.name} (交通${travelTime}分钟)`);
-                curMin = endMin;
-                remainingTravel -= spend;
-            }
-            tryInsertLunch();
-            tryInsertDinner();
-        } else if(cur.transportTime === null){
-            addLine(curMin, `⚠️ 前往 ${cur.name} 交通耗时未知`);
-        }
-        if(cur.visitDuration > 0 && !isNonVisitPoi(cur.id)){
-            let visitLeft = cur.visitDuration;
-            while(visitLeft > 0){
-                if(curMin < DAY_START) curMin = DAY_START;
-                while(curMin >= DAY_END){
-                    addLine(DAY_END, `🌙 当天行程结束，住宿休息`);
-                    curDate.setDate(curDate.getDate()+1);
-                    curMin = DAY_START;
-                    lunchDone = false;
-                    dinnerDone = false;
-                }
-                if(tryInsertLunch() || tryInsertDinner()) continue;
-                let nextBreak = DAY_END;
-                if(!lunchDone && curMin < LUNCH_TRIGGER) nextBreak = LUNCH_TRIGGER;
-                else if(!dinnerDone && curMin < DINNER_TRIGGER) nextBreak = DINNER_TRIGGER;
-                let timeToBreak = nextBreak - curMin;
-                if(timeToBreak <= 0) timeToBreak = 1;
-                let spend = Math.min(visitLeft, timeToBreak);
-                let endMin = curMin + spend;
-                addLine(curMin, `⏱️ ${formatTime(curMin)}-${formatTime(endMin)} 游览 ${cur.name} (游览${cur.visitDuration}分钟)`);
-                curMin = endMin;
-                visitLeft -= spend;
-                tryInsertLunch();
-                tryInsertDinner();
-            }
-        } else if(isNonVisitPoi(cur.id)){
-            addLine(curMin, `📍 ${formatTime(curMin)} 到达 ${cur.name}`);
-        }
-        tryInsertLunch();
-        tryInsertDinner();
-    }
-    return lines;
-}
-
-async function generateCustomTrip(){
-    const valid = routeLegs.filter(l => l.id && l.id!=='county');
-    if(valid.length===0) return alert('请至少选择一个景区');
-    const dateStr = document.getElementById('trip-date').value;
-    const startTime = document.getElementById('trip-time').value;
-    if(!dateStr) return alert('选择出发日期');
-    const mode = document.getElementById('trip-mode').value;
-    const people = document.getElementById('trip-people').value;
-    let nodes = [{...routeLegs[0], type:'start'}];
-    for(let i=1; i<routeLegs.length; i++){
-        const p = routeLegs[i];
-        let dur = allPois.find(p2=>p2.id==p.id)?.visit_duration || 0;
-        if(isNonVisitPoi(p.id)) dur = 0;
-        nodes.push({...p, type:'poi', visitDuration:dur, transportTime: getTransportTime(routeLegs[i-1].id, p.id)});
-    }
-    const allLines = generateTimeline(nodes, dateStr, startTime);
-    const days = []; let day = null;
-    allLines.forEach(l => {
-        const ld = l.date.toLocaleDateString('zh-CN');
-        if(!day || day.date !== ld){ if(day) days.push(day); day = { date: ld, lines: [] }; }
-        day.lines.push({time: l.time, text: l.text});
-    });
-    if(day) days.push(day);
-    let html = '';
-    days.forEach((d,i) => html += `<div class="day-header">📅 第${i+1}天 (${d.date})</div>` + d.lines.map(l => `<div class="trip-line">${l.text}</div>`).join(''));
-    let totalActivity = nodes.reduce((sum, n) => sum + (n.transportTime||0) + (n.visitDuration||0), 0);
-    let mealCount = allLines.filter(l => l.text.includes('🍽️')).length;
-    let tips = [];
-    tips.push(`纯活动时间：${totalActivity}分钟（约${(totalActivity/60).toFixed(1)}小时）`);
-    if(mealCount > 0) tips.push(`包含 ${mealCount} 次就餐，预计总耗时约 ${Math.round((totalActivity + mealCount*60)/60)} 小时`);
-    if(days.length > 1) tips.push(`行程跨${days.length}天，请合理安排住宿。`);
-    document.getElementById('generated-trip').innerHTML = `<div class="card">${html}</div>`;
-    document.getElementById('trip-warnings').innerHTML = tips.length ? `<div class="warn-list"><strong>温馨提示：</strong>${tips.map(t=>`<div>${t}</div>`).join('')}</div>` : '';
-    document.getElementById('saveGeneratedTripBtn').classList.remove('hidden');
-    generatedTripData = { name:'自设行程', date:dateStr, time:startTime, mode, people, nodes: nodes.map(n => ({id:n.id, name:n.name, transportTime:n.transportTime, visitDuration:n.visitDuration})), days: days.map(d => ({date:d.date, lines:d.lines})), tips };
-}
-
-function saveGeneratedTrip(){
-    if(!generatedTripData) return;
-    const name = prompt('行程名称', generatedTripData.name);
-    if(!name) return;
-    generatedTripData.name = name;
-    const trips = JSON.parse(localStorage.getItem('trips')||'[]');
-    trips.push(generatedTripData);
-    localStorage.setItem('trips', JSON.stringify(trips));
-    alert('行程已保存');
-    document.getElementById('saveGeneratedTripBtn').classList.add('hidden');
-    document.getElementById('generated-trip').innerHTML='';
-    generatedTripData=null;
-    resetRouteLegs();
-}
-
-function renderMyTrip(){
-    const trips = JSON.parse(localStorage.getItem('trips')||'[]');
-    let html = '';
-    trips.forEach((trip,i)=>{
-        html += `<div class="card"><div class="collapse-header" onclick="toggleTripDetail(${i})">📅 ${trip.name} | ${trip.date} ${trip.time}</div><div id="trip-detail-${i}" class="hidden">`;
-        if(trip.days) trip.days.forEach(day => html += `<div class="day-header">📅 ${day.date}</div>` + day.lines.map(l => `<div class="trip-line">${l.text}</div>`).join(''));
-        if(trip.tips) html += `<div class="warn-list">${trip.tips.map(t=>`<div>${t}</div>`).join('')}</div>`;
-        html += `<button class="btn btn-danger" onclick="event.stopPropagation(); deleteTrip(${i})">删除</button></div></div>`;
-    });
-    document.getElementById('myTripContent').innerHTML = html || '<p>暂无保存的行程</p>';
-}
-window.toggleTripDetail = function(idx){ document.getElementById('trip-detail-'+idx).classList.toggle('hidden'); };
-function deleteTrip(idx){
-    const trips = JSON.parse(localStorage.getItem('trips')||'[]');
-    trips.splice(idx,1);
-    localStorage.setItem('trips', JSON.stringify(trips));
-    renderMyTrip();
-}
-
-// 我的预约（折叠显示）
-async function loadMyReservations(){
-    const uid = getUserId();
-    const { data } = await sb.from('reservations').select('*').eq('user_id', uid).order('created_at', false);
-    let html = '';
-    if(data && data.length){
-        data.forEach((r, idx) => {
+function exportReservations(){
+    sb.from('reservations').select('*').eq('merchant_id', merchant.id).order('created_at', false).then(({ data }) => {
+        if(!data || data.length===0){ alert('无预约记录'); return; }
+        const header = '日期,时段,单位,联系人,电话,人数,活动类别,地点,状态,备注\n';
+        const csv = data.map(r => {
             let category = '';
-            if(r.remark && r.remark.includes('类别：')) {
-                category = r.remark.split('类别：')[1]?.split('|')[0] || '';
+            let remark = r.remark || '';
+            if(remark.includes('类别：')){
+                category = remark.split('类别：')[1]?.split('|')[0] || '';
+                remark = remark.replace('类别：'+category+'|', '').replace('类别：'+category, '');
             }
-            html += `<div class="card">
-                <div class="collapse-header" onclick="toggleMyReservationDetail(${idx})">
-                    <span>${r.reservation_date} | ${r.time_slot_start}-${r.time_slot_end||''} | ${category||'未分类'} | 联系人：${r.name}</span>
-                </div>
-                <div id="my-res-detail-${idx}" class="hidden">
-                    <p><b>单位：</b>${r.unit||''} <b>人数：</b>${r.visitor_count}</p>
-                    <p><b>电话：</b>${r.phone}</p>
-                    <p><b>地点：</b>${r.room||''}</p>
-                    <p><b>状态：</b>${ {pending:'预约中', confirmed:'已确认', rejected:'已拒绝'}[r.status]||r.status }</p>
-                    ${r.remark ? '<p><b>备注：</b>'+r.remark.replace('类别：'+category+'|', '').replace('类别：'+category, '')+'</p>' : ''}
-                </div>
-            </div>`;
-        });
-    } else html = '<p>暂无预约</p>';
-    document.getElementById('myReservationContent').innerHTML = html;
-}
-window.toggleMyReservationDetail = function(idx){
-    document.getElementById('my-res-detail-'+idx).classList.toggle('hidden');
-};
-
-// 留言
-async function submitFeedback(){
-    const msg = document.getElementById('feedbackMsg').value;
-    if(!msg) return;
-    await sb.from('ztj_feedbacks').insert({ user_id: getUserId(), message: msg });
-    document.getElementById('feedbackMsg').value = '';
-    loadFeedbackHistory();
-}
-async function loadFeedbackHistory(){
-    const { data } = await sb.from('ztj_feedbacks').select('*').neq('user_id','system').order('created_at',{ascending:false});
-    let html = '';
-    if(data) data.forEach(f => {
-        html += `<div class="card"><b>${new Date(f.created_at).toLocaleString()}</b><p>${f.message}</p></div>`;
+            return `${r.reservation_date},"${r.time_slot_start}${r.time_slot_end ? '~'+r.time_slot_end : ''}","${r.unit||''}","${r.name}","${r.phone}",${r.visitor_count},"${category}","${r.room||''}",${r.status},"${remark}"`;
+        }).join('\n');
+        const blob = new Blob([header + csv], {type:'text/csv;charset=utf-8;'});
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `预约记录_${new Date().toISOString().slice(0,10)}.csv`;
+        a.click();
+        URL.revokeObjectURL(url);
     });
-    document.getElementById('feedbackHistory').innerHTML = html || '<p>暂无留言</p>';
 }
 
-function switchMyTab(tab){
-    document.getElementById('my-tab-trip').classList.remove('active');
-    document.getElementById('my-tab-reservation').classList.remove('active');
-    document.getElementById('my-tab-feedback').classList.remove('active');
-    document.getElementById('myTripContent').classList.add('hidden');
-    document.getElementById('myReservationContent').classList.add('hidden');
-    document.getElementById('myFeedbackContent').classList.add('hidden');
-    if(tab==='trip'){
-        document.getElementById('my-tab-trip').classList.add('active');
-        document.getElementById('myTripContent').classList.remove('hidden');
-        renderMyTrip();
-    } else if(tab==='reservation'){
-        document.getElementById('my-tab-reservation').classList.add('active');
-        document.getElementById('myReservationContent').classList.remove('hidden');
-        loadMyReservations();
-    } else {
-        document.getElementById('my-tab-feedback').classList.add('active');
-        document.getElementById('myFeedbackContent').classList.remove('hidden');
-        loadFeedbackHistory();
-    }
+// ==================== 留言 ====================
+async function loadMerchantFeedbacks(){
+    const { data } = await sb.from('ztj_feedbacks').select('*').eq('merchant_id', merchant.id).order('created_at', false);
+    let html = '';
+    data.forEach(f=>{
+        html += `<div class="card"><p>${f.message}</p><small>${new Date(f.created_at).toLocaleString()}</small><p>${f.reply||'暂未回复'}</p><textarea id="reply-${f.id}">${f.reply||''}</textarea><button class="btn btn-primary" onclick="replyFeedback(${f.id})">回复</button></div>`;
+    });
+    document.getElementById('feedback-list').innerHTML = html || '<p>暂无留言</p>';
+}
+async function replyFeedback(id){
+    const reply = document.getElementById('reply-'+id).value;
+    await sb.from('ztj_feedbacks').update({reply}).eq('id',id);
+    loadMerchantFeedbacks();
 }
 
-function openPanel(id){ document.getElementById(id).classList.add('active'); if(id==='routesPanel') loadRoutes(); }
-function closePanel(id){ document.getElementById(id).classList.remove('active'); }
-function startSimulation(){ alert('模拟导航功能即将上线'); }
-window.onload = initMap;
+// ==================== 基本信息 ====================
+function loadInfo(){
+    document.getElementById('business_type').value = merchant.business_type || 'other';
+    document.getElementById('status').value = merchant.status || 'open';
+    document.getElementById('phone').value = merchant.phone || '';
+    document.getElementById('address').value = merchant.address || '';
+    document.getElementById('parking').value = merchant.parking_spots || 0;
+    document.getElementById('intro').value = merchant.intro || '';
+}
+async function saveInfo(){
+    const updates = {
+        business_type: document.getElementById('business_type').value,
+        status: document.getElementById('status').value,
+        phone: document.getElementById('phone').value,
+        address: document.getElementById('address').value,
+        parking_spots: parseInt(document.getElementById('parking').value)||0,
+        intro: document.getElementById('intro').value
+    };
+    const { error } = await sb.from('ztj_merchants').update(updates).eq('id', merchant.id);
+    if(!error) { Object.assign(merchant, updates); alert('已保存'); }
+    else alert('保存失败：'+error.message);
+}
+
+checkSession();
 </script>
 </body>
 </html>

@@ -44,19 +44,9 @@
         .category-items { padding:0 12px; }
         .category-items .card { border:none; border-bottom:1px dotted #ddd; margin:0; border-radius:0; }
         .category-items .card:last-child { border-bottom:none; }
-        .biz-image-box {
-            width: 100%;
-            aspect-ratio: 4 / 3;
-            margin-top: 8px;
-            border-radius: 4px;
-            overflow: hidden;
-            background: #f0f0f0;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-        .biz-image-box img { width: 100%; height: 100%; object-fit: cover; }
-        @media (min-width: 768px) { .biz-image-box { max-width: 400px; } }
+        .biz-image-box { width:100%; aspect-ratio:4/3; margin-top:8px; border-radius:4px; overflow:hidden; background:#f0f0f0; display:flex; align-items:center; justify-content:center; }
+        .biz-image-box img { width:100%; height:100%; object-fit:cover; }
+        @media (min-width:768px){ .biz-image-box { max-width:400px; } }
     </style>
 </head>
 <body>
@@ -125,14 +115,15 @@ let userMarker = null, anonymousUserId = null;
 const COUNTY = { lat:32.08, lng:107.24, name:'红军广场', id:'county' };
 const poiColors = { '自然景区':'#2E7D32', '红色景区':'#9C27B0', '文博场馆':'#9C27B0', '餐饮住宿':'#FF9800', '停车场':'#00BCD4', '公共服务':'#607D8B' };
 let transportPresets = {};
-const DAY_START = 480, DAY_END = 1080; // 8:00-18:00 仅游览约束
-const LUNCH_TRIGGER = 690, LUNCH_END = 750;   // 11:30-12:30
-const DINNER_TRIGGER = 1050, DINNER_END = 1110; // 17:30-18:30
+const DAY_START = 480, DAY_END = 1080;
+const LUNCH_TRIGGER = 690, LUNCH_END = 750;
+const DINNER_TRIGGER = 1050, DINNER_END = 1110;
 const MEAL_DURATION = 60;
 const EXCLUDED_FROM_TRIP = ['游戏娱乐','公共服务','特产购物'];
 const NON_VISIT_CATEGORIES = ['交通枢纽','餐饮住宿','公共服务','特产购物','游玩娱乐'];
 let routeLegs=[], mainPoiOptions=[], allowedPoiOptions=[];
 
+// ---------- 匿名登录 ----------
 async function initAnonymousAuth(){
     const { data: { session } } = await sb.auth.getSession();
     if (session) anonymousUserId = session.user.id;
@@ -144,6 +135,7 @@ async function initAnonymousAuth(){
 function getUserId(){
     return anonymousUserId || localStorage.getItem('vid') || (()=>{let uid='v_'+Date.now()+Math.random().toString(36); localStorage.setItem('vid',uid); return uid;})();
 }
+
 function formatTime(m){ return `${Math.floor(m/60).toString().padStart(2,'0')}:${(m%60).toString().padStart(2,'0')}`; }
 function isNonVisitPoi(poiId){
     if(poiId==='county') return false;
@@ -163,9 +155,12 @@ function locateUser(){
     }, err => alert('定位失败：'+err.message), {enableHighAccuracy:true, timeout:10000});
 }
 
+// ---------- 地图 ----------
 function initMap(){
     map = L.map('map', { zoomControl: false }).setView([32.08,107.18], 12);
-    L.tileLayer('https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}',{ subdomains:['1','2','3','4'], maxZoom:18 }).addTo(map);
+    L.tileLayer('https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}',{
+        subdomains:['1','2','3','4'], maxZoom:18
+    }).addTo(map);
     L.control.zoom({ position: 'topright' }).addTo(map);
     initAnonymousAuth().then(() => loadAllPOIs());
 }
@@ -193,7 +188,7 @@ function renderPOIs(pois){
     pois.forEach(p => {
         const cat = (p.category||'').split(',')[0]||'其他';
         const color = poiColors[cat]||'#999';
-        L.marker([p.lat,p.lng],{icon: L.divIcon({html:`<div style="background:${color}; width:20px; height:20px; border-radius:50%; border:2px solid white;"></div>`,iconSize:[20,20]})}).addTo(map).on('click',()=>showPoiDetail(p));
+        L.marker([p.lat,p.lng],{icon:L.divIcon({html:`<div style="background:${color}; width:20px; height:20px; border-radius:50%; border:2px solid white;"></div>`,iconSize:[20,20]})}).addTo(map).on('click',()=>showPoiDetail(p));
     });
 }
 
@@ -206,7 +201,7 @@ async function showPoiDetail(poi){
         const sd = m.service_data || {};
         const categories = sd.businessCategories || [];
         const items = sd.businessItems || [];
-        if (categories.length>0 && items.length>0) {
+        if (categories.length && items.length) {
             categories.forEach(cat => {
                 const catItems = items.filter(i => i.category === cat);
                 if(!catItems.length) return;
@@ -217,7 +212,7 @@ async function showPoiDetail(poi){
                 });
                 html += `</div></div>`;
             });
-        } else if(sd.items && sd.items.length){
+        } else if (sd.items && sd.items.length) {
             sd.items.filter(i=>i.name).forEach((item,idx)=>{
                 html += `<div class="card"><div><b>${idx+1}. ${item.name}</b> ${item.price||''} ${item.duration||''}</div>${item.description?`<p>${item.description}</p>`:''}${item.image?`<div class="biz-image-box"><img src="${item.image}" alt="${item.name}"></div>`:''}</div>`;
             });
@@ -231,7 +226,7 @@ async function showPoiDetail(poi){
     openPanel('merchantDetailPanel');
 }
 
-// ========== 预约 ==========
+// ========== 预约表单 ==========
 async function toggleReserveForm(merchantId){
     const div = document.getElementById(`reserve-form-${merchantId}`);
     if(!div.classList.contains('hidden')){ div.classList.add('hidden'); return; }
@@ -276,7 +271,7 @@ async function submitReservationDirect(merchantId){
     else { alert('预约已提交'); document.getElementById(`reserve-form-${merchantId}`).classList.add('hidden'); }
 }
 
-// ========== 路线 ==========
+// ========== 推荐路线 ==========
 async function loadRoutes(){
     const { data } = await sb.from('ztj_routes').select('*');
     document.getElementById('routeList').innerHTML = data.map(r=>`<div class="card"><h3>${r.name}</h3><p>${r.days||1}天 | ${r.transport||'自驾'}</p><button class="btn btn-primary" onclick="showRouteDetail(${r.id})">查看</button></div>`).join('');
@@ -287,11 +282,11 @@ async function showRouteDetail(id){
     let html = `<h3>${route.name}</h3>`;
     nodes.forEach(n=> html += `<div>• ${n.poi?.name||'未知'} (停留${n.duration_min}分钟)</div>`);
     const panel = document.createElement('div'); panel.className='panel active'; panel.id='routeDetailPanel';
-    panel.innerHTML = `<div class="panel-header"><h2>路线详情</h2><button onclick="this.remove()">✕</button></div><div class="panel-body">${html}</div>`;
+    panel.innerHTML = `<div class="panel-header"><h2>路线详情</h2><button onclick="this.parentElement.parentElement.remove()">✕</button></div><div class="panel-body">${html}</div>`;
     document.body.appendChild(panel);
 }
 
-// ========== 自设行程 ==========
+// ========== 自设行程（交通不中断、游览8-18、就餐插入后不消耗活动时间） ==========
 function toggleCustomTripSection(){ document.getElementById('customTripSection').classList.toggle('hidden'); if(!document.getElementById('customTripSection').classList.contains('hidden')){ buildMainPoiOptions(); resetRouteLegs(); } }
 function buildMainPoiOptions(){
     const allMain = allPois.filter(p=>!p.parent_id);
@@ -320,14 +315,12 @@ async function updateAllTimes(){
     }
 }
 
-// 核心时间线生成（交通不中断，游览8-18，就餐触发后插入且不消耗活动时间）
 function generateTimeline(nodes, startDate, startTime){
     let curDate = new Date(startDate);
     let [h,m] = startTime.split(':').map(Number);
     let curMin = h*60 + m;
     const lines = [];
     let lunchDone = false, dinnerDone = false;
-
     const addLine = (time, text) => lines.push({time, text, date: new Date(curDate)});
     const tryInsertLunch = () => {
         if(!lunchDone && curMin >= LUNCH_TRIGGER){
@@ -358,7 +351,6 @@ function generateTimeline(nodes, startDate, startTime){
             const endMin = curMin + travelTime;
             addLine(curMin, `🚗 ${formatTime(curMin)}-${formatTime(endMin)} 前往 ${cur.name} (交通${travelTime}分钟)`);
             curMin = endMin;
-            // 交通结束后检查是否需要插入就餐
             tryInsertLunch();
             tryInsertDinner();
         } else if(cur.transportTime === null){
@@ -394,7 +386,6 @@ function generateTimeline(nodes, startDate, startTime){
             addLine(curMin, `📍 ${formatTime(curMin)} 到达 ${cur.name}`);
         }
 
-        // 节点结束后补漏
         tryInsertLunch();
         tryInsertDinner();
     }

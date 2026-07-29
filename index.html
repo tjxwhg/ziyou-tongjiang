@@ -265,19 +265,21 @@ async function showPoiDetail(poi){
     openPanel('merchantDetailPanel');
 }
 
-// ========== 预约表单（新顺序+必填校验） ==========
+// ========== 预约表单（含动态预约内容） ==========
 async function toggleReserveForm(merchantId){
     const formDiv = document.getElementById(`reserve-form-${merchantId}`);
     if(!formDiv.classList.contains('hidden')){ formDiv.classList.add('hidden'); return; }
     const { data: m } = await sb.from('ztj_merchants').select('service_data').eq('id', merchantId).single();
     const categories = (m && m.service_data && m.service_data.categories) ? m.service_data.categories : [];
+    const businessItems = (m && m.service_data && m.service_data.businessItems) ? m.service_data.businessItems : [];
     let catOptions = categories.map(c => `<option value="${c}">${c}</option>`).join('');
     let timeOptions = '';
     for(let h=8; h<17; h++) timeOptions += `<option value="${h.toString().padStart(2,'0')}:00-${(h+1).toString().padStart(2,'0')}:00">${h.toString().padStart(2,'0')}:00-${(h+1).toString().padStart(2,'0')}:00</option>`;
     formDiv.innerHTML = `
         <div class="form-group"><label><span class="required-star">*</span> 预约日期</label><input type="date" id="res-date-${merchantId}"></div>
         <div class="form-group"><label><span class="required-star">*</span> 预约时段</label><select id="res-time-${merchantId}">${timeOptions}</select></div>
-        <div class="form-group"><label><span class="required-star">*</span> 活动类别</label><select id="res-cat-${merchantId}">${catOptions}</select></div>
+        <div class="form-group"><label><span class="required-star">*</span> 活动类别</label><select id="res-cat-${merchantId}" onchange="updateReserveContent('${merchantId}')">${catOptions}</select></div>
+        <div class="form-group"><label>预约内容</label><select id="res-content-${merchantId}" disabled><option value="">请先选择活动类别</option></select></div>
         <div class="form-group"><label><span class="required-star">*</span> 预约人数</label><input type="number" id="res-count-${merchantId}" min="1"></div>
         <div class="form-group"><label><span class="required-star">*</span> 联系电话</label><input id="res-phone-${merchantId}"></div>
         <div class="form-group"><label>单位名称（团队或个人）</label><input id="res-unit-${merchantId}"></div>
@@ -287,8 +289,26 @@ async function toggleReserveForm(merchantId){
         <button class="btn btn-primary" onclick="submitReservationDirect('${merchantId}')">提交预约</button>
         <button class="btn btn-default" onclick="toggleReserveForm('${merchantId}')">取消</button>
     `;
+    // 存储该商户的业务项目数据供后续使用
+    window[`bizItems_${merchantId}`] = businessItems;
     formDiv.classList.remove('hidden');
 }
+
+// 根据活动类别更新预约内容下拉框
+window.updateReserveContent = function(merchantId){
+    const cat = document.getElementById(`res-cat-${merchantId}`)?.value;
+    const sel = document.getElementById(`res-content-${merchantId}`);
+    const bizItems = window[`bizItems_${merchantId}`] || [];
+    if (!cat || !sel) return;
+    const filtered = bizItems.filter(item => item.category === cat);
+    if (filtered.length > 0) {
+        sel.disabled = false;
+        sel.innerHTML = '<option value="">--选择具体项目--</option>' + filtered.map(item => `<option value="${item.name}">${item.name} ${item.price ? ' - '+item.price : ''}</option>`).join('');
+    } else {
+        sel.disabled = true;
+        sel.innerHTML = '<option value="">无相关项目</option>';
+    }
+};
 
 async function submitReservationDirect(merchantId){
     const date = document.getElementById(`res-date-${merchantId}`).value;
@@ -305,8 +325,15 @@ async function submitReservationDirect(merchantId){
     const name = document.getElementById(`res-name-${merchantId}`).value.trim();
     const room = document.getElementById(`res-room-${merchantId}`).value.trim();
     const remark = document.getElementById(`res-remark-${merchantId}`).value.trim();
-    let finalRemark = category ? `类别：${category}` : '';
+    const content = document.getElementById(`res-content-${merchantId}`)?.value || '';
+    // 构建备注：类别、内容、原始备注
+    let finalRemark = '';
+    if(category) finalRemark += `类别：${category}`;
+    if(content) finalRemark += (finalRemark ? '|' : '') + `内容：${content}`;
     if(remark) finalRemark += (finalRemark ? '|' : '') + remark;
+    // 获取商户名称（用于“我的-预约”显示）
+    const { data: merchant } = await sb.from('ztj_merchants').select('display_name').eq('id', merchantId).single();
+    const merchantName = merchant?.display_name || '';
     const { error } = await sb.from('reservations').insert({
         merchant_id: merchantId,
         reservation_date: date,
@@ -322,7 +349,10 @@ async function submitReservationDirect(merchantId){
         user_id: getUserId()
     });
     if(error) alert('提交失败：'+error.message);
-    else { alert('预约已提交'); document.getElementById(`reserve-form-${merchantId}`).classList.add('hidden'); }
+    else {
+        alert('预约已提交');
+        document.getElementById(`reserve-form-${merchantId}`).classList.add('hidden');
+    }
 }
 
 // ---------- 推荐路线 ----------
@@ -545,21 +575,50 @@ function deleteTrip(idx){
     renderMyTrip();
 }
 
-// 我的预约
+// ========== 我的预约（含商户名称和内容） ==========
 async function loadMyReservations(){
     const uid = getUserId();
     const { data } = await sb.from('reservations').select('*').eq('user_id', uid).order('created_at', false);
+    if (!data || data.length === 0) {
+        document.getElementById('myReservationContent').innerHTML = '<p>暂无预约</p>';
+        return;
+    }
+    // 获取所有涉及商户的名称
+    const merchantIds = [...new Set(data.map(r => r.merchant_id))];
+    const { data: merchants } = await sb.from('ztj_merchants').select('id,display_name').in('id', merchantIds);
+    const merchantMap = {};
+    if (merchants) merchants.forEach(m => merchantMap[m.id] = m.display_name);
     let html = '';
-    if(data && data.length){
-        data.forEach((r, idx) => {
-            let category = '';
-            if(r.remark && r.remark.includes('类别：')) category = r.remark.split('类别：')[1]?.split('|')[0] || '';
-            html += `<div class="card"><div class="collapse-header" onclick="toggleMyReservationDetail(${idx})"><span>${r.reservation_date} | ${r.time_slot_start}-${r.time_slot_end||''} | ${category||'未分类'} | 联系人：${r.name}</span></div><div id="my-res-detail-${idx}" class="hidden"><p><b>单位：</b>${r.unit||''} <b>人数：</b>${r.visitor_count}</p><p><b>电话：</b>${r.phone}</p><p><b>地点：</b>${r.room||''}</p><p><b>状态：</b>${{pending:'预约中',confirmed:'已确认',rejected:'已拒绝'}[r.status]||r.status}</p>${r.remark?'<p><b>备注：</b>'+r.remark.replace('类别：'+category+'|','').replace('类别：'+category,'')+'</p>':''}</div></div>`;
-        });
-    } else html = '<p>暂无预约</p>';
+    data.forEach((r, idx) => {
+        let category = '', content = '';
+        if (r.remark) {
+            const parts = r.remark.split('|');
+            parts.forEach(p => {
+                if (p.startsWith('类别：')) category = p.replace('类别：', '');
+                else if (p.startsWith('内容：')) content = p.replace('内容：', '');
+            });
+        }
+        const merchantName = merchantMap[r.merchant_id] || '未知商户';
+        html += `<div class="card">
+            <div class="collapse-header" onclick="toggleMyReservationDetail(${idx})">
+                <span>${r.reservation_date} | ${r.time_slot_start}-${r.time_slot_end||''} | ${merchantName} | ${category||'未分类'} | ${content||''} | 联系人：${r.name}</span>
+            </div>
+            <div id="my-res-detail-${idx}" class="hidden">
+                <p><b>商户：</b>${merchantName}</p>
+                <p><b>活动类别：</b>${category||'未指定'}</p>
+                <p><b>预约内容：</b>${content||'未指定'}</p>
+                <p><b>单位：</b>${r.unit||''} <b>人数：</b>${r.visitor_count}</p>
+                <p><b>电话：</b>${r.phone}</p>
+                <p><b>地点：</b>${r.room||''}</p>
+                <p><b>状态：</b>${{pending:'预约中',confirmed:'已确认',rejected:'已拒绝'}[r.status]||r.status}</p>
+            </div>
+        </div>`;
+    });
     document.getElementById('myReservationContent').innerHTML = html;
 }
-window.toggleMyReservationDetail = function(idx){ document.getElementById('my-res-detail-'+idx).classList.toggle('hidden'); };
+window.toggleMyReservationDetail = function(idx){
+    document.getElementById('my-res-detail-'+idx).classList.toggle('hidden');
+};
 
 // 留言
 async function submitFeedback(){

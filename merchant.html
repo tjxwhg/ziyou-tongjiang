@@ -90,12 +90,12 @@
                 <div class="form-group"><label>时段</label><select id="new-res-time">
                     <option value="08:00-09:00">08:00-09:00</option><option value="09:00-10:00">09:00-10:00</option><option value="10:00-11:00">10:00-11:00</option><option value="11:00-12:00">11:00-12:00</option><option value="13:00-14:00">13:00-14:00</option><option value="14:00-15:00">14:00-15:00</option><option value="15:00-16:00">15:00-16:00</option><option value="16:00-17:00">16:00-17:00</option>
                 </select></div>
-                <div class="form-group"><label>活动类别</label><select id="new-res-activity"></select></div>
-                <div class="form-group"><label>单位名称（团队或个人）</label><input id="new-res-unit"></div>
-                <div class="form-group"><label>人数</label><input type="number" id="new-res-count" min="1"></div>
+                <div class="form-group"><label>单位（团队）名称</label><input id="new-res-unit"></div>
                 <div class="form-group"><label>联系人</label><input id="new-res-name"></div>
-                <div class="form-group"><label>联系电话</label><input id="new-res-phone"></div>
-                <div class="form-group"><label>活动地点</label><input id="new-res-room"></div>
+                <div class="form-group"><label>联系人电话</label><input id="new-res-phone"></div>
+                <div class="form-group"><label>人数</label><input type="number" id="new-res-count" min="1"></div>
+                <div class="form-group"><label>活动类别</label><select id="new-res-activity"></select></div>
+                <div class="form-group"><label>地点/场地</label><input id="new-res-room"></div>
                 <div class="form-group"><label>备注</label><textarea id="new-res-remark" rows="2"></textarea></div>
                 <button class="btn btn-primary" onclick="addReservation()">保存预约</button>
                 <button class="btn btn-default" onclick="toggleAddReservationForm()">取消</button>
@@ -176,7 +176,7 @@ function switchTab(tab){
     if(tab==='info') loadInfo();
 }
 
-// ==================== 业务管理（完整） ====================
+// ==================== 业务管理 ====================
 function loadBusinessData(){
     const sd = merchant.service_data || {};
     businessCategories = sd.businessCategories ? [...sd.businessCategories] : [];
@@ -304,7 +304,7 @@ async function confirmAddItem(){
     renderBusiness();
 }
 
-// ==================== 分类管理 ====================
+// ========== 分类管理 ==========
 function toggleBusinessCategoryManager(){
     document.getElementById('business-category-panel').classList.toggle('hidden');
     renderBusinessCategoryList();
@@ -388,7 +388,7 @@ async function loadActivityCategoriesForSelect(){
     }
 }
 
-// ==================== 保存核心 ====================
+// ========== 保存核心 ==========
 async function updateMerchantServiceData(){
     const sd = {
         businessCategories: businessCategories,
@@ -402,11 +402,12 @@ async function updateMerchantServiceData(){
     if(!error) merchant.service_data = sd;
 }
 
-// ==================== 预约列表 ====================
+// ========== 预约列表（最新在最上，月份降序） ==========
 async function loadReservations(){
-    const { data } = await sb.from('reservations').select('*').eq('merchant_id', merchant.id).order('created_at', false);
+    const { data } = await sb.from('reservations').select('*').eq('merchant_id', merchant.id).order('created_at', { ascending: false });
     const container = document.getElementById('reservation-list');
     if(!data || data.length === 0){ container.innerHTML = '<p>暂无预约</p>'; return; }
+    // 按月分组，并且按月份降序排列
     const grouped = {};
     data.forEach(r => {
         const date = new Date(r.created_at);
@@ -414,8 +415,15 @@ async function loadReservations(){
         if(!grouped[key]) grouped[key] = [];
         grouped[key].push(r);
     });
+    // 获取月份并降序排序
+    const sortedMonths = Object.keys(grouped).sort((a, b) => {
+        const [aYear, aMonth] = a.replace('年','-').replace('月','').split('-').map(Number);
+        const [bYear, bMonth] = b.replace('年','-').replace('月','').split('-').map(Number);
+        return bYear - aYear || bMonth - aMonth;
+    });
     let html = '';
-    for(const [month, records] of Object.entries(grouped)){
+    sortedMonths.forEach(month => {
+        const records = grouped[month];
         html += `<div class="month-group">
             <div class="month-title" onclick="this.nextElementSibling.classList.toggle('hidden')">
                 📅 ${month} (${records.length}条) <span>▼</span>
@@ -444,7 +452,7 @@ async function loadReservations(){
             </div>`;
         });
         html += `</div></div>`;
-    }
+    });
     container.innerHTML = html;
 }
 window.toggleReservationDetail = function(id){ document.getElementById('res-detail-'+id).classList.toggle('hidden'); };
@@ -458,11 +466,11 @@ async function addReservation(){
     const date = document.getElementById('new-res-date').value;
     const timeRange = document.getElementById('new-res-time').value;
     const [start, end] = timeRange.split('-');
-    const activity = document.getElementById('new-res-activity').value;
-    const unit = document.getElementById('new-res-unit').value.trim();
-    const count = parseInt(document.getElementById('new-res-count').value) || 0;
     const name = document.getElementById('new-res-name').value.trim();
     const phone = document.getElementById('new-res-phone').value.trim();
+    const unit = document.getElementById('new-res-unit').value.trim();
+    const count = parseInt(document.getElementById('new-res-count').value) || 0;
+    const activity = document.getElementById('new-res-activity').value;
     const room = document.getElementById('new-res-room').value.trim();
     const remarkBase = document.getElementById('new-res-remark').value.trim();
     let finalRemark = '';
@@ -474,20 +482,20 @@ async function addReservation(){
         reservation_date: date,
         time_slot_start: start,
         time_slot_end: end,
-        unit, visitor_count: count,
-        name, phone, room,
+        name, phone, unit, visitor_count: count,
         remark: finalRemark,
+        room: room,
         status: 'pending',
         user_id: 'manual'
     });
     if(error){ alert('保存失败：'+error.message); return; }
     document.getElementById('new-res-date').value='';
     document.getElementById('new-res-time').value='08:00-09:00';
-    document.getElementById('new-res-activity').value='';
-    document.getElementById('new-res-unit').value='';
-    document.getElementById('new-res-count').value='';
     document.getElementById('new-res-name').value='';
     document.getElementById('new-res-phone').value='';
+    document.getElementById('new-res-unit').value='';
+    document.getElementById('new-res-count').value='';
+    document.getElementById('new-res-activity').value='';
     document.getElementById('new-res-room').value='';
     document.getElementById('new-res-remark').value='';
     toggleAddReservationForm();
@@ -495,7 +503,7 @@ async function addReservation(){
 }
 
 function exportReservations(){
-    sb.from('reservations').select('*').eq('merchant_id', merchant.id).order('created_at', false).then(({ data }) => {
+    sb.from('reservations').select('*').eq('merchant_id', merchant.id).order('created_at', { ascending: false }).then(({ data }) => {
         if(!data || data.length===0){ alert('无预约记录'); return; }
         const header = '日期,时段,单位,联系人,电话,人数,活动类别,地点,状态,备注\n';
         const csv = data.map(r => {
@@ -517,7 +525,7 @@ function exportReservations(){
     });
 }
 
-// ==================== 留言 ====================
+// ========== 留言 ==========
 async function loadMerchantFeedbacks(){
     const { data } = await sb.from('ztj_feedbacks').select('*').eq('merchant_id', merchant.id).order('created_at', false);
     let html = '';
@@ -532,7 +540,7 @@ async function replyFeedback(id){
     loadMerchantFeedbacks();
 }
 
-// ==================== 基本信息 ====================
+// ========== 基本信息 ==========
 function loadInfo(){
     document.getElementById('business_type').value = merchant.business_type || 'other';
     document.getElementById('status').value = merchant.status || 'open';

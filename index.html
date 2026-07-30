@@ -6,7 +6,7 @@
     <title>智游通江</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
-        /* 样式不变（略） */
+        /* 样式保持不变（同上） */
         * { margin:0; padding:0; box-sizing:border-box; }
         body { font-family: system-ui, sans-serif; height:100vh; overflow:hidden; }
         #map { height:100vh; width:100vw; z-index:1; }
@@ -464,23 +464,22 @@ function generateTimeline(nodes, startDate, startTime) {
         return false;
     }
 
-    // 强制插入（用于交通结束后或游览结束时）
+    // 强制插入餐饮（用于交通结束后或游览完成时）
     function forceInsertMeal() {
         let inserted = false;
+        // 优先插入午餐（若未插入且当前时间已过午餐开始）
         if (!lunchInserted && curMin >= LUNCH_START) {
             addEvent(curMin, `🍽️ 午餐时间 (${formatTime(curMin)}-${formatTime(curMin + MEAL_DURATION)})`);
             curMin += MEAL_DURATION;
             lunchInserted = true;
             inserted = true;
         }
-        if (!dinnerInserted && curMin >= DINNER_START && !lunchInserted) {
-            // 但若午餐刚插入且时间仍处于晚餐窗口，则再插入晚餐
-            if (curMin >= DINNER_START) {
-                addEvent(curMin, `🍽️ 晚餐时间 (${formatTime(curMin)}-${formatTime(curMin + MEAL_DURATION)})`);
-                curMin += MEAL_DURATION;
-                dinnerInserted = true;
-                inserted = true;
-            }
+        // 再插入晚餐（若午餐已插入或已过晚餐开始）
+        if (!dinnerInserted && curMin >= DINNER_START) {
+            addEvent(curMin, `🍽️ 晚餐时间 (${formatTime(curMin)}-${formatTime(curMin + MEAL_DURATION)})`);
+            curMin += MEAL_DURATION;
+            dinnerInserted = true;
+            inserted = true;
         }
         return inserted;
     }
@@ -508,13 +507,13 @@ function generateTimeline(nodes, startDate, startTime) {
         let firstSegment = true;
         while (remaining > 0) {
             ensureDaylight();
-            // 检查是否处于餐饮窗口
+            // 检查是否处于餐饮窗口且该餐未插入
             let inLunchWindow = (!lunchInserted && curMin >= LUNCH_START && curMin < LUNCH_END);
             let inDinnerWindow = (!dinnerInserted && curMin >= DINNER_START && curMin < DINNER_END);
             if (inLunchWindow || inDinnerWindow) {
-                // 若剩余时间 < 60，则先完成游览再插入餐饮
+                // 若剩余 < 60，先完成游览再插入餐饮
                 if (remaining < 60) {
-                    // 直接完成所有剩余游览（可能超过18:00，但最多到18:30）
+                    // 直接完成所有剩余游览（最多到18:30）
                     let maxEnd = Math.min(DAY_END + 30, curMin + remaining);
                     let spend = maxEnd - curMin;
                     if (spend <= 0) { // 如果已经>=18:30，强制跨天
@@ -528,13 +527,12 @@ function generateTimeline(nodes, startDate, startTime) {
                     addEvent(startMin, text);
                     remaining -= spend;
                     firstSegment = false;
-                    // 游览结束后，强制插入当前对应的餐饮（若未插入）
+                    // 游览结束后，强制插入对应的餐饮（若未插入）
                     forceInsertMeal();
-                    // 再尝试窗口内插入（可能已过窗口，但force会处理）
                     continue;
                 } else {
-                    // 剩余 >= 60，插入餐饮后继续
-                    tryInsertMeal(); // 插入对应的餐
+                    // 剩余 >= 60，先插入餐饮再继续
+                    tryInsertMeal(); // 插入当前窗口内的餐
                     continue;
                 }
             }
@@ -543,7 +541,6 @@ function generateTimeline(nodes, startDate, startTime) {
             let nextBreak = DAY_END;
             if (!lunchInserted && curMin < LUNCH_START) nextBreak = Math.min(nextBreak, LUNCH_START);
             if (!dinnerInserted && curMin < DINNER_START) nextBreak = Math.min(nextBreak, DINNER_START);
-            // 允许游览到18:30
             let maxEnd = Math.min(DAY_END + 30, curMin + remaining);
             let spend = Math.min(remaining, maxEnd - curMin);
             if (curMin + spend > nextBreak) spend = Math.max(0, nextBreak - curMin);
@@ -577,30 +574,35 @@ function generateTimeline(nodes, startDate, startTime) {
         const node = nodes[i];
         ensureDaylight();
 
-        // 交通
+        // 交通处理
         let travelTime = node.transportTime || 0;
         if (travelTime > 0) {
             let startMin = curMin;
             curMin += travelTime;
             addEvent(startMin, `🚗 ${formatTime(startMin)}-${formatTime(curMin)} 前往 ${node.name} (交通${travelTime}分钟)`);
+            // 如果是非游览节点，添加“到达”事件
+            if (isNonVisitPoi(node.id)) {
+                addEvent(curMin, `📍 ${formatTime(curMin)} 到达 ${node.name}`);
+            }
             // 交通结束后强制插入未安排的餐饮
             forceInsertMeal();
-            // 再尝试正常窗口检查
+            // 再尝试窗口内插入（可能刚插入，但确保顺序）
             tryInsertMeal();
         } else if (travelTime === null) {
             addEvent(curMin, `⚠️ 前往 ${node.name} 交通耗时未知`);
         }
 
-        // 游览
+        // 游览处理（仅当为游览景点且时长>0）
         if (node.visitDuration > 0 && !isNonVisitPoi(node.id)) {
             processVisit(node, node.visitDuration);
-        } else if (isNonVisitPoi(node.id)) {
+        } else if (isNonVisitPoi(node.id) && travelTime === 0) {
+            // 如果是非游览节点且无交通（如已在节点），直接添加到达
             addEvent(curMin, `📍 ${formatTime(curMin)} 到达 ${node.name}`);
             tryInsertMeal();
         }
     }
 
-    // 收尾
+    // 收尾：确保当天剩余时间有餐饮
     if (curMin < DAY_END && curMin > DAY_START + 30) {
         tryInsertMeal();
         if (curMin < DAY_END) {

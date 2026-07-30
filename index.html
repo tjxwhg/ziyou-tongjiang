@@ -6,7 +6,6 @@
     <title>智游通江</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
-        /* 样式保持不变（略） */
         * { margin:0; padding:0; box-sizing:border-box; }
         body { font-family: system-ui, sans-serif; height:100vh; overflow:hidden; }
         #map { height:100vh; width:100vw; z-index:1; }
@@ -447,7 +446,6 @@ function generateTimeline(nodes, startDate, startTime) {
         events.push({ time, text, date: new Date(curDate) });
     }
 
-    // 仅在窗口内插入（不强制移动时间）
     function tryInsertMeal() {
         if (!lunchInserted && curMin >= LUNCH_START && curMin < LUNCH_END) {
             addEvent(curMin, `🍽️ 午餐时间 (${formatTime(curMin)}-${formatTime(curMin + MEAL_DURATION)})`);
@@ -464,7 +462,6 @@ function generateTimeline(nodes, startDate, startTime) {
         return false;
     }
 
-    // 强制插入餐饮（用于交通结束后、游览完成时、跨天前）
     function forceInsertMeal() {
         let inserted = false;
         if (!lunchInserted && curMin >= LUNCH_START) {
@@ -482,7 +479,6 @@ function generateTimeline(nodes, startDate, startTime) {
         return inserted;
     }
 
-    // 跨天处理：先插入未安排的餐饮
     function goToNextDay() {
         forceInsertMeal();
         if (curMin > DAY_START) {
@@ -501,7 +497,7 @@ function generateTimeline(nodes, startDate, startTime) {
         if (curMin < DAY_START) curMin = DAY_START;
     }
 
-    // ========== 处理游览（彻底修正，正确使用窗口打断） ==========
+    // ========== 核心游览逻辑（彻底修正，不再产生分段） ==========
     function processVisit(poi, visitDuration) {
         let remaining = visitDuration;
         let firstSegment = true;
@@ -510,47 +506,54 @@ function generateTimeline(nodes, startDate, startTime) {
             // 检查当前是否在窗口内
             let inLunchWindow = (!lunchInserted && curMin >= LUNCH_START && curMin < LUNCH_END);
             let inDinnerWindow = (!dinnerInserted && curMin >= DINNER_START && curMin < DINNER_END);
-            if (inLunchWindow || inDinnerWindow) {
-                // 若剩余 < 60，直接完成游览，结束后强制插入
-                if (remaining < 60) {
-                    let maxEnd = Math.min(DAY_END + 30, curMin + remaining);
-                    let spend = maxEnd - curMin;
-                    if (spend <= 0) {
-                        goToNextDay();
-                        continue;
-                    }
-                    let startMin = curMin;
-                    curMin += spend;
-                    let endMin = curMin;
-                    let text = firstSegment ? `⏱️ ${formatTime(startMin)}-${formatTime(endMin)} 游览 ${poi.name} (游览${visitDuration}分钟)` : `⏱️ ${formatTime(startMin)}-${formatTime(endMin)} 继续游览 ${poi.name} (游览${spend}分钟)`;
-                    addEvent(startMin, text);
-                    remaining -= spend;
-                    firstSegment = false;
-                    forceInsertMeal(); // 游览结束后强制插入
-                    continue;
-                } else {
-                    // 剩余 >= 60，先插入餐饮
-                    tryInsertMeal();
+            let inWindow = inLunchWindow || inDinnerWindow;
+
+            // 如果剩余 <= 60，直接完成全部，不因窗口打断
+            if (remaining <= 60) {
+                let maxEnd = Math.min(DAY_END + 30, curMin + remaining);
+                let spend = maxEnd - curMin;
+                if (spend <= 0) {
+                    goToNextDay();
                     continue;
                 }
+                let startMin = curMin;
+                curMin += spend;
+                let endMin = curMin;
+                let text = firstSegment ? `⏱️ ${formatTime(startMin)}-${formatTime(endMin)} 游览 ${poi.name} (游览${visitDuration}分钟)` : `⏱️ ${formatTime(startMin)}-${formatTime(endMin)} 继续游览 ${poi.name} (游览${spend}分钟)`;
+                addEvent(startMin, text);
+                remaining -= spend;
+                firstSegment = false;
+                // 游览完成，强制插入餐饮
+                forceInsertMeal();
+                break;
             }
 
-            // 不在窗口内，计算下一个打断点（若剩余 >= 60 才考虑窗口打断，否则不打断）
-            let nextBreak = DAY_END;
-            if (remaining >= 60) {
-                if (!lunchInserted && curMin < LUNCH_START) nextBreak = Math.min(nextBreak, LUNCH_START);
-                if (!dinnerInserted && curMin < DINNER_START) nextBreak = Math.min(nextBreak, DINNER_START);
+            // 剩余 > 60，处理窗口
+            if (inWindow) {
+                tryInsertMeal(); // 插入餐饮后继续循环
+                continue;
             }
-            // 允许游览到 DAY_END+30
-            let maxEnd = Math.min(DAY_END + 30, curMin + remaining);
-            let spend = Math.min(remaining, maxEnd - curMin);
-            // 如果剩余 >= 60 且 nextBreak < maxEnd，则段长截断到 nextBreak
-            if (remaining >= 60 && curMin + spend > nextBreak) {
-                spend = Math.max(0, nextBreak - curMin);
+
+            // 不在窗口内，计算下一个打断点
+            let nextBreak = DAY_END;
+            if (!lunchInserted && curMin < LUNCH_START) nextBreak = Math.min(nextBreak, LUNCH_START);
+            if (!dinnerInserted && curMin < DINNER_START) nextBreak = Math.min(nextBreak, DINNER_START);
+            let timeToBreak = nextBreak - curMin;
+
+            // 决定本次游览的时长：如果到达打断点后剩余部分 <= 60，则直接完成全部，不停在窗口
+            let spend;
+            if (remaining > timeToBreak && (remaining - timeToBreak) <= 60) {
+                // 直接完成全部剩余，不受窗口影响
+                let maxEnd = Math.min(DAY_END + 30, curMin + remaining);
+                spend = maxEnd - curMin;
+            } else {
+                // 正常分配，最多到下一个打断点或DAY_END+30
+                let maxEnd = Math.min(DAY_END + 30, curMin + remaining);
+                spend = Math.min(remaining, maxEnd - curMin);
+                if (curMin + spend > nextBreak) spend = Math.max(0, nextBreak - curMin);
             }
             if (spend <= 0) {
-                // 如果无法分配（比如 curMin 已经到了 nextBreak），则强制推进（不应发生）
-                if (tryInsertMeal()) continue;
+                // 如果无法分配（如curMin已到DAY_END），强制推进
                 curMin = Math.min(curMin + 1, DAY_END);
                 continue;
             }
@@ -563,7 +566,7 @@ function generateTimeline(nodes, startDate, startTime) {
             firstSegment = false;
             // 段后不插入，循环继续
         }
-        // 整个景区完成（但可能已由内部force插入），确保再调用一次
+        // 保险：再次强制插入
         forceInsertMeal();
     }
 

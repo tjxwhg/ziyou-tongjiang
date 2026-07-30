@@ -397,18 +397,35 @@ function toggleCustomTripSection() {
         resetRouteLegs();
     }
 }
+
+// ======== 修正：按名称去重，避免重复POI出现在下拉列表 ========
 function buildMainPoiOptions() {
-    const allMain = allPois.filter(p => !p.parent_id);
+    // 先按名称去重（保留第一次出现的记录），解决重复POI数据导致下拉重复的问题
+    const nameMap = new Map();
+    allPois.forEach(p => {
+        // 只处理主景区（parent_id为空）
+        if (!p.parent_id && !nameMap.has(p.name)) {
+            nameMap.set(p.name, p);
+        }
+    });
+    const allMain = Array.from(nameMap.values());
+
     mainPoiOptions = allMain.filter(p => p.id !== 'county');
-    if (window.userLatLng) mainPoiOptions.unshift({ id: 'mylocation', name: '📍 我的位置', lat: window.userLatLng.lat, lng: window.userLatLng.lng });
+    if (window.userLatLng) {
+        mainPoiOptions.unshift({ id: 'mylocation', name: '📍 我的位置', lat: window.userLatLng.lat, lng: window.userLatLng.lng });
+    }
     mainPoiOptions.unshift(COUNTY);
+
     allowedPoiOptions = allMain.filter(p => {
         if (!p.category) return false;
         const cats = p.category.split(',');
         return !cats.some(c => EXCLUDED_FROM_TRIP.includes(c));
     });
-    if (!allowedPoiOptions.some(p => p.id === 'county')) allowedPoiOptions.unshift(COUNTY);
+    if (!allowedPoiOptions.some(p => p.id === 'county')) {
+        allowedPoiOptions.unshift(COUNTY);
+    }
 }
+
 function resetRouteLegs() { routeLegs = [{ ...COUNTY }]; renderDynamicRoute(); }
 function addRouteLeg() { routeLegs.push({ id: '', name: '' }); renderDynamicRoute(); }
 function removeLeg(idx) { if (idx > 0) { routeLegs.splice(idx, 1); renderDynamicRoute(); } }

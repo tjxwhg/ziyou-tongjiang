@@ -6,7 +6,7 @@
     <title>智游通江</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
-        /* 样式不变，略 */
+        /* 样式不变（略） */
         * { margin:0; padding:0; box-sizing:border-box; }
         body { font-family: system-ui, sans-serif; height:100vh; overflow:hidden; }
         #map { height:100vh; width:100vw; z-index:1; }
@@ -467,14 +467,12 @@ function generateTimeline(nodes, startDate, startTime) {
     // 强制插入餐饮（用于交通结束后或游览完成时）
     function forceInsertMeal() {
         let inserted = false;
-        // 优先插入午餐（若未插入且当前时间已过午餐开始）
         if (!lunchInserted && curMin >= LUNCH_START) {
             addEvent(curMin, `🍽️ 午餐时间 (${formatTime(curMin)}-${formatTime(curMin + MEAL_DURATION)})`);
             curMin += MEAL_DURATION;
             lunchInserted = true;
             inserted = true;
         }
-        // 再插入晚餐（若午餐已插入或已过晚餐开始）
         if (!dinnerInserted && curMin >= DINNER_START) {
             addEvent(curMin, `🍽️ 晚餐时间 (${formatTime(curMin)}-${formatTime(curMin + MEAL_DURATION)})`);
             curMin += MEAL_DURATION;
@@ -501,35 +499,48 @@ function generateTimeline(nodes, startDate, startTime) {
         if (curMin < DAY_START) curMin = DAY_START;
     }
 
-    // ========== 处理游览（核心逻辑，已完全修正） ==========
+    // ========== 处理游览（核心逻辑，已彻底修正） ==========
     function processVisit(poi, visitDuration) {
         let remaining = visitDuration;
         let firstSegment = true;
         while (remaining > 0) {
             ensureDaylight();
-            // 检查是否处于餐饮窗口且该餐未插入，且剩余时间 >= 60
+            // 如果剩余 <= 60，则直接完成，不因窗口打断
+            if (remaining <= 60) {
+                let maxEnd = Math.min(DAY_END + 30, curMin + remaining);
+                let spend = maxEnd - curMin;
+                if (spend <= 0) {
+                    goToNextDay();
+                    continue;
+                }
+                let startMin = curMin;
+                curMin += spend;
+                let endMin = curMin;
+                let text = firstSegment ? `⏱️ ${formatTime(startMin)}-${formatTime(endMin)} 游览 ${poi.name} (游览${visitDuration}分钟)` : `⏱️ ${formatTime(startMin)}-${formatTime(endMin)} 继续游览 ${poi.name} (游览${spend}分钟)`;
+                addEvent(startMin, text);
+                remaining -= spend;
+                firstSegment = false;
+                // 完成后强制插入未安排的餐饮
+                forceInsertMeal();
+                continue;
+            }
+
+            // 剩余 > 60，考虑窗口打断
             let inLunchWindow = (!lunchInserted && curMin >= LUNCH_START && curMin < LUNCH_END);
             let inDinnerWindow = (!dinnerInserted && curMin >= DINNER_START && curMin < DINNER_END);
-            if ((inLunchWindow || inDinnerWindow) && remaining >= 60) {
-                // 剩余 >= 60，先插入餐饮再继续
+            if (inLunchWindow || inDinnerWindow) {
                 tryInsertMeal();
                 continue;
             }
 
-            // 不在窗口内，或剩余 < 60（此时即使进入窗口也不打断，直接完成剩余）
-            // 计算本段可游览的最大时间：直到下一个餐饮开始（但若剩余<60，则无视窗口）
+            // 不在窗口内，正常分配一段
             let nextBreak = DAY_END;
-            // 仅当剩余 >= 60 且未插入餐时才考虑用窗口打断
-            if (remaining >= 60) {
-                if (!lunchInserted && curMin < LUNCH_START) nextBreak = Math.min(nextBreak, LUNCH_START);
-                if (!dinnerInserted && curMin < DINNER_START) nextBreak = Math.min(nextBreak, DINNER_START);
-            }
-            // 允许游览到18:30
+            if (!lunchInserted && curMin < LUNCH_START) nextBreak = Math.min(nextBreak, LUNCH_START);
+            if (!dinnerInserted && curMin < DINNER_START) nextBreak = Math.min(nextBreak, DINNER_START);
             let maxEnd = Math.min(DAY_END + 30, curMin + remaining);
             let spend = Math.min(remaining, maxEnd - curMin);
             if (curMin + spend > nextBreak) spend = Math.max(0, nextBreak - curMin);
             if (spend <= 0) {
-                // 如果无法分配（比如正好在窗口内但remaining<60，且curMin等于窗口开始），我们直接推进一分钟以防死循环
                 if (tryInsertMeal()) continue;
                 curMin = Math.min(curMin + 1, DAY_END);
                 continue;
@@ -541,9 +552,9 @@ function generateTimeline(nodes, startDate, startTime) {
             addEvent(startMin, text);
             remaining -= spend;
             firstSegment = false;
-            // 段后不主动插入餐饮，而是等到整个景区完成后再强制插入
+            // 段后不插入，循环继续
         }
-        // 整个景区游览完成，强制插入未安排的餐饮
+        // 整个景区完成（但若剩余<=60已forceInsertMeal，这里再调用一次确保）
         forceInsertMeal();
     }
 

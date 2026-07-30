@@ -6,7 +6,7 @@
     <title>智游通江</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
-        /* 样式保持不变（同上） */
+        /* 样式保持不变 */
         * { margin:0; padding:0; box-sizing:border-box; }
         body { font-family: system-ui, sans-serif; height:100vh; overflow:hidden; }
         #map { height:100vh; width:100vw; z-index:1; }
@@ -501,7 +501,7 @@ function generateTimeline(nodes, startDate, startTime) {
         if (curMin < DAY_START) curMin = DAY_START;
     }
 
-    // 处理游览（核心逻辑）
+    // ========== 处理游览（核心逻辑，已完全修正） ==========
     function processVisit(poi, visitDuration) {
         let remaining = visitDuration;
         let firstSegment = true;

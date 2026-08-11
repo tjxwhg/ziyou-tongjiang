@@ -52,6 +52,7 @@
         .checkbox-group { display:flex; flex-direction:column; gap:6px; margin-top:4px; max-height:200px; overflow-y:auto; border:1px solid #ccc; border-radius:4px; padding:8px; background:#fff; }
         .checkbox-group label { display:flex; align-items:center; gap:8px; font-weight:normal; cursor:pointer; }
         .checkbox-group input[type="checkbox"] { width:auto; }
+        .feedback-reply { background:#e8f5e9; padding:8px; border-radius:4px; margin-top:8px; color:#1b5e20; }
     </style>
 </head>
 <body>
@@ -207,7 +208,7 @@ function checkVoiceTrigger(userLat, userLng){
     resetDailyTriggered();
     allPois.forEach(poi => {
         if (triggeredPois[poi.id]) return;
-        const radius = poi.trigger_radius || 100; // 默认100米
+        const radius = poi.trigger_radius || 100;
         const dist = getDistance(userLat, userLng, poi.lat, poi.lng);
         if (dist <= radius) {
             triggerVoice(poi);
@@ -286,7 +287,6 @@ function initMap(){
     map.on('click', e => { if(simPos) setSimulatedPosition(e.latlng.lat, e.latlng.lng); });
 }
 
-// ========== POI 加载 ==========
 async function loadAllPOIs(){
     const { data } = await sb.from('ztj_poi').select('*').eq('status','active');
     allPois = data || [];
@@ -514,7 +514,6 @@ async function updateAllTimes(){
     }
 }
 
-// 核心时间线生成（交通不中断 + 每日双餐保证）
 function generateTimeline(nodes, startDate, startTime){
     let curDate = new Date(startDate);
     let [h,m] = startTime.split(':').map(Number);
@@ -685,7 +684,7 @@ function deleteTrip(idx){
     renderMyTrip();
 }
 
-// 我的预约（含商户名称和多选内容）
+// 我的预约
 async function loadMyReservations(){
     const uid = getUserId();
     const { data } = await sb.from('reservations').select('*').eq('user_id', uid).order('created_at', false);
@@ -727,7 +726,7 @@ async function loadMyReservations(){
 }
 window.toggleMyReservationDetail = function(idx){ document.getElementById('my-res-detail-'+idx).classList.toggle('hidden'); };
 
-// 留言
+// 留言（修复：显示回复内容）
 async function submitFeedback(){
     const msg = document.getElementById('feedbackMsg').value;
     if(!msg) return;
@@ -738,7 +737,19 @@ async function submitFeedback(){
 async function loadFeedbackHistory(){
     const { data } = await sb.from('ztj_feedbacks').select('*').neq('user_id','system').order('created_at',{ascending:false});
     let html = '';
-    if(data) data.forEach(f => html += `<div class="card"><b>${new Date(f.created_at).toLocaleString()}</b><p>${f.message}</p></div>`);
+    if (data) {
+        data.forEach(f => {
+            let replyHtml = '';
+            if (f.reply) {
+                replyHtml = `<div class="feedback-reply">🔔 管理员回复：${f.reply}</div>`;
+            }
+            html += `<div class="card">
+                <div><b>${new Date(f.created_at).toLocaleString()}</b></div>
+                <div>${f.message}</div>
+                ${replyHtml}
+            </div>`;
+        });
+    }
     document.getElementById('feedbackHistory').innerHTML = html || '<p>暂无留言</p>';
 }
 

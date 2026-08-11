@@ -101,8 +101,8 @@
         <!-- 交通耗时 -->
         <div id="tab-transport" class="hidden">
             <h3>景点间交通耗时（分钟）</h3>
-            <p style="color:#666;">点击景点展开，修改耗时后自动保存。可删除不需要的点位（刷新保持）。</p>
-            <button class="btn btn-primary add-poi-btn" onclick="addTransportPoi()">+ 添加景点</button>
+            <p style="color:#666;">点击景点展开，修改耗时后自动保存。可移除不需要的点位（刷新保持）。</p>
+            <button class="btn btn-primary" onclick="addTransportPoi()">+ 添加景点</button>
             <div id="transport-editor"></div>
         </div>
 
@@ -131,6 +131,7 @@ let allTransportPresets = {};
 let mainPoisForTransport = [];
 let allMainPois = [];
 
+// ========== 会话 ==========
 async function checkSession(){
     const { data: { session } } = await sb.auth.getSession();
     if(session) { currentUser = session.user; showMain(); }
@@ -322,16 +323,22 @@ async function removeFromParent(subId, parentId){
     loadSubPois(parentId);
     loadPOIs();
 }
-// 修复删除：先解除关联商户，再删除
+
+// 彻底删除POI：清理所有外键引用
 async function deletePoi(id){
-    if(confirm('确定删除此POI？将同时解除所有关联商户的绑定。')){
-        // 将引用此 poi_id 的商户 poi_id 设为 null
+    if(confirm('确定删除此POI？将同时解除关联的商户、交通预设、路线节点，并删除子点。')){
+        // 解除商户绑定
         await sb.from('ztj_merchants').update({ poi_id: null }).eq('poi_id', id);
-        // 删除子点（如果存在）
+        // 删除交通预设中包含此POI的记录
+        await sb.from('ztj_transport_presets').delete().or(`from_poi_id.eq.${id},to_poi_id.eq.${id}`);
+        // 删除路线节点引用
+        await sb.from('ztj_route_nodes').delete().eq('poi_id', id);
+        // 删除子点
         await sb.from('ztj_poi').delete().eq('parent_id', id);
-        // 删除该 POI
-        await sb.from('ztj_poi').delete().eq('id', id);
-        loadPOIs();
+        // 最后删除自身
+        const { error } = await sb.from('ztj_poi').delete().eq('id', id);
+        if(error) { alert('删除失败：'+error.message); }
+        else { loadPOIs(); }
     }
 }
 
@@ -455,11 +462,10 @@ function setExcludedTransportPois(arr){
 async function loadTransportEditor(){
     const { data: pois } = await sb.from('ztj_poi').select('id,name,category').is('parent_id', null).order('name');
     allMainPois = pois || [];
-    // 读取本地存储的排除列表
     const excludedIds = getExcludedTransportPois();
     mainPoisForTransport = [ { id: 0, name: '红军广场', category: '' } ];
     (pois||[]).forEach(p => {
-        if (excludedIds.includes(p.id)) return;  // 跳过被移除的 POI
+        if (excludedIds.includes(p.id)) return;
         if (!p.category) { mainPoisForTransport.push(p); return; }
         const cats = p.category.split(',');
         if (!cats.some(c => EXCLUDED_TRANSPORT_CATS.includes(c))) {
@@ -525,7 +531,7 @@ function addTransportPoi(){
             const poi = allMainPois.find(p => p.id == selectedId);
             if(poi) {
                 mainPoisForTransport.push(poi);
-                // 从排除列表中移除（如果之前被移除了）
+                // 从排除列表中移除
                 const excluded = getExcludedTransportPois();
                 const idx = excluded.indexOf(Number(selectedId));
                 if(idx !== -1) {
@@ -540,9 +546,7 @@ function addTransportPoi(){
 }
 
 function removeTransportPoi(id){
-    // 从当前列表移除
     mainPoisForTransport = mainPoisForTransport.filter(p => p.id != id);
-    // 记录到本地存储的排除列表
     const excluded = getExcludedTransportPois();
     if(!excluded.includes(id)) excluded.push(id);
     setExcludedTransportPois(excluded);

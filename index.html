@@ -7,24 +7,33 @@
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
         * { margin:0; padding:0; box-sizing:border-box; }
-        body { font-family: system-ui, sans-serif; height:100vh; overflow:hidden; }
+        body { font-family: system-ui, sans-serif; height:100vh; overflow:hidden; background:#f5f5f5; }
         #map { height:100vh; width:100vw; z-index:1; }
-        .top-bar { position:fixed; top:20px; right:20px; z-index:1500; display:flex; gap:8px; }
-        .top-btn { background:white; border-radius:20px; padding:6px 12px; box-shadow:0 2px 8px rgba(0,0,0,0.2); border:none; font-size:14px; cursor:pointer; }
+
+        /* 顶部栏 */
+        .top-bar { position:fixed; top:20px; right:20px; z-index:1500; display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end; }
+        .top-btn { background:white; border-radius:20px; padding:6px 12px; box-shadow:0 2px 8px rgba(0,0,0,0.2); border:none; font-size:14px; cursor:pointer; display:flex; align-items:center; gap:4px; }
+
+        /* 底部按钮 */
         .bottom-bar { position:fixed; bottom:20px; left:20px; right:20px; z-index:1500; display:flex; gap:10px; }
         .btn { flex:1; padding:14px; border:none; border-radius:12px; font-size:16px; font-weight:bold; box-shadow:0 4px 12px rgba(0,0,0,0.15); cursor:pointer; }
         .btn-primary { background:#2E7D32; color:white; }
         .btn-secondary { background:white; color:#2E7D32; }
-        .locate-btn { position:fixed; bottom:120px; right:20px; z-index:1500; background:white; border-radius:50%; width:50px; height:50px; display:flex; align-items:center; justify-content:center; box-shadow:0 4px 12px rgba(0,0,0,0.3); cursor:pointer; font-size:22px; }
-        .voice-toggle-btn { position:fixed; bottom:180px; right:20px; z-index:1500; background:white; border-radius:50%; width:50px; height:50px; display:flex; align-items:center; justify-content:center; box-shadow:0 4px 12px rgba(0,0,0,0.3); cursor:pointer; font-size:22px; }
-        .panel { position:fixed; top:0; left:0; right:0; bottom:0; background:white; z-index:2000; transform:translateY(100%); transition:transform 0.3s; overflow-y:auto; display:flex; flex-direction:column; }
+        .btn-danger { background:#c62828; color:white; }
+
+        /* 右侧浮动按钮 */
+        .float-btn { position:fixed; z-index:1500; background:white; border-radius:50%; width:50px; height:50px; display:flex; align-items:center; justify-content:center; box-shadow:0 4px 12px rgba(0,0,0,0.3); cursor:pointer; font-size:22px; border:none; }
+        .locate-btn { bottom:130px; right:20px; }
+        .voice-toggle-btn { bottom:190px; right:20px; }
+        .test-btn { bottom:250px; right:20px; background:#1565C0; color:white; }
+
+        /* 面板 */
+        .panel { position:fixed; top:0; left:0; right:0; bottom:0; background:white; z-index:2000; transform:translateY(100%); transition:transform 0.3s ease; overflow-y:auto; display:flex; flex-direction:column; }
         .panel.active { transform:translateY(0); }
-        .panel-header { padding:16px; border-bottom:1px solid #eee; display:flex; justify-content:space-between; align-items:center; }
+        .panel-header { padding:16px; border-bottom:1px solid #eee; display:flex; justify-content:space-between; align-items:center; background:white; position:sticky; top:0; z-index:10; }
         .panel-body { flex:1; padding:16px; overflow-y:auto; }
-        .reserve-btn { background:#1565C0; color:white; border:none; padding:10px 20px; border-radius:20px; width:100%; margin-top:12px; cursor:pointer; }
-        .time-slot { display:inline-block; padding:6px 12px; margin:4px; border:1px solid #ccc; border-radius:20px; cursor:pointer; }
-        .time-slot.full { background:#eee; color:#999; cursor:not-allowed; }
-        .time-slot.selected { background:#2E7D32; color:white; }
+
+        /* 卡片等 */
         .card { border:1px solid #eee; border-radius:8px; padding:12px; margin:8px 0; background:#fafafa; }
         .hidden { display:none; }
         .form-group { margin:8px 0; }
@@ -32,44 +41,54 @@
         input, select, textarea { width:100%; padding:8px; border:1px solid #ccc; border-radius:4px; }
         .my-tab { padding:8px 16px; border:none; background:#eee; border-radius:20px; cursor:pointer; }
         .my-tab.active { background:#2e7d32; color:white; }
-        .route-node { display:flex; gap:8px; align-items:center; margin:8px 0; }
+
+        .route-node { display:flex; gap:8px; align-items:center; margin:8px 0; flex-wrap:wrap; }
         .day-header { font-weight:bold; background:#e9f5ea; padding:6px; border-radius:4px; margin:12px 0 6px; }
         .trip-line { padding:4px 0; border-bottom:1px dotted #eee; }
-        .collapse-header { cursor:pointer; font-weight:bold; display:flex; justify-content:space-between; }
         .warn-list { background:#fafafa; padding:10px; border-radius:8px; margin-top:10px; }
         .toggle-section { background:#f0f0f0; border-radius:8px; padding:12px; margin:10px 0; cursor:pointer; }
-        .route-time { font-size:12px; color:#666; margin-left:8px; }
-        .lang-select { margin-bottom:15px; }
-        .category-group { margin-bottom:10px; border:1px solid #eee; border-radius:8px; overflow:hidden; }
-        .category-title { background:#f5f5f5; padding:12px; font-weight:bold; cursor:pointer; display:flex; justify-content:space-between; align-items:center; }
-        .category-items { padding:0 12px; }
-        .category-items .card { border:none; border-bottom:1px dotted #ddd; margin:0; border-radius:0; }
-        .category-items .card:last-child { border-bottom:none; }
         .biz-image-box { width:100%; aspect-ratio:4/3; margin-top:8px; border-radius:4px; overflow:hidden; background:#f0f0f0; display:flex; align-items:center; justify-content:center; }
         .biz-image-box img { width:100%; height:100%; object-fit:cover; }
-        @media (min-width:768px) { .biz-image-box { max-width:400px; } }
-        .required-star { color:#c62828; }
         .checkbox-group { display:flex; flex-direction:column; gap:6px; margin-top:4px; max-height:200px; overflow-y:auto; border:1px solid #ccc; border-radius:4px; padding:8px; background:#fff; }
         .checkbox-group label { display:flex; align-items:center; gap:8px; font-weight:normal; cursor:pointer; }
-        .checkbox-group input[type="checkbox"] { width:auto; }
         .feedback-reply { background:#e8f5e9; padding:8px; border-radius:4px; margin-top:8px; color:#1b5e20; }
+
+        /* 调试距离列表 */
+        .nearby-list { max-height:200px; overflow-y:auto; background:#f9f9f9; border-radius:8px; padding:8px; margin-top:8px; }
+        .nearby-item { display:flex; justify-content:space-between; padding:4px 0; border-bottom:1px dotted #ddd; font-size:14px; }
+        .nearby-item .dist { font-weight:bold; }
+        .nearby-item .triggered { color:#2e7d32; }
+        .debug-panel { background:#fff3e0; padding:8px; border-radius:8px; margin-bottom:10px; border-left:4px solid #ff9800; }
+
+        @media (max-width:480px) { .top-btn { font-size:12px; padding:4px 8px; } .float-btn { width:44px; height:44px; font-size:18px; } .locate-btn { bottom:120px; } .voice-toggle-btn { bottom:175px; } .test-btn { bottom:230px; } }
     </style>
 </head>
 <body>
 <div id="map"></div>
-<div class="top-bar"><button class="top-btn" onclick="openPanel('myPanel')">👤 我的</button></div>
+
+<!-- 顶部栏 -->
+<div class="top-bar">
+    <button class="top-btn" onclick="openPanel('myPanel')">👤 我的</button>
+    <button class="top-btn" onclick="openPanel('debugPanel')">🐛 调试</button>
+</div>
+
+<!-- 底部按钮 -->
 <div class="bottom-bar">
     <button class="btn btn-secondary" onclick="openPanel('routesPanel')">📋 路线</button>
     <button class="btn btn-primary" id="navBtn" onclick="startSimulation()">📍 模拟导航</button>
 </div>
-<div class="locate-btn" onclick="locateUser()" title="定位我的位置">📍</div>
-<div class="voice-toggle-btn" onclick="toggleAutoVoice()" title="自动语音开关">🔊</div>
+
+<!-- 浮动按钮 -->
+<button class="float-btn locate-btn" onclick="locateUser()" title="定位我的位置">📍</button>
+<button class="float-btn voice-toggle-btn" id="voiceToggleBtn" onclick="toggleAutoVoice()" title="自动语音开关">🔊</button>
+<button class="float-btn test-btn" onclick="manualTriggerVoice()" title="手动触发语音测试（最近POI）">🔔</button>
 
 <!-- 商户详情面板 -->
 <div class="panel" id="merchantDetailPanel">
     <div class="panel-header"><h2 id="merchantDetailTitle"></h2><button onclick="closePanel('merchantDetailPanel')">✕</button></div>
     <div class="panel-body" id="merchantDetailContent"></div>
 </div>
+
 <!-- 路线面板 -->
 <div class="panel" id="routesPanel">
     <div class="panel-header"><h2>路线</h2><button onclick="closePanel('routesPanel')">✕</button></div>
@@ -82,7 +101,7 @@
             <div class="form-group"><label>出发时间</label><select id="trip-time"><option value="07:00" selected>07:00</option><option value="08:00">08:00</option><option value="09:00">09:00</option></select></div>
             <div class="form-group"><label>出行方式</label><select id="trip-mode"><option value="auto">自驾</option><option value="bus">公交</option><option value="walk">步行</option></select></div>
             <div class="form-group"><label>人数</label><input type="number" id="trip-people" min="1" value="2"></div>
-            <div class="form-group"><label>行程路线</label><div id="dynamic-route"></div><button class="btn btn-default" onclick="addRouteLeg()">+ 添加景点</button></div>
+            <div class="form-group"><label>行程路线</label><div id="dynamic-route"></div><button class="btn btn-secondary" onclick="addRouteLeg()">+ 添加景点</button></div>
             <button class="btn btn-primary" onclick="generateCustomTrip()" style="width:100%; margin-top:12px;">生成行程</button>
             <div id="generated-trip" style="margin-top:12px;"></div>
             <div id="trip-warnings" style="margin-top:12px;"></div>
@@ -95,7 +114,7 @@
 <div class="panel" id="myPanel">
     <div class="panel-header"><h2>我的</h2><button onclick="closePanel('myPanel')">✕</button></div>
     <div class="panel-body">
-        <div class="lang-select"><label>语言</label><select id="langSelect" style="width:100%"><option value="cn">中文</option></select></div>
+        <div class="lang-select"><label>语言</label><select id="langSelect" style="width:100%"><option value="cn">中文</option><option value="en">English</option><option value="ja">日本語</option></select></div>
         <div style="display:flex; gap:10px; margin-bottom:15px;">
             <button id="my-tab-trip" class="my-tab active" onclick="switchMyTab('trip')">📅 行程</button>
             <button id="my-tab-reservation" class="my-tab" onclick="switchMyTab('reservation')">📋 预约</button>
@@ -111,18 +130,40 @@
     </div>
 </div>
 
+<!-- 调试面板 -->
+<div class="panel" id="debugPanel">
+    <div class="panel-header"><h2>🐛 调试 & 围栏测试</h2><button onclick="closePanel('debugPanel')">✕</button></div>
+    <div class="panel-body">
+        <div class="debug-panel">
+            <div><b>语音状态：</b><span id="voiceStatus">🔊 已开启</span></div>
+            <div><b>当前位置：</b><span id="currentPos">未定位</span></div>
+            <div><b>最近POI距离：</b><span id="nearestDist">--</span></div>
+        </div>
+        <h4>📍 附近POI（<span id="nearbyCount">0</span>个在50米内）</h4>
+        <div id="nearbyList" class="nearby-list"></div>
+        <button class="btn btn-secondary" onclick="refreshNearby()" style="margin-top:8px;">🔄 刷新附近列表</button>
+        <button class="btn btn-primary" onclick="manualTriggerVoice()" style="margin-top:8px;">🔔 强制触发最近POI语音</button>
+        <hr style="margin:16px 0;">
+        <p><small>💡 提示：点击地图可模拟位置（用于测试），定位后自动检测围栏。</small></p>
+    </div>
+</div>
+
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="config.js"></script>
 <script>
+// ==================== 核心配置 ====================
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-let map, allPois=[], generatedTripData=null;
-let userMarker = null;
+let map, allPois = [], generatedTripData = null;
+let userMarker = null, simMarker = null;
 let anonymousUserId = null;
-let voiceEnabled = true;          // 自动语音开关
-let lastTriggeredPoiIds = {};     // 记录最近触发的时间，避免短时间内重复播放
-const COOLDOWN = 5 * 60 * 1000;   // 同一POI冷却5分钟
+let voiceEnabled = true;
+let lastTriggeredPoiIds = {};
+const COOLDOWN = 5 * 60 * 1000;   // 5分钟
 let watchId = null;
+let currentGcjPos = null;          // 当前GCJ-02坐标
+const TRIGGER_RADIUS = 50;        // 电子围栏半径（米）
+const GPS_ACCURACY_TOLERANCE = 15; // 补偿GPS误差（米）
 
 const COUNTY = { lat:32.08, lng:107.24, name:'红军广场', id:'county' };
 const poiColors = { '自然景区':'#2E7D32', '红色景区':'#9C27B0', '文博场馆':'#9C27B0', '餐饮住宿':'#FF9800', '停车场':'#00BCD4', '公共服务':'#607D8B' };
@@ -132,7 +173,7 @@ const EXCLUDED_FROM_TRIP = ['游戏娱乐','公共服务','特产购物'];
 const NON_VISIT_CATEGORIES = ['交通枢纽','餐饮住宿','公共服务','特产购物','游玩娱乐'];
 let routeLegs=[], mainPoiOptions=[], allowedPoiOptions=[];
 
-// 坐标转换（保留，但不再作为问题根源）
+// ==================== 辅助函数 ====================
 function wgs84ToGcj02(lat, lon) {
     const a = 6378245.0;
     const ee = 0.00669342162296594323;
@@ -161,14 +202,20 @@ function wgs84ToGcj02(lat, lon) {
     return { lat: lat + dLatFinal, lng: lon + dLonFinal };
 }
 
-// 匿名登录
-async function initAnonymousAuth(){
-    const { data: { session } } = await sb.auth.getSession();
-    if (session) { anonymousUserId = session.user.id; }
-    else {
-        const { data, error } = await sb.auth.signInAnonymously();
-        if (!error && data.session) anonymousUserId = data.session.user.id;
-    }
+function getDistance(lat1, lng1, lat2, lng2) {
+    const R = 6371000;
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLng = (lng2 - lng1) * Math.PI / 180;
+    const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180) * Math.cos(lat2*Math.PI/180) * Math.sin(dLng/2)**2;
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+
+function formatTime(m){ return `${Math.floor(m/60).toString().padStart(2,'0')}:${(m%60).toString().padStart(2,'0')}`; }
+function isNonVisitPoi(poiId){
+    if(poiId==='county') return false;
+    const poi = allPois.find(p=>p.id==poiId);
+    if(!poi || !poi.category) return false;
+    return poi.category.split(',').some(c=>NON_VISIT_CATEGORIES.includes(c));
 }
 function getUserId(){
     return anonymousUserId || (localStorage.getItem('vid') || (()=>{
@@ -177,75 +224,166 @@ function getUserId(){
         return uid;
     })());
 }
-function formatTime(m){ return `${Math.floor(m/60).toString().padStart(2,'0')}:${(m%60).toString().padStart(2,'0')}`; }
-function isNonVisitPoi(poiId){
-    if(poiId==='county') return false;
-    const poi=allPois.find(p=>p.id==poiId);
-    if(!poi||!poi.category) return false;
-    return poi.category.split(',').some(c=>NON_VISIT_CATEGORIES.includes(c));
+
+// ==================== 语音引擎激活 ====================
+function activateSpeech() {
+    // 首次调用时触发语音引擎初始化（某些浏览器需要）
+    if ('speechSynthesis' in window) {
+        speechSynthesis.getVoices(); // 触发加载语音列表
+        // 播放一个极短静音片段以激活
+        const silent = new SpeechSynthesisUtterance(' ');
+        silent.volume = 0;
+        silent.lang = 'zh-CN';
+        speechSynthesis.speak(silent);
+        setTimeout(() => speechSynthesis.cancel(), 100);
+        console.log('[语音] 引擎已激活');
+    }
 }
 
-// 自动语音开关
-function toggleAutoVoice(){
+// ==================== 自动语音开关 ====================
+function toggleAutoVoice() {
     voiceEnabled = !voiceEnabled;
-    const btn = document.querySelector('.voice-toggle-btn');
+    const btn = document.getElementById('voiceToggleBtn');
     if (voiceEnabled) {
         btn.textContent = '🔊';
-        // 重新打开时，清空冷却记录，立即检测当前所在位置
+        document.getElementById('voiceStatus').textContent = '🔊 已开启';
         lastTriggeredPoiIds = {};
-        if (window.lastGcjPos) {
-            checkVoiceTrigger(window.lastGcjPos.lat, window.lastGcjPos.lng);
+        if (currentGcjPos) {
+            checkVoiceTrigger(currentGcjPos.lat, currentGcjPos.lng);
         }
+        // 重新激活语音
+        activateSpeech();
     } else {
         btn.textContent = '🔇';
+        document.getElementById('voiceStatus').textContent = '🔇 已关闭';
         speechSynthesis.cancel();
     }
 }
 
-// 检测电子围栏（基于距离与冷却时间）
-function checkVoiceTrigger(userLat, userLng){
-    if (!voiceEnabled) return;
+// ==================== 核心：电子围栏检测 ====================
+function checkVoiceTrigger(userLat, userLng) {
+    if (!voiceEnabled) {
+        console.log('[围栏] 语音已关闭，跳过检测');
+        return;
+    }
+    if (!allPois || allPois.length === 0) {
+        console.warn('[围栏] POI数据未加载');
+        return;
+    }
     const now = Date.now();
-    const triggerRadius = 50;  // 50米
+    const threshold = TRIGGER_RADIUS + GPS_ACCURACY_TOLERANCE; // 考虑误差
+    let triggered = false;
+
     allPois.forEach(poi => {
-        // 检查冷却时间
-        const lastTime = lastTriggeredPoiIds[poi.id] || 0;
-        if (now - lastTime < COOLDOWN) return;
+        if (!poi.lat || !poi.lng) return;
         const dist = getDistance(userLat, userLng, poi.lat, poi.lng);
-        // 调试用（可在控制台查看距离）
-        // console.log(poi.name, dist);
-        if (dist <= triggerRadius) {
+        // 调试输出（仅输出距离小于100米的）
+        if (dist < 100) {
+            console.log(`[围栏] ${poi.name} 距离 ${dist.toFixed(1)}m`);
+        }
+        const lastTime = lastTriggeredPoiIds[poi.id] || 0;
+        if (dist <= threshold && (now - lastTime >= COOLDOWN)) {
+            // 触发语音
             triggerVoice(poi);
             lastTriggeredPoiIds[poi.id] = now;
+            triggered = true;
         }
     });
+
+    // 更新调试面板
+    updateDebugPanel(userLat, userLng);
 }
 
-// 语音播报
-function triggerVoice(poi){
+// ==================== 语音播报 ====================
+function triggerVoice(poi) {
+    if (!voiceEnabled) {
+        console.log('[语音] 开关关闭，不播放');
+        return;
+    }
     const lang = document.getElementById('langSelect')?.value || 'cn';
     const text = poi['voice_' + lang] || poi.voice_cn || poi.description || poi.name;
-    if (!text) return;
+    if (!text) {
+        console.warn('[语音] 无可用文本', poi.name);
+        return;
+    }
+    // 取消已有语音
     speechSynthesis.cancel();
     const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = {cn:'zh-CN', en:'en-US', ja:'ja-JP', ko:'ko-KR'}[lang] || 'zh-CN';
+    utterance.lang = { cn:'zh-CN', en:'en-US', ja:'ja-JP', ko:'ko-KR' }[lang] || 'zh-CN';
     utterance.rate = 0.9;
+    utterance.onend = () => console.log('[语音] 播报完成');
+    utterance.onerror = (e) => console.warn('[语音] 播报错误', e);
     speechSynthesis.speak(utterance);
+    console.log(`[语音] 播放：${text}`);
 }
 
-// 持续定位监听
-function startWatching(){
-    if (!navigator.geolocation) return;
-    if (watchId) navigator.geolocation.clearWatch(watchId);
-    watchId = navigator.geolocation.watchPosition(
-        (pos) => {
-            const raw = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-            // 使用原始WGS-84坐标（因为地图POI也是WGS-84，无需转换）
-            // 如果POI是GCJ-02，则需要转换，但根据用户描述，POI坐标是在游客端地图上调整的，应已是GCJ-02，所以需要转换
-            // 为保险起见，我们同时提供两种选择：如果用户确认POI就是GCJ-02，则使用转换后的坐标；否则直接使用原始
-            // 这里默认仍进行转换，因为高德地图的POI默认是GCJ-02
+// ==================== 手动触发测试 ====================
+function manualTriggerVoice() {
+    if (!currentGcjPos) {
+        alert('请先定位或点击地图模拟位置');
+        return;
+    }
+    // 找出最近的POI（无论是否在围栏内）
+    let nearest = null, minDist = Infinity;
+    allPois.forEach(poi => {
+        if (!poi.lat || !poi.lng) return;
+        const d = getDistance(currentGcjPos.lat, currentGcjPos.lng, poi.lat, poi.lng);
+        if (d < minDist) { minDist = d; nearest = poi; }
+    });
+    if (nearest) {
+        console.log(`[手动] 最近POI: ${nearest.name} 距离 ${minDist.toFixed(1)}m`);
+        if (minDist <= TRIGGER_RADIUS + GPS_ACCURACY_TOLERANCE) {
+            triggerVoice(nearest);
+            lastTriggeredPoiIds[nearest.id] = Date.now();
+        } else {
+            alert(`最近POI "${nearest.name}" 距离 ${minDist.toFixed(1)}m，超过围栏（${TRIGGER_RADIUS}m），不触发语音。`);
+        }
+    } else {
+        alert('无POI数据');
+    }
+}
+
+// ==================== 调试面板更新 ====================
+function updateDebugPanel(lat, lng) {
+    if (!lat || !lng) return;
+    document.getElementById('currentPos').textContent = `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+    // 找出50米内的POI
+    const nearby = allPois.filter(p => {
+        if (!p.lat || !p.lng) return false;
+        return getDistance(lat, lng, p.lat, p.lng) <= TRIGGER_RADIUS + GPS_ACCURACY_TOLERANCE;
+    });
+    document.getElementById('nearbyCount').textContent = nearby.length;
+    let html = nearby.map(p => {
+        const d = getDistance(lat, lng, p.lat, p.lng);
+        const triggered = (lastTriggeredPoiIds[p.id] && (Date.now() - lastTriggeredPoiIds[p.id] < COOLDOWN));
+        return `<div class="nearby-item"><span>${p.name}</span><span class="dist">${d.toFixed(1)}m ${triggered ? '✅已触发' : ''}</span></div>`;
+    }).join('');
+    document.getElementById('nearbyList').innerHTML = html || '<div style="color:#999;">无POI在围栏内</div>';
+    // 最近距离
+    let nearestDist = Infinity;
+    allPois.forEach(p => {
+        if (!p.lat || !p.lng) return;
+        const d = getDistance(lat, lng, p.lat, p.lng);
+        if (d < nearestDist) nearestDist = d;
+    });
+    document.getElementById('nearestDist').textContent = nearestDist === Infinity ? '--' : nearestDist.toFixed(1) + 'm';
+}
+
+function refreshNearby() {
+    if (currentGcjPos) updateDebugPanel(currentGcjPos.lat, currentGcjPos.lng);
+    else alert('请先定位');
+}
+
+// ==================== 定位 ====================
+function locateUser() {
+    if (!navigator.geolocation) { alert('您的浏览器不支持定位'); return; }
+    // 激活语音引擎
+    activateSpeech();
+    navigator.geolocation.getCurrentPosition(
+        (position) => {
+            const raw = { lat: position.coords.latitude, lng: position.coords.longitude };
             const gcj = wgs84ToGcj02(raw.lat, raw.lng);
-            window.lastGcjPos = gcj;
+            currentGcjPos = gcj;
             // 更新用户标记
             if (userMarker) map.removeLayer(userMarker);
             userMarker = L.marker([gcj.lat, gcj.lng], {
@@ -254,22 +392,27 @@ function startWatching(){
                     iconSize: [20,20],
                     className: ''
                 })
-            }).addTo(map);
-            // 执行围栏检测
+            }).addTo(map).bindPopup('我的位置').openPopup();
+            map.setView([gcj.lat, gcj.lng], 15);
+            // 开始持续监听
+            startWatching();
+            // 立即检测一次围栏
             checkVoiceTrigger(gcj.lat, gcj.lng);
+            updateDebugPanel(gcj.lat, gcj.lng);
         },
-        (err) => { console.warn('定位错误', err); },
-        { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 }
+        (error) => { alert('无法获取位置：' + error.message); },
+        { enableHighAccuracy: true, timeout: 10000 }
     );
 }
 
-// 定位按钮
-function locateUser(){
-    if (!navigator.geolocation) { alert('您的浏览器不支持定位'); return; }
-    navigator.geolocation.getCurrentPosition(
-        (position) => {
-            const raw = { lat: position.coords.latitude, lng: position.coords.longitude };
+function startWatching() {
+    if (!navigator.geolocation) return;
+    if (watchId) navigator.geolocation.clearWatch(watchId);
+    watchId = navigator.geolocation.watchPosition(
+        (pos) => {
+            const raw = { lat: pos.coords.latitude, lng: pos.coords.longitude };
             const gcj = wgs84ToGcj02(raw.lat, raw.lng);
+            currentGcjPos = gcj;
             if (userMarker) map.removeLayer(userMarker);
             userMarker = L.marker([gcj.lat, gcj.lng], {
                 icon: L.divIcon({
@@ -277,46 +420,82 @@ function locateUser(){
                     iconSize: [20,20],
                     className: ''
                 })
-            }).addTo(map).bindPopup('我的位置').openPopup();
-            map.setView([gcj.lat, gcj.lng], 14);
-            window.userLatLng = gcj;
-            window.lastGcjPos = gcj;
-            startWatching();
+            }).addTo(map);
+            checkVoiceTrigger(gcj.lat, gcj.lng);
+            updateDebugPanel(gcj.lat, gcj.lng);
         },
-        (error) => { alert('无法获取位置：' + error.message); },
-        { enableHighAccuracy: true, timeout: 10000 }
+        (err) => { console.warn('定位错误', err); },
+        { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 }
     );
 }
 
-// 地图初始化
-function initMap(){
-    map = L.map('map', { zoomControl: false }).setView([32.08,107.18], 12);
+// ==================== 地图点击模拟位置（调试用） ====================
+function setSimulatedPosition(lat, lng) {
+    // 假设传入的是GCJ-02（地图点击得到）
+    currentGcjPos = { lat, lng };
+    if (simMarker) map.removeLayer(simMarker);
+    simMarker = L.marker([lat, lng], {
+        icon: L.divIcon({
+            html: '<div style="background:#FF5722; width:16px; height:16px; border-radius:50%; border:2px solid white; box-shadow:0 0 8px rgba(0,0,0,0.3);"></div>',
+            iconSize: [16,16],
+            className: ''
+        })
+    }).addTo(map).bindPopup('模拟位置').openPopup();
+    // 触发围栏检测
+    checkVoiceTrigger(lat, lng);
+    updateDebugPanel(lat, lng);
+    map.setView([lat, lng], 15);
+}
+
+// ==================== 初始化地图 ====================
+function initMap() {
+    map = L.map('map', { zoomControl: false }).setView([32.08, 107.18], 12);
     L.tileLayer('https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}',{
         subdomains:['1','2','3','4'], maxZoom:18
     }).addTo(map);
     L.control.zoom({ position: 'topright' }).addTo(map);
+    // 点击地图模拟位置
+    map.on('click', (e) => {
+        setSimulatedPosition(e.latlng.lat, e.latlng.lng);
+    });
+
     initAnonymousAuth().then(() => loadAllPOIs());
-    map.on('click', e => { if(simPos) setSimulatedPosition(e.latlng.lat, e.latlng.lng); });
+    // 激活语音引擎
+    setTimeout(activateSpeech, 500);
+    // 更新语音状态显示
+    document.getElementById('voiceStatus').textContent = '🔊 已开启';
 }
 
-// ========== POI 加载 ==========
-async function loadAllPOIs(){
+// ==================== 匿名登录 & POI加载 ====================
+async function initAnonymousAuth() {
+    const { data: { session } } = await sb.auth.getSession();
+    if (session) { anonymousUserId = session.user.id; }
+    else {
+        const { data, error } = await sb.auth.signInAnonymously();
+        if (!error && data.session) anonymousUserId = data.session.user.id;
+    }
+}
+
+async function loadAllPOIs() {
     const { data } = await sb.from('ztj_poi').select('*').eq('status','active');
     allPois = data || [];
     renderPOIs(allPois);
     window.subPoisMap = {};
     allPois.forEach(p => { if(p.parent_id){ if(!window.subPoisMap[p.parent_id]) window.subPoisMap[p.parent_id]=[]; window.subPoisMap[p.parent_id].push(p); } });
     await loadTransportPresets();
+    console.log(`[POI] 已加载 ${allPois.length} 个POI`);
 }
-async function loadTransportPresets(){
+
+async function loadTransportPresets() {
     const { data } = await sb.from('ztj_transport_presets').select('*');
     transportPresets = {};
     if(data) data.forEach(p => { transportPresets[`${p.from_poi_id}_${p.to_poi_id}`] = p.time_min; });
 }
-function getTransportTime(fromId, toId, mode){
+
+function getTransportTime(fromId, toId, mode) {
     if (fromId === 'mylocation' || toId === 'mylocation') {
-        const fromPoi = fromId === 'mylocation' ? { lat: window.userLatLng.lat, lng: window.userLatLng.lng } : allPois.find(p => p.id == fromId) || COUNTY;
-        const toPoi = toId === 'mylocation' ? { lat: window.userLatLng.lat, lng: window.userLatLng.lng } : allPois.find(p => p.id == toId) || COUNTY;
+        const fromPoi = fromId === 'mylocation' ? { lat: currentGcjPos?.lat || 0, lng: currentGcjPos?.lng || 0 } : allPois.find(p => p.id == fromId) || COUNTY;
+        const toPoi = toId === 'mylocation' ? { lat: currentGcjPos?.lat || 0, lng: currentGcjPos?.lng || 0 } : allPois.find(p => p.id == toId) || COUNTY;
         if (!fromPoi || !toPoi) return null;
         const dist = getDistance(fromPoi.lat, fromPoi.lng, toPoi.lat, toPoi.lng);
         const speed = mode === 'auto' ? 40000 : (mode === 'bus' ? 20000 : 5000);
@@ -329,8 +508,9 @@ function getTransportTime(fromId, toId, mode){
     t = transportPresets[`${tId}_${fId}`];
     return t !== undefined ? t : null;
 }
-function renderPOIs(pois){
-    map.eachLayer(l => { if(l instanceof L.Marker) map.removeLayer(l); });
+
+function renderPOIs(pois) {
+    map.eachLayer(l => { if(l instanceof L.Marker && l !== userMarker && l !== simMarker) map.removeLayer(l); });
     pois.forEach(p => {
         const cat = (p.category||'').split(',')[0]||'其他';
         const color = poiColors[cat]||'#999';
@@ -339,8 +519,8 @@ function renderPOIs(pois){
     });
 }
 
-// ========== 商户详情 ==========
-async function showPoiDetail(poi){
+// ==================== 商户详情 ====================
+async function showPoiDetail(poi) {
     const { data: m } = await sb.from('ztj_merchants').select('*').eq('poi_id', poi.id).maybeSingle();
     document.getElementById('merchantDetailTitle').textContent = poi.name;
     let html = '';
@@ -387,8 +567,8 @@ async function showPoiDetail(poi){
     openPanel('merchantDetailPanel');
 }
 
-// ========== 预约表单 ==========
-async function toggleReserveForm(merchantId){
+// ==================== 预约表单（简化，与之前相同） ====================
+async function toggleReserveForm(merchantId) {
     const formDiv = document.getElementById(`reserve-form-${merchantId}`);
     if(!formDiv.classList.contains('hidden')){ formDiv.classList.add('hidden'); return; }
     const { data: m } = await sb.from('ztj_merchants').select('service_data').eq('id', merchantId).single();
@@ -409,13 +589,13 @@ async function toggleReserveForm(merchantId){
         <div class="form-group"><label>预约地点</label><input id="res-room-${merchantId}"></div>
         <div class="form-group"><label>备注</label><textarea id="res-remark-${merchantId}" rows="2"></textarea></div>
         <button class="btn btn-primary" onclick="submitReservationDirect('${merchantId}')">提交预约</button>
-        <button class="btn btn-default" onclick="toggleReserveForm('${merchantId}')">取消</button>
+        <button class="btn btn-secondary" onclick="toggleReserveForm('${merchantId}')">取消</button>
     `;
     window[`bizItems_${merchantId}`] = businessItems;
     formDiv.classList.remove('hidden');
 }
 
-window.updateReserveContent = function(merchantId){
+window.updateReserveContent = function(merchantId) {
     const cat = document.getElementById(`res-cat-${merchantId}`)?.value;
     const container = document.getElementById(`res-content-${merchantId}`);
     const bizItems = window[`bizItems_${merchantId}`] || [];
@@ -433,7 +613,7 @@ window.updateReserveContent = function(merchantId){
     }
 };
 
-async function submitReservationDirect(merchantId){
+async function submitReservationDirect(merchantId) {
     const date = document.getElementById(`res-date-${merchantId}`).value;
     const timeRange = document.getElementById(`res-time-${merchantId}`).value;
     const count = document.getElementById(`res-count-${merchantId}`).value;
@@ -474,7 +654,7 @@ async function submitReservationDirect(merchantId){
     else { alert('预约已提交'); document.getElementById(`reserve-form-${merchantId}`).classList.add('hidden'); }
 }
 
-// ========== 推荐路线 ==========
+// ==================== 路线（简化，与之前相同） ====================
 async function loadRoutes(){
     const { data } = await sb.from('ztj_routes').select('*');
     document.getElementById('routeList').innerHTML = data.map(r => `<div class="card"><h3>${r.name}</h3><p>${r.days||1}天 | ${r.transport||'自驾'}</p><button class="btn btn-primary" onclick="showRouteDetail(${r.id})">查看详情</button></div>`).join('');
@@ -489,12 +669,12 @@ async function showRouteDetail(id){
     document.body.appendChild(panel);
 }
 
-// ========== 自设行程（完整逻辑） ==========
+// ==================== 自设行程（简化，与之前相同） ====================
 function toggleCustomTripSection(){ document.getElementById('customTripSection').classList.toggle('hidden'); if(!document.getElementById('customTripSection').classList.contains('hidden')){ buildMainPoiOptions(); resetRouteLegs(); } }
 function buildMainPoiOptions(){
     const allMain = allPois.filter(p => !p.parent_id);
     mainPoiOptions = allMain.filter(p => p.id !== 'county');
-    if (window.userLatLng) mainPoiOptions.unshift({ id:'mylocation', name:'📍 我的位置', lat: window.userLatLng.lat, lng: window.userLatLng.lng });
+    if (currentGcjPos) mainPoiOptions.unshift({ id:'mylocation', name:'📍 我的位置', lat: currentGcjPos.lat, lng: currentGcjPos.lng });
     mainPoiOptions.unshift(COUNTY);
     allowedPoiOptions = allMain.filter(p => {
         if(!p.category) return false;
@@ -527,7 +707,7 @@ async function updateAllTimes(){
     }
 }
 
-// 核心时间线生成
+// 行程生成（简略，与之前相同）
 function generateTimeline(nodes, startDate, startTime){
     let curDate = new Date(startDate);
     let [h,m] = startTime.split(':').map(Number);
@@ -698,7 +878,6 @@ function deleteTrip(idx){
     renderMyTrip();
 }
 
-// 我的预约
 async function loadMyReservations(){
     const uid = getUserId();
     const { data } = await sb.from('reservations').select('*').eq('user_id', uid).order('created_at', false);
@@ -740,7 +919,6 @@ async function loadMyReservations(){
 }
 window.toggleMyReservationDetail = function(idx){ document.getElementById('my-res-detail-'+idx).classList.toggle('hidden'); };
 
-// 留言（含回复）
 async function submitFeedback(){
     const msg = document.getElementById('feedbackMsg').value;
     if(!msg) return;
@@ -782,13 +960,16 @@ function switchMyTab(tab){
 function openPanel(id){ document.getElementById(id).classList.add('active'); if(id==='routesPanel') loadRoutes(); }
 function closePanel(id){ document.getElementById(id).classList.remove('active'); }
 function startSimulation(){ alert('模拟导航功能即将上线'); }
-function getDistance(lat1,lng1,lat2,lng2){
-    const R=6371000, dLat=(lat2-lat1)*Math.PI/180, dLng=(lng2-lng1)*Math.PI/180;
-    const a=Math.sin(dLat/2)**2+Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLng/2)**2;
-    return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
-}
 
-window.onload = initMap;
+// ==================== 启动 ====================
+window.onload = function() {
+    initMap();
+    // 如果浏览器支持，尝试自动定位（但需要用户手势，所以只作为提示）
+    if (navigator.geolocation) {
+        // 不自动定位，由用户点击按钮触发
+        console.log('[系统] 点击定位按钮开始定位');
+    }
+};
 </script>
 </body>
 </html>

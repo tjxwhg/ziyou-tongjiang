@@ -121,8 +121,8 @@ const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 let map, allPois=[], generatedTripData=null;
 let userMarker = null;
 let anonymousUserId = null;
-let voiceEnabled = true;
-let triggeredPois = {};
+let voiceEnabled = true;        // 自动语音开关
+let triggeredPois = {};        // 当日已触发记录
 let watchId = null;
 
 const COUNTY = { lat:32.08, lng:107.24, name:'红军广场', id:'county' };
@@ -133,7 +133,7 @@ const EXCLUDED_FROM_TRIP = ['游戏娱乐','公共服务','特产购物'];
 const NON_VISIT_CATEGORIES = ['交通枢纽','餐饮住宿','公共服务','特产购物','游玩娱乐'];
 let routeLegs=[], mainPoiOptions=[], allowedPoiOptions=[];
 
-// ========== 坐标转换 WGS84 -> GCJ02 ==========
+// ========== WGS-84 → GCJ-02 坐标转换 ==========
 function wgs84ToGcj02(lat, lon) {
     const a = 6378245.0;
     const ee = 0.00669342162296594323;
@@ -186,12 +186,21 @@ function isNonVisitPoi(poiId){
     return poi.category.split(',').some(c=>NON_VISIT_CATEGORIES.includes(c));
 }
 
-// 自动语音开关
+// 自动语音开关控制
 function toggleAutoVoice(){
     voiceEnabled = !voiceEnabled;
-    document.querySelector('.voice-toggle-btn').textContent = voiceEnabled ? '🔊' : '🔇';
-    if (!voiceEnabled) speechSynthesis.cancel();
-    console.log('语音播报', voiceEnabled ? '已开启' : '已关闭');
+    const btn = document.querySelector('.voice-toggle-btn');
+    btn.textContent = voiceEnabled ? '🔊' : '🔇';
+    if (!voiceEnabled) {
+        speechSynthesis.cancel();
+    } else {
+        // 重新打开时，清空已触发记录，以便再次进入围栏时立即触发一次
+        triggeredPois = {};
+        // 同时立即检查当前位置是否在某个POI围栏内，若是则触发
+        if (window.lastGcjPos) {
+            checkVoiceTrigger(window.lastGcjPos.lat, window.lastGcjPos.lng);
+        }
+    }
 }
 
 // 每日重置触发记录
@@ -200,20 +209,20 @@ function resetDailyTriggered(){
     if (localStorage.getItem('voiceDate') !== today) {
         triggeredPois = {};
         localStorage.setItem('voiceDate', today);
-        console.log('新的一天，重置语音触发记录');
     }
 }
 
-// 电子围栏检测与触发
+// 电子围栏检测（使用GCJ-02坐标）
 function checkVoiceTrigger(userLat, userLng){
     if (!voiceEnabled) return;
     resetDailyTriggered();
+    // 默认触发半径 120 米，可根据需要调整
+    const defaultRadius = 120;
     allPois.forEach(poi => {
         if (triggeredPois[poi.id]) return;
-        const radius = poi.trigger_radius || 150;  // 默认 150 米
+        const radius = poi.trigger_radius || defaultRadius;
         const dist = getDistance(userLat, userLng, poi.lat, poi.lng);
         if (dist <= radius) {
-            console.log(`进入「${poi.name}」范围 (${dist.toFixed(0)}米)，触发语音`);
             triggerVoice(poi);
             triggeredPois[poi.id] = true;
         }
@@ -232,7 +241,7 @@ function triggerVoice(poi){
     speechSynthesis.speak(utterance);
 }
 
-// 持续定位监听
+// 持续定位监听（转换坐标，存储最后位置）
 function startWatching(){
     if (!navigator.geolocation) return;
     if (watchId) navigator.geolocation.clearWatch(watchId);
@@ -240,6 +249,8 @@ function startWatching(){
         (pos) => {
             const raw = { lat: pos.coords.latitude, lng: pos.coords.longitude };
             const gcj = wgs84ToGcj02(raw.lat, raw.lng);
+            window.lastGcjPos = gcj; // 存储供开关使用
+            // 更新地图上的用户位置标记
             if (userMarker) map.removeLayer(userMarker);
             userMarker = L.marker([gcj.lat, gcj.lng], {
                 icon: L.divIcon({
@@ -248,14 +259,15 @@ function startWatching(){
                     className: ''
                 })
             }).addTo(map);
+            // 检测电子围栏
             checkVoiceTrigger(gcj.lat, gcj.lng);
         },
         (err) => { console.warn('定位错误', err); },
-        { enableHighAccuracy: true, maximumAge: 5000 }
+        { enableHighAccuracy: true, maximumAge: 3000 }
     );
 }
 
-// 定位按钮
+// 定位按钮：获取一次位置，转换为GCJ-02，启动持续监控
 function locateUser(){
     if (!navigator.geolocation) { alert('您的浏览器不支持定位'); return; }
     navigator.geolocation.getCurrentPosition(
@@ -271,9 +283,9 @@ function locateUser(){
                 })
             }).addTo(map).bindPopup('我的位置').openPopup();
             map.setView([gcj.lat, gcj.lng], 14);
-            window.userLatLng = gcj;
-            startWatching();
-            console.log('定位成功，已开始持续跟踪');
+            window.userLatLng = gcj;       // 用于自设行程起点
+            window.lastGcjPos = gcj;        // 存储
+            startWatching();               // 开启持续监控
         },
         (error) => { alert('无法获取位置：' + error.message); },
         { enableHighAccuracy: true, timeout: 10000 }
@@ -291,6 +303,7 @@ function initMap(){
     map.on('click', e => { if(simPos) setSimulatedPosition(e.latlng.lat, e.latlng.lng); });
 }
 
+// ========== POI 加载 ==========
 async function loadAllPOIs(){
     const { data } = await sb.from('ztj_poi').select('*').eq('status','active');
     allPois = data || [];
@@ -518,6 +531,7 @@ async function updateAllTimes(){
     }
 }
 
+// 核心时间线生成
 function generateTimeline(nodes, startDate, startTime){
     let curDate = new Date(startDate);
     let [h,m] = startTime.split(':').map(Number);
@@ -730,7 +744,7 @@ async function loadMyReservations(){
 }
 window.toggleMyReservationDetail = function(idx){ document.getElementById('my-res-detail-'+idx).classList.toggle('hidden'); };
 
-// 留言（显示回复）
+// 留言（含回复）
 async function submitFeedback(){
     const msg = document.getElementById('feedbackMsg').value;
     if(!msg) return;

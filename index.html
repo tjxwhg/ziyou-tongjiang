@@ -191,6 +191,7 @@ function toggleAutoVoice(){
     voiceEnabled = !voiceEnabled;
     document.querySelector('.voice-toggle-btn').textContent = voiceEnabled ? '🔊' : '🔇';
     if (!voiceEnabled) speechSynthesis.cancel();
+    console.log('语音播报', voiceEnabled ? '已开启' : '已关闭');
 }
 
 // 每日重置触发记录
@@ -199,6 +200,7 @@ function resetDailyTriggered(){
     if (localStorage.getItem('voiceDate') !== today) {
         triggeredPois = {};
         localStorage.setItem('voiceDate', today);
+        console.log('新的一天，重置语音触发记录');
     }
 }
 
@@ -208,9 +210,10 @@ function checkVoiceTrigger(userLat, userLng){
     resetDailyTriggered();
     allPois.forEach(poi => {
         if (triggeredPois[poi.id]) return;
-        const radius = poi.trigger_radius || 100;
+        const radius = poi.trigger_radius || 150;  // 默认 150 米
         const dist = getDistance(userLat, userLng, poi.lat, poi.lng);
         if (dist <= radius) {
+            console.log(`进入「${poi.name}」范围 (${dist.toFixed(0)}米)，触发语音`);
             triggerVoice(poi);
             triggeredPois[poi.id] = true;
         }
@@ -270,6 +273,7 @@ function locateUser(){
             map.setView([gcj.lat, gcj.lng], 14);
             window.userLatLng = gcj;
             startWatching();
+            console.log('定位成功，已开始持续跟踪');
         },
         (error) => { alert('无法获取位置：' + error.message); },
         { enableHighAccuracy: true, timeout: 10000 }
@@ -726,7 +730,7 @@ async function loadMyReservations(){
 }
 window.toggleMyReservationDetail = function(idx){ document.getElementById('my-res-detail-'+idx).classList.toggle('hidden'); };
 
-// 留言（修复：显示回复内容）
+// 留言（显示回复）
 async function submitFeedback(){
     const msg = document.getElementById('feedbackMsg').value;
     if(!msg) return;

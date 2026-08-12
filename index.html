@@ -22,7 +22,6 @@
         .float-btn { position:fixed; z-index:1500; background:white; border-radius:50%; width:50px; height:50px; display:flex; align-items:center; justify-content:center; box-shadow:0 4px 12px rgba(0,0,0,0.3); cursor:pointer; font-size:22px; border:none; }
         .locate-btn { bottom:130px; right:20px; }
         .voice-toggle-btn { bottom:190px; right:20px; }
-        .test-btn { bottom:250px; right:20px; background:#1565C0; color:white; }
 
         .panel { position:fixed; top:0; left:0; right:0; bottom:0; background:white; z-index:2000; transform:translateY(100%); transition:transform 0.3s ease; overflow-y:auto; display:flex; flex-direction:column; }
         .panel.active { transform:translateY(0); }
@@ -48,16 +47,7 @@
         .checkbox-group label { display:flex; align-items:center; gap:8px; font-weight:normal; cursor:pointer; }
         .feedback-reply { background:#e8f5e9; padding:8px; border-radius:4px; margin-top:8px; color:#1b5e20; }
 
-        .nearby-list { max-height:200px; overflow-y:auto; background:#f9f9f9; border-radius:8px; padding:8px; margin-top:8px; }
-        .nearby-item { display:flex; justify-content:space-between; padding:4px 0; border-bottom:1px dotted #ddd; font-size:14px; }
-        .nearby-item .dist { font-weight:bold; }
-        .nearby-item .triggered { color:#2e7d32; }
-        .debug-panel { background:#fff3e0; padding:8px; border-radius:8px; margin-bottom:10px; border-left:4px solid #ff9800; }
-        .voice-status-badge { display:inline-block; padding:2px 8px; border-radius:12px; background:#e0f2f1; color:#00695c; }
-        .play-mp3 { color:#0d47a1; }
-        .play-tts { color:#bf360c; }
-
-        @media (max-width:480px) { .top-btn { font-size:12px; padding:4px 8px; } .float-btn { width:44px; height:44px; font-size:18px; } .locate-btn { bottom:120px; } .voice-toggle-btn { bottom:175px; } .test-btn { bottom:230px; } }
+        @media (max-width:480px) { .top-btn { font-size:12px; padding:4px 8px; } .float-btn { width:44px; height:44px; font-size:18px; } .locate-btn { bottom:120px; } .voice-toggle-btn { bottom:175px; } }
     </style>
 </head>
 <body>
@@ -65,7 +55,6 @@
 
 <div class="top-bar">
     <button class="top-btn" onclick="openPanel('myPanel')">👤 我的</button>
-    <button class="top-btn" onclick="openPanel('debugPanel')">🐛 调试</button>
 </div>
 
 <div class="bottom-bar">
@@ -75,7 +64,6 @@
 
 <button class="float-btn locate-btn" onclick="locateUser()" title="定位我的位置">📍</button>
 <button class="float-btn voice-toggle-btn" id="voiceToggleBtn" onclick="toggleAutoVoice()" title="自动语音开关">🔊</button>
-<button class="float-btn test-btn" onclick="manualTriggerVoice()" title="手动触发语音测试（最近POI）">🔔</button>
 
 <!-- 商户详情面板 -->
 <div class="panel" id="merchantDetailPanel">
@@ -121,26 +109,6 @@
             <button class="btn btn-primary" onclick="submitFeedback()" style="width:100%; margin-top:8px;">提交</button>
             <div id="feedbackHistory" style="margin-top:12px;"></div>
         </div>
-    </div>
-</div>
-
-<!-- 调试面板 -->
-<div class="panel" id="debugPanel">
-    <div class="panel-header"><h2>🐛 调试 & 围栏测试</h2><button onclick="closePanel('debugPanel')">✕</button></div>
-    <div class="panel-body">
-        <div class="debug-panel">
-            <div><b>语音状态：</b><span id="voiceStatus">🔊 已开启</span></div>
-            <div><b>当前位置：</b><span id="currentPos">未定位</span></div>
-            <div><b>最近POI距离：</b><span id="nearestDist">--</span></div>
-            <div><b>最后播放方式：</b><span id="lastPlayMethod">--</span></div>
-        </div>
-        <h4>📍 附近POI（<span id="nearbyCount">0</span>个在50米内）</h4>
-        <div id="nearbyList" class="nearby-list"></div>
-        <button class="btn btn-secondary" onclick="refreshNearby()" style="margin-top:8px;">🔄 刷新附近列表</button>
-        <button class="btn btn-primary" onclick="manualTriggerVoice()" style="margin-top:8px;">🔔 强制触发最近POI语音</button>
-        <hr style="margin:16px 0;">
-        <p><small>💡 提示：点击地图可模拟位置（用于测试），定位后自动检测围栏。</small></p>
-        <p><small>🎵 若POI有 <code>voice_mp3</code> 字段，将直接播放MP3；否则使用TTS文本。</small></p>
     </div>
 </div>
 
@@ -241,7 +209,6 @@ function toggleAutoVoice() {
     const btn = document.getElementById('voiceToggleBtn');
     if (voiceEnabled) {
         btn.textContent = '🔊';
-        document.getElementById('voiceStatus').textContent = '🔊 已开启';
         const testMsg = new SpeechSynthesisUtterance('语音已开启');
         testMsg.lang = 'zh-CN';
         speechSynthesis.speak(testMsg);
@@ -251,7 +218,6 @@ function toggleAutoVoice() {
         }
     } else {
         btn.textContent = '🔇';
-        document.getElementById('voiceStatus').textContent = '🔇 已关闭';
         speechSynthesis.cancel();
         if (currentAudio) {
             currentAudio.pause();
@@ -269,7 +235,6 @@ function triggerVoice(poi) {
         console.log('[语音] 开关关闭，不播放');
         return;
     }
-    // 先取消任何正在播放的音频和TTS
     speechSynthesis.cancel();
     if (currentAudio) {
         currentAudio.pause();
@@ -278,31 +243,27 @@ function triggerVoice(poi) {
 
     // 1. 优先使用MP3（voice_mp3字段）
     if (poi.voice_mp3) {
-        console.log('[语音] 尝试播放MP3 (voice_mp3):', poi.voice_mp3);
+        console.log('[语音] 播放MP3 (voice_mp3):', poi.voice_mp3);
         const audio = new Audio(poi.voice_mp3);
         currentAudio = audio;
         audio.play().then(() => {
             console.log('[语音] MP3播放成功', poi.name);
-            document.getElementById('lastPlayMethod').textContent = '🎵 MP3 (voice_mp3)';
         }).catch(err => {
             console.warn('[语音] MP3播放失败，降级到TTS', err);
-            document.getElementById('lastPlayMethod').textContent = '⚠️ MP3失败→TTS';
             playTTS(poi);
         });
         return;
     }
 
-    // 2. 检查 voice_cn 是否包含URL（以http开头）
+    // 2. 检查 voice_cn 是否包含URL（兼容旧数据）
     if (poi.voice_cn && poi.voice_cn.startsWith('http')) {
         console.log('[语音] 播放MP3 (voice_cn URL):', poi.voice_cn);
         const audio = new Audio(poi.voice_cn);
         currentAudio = audio;
         audio.play().then(() => {
             console.log('[语音] MP3播放成功 (voice_cn URL)', poi.name);
-            document.getElementById('lastPlayMethod').textContent = '🎵 MP3 (voice_cn)';
         }).catch(err => {
             console.warn('[语音] MP3 (voice_cn) 播放失败，降级到TTS', err);
-            document.getElementById('lastPlayMethod').textContent = '⚠️ URL MP3失败→TTS';
             playTTS(poi);
         });
         return;
@@ -315,28 +276,20 @@ function triggerVoice(poi) {
 function playTTS(poi) {
     const lang = document.getElementById('langSelect')?.value || 'cn';
     let text = poi['voice_' + lang] || poi.voice_cn || poi.description || poi.name;
-    // 如果 text 是URL（可能误存），则过滤掉
     if (text && text.startsWith('http')) {
         console.warn('[TTS] voice_cn 是URL，忽略，使用 description');
         text = poi.description || poi.name;
     }
     if (!text) {
         console.warn('[语音] 无可用文本', poi.name);
-        document.getElementById('lastPlayMethod').textContent = '❌ 无文本';
         return;
     }
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.lang = { cn:'zh-CN', en:'en-US', ja:'ja-JP', ko:'ko-KR' }[lang] || 'zh-CN';
     utterance.rate = 0.9;
     utterance.onstart = () => console.log('[语音] TTS开始播放');
-    utterance.onend = () => {
-        console.log('[语音] TTS播报完成');
-        document.getElementById('lastPlayMethod').textContent = '🗣️ TTS';
-    };
-    utterance.onerror = (e) => {
-        console.warn('[语音] TTS播报错误', e);
-        document.getElementById('lastPlayMethod').textContent = '❌ TTS错误';
-    };
+    utterance.onend = () => console.log('[语音] TTS播报完成');
+    utterance.onerror = (e) => console.warn('[语音] TTS播报错误', e);
     speechSynthesis.speak(utterance);
     console.log(`[语音] TTS播放：${text}`);
 }
@@ -363,66 +316,14 @@ function checkVoiceTrigger(userLat, userLng) {
             lastTriggeredPoiIds[poi.id] = now;
         }
     });
-    updateDebugPanel(userLat, userLng);
-}
-
-// ==================== 手动触发测试 ====================
-function manualTriggerVoice() {
-    if (!currentGcjPos) {
-        alert('请先定位或点击地图模拟位置');
-        return;
-    }
-    let nearest = null, minDist = Infinity;
-    allPois.forEach(poi => {
-        if (!poi.lat || !poi.lng) return;
-        const d = getDistance(currentGcjPos.lat, currentGcjPos.lng, poi.lat, poi.lng);
-        if (d < minDist) { minDist = d; nearest = poi; }
-    });
-    if (nearest) {
-        console.log(`[手动] 最近POI: ${nearest.name} 距离 ${minDist.toFixed(1)}m`);
-        if (minDist <= TRIGGER_RADIUS + GPS_ACCURACY_TOLERANCE) {
-            triggerVoice(nearest);
-            lastTriggeredPoiIds[nearest.id] = Date.now();
-        } else {
-            alert(`最近POI "${nearest.name}" 距离 ${minDist.toFixed(1)}m，超过围栏（${TRIGGER_RADIUS}m），不触发语音。\n可点击地图模拟靠近。`);
-        }
-    } else {
-        alert('无POI数据');
-    }
-}
-
-// ==================== 调试面板更新 ====================
-function updateDebugPanel(lat, lng) {
-    if (!lat || !lng) return;
-    document.getElementById('currentPos').textContent = `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
-    const nearby = allPois.filter(p => {
-        if (!p.lat || !p.lng) return false;
-        return getDistance(lat, lng, p.lat, p.lng) <= TRIGGER_RADIUS + GPS_ACCURACY_TOLERANCE;
-    });
-    document.getElementById('nearbyCount').textContent = nearby.length;
-    let html = nearby.map(p => {
-        const d = getDistance(lat, lng, p.lat, p.lng);
-        const triggered = (lastTriggeredPoiIds[p.id] && (Date.now() - lastTriggeredPoiIds[p.id] < COOLDOWN));
-        return `<div class="nearby-item"><span>${p.name}</span><span class="dist">${d.toFixed(1)}m ${triggered ? '✅已触发' : ''}</span></div>`;
-    }).join('');
-    document.getElementById('nearbyList').innerHTML = html || '<div style="color:#999;">无POI在围栏内</div>';
-    let nearestDist = Infinity;
-    allPois.forEach(p => {
-        if (!p.lat || !p.lng) return;
-        const d = getDistance(lat, lng, p.lat, p.lng);
-        if (d < nearestDist) nearestDist = d;
-    });
-    document.getElementById('nearestDist').textContent = nearestDist === Infinity ? '--' : nearestDist.toFixed(1) + 'm';
-}
-
-function refreshNearby() {
-    if (currentGcjPos) updateDebugPanel(currentGcjPos.lat, currentGcjPos.lng);
-    else alert('请先定位');
 }
 
 // ==================== 定位 ====================
 function locateUser() {
-    if (!navigator.geolocation) { alert('您的浏览器不支持定位'); return; }
+    if (!navigator.geolocation) {
+        alert('您的浏览器不支持定位');
+        return;
+    }
     activateSpeech();
     navigator.geolocation.getCurrentPosition(
         (position) => {
@@ -440,9 +341,11 @@ function locateUser() {
             map.setView([gcj.lat, gcj.lng], 15);
             startWatching();
             checkVoiceTrigger(gcj.lat, gcj.lng);
-            updateDebugPanel(gcj.lat, gcj.lng);
         },
-        (error) => { alert('无法获取位置：' + error.message); },
+        (error) => {
+            console.warn('定位失败:', error.message);
+            // 用户拒绝或无法获取位置，不弹出烦人提示，仅静默失败
+        },
         { enableHighAccuracy: true, timeout: 10000 }
     );
 }
@@ -464,14 +367,13 @@ function startWatching() {
                 })
             }).addTo(map);
             checkVoiceTrigger(gcj.lat, gcj.lng);
-            updateDebugPanel(gcj.lat, gcj.lng);
         },
-        (err) => { console.warn('定位错误', err); },
+        (err) => { console.warn('定位监听错误', err); },
         { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 }
     );
 }
 
-// ==================== 地图点击模拟位置 ====================
+// ==================== 地图点击模拟位置（保留用于测试，但可隐藏） ====================
 function setSimulatedPosition(lat, lng) {
     currentGcjPos = { lat, lng };
     if (simMarker) map.removeLayer(simMarker);
@@ -483,7 +385,6 @@ function setSimulatedPosition(lat, lng) {
         })
     }).addTo(map).bindPopup('模拟位置').openPopup();
     checkVoiceTrigger(lat, lng);
-    updateDebugPanel(lat, lng);
     map.setView([lat, lng], 15);
 }
 
@@ -494,13 +395,18 @@ function initMap() {
         subdomains:['1','2','3','4'], maxZoom:18
     }).addTo(map);
     L.control.zoom({ position: 'topright' }).addTo(map);
-    map.on('click', (e) => {
-        setSimulatedPosition(e.latlng.lat, e.latlng.lng);
-    });
+    // 点击地图模拟位置（调试用，但用户可保留，为安全可注释掉）
+    // map.on('click', (e) => {
+    //     setSimulatedPosition(e.latlng.lat, e.latlng.lng);
+    // });
 
     initAnonymousAuth().then(() => loadAllPOIs());
     setTimeout(activateSpeech, 500);
-    document.getElementById('voiceStatus').textContent = '🔊 已开启';
+
+    // 自动请求定位（首次会弹窗询问）
+    setTimeout(() => {
+        locateUser();
+    }, 1000);
 }
 
 // ==================== 匿名登录 & POI加载 ====================
@@ -915,7 +821,6 @@ function deleteTrip(idx){
     renderMyTrip();
 }
 
-// ==================== 我的预约 ====================
 async function loadMyReservations(){
     const uid = getUserId();
     const { data } = await sb.from('reservations').select('*').eq('user_id', uid).order('created_at', false);
@@ -957,7 +862,6 @@ async function loadMyReservations(){
 }
 window.toggleMyReservationDetail = function(idx){ document.getElementById('my-res-detail-'+idx).classList.toggle('hidden'); };
 
-// ==================== 留言 ====================
 async function submitFeedback(){
     const msg = document.getElementById('feedbackMsg').value;
     if(!msg) return;
@@ -1003,7 +907,7 @@ function startSimulation(){ alert('模拟导航功能即将上线'); }
 // ==================== 启动 ====================
 window.onload = function() {
     initMap();
-    console.log('[系统] 智游通江已启动，点击定位按钮或地图模拟位置测试语音。');
+    console.log('[系统] 智游通江已启动，定位请求将在页面加载后自动发出。');
 };
 </script>
 </body>

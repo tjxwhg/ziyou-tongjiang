@@ -242,7 +242,6 @@ function toggleAutoVoice() {
     if (voiceEnabled) {
         btn.textContent = '🔊';
         document.getElementById('voiceStatus').textContent = '🔊 已开启';
-        // 播放测试语音（用户手势触发，可正常播放）
         const testMsg = new SpeechSynthesisUtterance('语音已开启');
         testMsg.lang = 'zh-CN';
         speechSynthesis.speak(testMsg);
@@ -258,7 +257,6 @@ function toggleAutoVoice() {
             currentAudio.pause();
             currentAudio = null;
         }
-        // 播报关闭（可选）
         const closeMsg = new SpeechSynthesisUtterance('语音已关闭');
         closeMsg.lang = 'zh-CN';
         speechSynthesis.speak(closeMsg);
@@ -278,14 +276,14 @@ function triggerVoice(poi) {
         currentAudio = null;
     }
 
-    // 1. 优先使用MP3
+    // 1. 优先使用MP3（voice_mp3字段）
     if (poi.voice_mp3) {
-        console.log('[语音] 尝试播放MP3:', poi.voice_mp3);
+        console.log('[语音] 尝试播放MP3 (voice_mp3):', poi.voice_mp3);
         const audio = new Audio(poi.voice_mp3);
         currentAudio = audio;
         audio.play().then(() => {
             console.log('[语音] MP3播放成功', poi.name);
-            document.getElementById('lastPlayMethod').textContent = '🎵 MP3';
+            document.getElementById('lastPlayMethod').textContent = '🎵 MP3 (voice_mp3)';
         }).catch(err => {
             console.warn('[语音] MP3播放失败，降级到TTS', err);
             document.getElementById('lastPlayMethod').textContent = '⚠️ MP3失败→TTS';
@@ -294,13 +292,34 @@ function triggerVoice(poi) {
         return;
     }
 
-    // 2. 降级到TTS
+    // 2. 检查 voice_cn 是否包含URL（以http开头）
+    if (poi.voice_cn && poi.voice_cn.startsWith('http')) {
+        console.log('[语音] 播放MP3 (voice_cn URL):', poi.voice_cn);
+        const audio = new Audio(poi.voice_cn);
+        currentAudio = audio;
+        audio.play().then(() => {
+            console.log('[语音] MP3播放成功 (voice_cn URL)', poi.name);
+            document.getElementById('lastPlayMethod').textContent = '🎵 MP3 (voice_cn)';
+        }).catch(err => {
+            console.warn('[语音] MP3 (voice_cn) 播放失败，降级到TTS', err);
+            document.getElementById('lastPlayMethod').textContent = '⚠️ URL MP3失败→TTS';
+            playTTS(poi);
+        });
+        return;
+    }
+
+    // 3. 降级到TTS
     playTTS(poi);
 }
 
 function playTTS(poi) {
     const lang = document.getElementById('langSelect')?.value || 'cn';
-    const text = poi['voice_' + lang] || poi.voice_cn || poi.description || poi.name;
+    let text = poi['voice_' + lang] || poi.voice_cn || poi.description || poi.name;
+    // 如果 text 是URL（可能误存），则过滤掉
+    if (text && text.startsWith('http')) {
+        console.warn('[TTS] voice_cn 是URL，忽略，使用 description');
+        text = poi.description || poi.name;
+    }
     if (!text) {
         console.warn('[语音] 无可用文本', poi.name);
         document.getElementById('lastPlayMethod').textContent = '❌ 无文本';
@@ -339,6 +358,7 @@ function checkVoiceTrigger(userLat, userLng) {
         const dist = getDistance(userLat, userLng, poi.lat, poi.lng);
         const lastTime = lastTriggeredPoiIds[poi.id] || 0;
         if (dist <= threshold && (now - lastTime >= COOLDOWN)) {
+            console.log(`[围栏] 触发 ${poi.name}, 距离 ${dist.toFixed(1)}m`);
             triggerVoice(poi);
             lastTriggeredPoiIds[poi.id] = now;
         }
@@ -501,8 +521,6 @@ async function loadAllPOIs() {
     allPois.forEach(p => { if(p.parent_id){ if(!window.subPoisMap[p.parent_id]) window.subPoisMap[p.parent_id]=[]; window.subPoisMap[p.parent_id].push(p); } });
     await loadTransportPresets();
     console.log(`[POI] 已加载 ${allPois.length} 个POI`);
-    // 检查是否有voice_mp3字段
-    const hasMp3 = allPois.some(p => p.voice_mp3);
     console.log(`[POI] 有voice_mp3的POI数量: ${allPois.filter(p=>p.voice_mp3).length}`);
 }
 
@@ -539,7 +557,7 @@ function renderPOIs(pois) {
     });
 }
 
-// ==================== 商户详情（与原保持一致） ====================
+// ==================== 商户详情 ====================
 async function showPoiDetail(poi) {
     const { data: m } = await sb.from('ztj_merchants').select('*').eq('poi_id', poi.id).maybeSingle();
     document.getElementById('merchantDetailTitle').textContent = poi.name;
@@ -587,7 +605,7 @@ async function showPoiDetail(poi) {
     openPanel('merchantDetailPanel');
 }
 
-// ==================== 预约表单（完全保留） ====================
+// ==================== 预约表单 ====================
 async function toggleReserveForm(merchantId) {
     const formDiv = document.getElementById(`reserve-form-${merchantId}`);
     if(!formDiv.classList.contains('hidden')){ formDiv.classList.add('hidden'); return; }
@@ -674,7 +692,7 @@ async function submitReservationDirect(merchantId) {
     else { alert('预约已提交'); document.getElementById(`reserve-form-${merchantId}`).classList.add('hidden'); }
 }
 
-// ==================== 路线与自设行程（完整保留） ====================
+// ==================== 路线 ====================
 async function loadRoutes(){
     const { data } = await sb.from('ztj_routes').select('*');
     document.getElementById('routeList').innerHTML = data.map(r => `<div class="card"><h3>${r.name}</h3><p>${r.days||1}天 | ${r.transport||'自驾'}</p><button class="btn btn-primary" onclick="showRouteDetail(${r.id})">查看详情</button></div>`).join('');
@@ -689,6 +707,7 @@ async function showRouteDetail(id){
     document.body.appendChild(panel);
 }
 
+// ==================== 自设行程 ====================
 function toggleCustomTripSection(){ document.getElementById('customTripSection').classList.toggle('hidden'); if(!document.getElementById('customTripSection').classList.contains('hidden')){ buildMainPoiOptions(); resetRouteLegs(); } }
 function buildMainPoiOptions(){
     const allMain = allPois.filter(p => !p.parent_id);
@@ -896,6 +915,7 @@ function deleteTrip(idx){
     renderMyTrip();
 }
 
+// ==================== 我的预约 ====================
 async function loadMyReservations(){
     const uid = getUserId();
     const { data } = await sb.from('reservations').select('*').eq('user_id', uid).order('created_at', false);
@@ -937,6 +957,7 @@ async function loadMyReservations(){
 }
 window.toggleMyReservationDetail = function(idx){ document.getElementById('my-res-detail-'+idx).classList.toggle('hidden'); };
 
+// ==================== 留言 ====================
 async function submitFeedback(){
     const msg = document.getElementById('feedbackMsg').value;
     if(!msg) return;

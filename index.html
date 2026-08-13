@@ -133,9 +133,10 @@ const GPS_ACCURACY_TOLERANCE = 10;
 let watchId = null;
 let currentGcjPos = null;
 let currentAudio = null;
-let weatherCache = null; // { time: timestamp, data: { dates: [...], tempsMax: [...], tempsMin: [...], winds: [...], codes: [...] } }
+let weatherCache = null;
 
-const COUNTY = { lat:32.08, lng:107.24, name:'红军广场', id:'county' };
+// 通江县正确坐标：纬度31.911705，经度107.245033
+const COUNTY = { lat:31.911705, lng:107.245033, name:'红军广场', id:'county' };
 const poiColors = { '自然景区':'#2E7D32', '红色景区':'#9C27B0', '文博场馆':'#9C27B0', '餐饮住宿':'#FF9800', '停车场':'#00BCD4', '公共服务':'#607D8B' };
 let transportPresets = {};
 const DAY_START=480, DAY_END=1080, LUNCH_TRIGGER=690, LUNCH_END=750, DINNER_TRIGGER=1050, DINNER_END=1110, MEAL_DURATION=60;
@@ -197,7 +198,6 @@ function getUserId(){
 function getTodayStr(){ return new Date().toISOString().slice(0,10); }
 
 // ==================== 天气获取（Open-Meteo API，免费无需Key） ====================
-// 返回按日期顺序排列的数组，每个元素包含 { date, weather, tempMax, tempMin, wind }
 async function fetchWeatherForecast() {
     const now = Date.now();
     if (weatherCache && (now - weatherCache.time < 3600000)) {
@@ -205,7 +205,8 @@ async function fetchWeatherForecast() {
     }
 
     try {
-        const url = `https://api.open-meteo.com/v1/forecast?latitude=32.08&longitude=107.24&daily=weathercode,temperature_2m_max,temperature_2m_min,windspeed_10m_max&timezone=Asia/Shanghai&forecast_days=16`;
+        // 使用通江县正确坐标
+        const url = `https://api.open-meteo.com/v1/forecast?latitude=31.911705&longitude=107.245033&daily=weathercode,temperature_2m_max,temperature_2m_min,windspeed_10m_max&timezone=Asia/Shanghai&forecast_days=16`;
         const response = await fetch(url);
         if (!response.ok) throw new Error('天气API请求失败');
         const data = await response.json();
@@ -244,7 +245,6 @@ async function fetchWeatherForecast() {
     }
 }
 
-// 生成单日天气提示文本（基于天气对象）
 function getDayWeatherTip(weatherObj) {
     if (!weatherObj) return '⚠️ 天气信息获取失败，请自行关注天气变化。';
     const { weather, tempMax, tempMin, wind } = weatherObj;
@@ -257,7 +257,6 @@ function getDayWeatherTip(weatherObj) {
     if (wind !== '--') {
         tip += `，风力 ${wind} km/h`;
     }
-    // 出行建议
     if (weather.includes('雨') || weather.includes('雷') || weather.includes('雾')) {
         tip += '，☔ 有降雨或大雾，建议携带雨具，注意出行安全。';
     } else if (tempMax !== '--' && tempMax > 33) {
@@ -465,7 +464,8 @@ function setSimulatedPosition(lat, lng) {
 
 // ==================== 初始化地图 ====================
 function initMap() {
-    map = L.map('map', { zoomControl: false }).setView([32.08, 107.18], 12);
+    // 使用通江县坐标作为地图初始中心
+    map = L.map('map', { zoomControl: false }).setView([31.911705, 107.245033], 12);
     L.tileLayer('https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}',{
         subdomains:['1','2','3','4'], maxZoom:18
     }).addTo(map);
@@ -945,7 +945,6 @@ async function generateCustomTrip() {
 
     // ===== 获取天气数据（按顺序匹配） =====
     const weatherForecast = await fetchWeatherForecast();
-    // 为每一天生成天气提示，按顺序取天气数据（第0天对应第1天，第1天对应第2天...）
     const dayWeatherTips = [];
     for (let i = 0; i < days.length; i++) {
         if (weatherForecast && i < weatherForecast.length) {
@@ -956,7 +955,7 @@ async function generateCustomTrip() {
         }
     }
 
-    // 构建HTML显示，为每一天匹配天气
+    // 构建HTML显示
     let html = '';
     for (let i = 0; i < days.length; i++) {
         const d = days[i];
@@ -964,7 +963,6 @@ async function generateCustomTrip() {
         d.lines.forEach(l => {
             html += `<div class="trip-line">${l.text}</div>`;
         });
-        // 在当天行程末尾添加天气提示
         html += `<div class="trip-line" style="color:#0d47a1;">${dayWeatherTips[i]}</div>`;
     }
 
@@ -1011,7 +1009,7 @@ async function generateCustomTrip() {
     document.getElementById('trip-warnings').innerHTML = tips.length ? `<div class="warn-list"><strong>💡 温馨提示：</strong>${tips.map(t=>`<div>${t}</div>`).join('')}</div>` : '';
     document.getElementById('saveGeneratedTripBtn').classList.remove('hidden');
 
-    // 保存行程数据，包含每天的天气信息
+    // 保存行程数据
     const daysWithWeather = days.map((d, i) => ({
         date: d.date,
         lines: d.lines,
@@ -1154,7 +1152,7 @@ function startSimulation() { alert('模拟导航功能即将上线'); }
 // ==================== 启动 ====================
 window.onload = function() {
     initMap();
-    console.log('[系统] 智游通江已启动。');
+    console.log('[系统] 智游通江已启动，坐标已修正为通江县。');
 };
 </script>
 </body>

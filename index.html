@@ -17,7 +17,7 @@
         .btn { flex:1; padding:14px; border:none; border-radius:12px; font-size:16px; font-weight:bold; box-shadow:0 4px 12px rgba(0,0,0,0.15); cursor:pointer; }
         .btn-primary { background:#2E7D32; color:white; }
         .btn-secondary { background:white; color:#2E7D32; }
-        .btn-danger { background:#c62828; color:white; font-size:12px; padding:2px 6px; line-height:1.4; min-width:auto; }
+        .btn-danger { background:#c62828; color:white; font-size:12px; padding:2px 6px; line-height:1.4; flex:0 0 auto; min-width:0; white-space:nowrap; }
 
         .float-btn { position:fixed; z-index:1500; background:white; border-radius:50%; width:50px; height:50px; display:flex; align-items:center; justify-content:center; box-shadow:0 4px 12px rgba(0,0,0,0.3); cursor:pointer; font-size:22px; border:none; }
         .locate-btn { bottom:130px; right:20px; }
@@ -37,8 +37,8 @@
         .my-tab.active { background:#2e7d32; color:white; }
 
         .route-node { display:flex; gap:6px; align-items:center; margin:6px 0; flex-wrap:nowrap; }
-        .route-node select { flex:1; min-width:80px; }
-        .route-node .btn-danger { font-size:12px; padding:2px 6px; line-height:1.4; min-width:auto; white-space:nowrap; }
+        .route-node select { flex:1; min-width:0; }
+        .route-node .btn-danger { font-size:12px; padding:2px 6px; line-height:1.4; flex:0 0 auto; min-width:0; white-space:nowrap; }
 
         .day-header { font-weight:bold; background:#e9f5ea; padding:6px; border-radius:4px; margin:12px 0 6px; }
         .trip-line { padding:4px 0; border-bottom:1px dotted #eee; }
@@ -49,6 +49,10 @@
         .checkbox-group { display:flex; flex-direction:column; gap:6px; margin-top:4px; max-height:200px; overflow-y:auto; border:1px solid #ccc; border-radius:4px; padding:8px; background:#fff; }
         .checkbox-group label { display:flex; align-items:center; gap:8px; font-weight:normal; cursor:pointer; }
         .feedback-reply { background:#e8f5e9; padding:8px; border-radius:4px; margin-top:8px; color:#1b5e20; }
+
+        .time-select-group { display:flex; gap:8px; align-items:center; }
+        .time-select-group select { flex:1; padding:8px; border:1px solid #ccc; border-radius:4px; }
+        .time-select-group span { white-space:nowrap; }
 
         @media (max-width:480px) { .top-btn { font-size:12px; padding:4px 8px; } .float-btn { width:44px; height:44px; font-size:18px; } .locate-btn { bottom:120px; } .voice-toggle-btn { bottom:175px; } }
     </style>
@@ -83,7 +87,14 @@
         <div class="toggle-section" onclick="toggleCustomTripSection()"><h4>✏️ 自设行程 <span id="customTripArrow">▼</span></h4></div>
         <div id="customTripSection" class="hidden" style="margin-top:10px;">
             <div class="form-group"><label>出发日期</label><input type="date" id="trip-date"></div>
-            <div class="form-group"><label>出发时间</label><input type="time" id="trip-time" step="60"></div>
+            <div class="form-group"><label>出发时间（24小时制，10分钟间隔）</label>
+                <div class="time-select-group">
+                    <select id="trip-time-hour"></select>
+                    <span>时</span>
+                    <select id="trip-time-minute"></select>
+                    <span>分</span>
+                </div>
+            </div>
             <div class="form-group"><label>出行方式</label><select id="trip-mode"><option value="auto">自驾</option><option value="bus">公交</option><option value="walk">步行</option></select></div>
             <div class="form-group"><label>人数</label><input type="number" id="trip-people" min="1" value="2"></div>
             <div class="form-group"><label>行程路线</label><div id="dynamic-route"></div><button class="btn btn-secondary" onclick="addRouteLeg()">+ 添加景点</button></div>
@@ -131,6 +142,7 @@ const GPS_ACCURACY_TOLERANCE = 10;
 let watchId = null;
 let currentGcjPos = null;
 let currentAudio = null;
+let cachedWeather = null; // 缓存天气信息
 
 const COUNTY = { lat:32.08, lng:107.24, name:'红军广场', id:'county' };
 const poiColors = { '自然景区':'#2E7D32', '红色景区':'#9C27B0', '文博场馆':'#9C27B0', '餐饮住宿':'#FF9800', '停车场':'#00BCD4', '公共服务':'#607D8B' };
@@ -192,6 +204,91 @@ function getUserId(){
     })());
 }
 function getTodayStr(){ return new Date().toISOString().slice(0,10); }
+
+// ==================== 获取通江县天气（免费，无需API Key） ====================
+async function fetchTongjiangWeather() {
+    if (cachedWeather && (Date.now() - cachedWeather.time < 3600000)) {
+        return cachedWeather.data;
+    }
+    try {
+        const url = 'https://www.yzqxj.com/guonei/sichuan-bazhong-tongjiang/7day.html';
+        const response = await fetch(url);
+        const html = await response.text();
+        const todayStr = new Date().toISOString().slice(0,10);
+        const regex = new RegExp(todayStr + '\\s*\\([^)]+\\)\\s*([^\\d]+)\\s*(\\d+)℃\\s*～\\s*(\\d+)℃\\s*([^<]*)');
+        const match = html.match(regex);
+        if (match) {
+            const weather = {
+                condition: match[1].trim(),
+                tempMin: parseInt(match[2]),
+                tempMax: parseInt(match[3]),
+                wind: match[4].trim() || '微风'
+            };
+            cachedWeather = { time: Date.now(), data: weather };
+            console.log('[天气] 获取成功:', weather);
+            return weather;
+        }
+        const url2 = 'https://tianqi.moji.com/today/china/sichuan/tongjiang-county';
+        const response2 = await fetch(url2);
+        const html2 = await response2.text();
+        const regex2 = /今日天气\s*([^\d]+)\s*(\d+)°/;
+        const match2 = html2.match(regex2);
+        if (match2) {
+            const weather = {
+                condition: match2[1].trim(),
+                tempMax: parseInt(match2[2]),
+                tempMin: null,
+                wind: '未知'
+            };
+            cachedWeather = { time: Date.now(), data: weather };
+            console.log('[天气] 获取成功(备用):', weather);
+            return weather;
+        }
+        const url3 = 'https://wttr.in/tongjiang?format=%C+%t+%w';
+        const response3 = await fetch(url3);
+        const text3 = await response3.text();
+        const parts = text3.trim().split(/\s+/);
+        if (parts.length >= 2) {
+            const weather = {
+                condition: parts[0] || '未知',
+                tempMax: parseInt(parts[1].replace('+','').replace('°C','')) || null,
+                tempMin: null,
+                wind: parts.slice(2).join(' ') || '微风'
+            };
+            cachedWeather = { time: Date.now(), data: weather };
+            console.log('[天气] 获取成功(wttr.in):', weather);
+            return weather;
+        }
+        console.warn('[天气] 所有方案均失败');
+        return null;
+    } catch (e) {
+        console.warn('[天气] 获取失败:', e);
+        return null;
+    }
+}
+
+function getWeatherTip(weather) {
+    if (!weather) return '⚠️ 天气信息获取失败，请自行关注天气变化。';
+    let tip = `🌤️ 通江今日天气：${weather.condition}`;
+    if (weather.tempMin !== null && weather.tempMax !== null) {
+        tip += `，气温 ${weather.tempMin}℃ ～ ${weather.tempMax}℃`;
+    } else if (weather.tempMax !== null) {
+        tip += `，最高气温 ${weather.tempMax}℃`;
+    }
+    if (weather.wind && weather.wind !== '未知') {
+        tip += `，${weather.wind}`;
+    }
+    if (weather.condition && (weather.condition.includes('雨') || weather.condition.includes('雷'))) {
+        tip += '，☔ 有降雨可能，建议携带雨具，注意出行安全。';
+    } else if (weather.tempMax !== null && weather.tempMax > 33) {
+        tip += '，☀️ 气温较高，注意防暑防晒，多补充水分。';
+    } else if (weather.tempMax !== null && weather.tempMax < 10) {
+        tip += '，🧥 气温较低，注意保暖。';
+    } else {
+        tip += '，🌿 天气适宜出行，祝您旅途愉快！';
+    }
+    return tip;
+}
 
 // ==================== 语音引擎激活 ====================
 function activateSpeech() {
@@ -398,19 +495,55 @@ function initMap() {
     initAnonymousAuth().then(() => loadAllPOIs());
     setTimeout(activateSpeech, 500);
 
-    // 设置默认日期为今天，默认时间为当前时间（取整到最近15分钟）
+    // 设置默认日期为今天
     const now = new Date();
     const dateStr = now.toISOString().slice(0,10);
     document.getElementById('trip-date').value = dateStr;
-    let h = now.getHours(), m = now.getMinutes();
-    m = Math.floor(m / 15) * 15;
-    const timeStr = `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
-    document.getElementById('trip-time').value = timeStr;
+
+    // 初始化时间下拉框
+    initTimeSelectors();
+
+    // 预加载天气
+    fetchTongjiangWeather();
 
     // 自动请求定位
     setTimeout(() => {
         locateUser();
     }, 1000);
+}
+
+// ==================== 初始化时间下拉框（24小时制，10分钟间隔） ====================
+function initTimeSelectors() {
+    const hourSelect = document.getElementById('trip-time-hour');
+    const minuteSelect = document.getElementById('trip-time-minute');
+    // 填充小时 0-23
+    for (let i = 0; i < 24; i++) {
+        const opt = document.createElement('option');
+        opt.value = String(i).padStart(2, '0');
+        opt.textContent = String(i).padStart(2, '0');
+        hourSelect.appendChild(opt);
+    }
+    // 填充分钟 0,10,20,...50
+    for (let i = 0; i < 60; i += 10) {
+        const opt = document.createElement('option');
+        opt.value = String(i).padStart(2, '0');
+        opt.textContent = String(i).padStart(2, '0');
+        minuteSelect.appendChild(opt);
+    }
+    // 设置默认时间为当前时间（取整到最近10分钟）
+    const now = new Date();
+    let h = now.getHours();
+    let m = Math.floor(now.getMinutes() / 10) * 10;
+    if (m === 60) { m = 0; h = (h + 1) % 24; }
+    hourSelect.value = String(h).padStart(2, '0');
+    minuteSelect.value = String(m).padStart(2, '0');
+}
+
+// 获取组合时间字符串
+function getSelectedTime() {
+    const hour = document.getElementById('trip-time-hour').value;
+    const minute = document.getElementById('trip-time-minute').value;
+    return hour + ':' + minute;
 }
 
 // ==================== 匿名登录 & POI加载 ====================
@@ -661,16 +794,14 @@ function generateTimeline(nodes, startDate, startTime) {
     let [h, m] = startTime.split(':').map(Number);
     let curMin = h * 60 + m;
     const lines = [];
-    // 根据出发时间决定是否跳过午餐/晚餐
     let lunchDone = false, dinnerDone = false;
     if (curMin >= LUNCH_TRIGGER) {
-        lunchDone = true; // 出发时间晚于午餐时间，不再插入午餐
+        lunchDone = true;
     }
     if (curMin >= DINNER_TRIGGER) {
-        dinnerDone = true; // 出发时间晚于晚餐时间，不再插入晚餐
+        dinnerDone = true;
     }
 
-    // 每日统计
     let dailyStats = [];
     let currentDayTransport = 0;
     let currentDayVisit = 0;
@@ -696,10 +827,8 @@ function generateTimeline(nodes, startDate, startTime) {
             });
             curDate.setDate(curDate.getDate() + 1);
             curMin = DAY_START;
-            // 新的一天，重置就餐标记（因为新的一天需要重新安排就餐）
             lunchDone = false;
             dinnerDone = false;
-            // 但如果到达新的一天时，时间还是晚于午餐/晚餐，则标记为已过
             if (curMin >= LUNCH_TRIGGER) lunchDone = true;
             if (curMin >= DINNER_TRIGGER) dinnerDone = true;
             currentDayDate = curDate.toLocaleDateString('zh-CN');
@@ -743,7 +872,6 @@ function generateTimeline(nodes, startDate, startTime) {
         }
     }
 
-    // 出发
     addLine(curMin, `🚩 ${formatTime(curMin)} 从 ${nodes[0].name} 出发`, curDate, null, 0);
 
     for (let i = 1; i < nodes.length; i++) {
@@ -757,7 +885,6 @@ function generateTimeline(nodes, startDate, startTime) {
             if (daysPassed > 0) {
                 curDate.setDate(curDate.getDate() + daysPassed);
                 curMin = curMin % 1440;
-                // 新的一天，重置就餐标记
                 lunchDone = false;
                 dinnerDone = false;
                 if (curMin >= LUNCH_TRIGGER) lunchDone = true;
@@ -770,7 +897,6 @@ function generateTimeline(nodes, startDate, startTime) {
             addLine(curMin, `⚠️ 前往 ${cur.name} 交通耗时未知`, curDate, null, 0);
         }
 
-        // 游览
         if (cur.visitDuration > 0 && !isNonVisitPoi(cur.id)) {
             let visitLeft = cur.visitDuration;
             while (visitLeft > 0) {
@@ -800,7 +926,6 @@ function generateTimeline(nodes, startDate, startTime) {
     if (curMin < DAY_END) { tryInsertLunch(); tryInsertDinner(); }
     else ensureMealsForDay();
 
-    // 记录最后一天
     dailyStats.push({
         date: currentDayDate,
         transport: currentDayTransport,
@@ -810,17 +935,16 @@ function generateTimeline(nodes, startDate, startTime) {
     return { lines, dailyStats };
 }
 
-// ==================== 自设行程生成（含时间校验和每日精细化温馨提示，无阈值表述） ====================
+// ==================== 自设行程生成（含天气信息、时间校验和每日精细化温馨提示） ====================
 async function generateCustomTrip() {
     const valid = routeLegs.filter(l => l.id && l.id !== 'county');
     if (valid.length === 0) return alert('请至少选择一个景区');
 
     const dateStr = document.getElementById('trip-date').value;
-    const startTime = document.getElementById('trip-time').value;
+    const startTime = getSelectedTime(); // 从下拉框获取
     if (!dateStr) return alert('选择出发日期');
     if (!startTime) return alert('选择出发时间');
 
-    // 校验出发时间不能早于当前时间
     const now = new Date();
     const selectedDateTime = new Date(dateStr + 'T' + startTime);
     if (selectedDateTime < now) {
@@ -846,7 +970,6 @@ async function generateCustomTrip() {
 
     const { lines, dailyStats } = generateTimeline(nodes, dateStr, startTime);
 
-    // 按天分组 lines
     const daysMap = {};
     lines.forEach(l => {
         const key = l.date.toLocaleDateString('zh-CN');
@@ -858,7 +981,6 @@ async function generateCustomTrip() {
         lines: daysMap[date]
     }));
 
-    // 构建HTML显示
     let html = '';
     days.forEach((d, i) => {
         html += `<div class="day-header">📅 第${i+1}天 (${d.date})</div>`;
@@ -867,7 +989,6 @@ async function generateCustomTrip() {
         });
     });
 
-    // 生成温馨提示（无阈值数值，仅描述性）
     let tips = [];
     let totalTransport = 0, totalVisit = 0;
     dailyStats.forEach(stat => {
@@ -880,7 +1001,15 @@ async function generateCustomTrip() {
     if (mealCount > 0) tips.push(`🍴 包含 ${mealCount} 次用餐，预计总耗时约 ${Math.round((totalActivity + mealCount*60)/60)} 小时。`);
     if (days.length > 1) tips.push(`🏨 行程跨${days.length}天，请合理安排住宿。`);
 
-    // 每日详细建议（不再出现“超过建议”等数值表述）
+    try {
+        const weather = await fetchTongjiangWeather();
+        if (weather) {
+            tips.push(getWeatherTip(weather));
+        }
+    } catch (e) {
+        console.warn('[天气] 获取天气失败，跳过');
+    }
+
     dailyStats.forEach((stat, idx) => {
         const dayNum = idx + 1;
         const dateLabel = stat.date;
@@ -903,7 +1032,6 @@ async function generateCustomTrip() {
         }
     });
 
-    // 如果只有一天且交通或游览较长，给出整体顺延建议
     if (days.length === 1 && (totalTransport > 120 || totalVisit > 240)) {
         tips.push(`💡 由于当日行程时间较长，建议您考虑将部分景点调整到第二天，或选择更近的景点，以获得更好的旅行体验。`);
     }

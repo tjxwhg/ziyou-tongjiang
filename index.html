@@ -36,7 +36,10 @@
         .my-tab { padding:8px 16px; border:none; background:#eee; border-radius:20px; cursor:pointer; }
         .my-tab.active { background:#2e7d32; color:white; }
 
-        .route-node { display:flex; gap:8px; align-items:center; margin:8px 0; flex-wrap:wrap; }
+        .route-node { display:flex; gap:6px; align-items:center; margin:6px 0; flex-wrap:nowrap; }
+        .route-node select { flex:1; min-width:80px; }
+        .route-node .btn-danger { font-size:12px; padding:2px 6px; line-height:1.4; }
+
         .day-header { font-weight:bold; background:#e9f5ea; padding:6px; border-radius:4px; margin:12px 0 6px; }
         .trip-line { padding:4px 0; border-bottom:1px dotted #eee; }
         .warn-list { background:#fafafa; padding:10px; border-radius:8px; margin-top:10px; }
@@ -122,13 +125,12 @@ let map, allPois = [], generatedTripData = null;
 let userMarker = null, simMarker = null;
 let anonymousUserId = null;
 let voiceEnabled = true;
-let lastTriggeredPoiIds = {};
-const COOLDOWN = 5 * 60 * 1000;   // 5分钟
+let lastTriggeredPoiIds = {}; // 存储每个POI上次触发日期，格式 'YYYY-MM-DD'
+const TRIGGER_RADIUS = 30;     // 电子围栏半径30米
+const GPS_ACCURACY_TOLERANCE = 10; // 补偿误差
 let watchId = null;
 let currentGcjPos = null;
-const TRIGGER_RADIUS = 50;
-const GPS_ACCURACY_TOLERANCE = 15;
-let currentAudio = null; // 用于控制MP3播放
+let currentAudio = null;
 
 const COUNTY = { lat:32.08, lng:107.24, name:'红军广场', id:'county' };
 const poiColors = { '自然景区':'#2E7D32', '红色景区':'#9C27B0', '文博场馆':'#9C27B0', '餐饮住宿':'#FF9800', '停车场':'#00BCD4', '公共服务':'#607D8B' };
@@ -189,6 +191,7 @@ function getUserId(){
         return uid;
     })());
 }
+function getTodayStr(){ return new Date().toISOString().slice(0,10); }
 
 // ==================== 语音引擎激活 ====================
 function activateSpeech() {
@@ -212,7 +215,7 @@ function toggleAutoVoice() {
         const testMsg = new SpeechSynthesisUtterance('语音已开启');
         testMsg.lang = 'zh-CN';
         speechSynthesis.speak(testMsg);
-        lastTriggeredPoiIds = {};
+        // 清空上次触发记录，以便当天后续可再次触发（但每日限制仍由日期控制）
         if (currentGcjPos) {
             checkVoiceTrigger(currentGcjPos.lat, currentGcjPos.lng);
         }
@@ -294,7 +297,7 @@ function playTTS(poi) {
     console.log(`[语音] TTS播放：${text}`);
 }
 
-// ==================== 电子围栏检测 ====================
+// ==================== 电子围栏检测（30米，每日触发一次） ====================
 function checkVoiceTrigger(userLat, userLng) {
     if (!voiceEnabled) {
         console.log('[围栏] 语音已关闭，跳过检测');
@@ -304,16 +307,21 @@ function checkVoiceTrigger(userLat, userLng) {
         console.warn('[围栏] POI数据未加载');
         return;
     }
-    const now = Date.now();
+    const today = getTodayStr();
     const threshold = TRIGGER_RADIUS + GPS_ACCURACY_TOLERANCE;
     allPois.forEach(poi => {
         if (!poi.lat || !poi.lng) return;
         const dist = getDistance(userLat, userLng, poi.lat, poi.lng);
-        const lastTime = lastTriggeredPoiIds[poi.id] || 0;
-        if (dist <= threshold && (now - lastTime >= COOLDOWN)) {
+        const lastDate = lastTriggeredPoiIds[poi.id] || '';
+        // 如果今天已经触发过，则跳过
+        if (lastDate === today) {
+            // console.log(`[围栏] ${poi.name} 今日已触发，跳过`);
+            return;
+        }
+        if (dist <= threshold) {
             console.log(`[围栏] 触发 ${poi.name}, 距离 ${dist.toFixed(1)}m`);
             triggerVoice(poi);
-            lastTriggeredPoiIds[poi.id] = now;
+            lastTriggeredPoiIds[poi.id] = today;
         }
     });
 }
@@ -745,7 +753,7 @@ function generateTimeline(nodes, startDate, startTime){
     return lines;
 }
 
-// ==================== 修改：自设行程生成（含时间校验和时长限制） ====================
+// ==================== 自设行程生成（含时间校验和精细化温馨提示） ====================
 async function generateCustomTrip(){
     const valid = routeLegs.filter(l => l.id && l.id!=='county');
     if(valid.length===0) return alert('请至少选择一个景区');
@@ -791,22 +799,33 @@ async function generateCustomTrip(){
     let mealCount = allLines.filter(l => l.text.includes('🍽️')).length;
 
     let tips = [];
-    tips.push(`纯活动时间：${totalTransport + totalVisit}分钟（约${((totalTransport + totalVisit)/60).toFixed(1)}小时）`);
-    if(mealCount > 0) tips.push(`包含 ${mealCount} 次就餐，预计总耗时约 ${Math.round((totalTransport + totalVisit + mealCount*60)/60)} 小时`);
-    if(days.length > 1) tips.push(`行程跨${days.length}天，请合理安排住宿。`);
+    const MAX_TRANSPORT = 120;
+    const MAX_VISIT = 240;
 
-    // ----- 校验2：交通或游览超限提示 -----
-    const MAX_TRANSPORT = 120; // 交通上限120分钟
-    const MAX_VISIT = 240;     // 游览上限240分钟
-    if (totalTransport > MAX_TRANSPORT) {
-        tips.push(`⚠️ 当日交通总耗时 ${totalTransport} 分钟，超过建议的 ${MAX_TRANSPORT} 分钟，为保证安全，建议减少景点或选择就近游览。`);
-    }
-    if (totalVisit > MAX_VISIT) {
-        tips.push(`⚠️ 当日景点游览总耗时 ${totalVisit} 分钟，超过建议的 ${MAX_VISIT} 分钟，为保证体验，建议减少景点或适当休息。`);
+    // 基础信息
+    let totalActivity = totalTransport + totalVisit;
+    tips.push(`📊 活动总时长：${totalActivity}分钟（约${(totalActivity/60).toFixed(1)}小时），其中交通${totalTransport}分钟，游览${totalVisit}分钟。`);
+    if(mealCount > 0) tips.push(`🍴 包含 ${mealCount} 次用餐，预计总耗时约 ${Math.round((totalActivity + mealCount*60)/60)} 小时。`);
+    if(days.length > 1) tips.push(`🏨 行程跨${days.length}天，请合理安排住宿。`);
+
+    // 细致建议
+    if (totalTransport > MAX_TRANSPORT && totalVisit > MAX_VISIT) {
+        tips.push(`⚠️ 当日交通耗时（${totalTransport}分钟）和游览耗时（${totalVisit}分钟）均超过建议值（交通≤${MAX_TRANSPORT}分钟，游览≤${MAX_VISIT}分钟）。行程过于紧张，建议大幅减少景点数量，或选择更近的景点，以免疲劳影响体验。`);
+    } else if (totalTransport > MAX_TRANSPORT) {
+        tips.push(`⚠️ 当日交通总耗时 ${totalTransport} 分钟，超过建议的 ${MAX_TRANSPORT} 分钟。长时间驾车或乘车容易疲劳，建议减少跨区域景点，或选择周边景点。`);
+    } else if (totalVisit > MAX_VISIT) {
+        tips.push(`⚠️ 当日景点游览总耗时 ${totalVisit} 分钟，超过建议的 ${MAX_VISIT} 分钟。长时间游览易导致体力透支，建议适当减少景点或增加休息时间。`);
+    } else {
+        // 未超限，给出积极建议
+        if (totalTransport < 60 && totalVisit < 120) {
+            tips.push(`✅ 当日行程较为轻松，可考虑增加周边POI或游玩项目（后续后台可配置），让旅程更丰富。`);
+        } else {
+            tips.push(`✅ 当日行程时间安排合理，既充实又不紧张，祝您旅途愉快！`);
+        }
     }
 
     document.getElementById('generated-trip').innerHTML = `<div class="card">${html}</div>`;
-    document.getElementById('trip-warnings').innerHTML = tips.length ? `<div class="warn-list"><strong>温馨提示：</strong>${tips.map(t=>`<div>${t}</div>`).join('')}</div>` : '';
+    document.getElementById('trip-warnings').innerHTML = tips.length ? `<div class="warn-list"><strong>💡 温馨提示：</strong>${tips.map(t=>`<div>${t}</div>`).join('')}</div>` : '';
     document.getElementById('saveGeneratedTripBtn').classList.remove('hidden');
 
     generatedTripData = {

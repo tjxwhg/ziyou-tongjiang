@@ -133,7 +133,7 @@ const GPS_ACCURACY_TOLERANCE = 10;
 let watchId = null;
 let currentGcjPos = null;
 let currentAudio = null;
-let weatherCache = {};
+let weatherCache = null; // { time: timestamp, data: { dates: [...], tempsMax: [...], tempsMin: [...], winds: [...], codes: [...] } }
 
 const COUNTY = { lat:32.08, lng:107.24, name:'红军广场', id:'county' };
 const poiColors = { '自然景区':'#2E7D32', '红色景区':'#9C27B0', '文博场馆':'#9C27B0', '餐饮住宿':'#FF9800', '停车场':'#00BCD4', '公共服务':'#607D8B' };
@@ -197,35 +197,26 @@ function getUserId(){
 function getTodayStr(){ return new Date().toISOString().slice(0,10); }
 
 // ==================== 天气获取（Open-Meteo API，免费无需Key） ====================
-async function fetchWeatherForDate(dateStr) {
-    // 检查缓存（缓存1小时）
-    const cacheKey = dateStr;
-    if (weatherCache[cacheKey] && (Date.now() - weatherCache[cacheKey].time < 3600000)) {
-        return weatherCache[cacheKey].data;
+// 返回按日期顺序排列的数组，每个元素包含 { date, weather, tempMax, tempMin, wind }
+async function fetchWeatherForecast() {
+    const now = Date.now();
+    if (weatherCache && (now - weatherCache.time < 3600000)) {
+        return weatherCache.data;
     }
 
     try {
-        // 通江县坐标：纬度32.08，经度107.24
-        // 使用 Open-Meteo 官方 API，无需 Key[reference:6][reference:7]
         const url = `https://api.open-meteo.com/v1/forecast?latitude=32.08&longitude=107.24&daily=weathercode,temperature_2m_max,temperature_2m_min,windspeed_10m_max&timezone=Asia/Shanghai&forecast_days=16`;
         const response = await fetch(url);
-        if (!response.ok) {
-            throw new Error('天气API请求失败');
-        }
+        if (!response.ok) throw new Error('天气API请求失败');
         const data = await response.json();
+        if (!data.daily || !data.daily.time) throw new Error('天气数据格式异常');
 
-        if (!data.daily || !data.daily.time) {
-            throw new Error('天气数据格式异常');
-        }
-
-        // 构建日期到天气的映射
-        const weatherMap = {};
         const codes = data.daily.weathercode || [];
         const tempsMax = data.daily.temperature_2m_max || [];
         const tempsMin = data.daily.temperature_2m_min || [];
         const winds = data.daily.windspeed_10m_max || [];
+        const dates = data.daily.time || [];
 
-        // 天气代码转中文描述[reference:8]
         const codeMap = {
             0: '晴', 1: '晴', 2: '晴间多云', 3: '多云',
             45: '雾', 48: '雾',
@@ -236,53 +227,37 @@ async function fetchWeatherForDate(dateStr) {
             95: '雷暴', 96: '雷暴加冰雹', 99: '强雷暴加冰雹'
         };
 
-        for (let i = 0; i < data.daily.time.length; i++) {
-            const date = data.daily.time[i];
-            const code = codes[i] !== undefined ? codes[i] : 0;
-            const weatherDesc = codeMap[code] || '未知天气';
-            const tempMax = tempsMax[i] !== undefined ? Math.round(tempsMax[i]) : '--';
-            const tempMin = tempsMin[i] !== undefined ? Math.round(tempsMin[i]) : '--';
-            const wind = winds[i] !== undefined ? Math.round(winds[i]) : '--';
+        const forecast = dates.map((date, i) => ({
+            date: date,
+            weather: codeMap[codes[i]] || '未知天气',
+            tempMax: tempsMax[i] !== undefined ? Math.round(tempsMax[i]) : '--',
+            tempMin: tempsMin[i] !== undefined ? Math.round(tempsMin[i]) : '--',
+            wind: winds[i] !== undefined ? Math.round(winds[i]) : '--'
+        }));
 
-            weatherMap[date] = {
-                date: date,
-                weather: weatherDesc,
-                tempMax: tempMax,
-                tempMin: tempMin,
-                wind: wind,
-                raw: data.daily
-            };
-        }
-
-        // 缓存结果
-        weatherCache[cacheKey] = {
-            time: Date.now(),
-            data: weatherMap
-        };
-
-        return weatherMap;
+        weatherCache = { time: Date.now(), data: forecast };
+        console.log('[天气] 获取成功，共', forecast.length, '天');
+        return forecast;
     } catch (e) {
         console.warn('[天气] 获取失败:', e);
         return null;
     }
 }
 
-// 生成单日天气提示文本
-function getDayWeatherTip(weatherData, dateStr) {
-    if (!weatherData) return '⚠️ 天气信息获取失败，请自行关注天气变化。';
-
-    const dayData = weatherData[dateStr];
-    if (!dayData) return '⚠️ 该日天气信息暂不可用。';
-
-    let tip = `🌤️ 天气：${dayData.weather}`;
-    tip += `，气温 ${dayData.tempMin}℃ ～ ${dayData.tempMax}℃`;
-    if (dayData.wind !== '--') {
-        tip += `，风力 ${dayData.wind} km/h`;
+// 生成单日天气提示文本（基于天气对象）
+function getDayWeatherTip(weatherObj) {
+    if (!weatherObj) return '⚠️ 天气信息获取失败，请自行关注天气变化。';
+    const { weather, tempMax, tempMin, wind } = weatherObj;
+    let tip = `🌤️ 天气：${weather}`;
+    if (tempMin !== '--' && tempMax !== '--') {
+        tip += `，气温 ${tempMin}℃ ～ ${tempMax}℃`;
+    } else if (tempMax !== '--') {
+        tip += `，最高气温 ${tempMax}℃`;
     }
-
-    // 添加出行建议
-    const weather = dayData.weather;
-    const tempMax = dayData.tempMax;
+    if (wind !== '--') {
+        tip += `，风力 ${wind} km/h`;
+    }
+    // 出行建议
     if (weather.includes('雨') || weather.includes('雷') || weather.includes('雾')) {
         tip += '，☔ 有降雨或大雾，建议携带雨具，注意出行安全。';
     } else if (tempMax !== '--' && tempMax > 33) {
@@ -968,47 +943,29 @@ async function generateCustomTrip() {
         lines: daysMap[date]
     }));
 
-    // ===== 获取每一天的天气信息 =====
-    // 获取行程涉及的所有日期（从出发日期开始，覆盖所有天数）
-    const startDateObj = new Date(dateStr);
-    const allDateStrs = [];
+    // ===== 获取天气数据（按顺序匹配） =====
+    const weatherForecast = await fetchWeatherForecast();
+    // 为每一天生成天气提示，按顺序取天气数据（第0天对应第1天，第1天对应第2天...）
+    const dayWeatherTips = [];
     for (let i = 0; i < days.length; i++) {
-        const d = new Date(startDateObj);
-        d.setDate(d.getDate() + i);
-        allDateStrs.push(d.toISOString().slice(0,10));
-    }
-
-    // 获取天气数据
-    let weatherMap = null;
-    try {
-        // 使用第一天作为查询基准，Open-Meteo会返回16天预报
-        weatherMap = await fetchWeatherForDate(allDateStrs[0] || dateStr);
-    } catch (e) {
-        console.warn('[天气] 获取失败:', e);
+        if (weatherForecast && i < weatherForecast.length) {
+            const weatherObj = weatherForecast[i];
+            dayWeatherTips.push(getDayWeatherTip(weatherObj));
+        } else {
+            dayWeatherTips.push('⚠️ 该日天气信息暂不可用。');
+        }
     }
 
     // 构建HTML显示，为每一天匹配天气
     let html = '';
-    const dayWeatherTips = {};
-
     for (let i = 0; i < days.length; i++) {
         const d = days[i];
-        const dateKey = allDateStrs[i] || d.date;
-        // 获取该日天气提示
-        let weatherTip = '';
-        if (weatherMap) {
-            weatherTip = getDayWeatherTip(weatherMap, dateKey);
-        } else {
-            weatherTip = '⚠️ 天气信息获取失败，请自行关注天气变化。';
-        }
-        dayWeatherTips[dateKey] = weatherTip;
-
         html += `<div class="day-header">📅 第${i+1}天 (${d.date})</div>`;
         d.lines.forEach(l => {
             html += `<div class="trip-line">${l.text}</div>`;
         });
         // 在当天行程末尾添加天气提示
-        html += `<div class="trip-line" style="color:#0d47a1;">${weatherTip}</div>`;
+        html += `<div class="trip-line" style="color:#0d47a1;">${dayWeatherTips[i]}</div>`;
     }
 
     // 生成温馨提示
@@ -1055,14 +1012,11 @@ async function generateCustomTrip() {
     document.getElementById('saveGeneratedTripBtn').classList.remove('hidden');
 
     // 保存行程数据，包含每天的天气信息
-    const daysWithWeather = days.map((d, i) => {
-        const dateKey = allDateStrs[i] || d.date;
-        return {
-            date: d.date,
-            lines: d.lines,
-            weatherTip: dayWeatherTips[dateKey] || '天气信息暂不可用'
-        };
-    });
+    const daysWithWeather = days.map((d, i) => ({
+        date: d.date,
+        lines: d.lines,
+        weatherTip: dayWeatherTips[i] || '天气信息暂不可用'
+    }));
 
     generatedTripData = {
         name: '自设行程',

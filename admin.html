@@ -39,6 +39,11 @@
         .feedback-card { cursor:pointer; }
         .feedback-card .feedback-header { display:flex; justify-content:space-between; }
         .feedback-card .feedback-body { margin-top:8px; }
+        .sub-poi-edit-form { background:#f5f5f5; border:1px solid #2e7d32; border-radius:8px; padding:12px; margin-top:8px; }
+        .sub-poi-add-form { background:#f5f5f5; border:1px dashed #2e7d32; border-radius:8px; padding:12px; margin-top:8px; }
+        .sub-poi-item { display:flex; justify-content:space-between; align-items:center; padding:6px 0; border-bottom:1px solid #eee; }
+        .sub-poi-item:last-child { border-bottom:none; }
+        .sub-poi-item .actions { display:flex; gap:4px; }
     </style>
 </head>
 <body>
@@ -290,7 +295,7 @@ async function savePoiEdit(id){
         parent_id: parent_id||null,
         visit_duration,
         description,
-        voice_cn: voice_text   // 存储文本，不存储URL
+        voice_cn: voice_text
     }).eq('id', id);
     if(error) { alert('保存失败：'+error.message); return; }
     const card = document.getElementById(`poi-card-${id}`);
@@ -299,7 +304,7 @@ async function savePoiEdit(id){
     }
     document.getElementById(`edit-poi-${id}`).classList.add('hidden');
     alert('保存成功');
-    loadPOIs(); // 刷新列表
+    loadPOIs();
 }
 
 async function uploadPoiVoice(poiId, input){
@@ -316,36 +321,150 @@ async function uploadPoiVoice(poiId, input){
     if(urlInput) urlInput.value = publicUrl;
 }
 
+// ================== 子点管理（折叠式，内联编辑） ==================
 async function manageSubPois(poiId){
     const container = document.getElementById(`sub-pois-${poiId}`);
     if(!container.classList.contains('hidden')){ container.classList.add('hidden'); return; }
     container.classList.remove('hidden');
-    loadSubPois(poiId);
+    await loadSubPois(poiId);
 }
-async function loadSubPois(poiId){
-    const { data } = await sb.from('ztj_poi').select('*').eq('parent_id', poiId).order('sort_order');
-    let html = `<button class="btn btn-primary" onclick="addSubPoi(${poiId})">+ 添加子点</button>`;
-    if(data) data.forEach(sub => {
-        html += `<div class="card sub-poi-card">
-            <div><b>${sub.name}</b> (${sub.lat},${sub.lng})</div>
-            <button class="btn btn-default" onclick="toggleEditPoi(${sub.id})">编辑</button>
-            <button class="btn btn-danger" onclick="removeFromParent(${sub.id}, ${poiId})">移出</button>
-        </div>`;
-    });
-    document.getElementById(`sub-pois-${poiId}`).innerHTML = html;
+
+async function loadSubPois(parentId){
+    const container = document.getElementById(`sub-pois-${parentId}`);
+    const { data: subs } = await sb.from('ztj_poi').select('*').eq('parent_id', parentId).order('sort_order');
+    let html = `<div class="sub-poi-add-form">
+        <h4>新增子点</h4>
+        <div class="form-group"><label>名称</label><input id="sub-new-name-${parentId}"></div>
+        <div class="form-group"><label>类别</label><div class="checkbox-group" id="sub-new-categories-${parentId}">${POI_CATEGORIES.map(c => `<label><input type="checkbox" value="${c}"> ${c}</label>`).join('')}</div></div>
+        <div class="form-group"><label>纬度</label><input type="number" step="any" id="sub-new-lat-${parentId}"></div>
+        <div class="form-group"><label>经度</label><input type="number" step="any" id="sub-new-lng-${parentId}"></div>
+        <div class="form-group"><label>简介</label><textarea id="sub-new-desc-${parentId}" rows="2"></textarea></div>
+        <div class="form-group"><label>语音文本 (TTS备用)</label><textarea id="sub-new-voice-text-${parentId}" rows="2"></textarea></div>
+        <div class="form-group"><label>MP3语音文件</label><input type="file" accept="audio/*" id="sub-new-voice-${parentId}"></div>
+        <button class="btn btn-primary" onclick="addSubPoi(${parentId})">保存子点</button>
+        <button class="btn btn-default" onclick="document.getElementById('sub-pois-${parentId}').classList.add('hidden')">关闭</button>
+    </div>`;
+    if(subs && subs.length){
+        html += `<div style="margin-top:10px;"><h4>已有子点</h4>`;
+        subs.forEach(sub => {
+            html += `<div class="sub-poi-item" id="sub-item-${sub.id}">
+                <span><b>${sub.name}</b> (${sub.lat}, ${sub.lng}) ${sub.voice_mp3 ? '🔊' : ''}</span>
+                <div class="actions">
+                    <button class="btn btn-default" onclick="toggleEditSubPoi(${sub.id}, ${parentId})">编辑</button>
+                    <button class="btn btn-danger" onclick="removeFromParent(${sub.id}, ${parentId})">移出</button>
+                </div>
+            </div>
+            <div id="edit-sub-poi-${sub.id}" class="sub-poi-edit-form hidden"></div>`;
+        });
+        html += `</div>`;
+    } else {
+        html += `<p style="color:#999; margin-top:10px;">暂无子点，请在上方添加。</p>`;
+    }
+    container.innerHTML = html;
 }
+
+// 新增子点（非弹窗，使用上方表单）
 async function addSubPoi(parentId){
-    const name = prompt('子点名称'), lat = prompt('纬度'), lng = prompt('经度');
-    if(!name||!lat||!lng) return;
-    await sb.from('ztj_poi').insert({ name, lat:parseFloat(lat), lng:parseFloat(lng), parent_id: parentId, category: '' });
+    const name = document.getElementById(`sub-new-name-${parentId}`).value.trim();
+    const lat = parseFloat(document.getElementById(`sub-new-lat-${parentId}`).value);
+    const lng = parseFloat(document.getElementById(`sub-new-lng-${parentId}`).value);
+    if(!name || isNaN(lat) || isNaN(lng)){ alert('名称、经纬度必填'); return; }
+    const checks = [...document.querySelectorAll(`#sub-new-categories-${parentId} input[type="checkbox"]:checked`)].map(cb => cb.value);
+    const category = checks.join(',');
+    const description = document.getElementById(`sub-new-desc-${parentId}`).value;
+    const voice_text = document.getElementById(`sub-new-voice-text-${parentId}`).value.trim();
+    const { data: inserted, error } = await sb.from('ztj_poi').insert({
+        name, lat, lng, category,
+        parent_id: parentId,
+        visit_duration: null,
+        description,
+        voice_cn: voice_text,
+        status: 'active'
+    }).select();
+    if(error){ alert('添加失败：'+error.message); return; }
+    // 处理MP3
+    const voiceFile = document.getElementById(`sub-new-voice-${parentId}`).files[0];
+    if(voiceFile && inserted.length){
+        const poiId = inserted[0].id;
+        const path = `poi_${poiId}_${Date.now()}.mp3`;
+        const { error: uploadError } = await sb.storage.from('audio-guides').upload(path, voiceFile);
+        if(!uploadError){
+            const { data: { publicUrl } } = sb.storage.from('audio-guides').getPublicUrl(path);
+            await sb.from('ztj_poi').update({ voice_mp3: publicUrl }).eq('id', poiId);
+        }
+    }
+    alert('子点添加成功');
     loadSubPois(parentId);
+    loadPOIs(); // 刷新主列表（可选）
 }
+
+// 切换子点编辑
+async function toggleEditSubPoi(subId, parentId){
+    const container = document.getElementById(`edit-sub-poi-${subId}`);
+    if(!container.classList.contains('hidden')){ container.classList.add('hidden'); return; }
+    const { data: poi } = await sb.from('ztj_poi').select('*').eq('id', subId).single();
+    const selectedCats = (poi.category||'').split(',');
+    container.innerHTML = `
+        <div class="form-group"><label>名称</label><input id="sub-edit-name-${subId}" value="${poi.name}"></div>
+        <div class="form-group"><label>类别</label>
+            <div class="checkbox-group">${POI_CATEGORIES.map(c => `<label><input type="checkbox" value="${c}" ${selectedCats.includes(c)?'checked':''}> ${c}</label>`).join('')}</div>
+        </div>
+        <div class="form-group"><label>纬度</label><input type="number" step="any" id="sub-edit-lat-${subId}" value="${poi.lat}"></div>
+        <div class="form-group"><label>经度</label><input type="number" step="any" id="sub-edit-lng-${subId}" value="${poi.lng}"></div>
+        <div class="form-group"><label>简介</label><textarea id="sub-edit-desc-${subId}">${poi.description||''}</textarea></div>
+        <div class="form-group"><label>语音文本 (TTS用)</label><textarea id="sub-edit-voice-text-${subId}">${poi.voice_cn || ''}</textarea></div>
+        <div class="form-group"><label>MP3语音文件 (上传后自动更新)</label><input type="file" accept="audio/*" onchange="uploadSubPoiVoice(${subId}, this)"></div>
+        <div class="form-group"><label>当前MP3 URL</label><input readonly value="${poi.voice_mp3 || '无'}"></div>
+        <button class="btn btn-primary" onclick="saveSubPoiEdit(${subId}, ${parentId})">保存</button>
+        <button class="btn btn-default" onclick="toggleEditSubPoi(${subId})">取消</button>
+    `;
+    container.classList.remove('hidden');
+}
+
+async function saveSubPoiEdit(subId, parentId){
+    const name = document.getElementById(`sub-edit-name-${subId}`).value.trim();
+    const lat = parseFloat(document.getElementById(`sub-edit-lat-${subId}`).value);
+    const lng = parseFloat(document.getElementById(`sub-edit-lng-${subId}`).value);
+    if(!name || isNaN(lat) || isNaN(lng)){ alert('名称、经纬度必填'); return; }
+    const checks = [...document.querySelectorAll(`#edit-sub-poi-${subId} input[type="checkbox"]:checked`)].map(cb => cb.value);
+    const category = checks.join(',');
+    const description = document.getElementById(`sub-edit-desc-${subId}`).value;
+    const voice_text = document.getElementById(`sub-edit-voice-text-${subId}`).value.trim();
+    const { error } = await sb.from('ztj_poi').update({
+        name, lat, lng, category,
+        description,
+        voice_cn: voice_text
+    }).eq('id', subId);
+    if(error){ alert('保存失败：'+error.message); return; }
+    alert('子点更新成功');
+    document.getElementById(`edit-sub-poi-${subId}`).classList.add('hidden');
+    loadSubPois(parentId);
+    loadPOIs();
+}
+
+async function uploadSubPoiVoice(subId, input){
+    const file = input.files[0];
+    if(!file) return;
+    const path = `poi_${subId}_${Date.now()}.mp3`;
+    const { error } = await sb.storage.from('audio-guides').upload(path, file);
+    if(error){ alert('上传失败：'+error.message); return; }
+    const { data: { publicUrl } } = sb.storage.from('audio-guides').getPublicUrl(path);
+    const { error: updateErr } = await sb.from('ztj_poi').update({ voice_mp3: publicUrl }).eq('id', subId);
+    if(updateErr){ alert('更新字段失败：'+updateErr.message); return; }
+    alert('MP3已上传并关联');
+    // 刷新当前编辑表单中的URL显示
+    const urlInput = document.querySelector(`#edit-sub-poi-${subId} input[readonly]`);
+    if(urlInput) urlInput.value = publicUrl;
+}
+
 async function removeFromParent(subId, parentId){
+    if(!confirm('确定将此子点移出（变为独立主景区）？')) return;
     await sb.from('ztj_poi').update({ parent_id: null }).eq('id', subId);
     loadSubPois(parentId);
     loadPOIs();
 }
 
+// ================== 删除POI（含子点清理） ==================
 async function deletePoi(id){
     if(confirm('确定删除此POI？将同时解除关联的商户、交通预设、路线节点，并删除子点。')){
         await sb.from('ztj_merchants').update({ poi_id: null }).eq('poi_id', id);

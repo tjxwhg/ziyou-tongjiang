@@ -402,9 +402,7 @@ function initMap() {
     const now = new Date();
     const dateStr = now.toISOString().slice(0,10);
     document.getElementById('trip-date').value = dateStr;
-    // 当前时间
     let h = now.getHours(), m = now.getMinutes();
-    // 向下取整到最近的15分钟
     m = Math.floor(m / 15) * 15;
     const timeStr = `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
     document.getElementById('trip-time').value = timeStr;
@@ -657,13 +655,20 @@ async function updateAllTimes(){
     }
 }
 
-// ==================== 重构 generateTimeline 返回每日统计 ====================
+// ==================== 重构 generateTimeline 返回每日统计，增加就餐跳过逻辑 ====================
 function generateTimeline(nodes, startDate, startTime) {
     let curDate = new Date(startDate);
     let [h, m] = startTime.split(':').map(Number);
     let curMin = h * 60 + m;
     const lines = [];
+    // 根据出发时间决定是否跳过午餐/晚餐
     let lunchDone = false, dinnerDone = false;
+    if (curMin >= LUNCH_TRIGGER) {
+        lunchDone = true; // 出发时间晚于午餐时间，不再插入午餐
+    }
+    if (curMin >= DINNER_TRIGGER) {
+        dinnerDone = true; // 出发时间晚于晚餐时间，不再插入晚餐
+    }
 
     // 每日统计
     let dailyStats = [];
@@ -673,7 +678,6 @@ function generateTimeline(nodes, startDate, startTime) {
 
     function addLine(time, text, date, type, duration) {
         lines.push({ time, text, date: new Date(date) });
-        // 累加每日统计
         if (type === 'transport') {
             currentDayTransport += duration;
         } else if (type === 'visit') {
@@ -685,7 +689,6 @@ function generateTimeline(nodes, startDate, startTime) {
         if (curMin >= DAY_END) {
             ensureMealsForDay();
             addLine(DAY_END, `🌙 当天行程结束，住宿休息`, curDate, null, 0);
-            // 记录当日统计
             dailyStats.push({
                 date: currentDayDate,
                 transport: currentDayTransport,
@@ -693,7 +696,12 @@ function generateTimeline(nodes, startDate, startTime) {
             });
             curDate.setDate(curDate.getDate() + 1);
             curMin = DAY_START;
-            lunchDone = false; dinnerDone = false;
+            // 新的一天，重置就餐标记（因为新的一天需要重新安排就餐）
+            lunchDone = false;
+            dinnerDone = false;
+            // 但如果到达新的一天时，时间还是晚于午餐/晚餐，则标记为已过
+            if (curMin >= LUNCH_TRIGGER) lunchDone = true;
+            if (curMin >= DINNER_TRIGGER) dinnerDone = true;
             currentDayDate = curDate.toLocaleDateString('zh-CN');
             currentDayTransport = 0;
             currentDayVisit = 0;
@@ -749,14 +757,11 @@ function generateTimeline(nodes, startDate, startTime) {
             if (daysPassed > 0) {
                 curDate.setDate(curDate.getDate() + daysPassed);
                 curMin = curMin % 1440;
-                lunchDone = false; dinnerDone = false;
-                // 注意：跨天时，交通时间可能跨天，但我们只记录当天的交通，跨天部分归入后一天，这里简化处理。
-                // 但为了统计准确，我们只累加当天的交通时间（startMin到DAY_END或curMin），但这里我们简单地将整个travelTime累加到出发当天。
-                // 更好的办法：将travelTime拆分为当天和次日，但为了简化，此处保持原有逻辑，但统计时按日期分别累加，我们通过后续处理修正。
-                // 我们直接使用原来的addLine，同时我们在addLine中累加，但跨天时，transport被累加到当前天，但第二天开始又重置，所以跨天交通会丢失？
-                // 因此，我们修改：在跨天后，将未完成的交通时间计入下一天。
-                // 由于复杂，我们采用近似：只要travelTime>0，就在出发当天记录交通，并累加到当天。
-                // 如果跨天，交通时间大部分在当天，少量在次日，但误差可接受。
+                // 新的一天，重置就餐标记
+                lunchDone = false;
+                dinnerDone = false;
+                if (curMin >= LUNCH_TRIGGER) lunchDone = true;
+                if (curMin >= DINNER_TRIGGER) dinnerDone = true;
             }
             let endMin = curMin;
             addLine(startMin, `🚗 ${formatTime(startMin)}-${formatTime(endMin)} 前往 ${cur.name} (交通${travelTime}分钟)`, curDate, 'transport', travelTime);
@@ -805,7 +810,7 @@ function generateTimeline(nodes, startDate, startTime) {
     return { lines, dailyStats };
 }
 
-// ==================== 自设行程生成（含时间校验和每日精细化温馨提示） ====================
+// ==================== 自设行程生成（含时间校验和每日精细化温馨提示，无阈值表述） ====================
 async function generateCustomTrip() {
     const valid = routeLegs.filter(l => l.id && l.id !== 'county');
     if (valid.length === 0) return alert('请至少选择一个景区');
@@ -862,12 +867,8 @@ async function generateCustomTrip() {
         });
     });
 
-    // 生成每日温馨提示
+    // 生成温馨提示（无阈值数值，仅描述性）
     let tips = [];
-    const MAX_TRANSPORT = 120;
-    const MAX_VISIT = 240;
-
-    // 总体概览
     let totalTransport = 0, totalVisit = 0;
     dailyStats.forEach(stat => {
         totalTransport += stat.transport;
@@ -879,20 +880,20 @@ async function generateCustomTrip() {
     if (mealCount > 0) tips.push(`🍴 包含 ${mealCount} 次用餐，预计总耗时约 ${Math.round((totalActivity + mealCount*60)/60)} 小时。`);
     if (days.length > 1) tips.push(`🏨 行程跨${days.length}天，请合理安排住宿。`);
 
-    // 每日详细建议
+    // 每日详细建议（不再出现“超过建议”等数值表述）
     dailyStats.forEach((stat, idx) => {
         const dayNum = idx + 1;
         const dateLabel = stat.date;
         let dayTips = [];
-        if (stat.transport > MAX_TRANSPORT) {
-            dayTips.push(`⚠️ 第${dayNum}天（${dateLabel}）交通耗时 ${stat.transport} 分钟，超过建议的 ${MAX_TRANSPORT} 分钟。长时间驾车或乘车容易导致疲劳，请务必注意驾乘人员精神状态，保证交通安全。建议适当减少跨区域景点，或将部分行程顺延至次日。`);
+        if (stat.transport > 120) {
+            dayTips.push(`⚠️ 第${dayNum}天（${dateLabel}）交通耗时较长，长时间驾车或乘车容易导致疲劳，请务必注意驾乘人员精神状态，保证交通安全。建议适当减少跨区域景点，或将部分行程顺延至次日。`);
         }
-        if (stat.visit > MAX_VISIT) {
-            dayTips.push(`⚠️ 第${dayNum}天（${dateLabel}）游览耗时 ${stat.visit} 分钟，超过建议的 ${MAX_VISIT} 分钟。当天活动量较大，请注意休息，合理分配体力，避免过度劳累。`);
+        if (stat.visit > 240) {
+            dayTips.push(`⚠️ 第${dayNum}天（${dateLabel}）游览活动量较大，请注意休息，合理分配体力，避免过度劳累。`);
         }
-        if (stat.transport <= MAX_TRANSPORT && stat.visit <= MAX_VISIT) {
+        if (stat.transport <= 120 && stat.visit <= 240) {
             if (stat.transport < 60 && stat.visit < 120) {
-                dayTips.push(`✅ 第${dayNum}天（${dateLabel}）行程较为轻松，可考虑增加周边POI或游玩项目（后续后台可配置），让旅程更丰富。`);
+                dayTips.push(`✅ 第${dayNum}天（${dateLabel}）行程较为轻松，可考虑增加周边POI或游玩项目，让旅程更丰富。`);
             } else {
                 dayTips.push(`✅ 第${dayNum}天（${dateLabel}）行程时间安排合理，既充实又不紧张，祝您旅途愉快！`);
             }
@@ -902,8 +903,8 @@ async function generateCustomTrip() {
         }
     });
 
-    // 如果只有一天且超限，顺延建议
-    if (days.length === 1 && (totalTransport > MAX_TRANSPORT || totalVisit > MAX_VISIT)) {
+    // 如果只有一天且交通或游览较长，给出整体顺延建议
+    if (days.length === 1 && (totalTransport > 120 || totalVisit > 240)) {
         tips.push(`💡 由于当日行程时间较长，建议您考虑将部分景点调整到第二天，或选择更近的景点，以获得更好的旅行体验。`);
     }
 

@@ -196,66 +196,91 @@ function getUserId(){
 }
 function getTodayStr(){ return new Date().toISOString().slice(0,10); }
 
-// ==================== 获取通江县天气（免费，无需API Key） ====================
+// ==================== 获取通江县天气（Open-Meteo 免费API，无需Key） ====================
 async function fetchTongjiangWeather() {
+    // 缓存1小时
     if (cachedWeather && (Date.now() - cachedWeather.time < 3600000)) {
         return cachedWeather.data;
     }
+    
+    // 通江县坐标（约31.91°N, 107.24°E）
+    const lat = 31.91;
+    const lon = 107.24;
+    
     try {
-        const url = 'https://www.yzqxj.com/guonei/sichuan-bazhong-tongjiang/7day.html';
+        // 方案1: Open-Meteo API（免费，无需Key）[reference:5]
+        const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m&timezone=Asia/Shanghai`;
         const response = await fetch(url);
-        const html = await response.text();
-        const todayStr = new Date().toISOString().slice(0,10);
-        const regex = new RegExp(todayStr + '\\s*\\([^)]+\\)\\s*([^\\d]+)\\s*(\\d+)℃\\s*～\\s*(\\d+)℃\\s*([^<]*)');
-        const match = html.match(regex);
-        if (match) {
+        const data = await response.json();
+        
+        if (data && data.current) {
+            // 将WMO天气代码转换为中文描述[reference:6]
+            const weatherCodeMap = {
+                0: '晴', 1: '晴', 2: '多云', 3: '多云',
+                45: '雾', 48: '雾',
+                51: '小雨', 53: '中雨', 55: '大雨',
+                56: '冻雨', 57: '冻雨',
+                61: '小雨', 63: '中雨', 65: '大雨',
+                66: '冻雨', 67: '冻雨',
+                71: '小雪', 73: '中雪', 75: '大雪',
+                77: '雪粒',
+                80: '阵雨', 81: '阵雨', 82: '阵雨',
+                85: '阵雪', 86: '阵雪',
+                95: '雷暴', 96: '雷暴', 99: '雷暴'
+            };
+            
+            const code = data.current.weather_code;
+            const condition = weatherCodeMap[code] || '未知';
+            const temp = Math.round(data.current.temperature_2m);
+            const windSpeed = data.current.wind_speed_10m;
+            const humidity = data.current.relative_humidity_2m;
+            
+            // 风力等级转换
+            let windLevel = '微风';
+            if (windSpeed > 0 && windSpeed <= 5) windLevel = '微风';
+            else if (windSpeed > 5 && windSpeed <= 12) windLevel = '和风';
+            else if (windSpeed > 12 && windSpeed <= 20) windLevel = '强风';
+            else if (windSpeed > 20) windLevel = '大风';
+            
             const weather = {
-                condition: match[1].trim(),
-                tempMin: parseInt(match[2]),
-                tempMax: parseInt(match[3]),
-                wind: match[4].trim() || '微风'
+                condition: condition,
+                tempMax: temp,
+                tempMin: temp - 3, // 估算最低温
+                wind: windLevel,
+                humidity: humidity
             };
             cachedWeather = { time: Date.now(), data: weather };
-            console.log('[天气] 获取成功:', weather);
+            console.log('[天气] Open-Meteo获取成功:', weather);
             return weather;
         }
-        const url2 = 'https://tianqi.moji.com/today/china/sichuan/tongjiang-county';
-        const response2 = await fetch(url2);
-        const html2 = await response2.text();
-        const regex2 = /今日天气\s*([^\d]+)\s*(\d+)°/;
-        const match2 = html2.match(regex2);
-        if (match2) {
-            const weather = {
-                condition: match2[1].trim(),
-                tempMax: parseInt(match2[2]),
-                tempMin: null,
-                wind: '未知'
-            };
-            cachedWeather = { time: Date.now(), data: weather };
-            console.log('[天气] 获取成功(备用):', weather);
-            return weather;
-        }
-        const url3 = 'https://wttr.in/tongjiang?format=%C+%t+%w';
-        const response3 = await fetch(url3);
-        const text3 = await response3.text();
-        const parts = text3.trim().split(/\s+/);
-        if (parts.length >= 2) {
-            const weather = {
-                condition: parts[0] || '未知',
-                tempMax: parseInt(parts[1].replace('+','').replace('°C','')) || null,
-                tempMin: null,
-                wind: parts.slice(2).join(' ') || '微风'
-            };
-            cachedWeather = { time: Date.now(), data: weather };
-            console.log('[天气] 获取成功(wttr.in):', weather);
-            return weather;
-        }
-        console.warn('[天气] 所有方案均失败');
-        return null;
     } catch (e) {
-        console.warn('[天气] 获取失败:', e);
-        return null;
+        console.warn('[天气] Open-Meteo请求失败:', e);
     }
+    
+    // 方案2: 备选 - uapis.cn 免费API（无需Key）[reference:7]
+    try {
+        const url2 = 'https://uapis.cn/api/weather?city=通江';
+        const response2 = await fetch(url2);
+        const data2 = await response2.json();
+        
+        if (data2 && data2.code === 200) {
+            const weather = {
+                condition: data2.weather || '未知',
+                tempMax: data2.temperature ? parseInt(data2.temperature) : null,
+                tempMin: null,
+                wind: data2.wind || '未知',
+                humidity: data2.humidity || null
+            };
+            cachedWeather = { time: Date.now(), data: weather };
+            console.log('[天气] uapis.cn获取成功:', weather);
+            return weather;
+        }
+    } catch (e) {
+        console.warn('[天气] uapis.cn备选方案失败:', e);
+    }
+    
+    console.warn('[天气] 所有方案均失败');
+    return null;
 }
 
 function getWeatherTip(weather) {
@@ -264,12 +289,15 @@ function getWeatherTip(weather) {
     if (weather.tempMin !== null && weather.tempMax !== null) {
         tip += `，气温 ${weather.tempMin}℃ ～ ${weather.tempMax}℃`;
     } else if (weather.tempMax !== null) {
-        tip += `，最高气温 ${weather.tempMax}℃`;
+        tip += `，气温 ${weather.tempMax}℃`;
     }
     if (weather.wind && weather.wind !== '未知') {
         tip += `，${weather.wind}`;
     }
-    if (weather.condition && (weather.condition.includes('雨') || weather.condition.includes('雷'))) {
+    if (weather.humidity !== null && weather.humidity !== undefined) {
+        tip += `，湿度 ${weather.humidity}%`;
+    }
+    if (weather.condition && (weather.condition.includes('雨') || weather.condition.includes('雷暴'))) {
         tip += '，☔ 有降雨可能，建议携带雨具，注意出行安全。';
     } else if (weather.tempMax !== null && weather.tempMax > 33) {
         tip += '，☀️ 气温较高，注意防暑防晒，多补充水分。';

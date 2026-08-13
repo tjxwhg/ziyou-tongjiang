@@ -344,7 +344,6 @@ function locateUser() {
         },
         (error) => {
             console.warn('定位失败:', error.message);
-            // 用户拒绝或无法获取位置，不弹出烦人提示，仅静默失败
         },
         { enableHighAccuracy: true, timeout: 10000 }
     );
@@ -373,7 +372,7 @@ function startWatching() {
     );
 }
 
-// ==================== 地图点击模拟位置（保留用于测试，但可隐藏） ====================
+// ==================== 地图点击模拟位置（保留但隐藏，仅用于调试） ====================
 function setSimulatedPosition(lat, lng) {
     currentGcjPos = { lat, lng };
     if (simMarker) map.removeLayer(simMarker);
@@ -395,15 +394,11 @@ function initMap() {
         subdomains:['1','2','3','4'], maxZoom:18
     }).addTo(map);
     L.control.zoom({ position: 'topright' }).addTo(map);
-    // 点击地图模拟位置（调试用，但用户可保留，为安全可注释掉）
-    // map.on('click', (e) => {
-    //     setSimulatedPosition(e.latlng.lat, e.latlng.lng);
-    // });
 
     initAnonymousAuth().then(() => loadAllPOIs());
     setTimeout(activateSpeech, 500);
 
-    // 自动请求定位（首次会弹窗询问）
+    // 自动请求定位
     setTimeout(() => {
         locateUser();
     }, 1000);
@@ -750,14 +745,26 @@ function generateTimeline(nodes, startDate, startTime){
     return lines;
 }
 
+// ==================== 修改：自设行程生成（含时间校验和时长限制） ====================
 async function generateCustomTrip(){
     const valid = routeLegs.filter(l => l.id && l.id!=='county');
     if(valid.length===0) return alert('请至少选择一个景区');
+
     const dateStr = document.getElementById('trip-date').value;
     const startTime = document.getElementById('trip-time').value;
     if(!dateStr) return alert('选择出发日期');
+
+    // ----- 校验1：出发时间不能早于当前时间 -----
+    const now = new Date();
+    const selectedDateTime = new Date(dateStr + 'T' + startTime);
+    if (selectedDateTime < now) {
+        alert('出发时间不能早于当前时间，请调整日期或时间。');
+        return;
+    }
+
     const mode = document.getElementById('trip-mode').value;
     const people = document.getElementById('trip-people').value;
+
     let nodes = [{...routeLegs[0], type:'start'}];
     for(let i=1; i<routeLegs.length; i++){
         const p = routeLegs[i];
@@ -765,6 +772,7 @@ async function generateCustomTrip(){
         if(isNonVisitPoi(p.id)) dur = 0;
         nodes.push({...p, type:'poi', visitDuration:dur, transportTime: getTransportTime(routeLegs[i-1].id, p.id, mode)});
     }
+
     const allLines = generateTimeline(nodes, dateStr, startTime);
     const days = []; let day = null;
     allLines.forEach(l => {
@@ -773,18 +781,44 @@ async function generateCustomTrip(){
         day.lines.push({time: l.time, text: l.text});
     });
     if(day) days.push(day);
+
     let html = '';
     days.forEach((d,i) => html += `<div class="day-header">📅 第${i+1}天 (${d.date})</div>` + d.lines.map(l => `<div class="trip-line">${l.text}</div>`).join(''));
-    let totalActivity = nodes.reduce((sum, n) => sum + (n.transportTime||0) + (n.visitDuration||0), 0);
+
+    // ----- 计算总交通耗时和总游览耗时 -----
+    let totalTransport = nodes.reduce((sum, n) => sum + (n.transportTime || 0), 0);
+    let totalVisit = nodes.reduce((sum, n) => sum + (n.visitDuration || 0), 0);
     let mealCount = allLines.filter(l => l.text.includes('🍽️')).length;
+
     let tips = [];
-    tips.push(`纯活动时间：${totalActivity}分钟（约${(totalActivity/60).toFixed(1)}小时）`);
-    if(mealCount > 0) tips.push(`包含 ${mealCount} 次就餐，预计总耗时约 ${Math.round((totalActivity + mealCount*60)/60)} 小时`);
+    tips.push(`纯活动时间：${totalTransport + totalVisit}分钟（约${((totalTransport + totalVisit)/60).toFixed(1)}小时）`);
+    if(mealCount > 0) tips.push(`包含 ${mealCount} 次就餐，预计总耗时约 ${Math.round((totalTransport + totalVisit + mealCount*60)/60)} 小时`);
     if(days.length > 1) tips.push(`行程跨${days.length}天，请合理安排住宿。`);
+
+    // ----- 校验2：交通或游览超限提示 -----
+    const MAX_TRANSPORT = 120; // 交通上限120分钟
+    const MAX_VISIT = 240;     // 游览上限240分钟
+    if (totalTransport > MAX_TRANSPORT) {
+        tips.push(`⚠️ 当日交通总耗时 ${totalTransport} 分钟，超过建议的 ${MAX_TRANSPORT} 分钟，为保证安全，建议减少景点或选择就近游览。`);
+    }
+    if (totalVisit > MAX_VISIT) {
+        tips.push(`⚠️ 当日景点游览总耗时 ${totalVisit} 分钟，超过建议的 ${MAX_VISIT} 分钟，为保证体验，建议减少景点或适当休息。`);
+    }
+
     document.getElementById('generated-trip').innerHTML = `<div class="card">${html}</div>`;
     document.getElementById('trip-warnings').innerHTML = tips.length ? `<div class="warn-list"><strong>温馨提示：</strong>${tips.map(t=>`<div>${t}</div>`).join('')}</div>` : '';
     document.getElementById('saveGeneratedTripBtn').classList.remove('hidden');
-    generatedTripData = { name:'自设行程', date:dateStr, time:startTime, mode, people, nodes: nodes.map(n => ({id:n.id, name:n.name, transportTime:n.transportTime, visitDuration:n.visitDuration})), days: days.map(d => ({date:d.date, lines:d.lines})), tips };
+
+    generatedTripData = {
+        name:'自设行程',
+        date:dateStr,
+        time:startTime,
+        mode,
+        people,
+        nodes: nodes.map(n => ({id:n.id, name:n.name, transportTime:n.transportTime, visitDuration:n.visitDuration})),
+        days: days.map(d => ({date:d.date, lines:d.lines})),
+        tips
+    };
 }
 
 function saveGeneratedTrip(){

@@ -50,10 +50,6 @@
         .checkbox-group label { display:flex; align-items:center; gap:8px; font-weight:normal; cursor:pointer; }
         .feedback-reply { background:#e8f5e9; padding:8px; border-radius:4px; margin-top:8px; color:#1b5e20; }
 
-        .time-select-group { display:flex; gap:8px; align-items:center; }
-        .time-select-group select { flex:1; padding:8px; border:1px solid #ccc; border-radius:4px; }
-        .time-select-group span { white-space:nowrap; }
-
         @media (max-width:480px) { .top-btn { font-size:12px; padding:4px 8px; } .float-btn { width:44px; height:44px; font-size:18px; } .locate-btn { bottom:120px; } .voice-toggle-btn { bottom:175px; } }
     </style>
 </head>
@@ -88,12 +84,7 @@
         <div id="customTripSection" class="hidden" style="margin-top:10px;">
             <div class="form-group"><label>出发日期</label><input type="date" id="trip-date"></div>
             <div class="form-group"><label>出发时间（24小时制，10分钟间隔）</label>
-                <div class="time-select-group">
-                    <select id="trip-time-hour"></select>
-                    <span>时</span>
-                    <select id="trip-time-minute"></select>
-                    <span>分</span>
-                </div>
+                <select id="trip-time"></select>
             </div>
             <div class="form-group"><label>出行方式</label><select id="trip-mode"><option value="auto">自驾</option><option value="bus">公交</option><option value="walk">步行</option></select></div>
             <div class="form-group"><label>人数</label><input type="number" id="trip-people" min="1" value="2"></div>
@@ -514,36 +505,28 @@ function initMap() {
 
 // ==================== 初始化时间下拉框（24小时制，10分钟间隔） ====================
 function initTimeSelectors() {
-    const hourSelect = document.getElementById('trip-time-hour');
-    const minuteSelect = document.getElementById('trip-time-minute');
-    // 填充小时 0-23
-    for (let i = 0; i < 24; i++) {
-        const opt = document.createElement('option');
-        opt.value = String(i).padStart(2, '0');
-        opt.textContent = String(i).padStart(2, '0');
-        hourSelect.appendChild(opt);
-    }
-    // 填充分钟 0,10,20,...50
-    for (let i = 0; i < 60; i += 10) {
-        const opt = document.createElement('option');
-        opt.value = String(i).padStart(2, '0');
-        opt.textContent = String(i).padStart(2, '0');
-        minuteSelect.appendChild(opt);
+    const select = document.getElementById('trip-time');
+    // 生成所有时间选项
+    for (let h = 0; h < 24; h++) {
+        for (let m = 0; m < 60; m += 10) {
+            const value = String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0');
+            const opt = document.createElement('option');
+            opt.value = value;
+            opt.textContent = value;
+            select.appendChild(opt);
+        }
     }
     // 设置默认时间为当前时间（取整到最近10分钟）
     const now = new Date();
     let h = now.getHours();
     let m = Math.floor(now.getMinutes() / 10) * 10;
     if (m === 60) { m = 0; h = (h + 1) % 24; }
-    hourSelect.value = String(h).padStart(2, '0');
-    minuteSelect.value = String(m).padStart(2, '0');
+    const defaultVal = String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0');
+    select.value = defaultVal;
 }
 
-// 获取组合时间字符串
 function getSelectedTime() {
-    const hour = document.getElementById('trip-time-hour').value;
-    const minute = document.getElementById('trip-time-minute').value;
-    return hour + ':' + minute;
+    return document.getElementById('trip-time').value;
 }
 
 // ==================== 匿名登录 & POI加载 ====================
@@ -935,13 +918,13 @@ function generateTimeline(nodes, startDate, startTime) {
     return { lines, dailyStats };
 }
 
-// ==================== 自设行程生成（含天气信息、时间校验和每日精细化温馨提示） ====================
+// ==================== 自设行程生成（含天气信息附加到每一天末尾、时间校验和每日精细化温馨提示） ====================
 async function generateCustomTrip() {
     const valid = routeLegs.filter(l => l.id && l.id !== 'county');
     if (valid.length === 0) return alert('请至少选择一个景区');
 
     const dateStr = document.getElementById('trip-date').value;
-    const startTime = getSelectedTime(); // 从下拉框获取
+    const startTime = getSelectedTime();
     if (!dateStr) return alert('选择出发日期');
     if (!startTime) return alert('选择出发时间');
 
@@ -981,14 +964,31 @@ async function generateCustomTrip() {
         lines: daysMap[date]
     }));
 
+    // 获取天气信息（只获取一次）
+    let weatherTip = '';
+    try {
+        const weather = await fetchTongjiangWeather();
+        if (weather) {
+            weatherTip = getWeatherTip(weather);
+        } else {
+            weatherTip = '⚠️ 天气信息获取失败，请自行关注天气变化。';
+        }
+    } catch (e) {
+        weatherTip = '⚠️ 天气信息获取失败，请自行关注天气变化。';
+    }
+
+    // 构建HTML显示，将天气提示附加到每一天的末尾
     let html = '';
     days.forEach((d, i) => {
         html += `<div class="day-header">📅 第${i+1}天 (${d.date})</div>`;
         d.lines.forEach(l => {
             html += `<div class="trip-line">${l.text}</div>`;
         });
+        // 在当天行程末尾添加天气提示
+        html += `<div class="trip-line" style="color:#0d47a1;">${weatherTip}</div>`;
     });
 
+    // 生成温馨提示（不含天气，天气已单独附加）
     let tips = [];
     let totalTransport = 0, totalVisit = 0;
     dailyStats.forEach(stat => {
@@ -1000,15 +1000,6 @@ async function generateCustomTrip() {
     tips.push(`📊 活动总时长：${totalActivity}分钟（约${(totalActivity/60).toFixed(1)}小时），其中交通${totalTransport}分钟，游览${totalVisit}分钟。`);
     if (mealCount > 0) tips.push(`🍴 包含 ${mealCount} 次用餐，预计总耗时约 ${Math.round((totalActivity + mealCount*60)/60)} 小时。`);
     if (days.length > 1) tips.push(`🏨 行程跨${days.length}天，请合理安排住宿。`);
-
-    try {
-        const weather = await fetchTongjiangWeather();
-        if (weather) {
-            tips.push(getWeatherTip(weather));
-        }
-    } catch (e) {
-        console.warn('[天气] 获取天气失败，跳过');
-    }
 
     dailyStats.forEach((stat, idx) => {
         const dayNum = idx + 1;
@@ -1047,7 +1038,7 @@ async function generateCustomTrip() {
         mode,
         people,
         nodes: nodes.map(n => ({ id: n.id, name: n.name, transportTime: n.transportTime, visitDuration: n.visitDuration })),
-        days: days.map(d => ({ date: d.date, lines: d.lines })),
+        days: days.map(d => ({ date: d.date, lines: d.lines, weatherTip: weatherTip })),
         tips
     };
 }
@@ -1072,7 +1063,11 @@ function renderMyTrip() {
     let html = '';
     trips.forEach((trip, i) => {
         html += `<div class="card"><div class="collapse-header" onclick="toggleTripDetail(${i})">📅 ${trip.name} | ${trip.date} ${trip.time}</div><div id="trip-detail-${i}" class="hidden">`;
-        if (trip.days) trip.days.forEach(day => html += `<div class="day-header">📅 ${day.date}</div>` + day.lines.map(l => `<div class="trip-line">${l.text}</div>`).join(''));
+        if (trip.days) trip.days.forEach(day => {
+            html += `<div class="day-header">📅 ${day.date}</div>`;
+            day.lines.forEach(l => html += `<div class="trip-line">${l.text}</div>`);
+            if (day.weatherTip) html += `<div class="trip-line" style="color:#0d47a1;">${day.weatherTip}</div>`;
+        });
         if (trip.tips) html += `<div class="warn-list">${trip.tips.map(t => `<div>${t}</div>`).join('')}</div>`;
         html += `<button class="btn btn-danger" onclick="event.stopPropagation(); deleteTrip(${i})">删除</button></div></div>`;
     });

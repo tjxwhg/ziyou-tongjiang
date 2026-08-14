@@ -385,7 +385,8 @@ function initMap() {
     L.tileLayer('https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}',{
         subdomains:['1','2','3','4'], maxZoom:18
     }).addTo(map);
-    L.control.zoom({ position: 'topright' }).addTo(map);
+    // 缩放按钮放在左上角，避免与右上角“我的”按钮重叠
+    L.control.zoom({ position: 'topleft' }).addTo(map);
 
     initAnonymousAuth().then(() => loadAllPOIs());
     setTimeout(activateSpeech, 500);
@@ -595,7 +596,7 @@ async function submitReservationDirect(merchantId) {
     else { alert('预约已提交'); document.getElementById(`reserve-form-${merchantId}`).classList.add('hidden'); }
 }
 
-// ==================== 路线（含推荐线路使用功能，支持出发地点选择） ====================
+// ==================== 路线（含推荐线路使用功能） ====================
 async function loadRoutes(){
     const { data } = await sb.from('ztj_routes').select('*');
     document.getElementById('routeList').innerHTML = data.map(r => `<div class="card"><h3>${r.name}</h3><p>${r.days||1}天 | ${r.transport||'自驾'}</p><button class="btn btn-primary" onclick="showRouteDetail(${r.id})">查看详情</button></div>`).join('');
@@ -626,19 +627,16 @@ async function showRouteDetail(id){
     document.body.appendChild(panel);
 }
 
-// ===== 使用路线生成行程（增加出发地点选择） =====
+// ===== 使用路线生成行程 =====
 async function useRoute(routeId) {
-    // 获取路线数据
     const { data: route } = await sb.from('ztj_routes').select('*').eq('id', routeId).single();
     const { data: nodes } = await sb.from('ztj_route_nodes').select('*').eq('route_id', routeId).order('order_num');
     if (!nodes || nodes.length === 0) { alert('该路线无节点'); return; }
 
-    // 获取所有可用出发地点（红军广场 + 所有POI）
     const startOptions = [
         { id: 'county', name: '红军广场' },
         ...allPois.filter(p => !p.parent_id).map(p => ({ id: p.id, name: p.name }))
     ];
-    // 如果有定位，添加“我的位置”
     if (currentGcjPos) {
         startOptions.unshift({ id: 'mylocation', name: '📍 我的位置' });
     }
@@ -688,10 +686,8 @@ async function useRoute(routeId) {
         if (selectedDateTime < new Date()) { alert('出发时间不能早于当前时间'); return; }
         overlay.remove();
         
-        // 构建节点数据
         const poiMap = {};
         allPois.forEach(p => poiMap[p.id] = p);
-        // 获取出发地点信息
         let startPoi = null;
         if (startId === 'county') startPoi = COUNTY;
         else if (startId === 'mylocation') {
@@ -702,37 +698,29 @@ async function useRoute(routeId) {
             if (!startPoi) { alert('出发地点不存在'); return; }
         }
         
-        // 构建行程项目列表：先出发，然后按节点顺序（每个节点包含其项目）
         const allActivities = [];
-        // 第一个节点前的交通
         const firstNode = nodes[0];
         const firstPoi = poiMap[firstNode.poi_id];
         if (!firstPoi) { alert('第一个节点POI不存在'); return; }
-        // 添加出发
         allActivities.push({ type: 'start', name: `从 ${startPoi.name} 出发`, poi: startPoi });
-        // 计算从起点到第一个节点的交通
         const travelTime1 = getTransportTime(startPoi.id, firstPoi.id, 'auto');
         if (travelTime1 !== null && travelTime1 > 0) {
             allActivities.push({ type: 'transport', name: `前往 ${firstPoi.name}`, duration: travelTime1, from: startPoi, to: firstPoi });
         } else {
             allActivities.push({ type: 'transport', name: `前往 ${firstPoi.name} (耗时未知)`, duration: 0, from: startPoi, to: firstPoi });
         }
-        // 遍历每个节点
         for (let i = 0; i < nodes.length; i++) {
             const n = nodes[i];
             const poi = poiMap[n.poi_id];
             if (!poi) { alert(`找不到POI ID ${n.poi_id}`); return; }
             const items = n.items || [];
-            // 如果节点没有项目，使用节点本身作为一项游览
             if (items.length === 0) {
                 allActivities.push({ type: 'visit', name: poi.name + '游览', duration: n.duration_min || poi.visit_duration || 60, poi: poi });
             } else {
-                // 按顺序添加所有项目
                 items.forEach(item => {
                     allActivities.push({ type: 'visit', name: item.name, duration: item.duration, poi: poi });
                 });
             }
-            // 如果不是最后一个节点，计算到下一节点的交通
             if (i < nodes.length - 1) {
                 const nextPoi = poiMap[nodes[i+1].poi_id];
                 if (!nextPoi) { alert(`找不到下一个POI`); return; }
@@ -745,7 +733,6 @@ async function useRoute(routeId) {
             }
         }
         
-        // 生成时间线
         const timeline = generateRouteTimeline(allActivities, dateStr, startTime);
         const days = timeline.days;
         const weatherForecast = await fetchWeatherForecast();
@@ -763,7 +750,6 @@ async function useRoute(routeId) {
                 html += `<div class="trip-line" ${l.isWeather ? 'style="color:#0d47a1;"' : ''}>${l.text}</div>`;
             });
         });
-        // 统计信息
         let totalTransport = 0, totalVisit = 0;
         allActivities.forEach(item => {
             if (item.type === 'transport') totalTransport += item.duration || 0;
@@ -779,7 +765,6 @@ async function useRoute(routeId) {
             tips.push(`💡 由于当日行程时间较长，建议您考虑将部分景点调整到第二天，或选择更近的景点。`);
         }
         
-        // 保存到 localStorage
         const tripData = {
             name: route.name + ' (推荐路线)',
             date: dateStr,
@@ -795,7 +780,6 @@ async function useRoute(routeId) {
         localStorage.setItem('trips', JSON.stringify(trips));
         alert('行程已保存到"我的行程"！');
         
-        // 显示在路线面板
         document.getElementById('generated-trip').innerHTML = `<div class="card">${html}</div>`;
         document.getElementById('trip-warnings').innerHTML = tips.length ? `<div class="warn-list"><strong>💡 温馨提示：</strong>${tips.map(t=>`<div>${t}</div>`).join('')}</div>` : '';
         document.getElementById('saveGeneratedTripBtn').classList.add('hidden');
@@ -803,7 +787,6 @@ async function useRoute(routeId) {
     };
 }
 
-// ===== 路线时间线生成（通用） =====
 function generateRouteTimeline(activities, startDate, startTime) {
     let curDate = new Date(startDate);
     let [h, m] = startTime.split(':').map(Number);
@@ -920,7 +903,7 @@ function generateRouteTimeline(activities, startDate, startTime) {
     return { days, mealCount };
 }
 
-// ==================== 自设行程（原有功能，不变） ====================
+// ==================== 自设行程（原有功能） ====================
 function toggleCustomTripSection(){ document.getElementById('customTripSection').classList.toggle('hidden'); if(!document.getElementById('customTripSection').classList.contains('hidden')){ buildMainPoiOptions(); resetRouteLegs(); } }
 function buildMainPoiOptions(){
     const allMain = allPois.filter(p => !p.parent_id);

@@ -55,6 +55,11 @@
         .overlay-dialog { position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.5); z-index:9998; display:flex; justify-content:center; align-items:center; }
         .overlay-dialog .dialog-box { background:white; padding:20px; border-radius:8px; max-width:400px; width:90%; }
 
+        /* 修复：预约内容复选框样式，使项目垂直排列且左对齐 */
+        .checkbox-group label { display:flex; align-items:center; gap:8px; font-weight:normal; cursor:pointer; padding:4px 0; border-bottom:1px solid #f0f0f0; }
+        .checkbox-group label:last-child { border-bottom:none; }
+        .checkbox-group input[type="checkbox"] { width:auto; flex-shrink:0; }
+
         @media (max-width:480px) { .top-btn { font-size:12px; padding:4px 8px; } .float-btn { width:44px; height:44px; font-size:18px; } .locate-btn { bottom:120px; } .voice-toggle-btn { bottom:175px; } }
     </style>
 </head>
@@ -510,7 +515,7 @@ async function showPoiDetail(poi) {
     openPanel('merchantDetailPanel');
 }
 
-// ==================== 预约表单（修复：加载后立即更新子项目） ====================
+// ==================== 预约表单 ====================
 async function toggleReserveForm(merchantId) {
     const formDiv = document.getElementById(`reserve-form-${merchantId}`);
     if(!formDiv.classList.contains('hidden')){ formDiv.classList.add('hidden'); return; }
@@ -536,11 +541,10 @@ async function toggleReserveForm(merchantId) {
     `;
     window[`bizItems_${merchantId}`] = businessItems;
     formDiv.classList.remove('hidden');
-    // 关键修复：加载后立即更新子项目显示
+    // 加载后立即更新子项目显示
     updateReserveContent(merchantId);
 }
 
-// 更新子项目内容（修复匹配逻辑，大小写不敏感）
 window.updateReserveContent = function(merchantId) {
     const cat = document.getElementById(`res-cat-${merchantId}`)?.value;
     const container = document.getElementById(`res-content-${merchantId}`);

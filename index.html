@@ -542,7 +542,8 @@ window.updateReserveContent = function(merchantId) {
     const container = document.getElementById(`res-content-${merchantId}`);
     const bizItems = window[`bizItems_${merchantId}`] || [];
     if (!cat || !container) return;
-    const filtered = bizItems.filter(item => item.category === cat);
+    // 使用 trim() 确保匹配
+    const filtered = bizItems.filter(item => item.category && item.category.trim() === cat.trim());
     if (filtered.length > 0) {
         container.innerHTML = filtered.map((item, idx) => `
             <label>
@@ -740,13 +741,18 @@ async function useRoute(routeId) {
             if (weatherForecast && i < weatherForecast.length) {
                 weatherTip = getDayWeatherTip(weatherForecast[i]);
             }
-            days[i].lines.push({ text: weatherTip, isWeather: true });
+            days[i].lines.push(weatherTip); // 天气作为单独行
         }
         let html = '';
         days.forEach((d, i) => {
             html += `<div class="day-header">📅 第${i+1}天 (${d.date})</div>`;
             d.lines.forEach(l => {
-                html += `<div class="trip-line" ${l.isWeather ? 'style="color:#0d47a1;"' : ''}>${l.text}</div>`;
+                // 判断是否为天气行（以"🌤️"或"⚠️"开头）
+                if (l.startsWith('🌤️') || l.startsWith('⚠️')) {
+                    html += `<div class="trip-line" style="color:#0d47a1;">${l}</div>`;
+                } else {
+                    html += `<div class="trip-line">${l}</div>`;
+                }
             });
         });
         let totalTransport = 0, totalVisit = 0;
@@ -803,10 +809,7 @@ function generateRouteTimeline(activities, startDate, startTime) {
         // 如果是游览行（以⏱️开头），尝试与上一行合并
         if (text.startsWith('⏱️') && lines.length > 0) {
             const last = lines[lines.length - 1];
-            // 检查上一行是否也是同一景点的游览，且时间连续（last.end === start）
             if (last.text && last.text.startsWith('⏱️')) {
-                // 提取景点名称：格式 "⏱️ 12:30-13:00 游览 某某景点 (60分钟)"
-                // 取 "游览" 后面的部分，去掉 (数字分钟)
                 const lastParts = last.text.split('游览 ');
                 if (lastParts.length > 1) {
                     const lastSpot = lastParts[1].replace(/\(.*\)/, '').trim();
@@ -814,7 +817,6 @@ function generateRouteTimeline(activities, startDate, startTime) {
                     if (curParts.length > 1) {
                         const curSpot = curParts[1].replace(/\(.*\)/, '').trim();
                         if (lastSpot === curSpot && last.end === start) {
-                            // 合并：更新上一行的结束时间和文本
                             const newEnd = end;
                             const newText = `⏱️ ${formatTime(last.start)}-${formatTime(newEnd)} 游览 ${lastSpot} (${newEnd - last.start}分钟)`;
                             lines[lines.length - 1] = { start: last.start, end: newEnd, text: newText, date: last.date, isWeather: last.isWeather };
@@ -824,8 +826,9 @@ function generateRouteTimeline(activities, startDate, startTime) {
                 }
             }
         }
-        // 否则正常添加
-        lines.push({ start, end, text, date, isWeather });
+        // 复制日期，避免引用问题
+        const dateCopy = new Date(date);
+        lines.push({ start, end, text, date: dateCopy, isWeather });
     }
 
     function tryInsertLunch() {
@@ -980,10 +983,7 @@ function generateRouteTimeline(activities, startDate, startTime) {
         daysMap[key].push(l.text);
     });
     const days = Object.keys(daysMap).map(date => ({ date, lines: daysMap[date] }));
-    // 将天气提示追加到每天末尾（在外部处理）
-    // 这里返回lines对象也保留，但主要用于展示，我们在外部附加天气
-    // 为兼容，我们返回原始的lines（含合并后的）
-    return { days: days.map(d => ({ ...d, lines: d.lines })), mealCount };
+    return { days, mealCount };
 }
 
 // ==================== 自设行程时间线生成（带合并连续游览） ====================
@@ -1018,7 +1018,8 @@ function generateTimeline(nodes, startDate, startTime) {
                 }
             }
         }
-        lines.push({ start, end, text, date });
+        const dateCopy = new Date(date);
+        lines.push({ start, end, text, date: dateCopy });
     }
 
     function tryInsertLunch() {

@@ -18,6 +18,7 @@
         .btn-primary { background:#2e7d32; color:white; }
         .btn-danger { background:#c62828; color:white; }
         .btn-default { background:#e0e0e0; color:#333; }
+        .btn-sm { padding:2px 8px; font-size:12px; }
         .card { border:1px solid #ddd; padding:12px; margin:8px 0; border-radius:8px; background:#fafafa; }
         .hidden { display:none; }
         .inline-edit { background:#fff; border:1px solid #2e7d32; border-radius:8px; padding:12px; margin-top:8px; }
@@ -26,6 +27,8 @@
         .sub-poi-card { margin-left:20px; border-left:3px solid #2e7d32; }
         .poi-name-header { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; }
         .route-node { display:flex; gap:8px; align-items:center; margin:8px 0; flex-wrap:wrap; }
+        .route-node select { flex:1; min-width:120px; }
+        .route-node .btn-danger { font-size:12px; padding:2px 6px; }
         .poi-transport-group { margin-bottom:10px; border:1px solid #ccc; border-radius:6px; overflow:hidden; }
         .poi-transport-header { background:#f9f9f9; padding:10px; cursor:pointer; font-weight:bold; display:flex; justify-content:space-between; align-items:center; }
         .poi-transport-list { padding:10px; background:white; }
@@ -39,11 +42,10 @@
         .feedback-card { cursor:pointer; }
         .feedback-card .feedback-header { display:flex; justify-content:space-between; }
         .feedback-card .feedback-body { margin-top:8px; }
-        .sub-poi-edit-form { background:#f5f5f5; border:1px solid #2e7d32; border-radius:8px; padding:12px; margin-top:8px; }
-        .sub-poi-add-form { background:#f5f5f5; border:1px dashed #2e7d32; border-radius:8px; padding:12px; margin-top:8px; }
-        .sub-poi-item { display:flex; justify-content:space-between; align-items:center; padding:6px 0; border-bottom:1px solid #eee; }
-        .sub-poi-item:last-child { border-bottom:none; }
-        .sub-poi-item .actions { display:flex; gap:4px; }
+        .item-list { margin-left:20px; border-left:2px solid #2e7d32; padding-left:10px; }
+        .item-entry { display:flex; gap:8px; align-items:center; margin:4px 0; }
+        .item-entry input { flex:1; }
+        .item-entry .btn-danger { padding:0 6px; }
     </style>
 </head>
 <body>
@@ -132,7 +134,7 @@ const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 let currentUser = null;
 const POI_CATEGORIES = ['自然景区','红色景区','文博场馆','餐饮住宿','交通枢纽','游玩娱乐','特产购物','公共服务'];
 const EXCLUDED_TRANSPORT_CATS = ['公共服务','游玩娱乐','特产购物'];
-let routeNodes = [];
+let routeNodes = []; // 每个元素：{ poi_id, duration_min, items: [{name, duration}] }
 let allTransportPresets = {};
 let mainPoisForTransport = [];
 let allMainPois = [];
@@ -321,14 +323,13 @@ async function uploadPoiVoice(poiId, input){
     if(urlInput) urlInput.value = publicUrl;
 }
 
-// ================== 子点管理（折叠式，内联编辑） ==================
+// ================== 子点管理 ==================
 async function manageSubPois(poiId){
     const container = document.getElementById(`sub-pois-${poiId}`);
     if(!container.classList.contains('hidden')){ container.classList.add('hidden'); return; }
     container.classList.remove('hidden');
     await loadSubPois(poiId);
 }
-
 async function loadSubPois(parentId){
     const container = document.getElementById(`sub-pois-${parentId}`);
     const { data: subs } = await sb.from('ztj_poi').select('*').eq('parent_id', parentId).order('sort_order');
@@ -362,8 +363,6 @@ async function loadSubPois(parentId){
     }
     container.innerHTML = html;
 }
-
-// 新增子点（非弹窗，使用上方表单）
 async function addSubPoi(parentId){
     const name = document.getElementById(`sub-new-name-${parentId}`).value.trim();
     const lat = parseFloat(document.getElementById(`sub-new-lat-${parentId}`).value);
@@ -382,7 +381,6 @@ async function addSubPoi(parentId){
         status: 'active'
     }).select();
     if(error){ alert('添加失败：'+error.message); return; }
-    // 处理MP3
     const voiceFile = document.getElementById(`sub-new-voice-${parentId}`).files[0];
     if(voiceFile && inserted.length){
         const poiId = inserted[0].id;
@@ -395,10 +393,8 @@ async function addSubPoi(parentId){
     }
     alert('子点添加成功');
     loadSubPois(parentId);
-    loadPOIs(); // 刷新主列表（可选）
+    loadPOIs();
 }
-
-// 切换子点编辑
 async function toggleEditSubPoi(subId, parentId){
     const container = document.getElementById(`edit-sub-poi-${subId}`);
     if(!container.classList.contains('hidden')){ container.classList.add('hidden'); return; }
@@ -420,7 +416,6 @@ async function toggleEditSubPoi(subId, parentId){
     `;
     container.classList.remove('hidden');
 }
-
 async function saveSubPoiEdit(subId, parentId){
     const name = document.getElementById(`sub-edit-name-${subId}`).value.trim();
     const lat = parseFloat(document.getElementById(`sub-edit-lat-${subId}`).value);
@@ -441,7 +436,6 @@ async function saveSubPoiEdit(subId, parentId){
     loadSubPois(parentId);
     loadPOIs();
 }
-
 async function uploadSubPoiVoice(subId, input){
     const file = input.files[0];
     if(!file) return;
@@ -452,19 +446,15 @@ async function uploadSubPoiVoice(subId, input){
     const { error: updateErr } = await sb.from('ztj_poi').update({ voice_mp3: publicUrl }).eq('id', subId);
     if(updateErr){ alert('更新字段失败：'+updateErr.message); return; }
     alert('MP3已上传并关联');
-    // 刷新当前编辑表单中的URL显示
     const urlInput = document.querySelector(`#edit-sub-poi-${subId} input[readonly]`);
     if(urlInput) urlInput.value = publicUrl;
 }
-
 async function removeFromParent(subId, parentId){
     if(!confirm('确定将此子点移出（变为独立主景区）？')) return;
     await sb.from('ztj_poi').update({ parent_id: null }).eq('id', subId);
     loadSubPois(parentId);
     loadPOIs();
 }
-
-// ================== 删除POI（含子点清理） ==================
 async function deletePoi(id){
     if(confirm('确定删除此POI？将同时解除关联的商户、交通预设、路线节点，并删除子点。')){
         await sb.from('ztj_merchants').update({ poi_id: null }).eq('poi_id', id);
@@ -477,7 +467,7 @@ async function deletePoi(id){
     }
 }
 
-// ================== 路线管理 ==================
+// ================== 路线管理（含项目支持） ==================
 async function loadPoiOptionsForRoute(){
     const { data } = await sb.from('ztj_poi').select('id,name').order('name');
     window.poiOptions = data || [];
@@ -488,25 +478,68 @@ async function renderRouteNodes(){
     const opts = (window.poiOptions||[]).map(p => `<option value="${p.id}">${p.name}</option>`).join('');
     let html = '';
     routeNodes.forEach((n, i) => {
-        html += `<div class="route-node">
-            <select onchange="updateRouteNode(${i},'poi_id',this.value)">
-                <option value="">--选择--</option>${opts}
-            </select>
-            <input type="number" value="${n.duration_min||60}" placeholder="分钟" style="width:80px" onchange="updateRouteNode(${i},'duration_min',this.value)">
-            <button class="btn btn-danger" onclick="removeRouteNode(${i})">删除</button>
+        html += `<div class="route-node" style="flex-wrap:wrap;">
+            <div style="display:flex; gap:8px; align-items:center; width:100%;">
+                <select onchange="updateRouteNode(${i},'poi_id',this.value)" style="flex:1;">
+                    <option value="">--选择--</option>${opts}
+                </select>
+                <input type="number" value="${n.duration_min||60}" placeholder="分钟" style="width:80px" onchange="updateRouteNode(${i},'duration_min',this.value)">
+                <button class="btn btn-default btn-sm" onclick="toggleItemsManager(${i})">📋 项目</button>
+                <button class="btn btn-danger" onclick="removeRouteNode(${i})">删除</button>
+            </div>
+            <div id="items-manager-${i}" style="width:100%; margin-top:4px; display:${n.items && n.items.length ? 'block' : 'none'};">
+                <div style="background:#f9f9f9; border-radius:4px; padding:6px;">
+                    <div style="display:flex; gap:8px; margin-bottom:4px;">
+                        <input type="text" placeholder="项目名称" id="item-name-${i}" style="flex:2; padding:4px;">
+                        <input type="number" placeholder="分钟" id="item-dur-${i}" style="width:60px; padding:4px;">
+                        <button class="btn btn-primary btn-sm" onclick="addItem(${i})">添加</button>
+                    </div>
+                    <div id="item-list-${i}">
+                        ${(n.items||[]).map((item, idx) => `<div class="item-entry">
+                            <span>${item.name} (${item.duration}分钟)</span>
+                            <button class="btn btn-danger btn-sm" onclick="removeItem(${i}, ${idx})">✕</button>
+                        </div>`).join('')}
+                    </div>
+                </div>
+            </div>
         </div>`;
     });
     container.innerHTML = html;
+    // 恢复选中值
     routeNodes.forEach((n, i) => {
         const sel = container.querySelectorAll('select')[i];
         if(sel && n.poi_id) sel.value = String(n.poi_id);
     });
 }
+function toggleItemsManager(idx){
+    const div = document.getElementById(`items-manager-${idx}`);
+    if(div.style.display === 'none' || div.style.display === '') {
+        div.style.display = 'block';
+    } else {
+        div.style.display = 'none';
+    }
+}
+function addItem(idx){
+    const nameInput = document.getElementById(`item-name-${idx}`);
+    const durInput = document.getElementById(`item-dur-${idx}`);
+    const name = nameInput.value.trim();
+    const dur = parseInt(durInput.value) || 30;
+    if(!name) return alert('请输入项目名称');
+    if(!routeNodes[idx].items) routeNodes[idx].items = [];
+    routeNodes[idx].items.push({ name, duration: dur });
+    nameInput.value = '';
+    durInput.value = '';
+    renderRouteNodes();
+}
+function removeItem(idx, itemIdx){
+    routeNodes[idx].items.splice(itemIdx, 1);
+    renderRouteNodes();
+}
 function updateRouteNode(idx, field, value){
     if(field==='poi_id') routeNodes[idx].poi_id = value || '';
     else routeNodes[idx].duration_min = parseInt(value)||60;
 }
-function addRouteNode(){ routeNodes.push({ poi_id: '', duration_min: 60 }); renderRouteNodes(); }
+function addRouteNode(){ routeNodes.push({ poi_id: '', duration_min: 60, items: [] }); renderRouteNodes(); }
 function removeRouteNode(idx){ routeNodes.splice(idx,1); renderRouteNodes(); }
 
 function toggleRouteForm(editMode = false){
@@ -534,7 +567,12 @@ async function editRoute(id){
     document.getElementById('route-name').value = route.name;
     document.getElementById('route-start-time').value = route.start_time || '08:30';
     document.getElementById('route-transport').value = route.transport || '';
-    routeNodes = (nodes||[]).map(n => ({ poi_id: n.poi_id, duration_min: n.duration_min }));
+    // 加载节点，并解析 items
+    routeNodes = (nodes||[]).map(n => ({
+        poi_id: n.poi_id,
+        duration_min: n.duration_min || 60,
+        items: n.items || []  // 假设数据库有 items JSONB 字段
+    }));
     await loadPoiOptionsForRoute();
     renderRouteNodes();
 }
@@ -561,7 +599,8 @@ async function saveRoute(){
         order_num: i+1,
         duration_min: n.duration_min || 60,
         transport_mode: '步行',
-        transport_time: 0
+        transport_time: 0,
+        items: n.items || []  // JSON 数组
     }));
     if(nodesPayload.length === 0){ alert('请至少添加一个有效节点'); return; }
     const { error } = await sb.from('ztj_route_nodes').insert(nodesPayload);
@@ -593,7 +632,6 @@ function getExcludedTransportPois(){
 function setExcludedTransportPois(arr){
     localStorage.setItem('excludedTransportPois', JSON.stringify(arr));
 }
-
 async function loadTransportEditor(){
     const { data: pois } = await sb.from('ztj_poi').select('id,name,category').is('parent_id', null).order('name');
     allMainPois = pois || [];
@@ -646,7 +684,6 @@ function renderTransportEditor(){
     });
     container.innerHTML = html;
 }
-
 function addTransportPoi(){
     const excludedIds = getExcludedTransportPois();
     const availablePois = allMainPois.filter(p => !mainPoisForTransport.some(mp => mp.id === p.id));
@@ -678,7 +715,6 @@ function addTransportPoi(){
         dialog.remove();
     };
 }
-
 function removeTransportPoi(id){
     mainPoisForTransport = mainPoisForTransport.filter(p => p.id != id);
     const excluded = getExcludedTransportPois();
@@ -686,7 +722,6 @@ function removeTransportPoi(id){
     setExcludedTransportPois(excluded);
     renderTransportEditor();
 }
-
 async function handleTransportChange(input){
     const from = parseInt(input.dataset.from), to = parseInt(input.dataset.to), val = input.value.trim();
     const statusEl = input.parentElement.querySelector('.save-status');

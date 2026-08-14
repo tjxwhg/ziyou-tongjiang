@@ -510,7 +510,7 @@ async function showPoiDetail(poi) {
     openPanel('merchantDetailPanel');
 }
 
-// ==================== 预约表单 ====================
+// ==================== 预约表单（修复：加载后立即更新子项目） ====================
 async function toggleReserveForm(merchantId) {
     const formDiv = document.getElementById(`reserve-form-${merchantId}`);
     if(!formDiv.classList.contains('hidden')){ formDiv.classList.add('hidden'); return; }
@@ -536,23 +536,21 @@ async function toggleReserveForm(merchantId) {
     `;
     window[`bizItems_${merchantId}`] = businessItems;
     formDiv.classList.remove('hidden');
+    // 关键修复：加载后立即更新子项目显示
+    updateReserveContent(merchantId);
 }
 
-// ===== 修复：预约子项目显示逻辑（大小写不敏感、去除空格） =====
+// 更新子项目内容（修复匹配逻辑，大小写不敏感）
 window.updateReserveContent = function(merchantId) {
     const cat = document.getElementById(`res-cat-${merchantId}`)?.value;
     const container = document.getElementById(`res-content-${merchantId}`);
     const bizItems = window[`bizItems_${merchantId}`] || [];
-    // 调试：输出当前类别和所有项目
-    console.log('[预约] 类别:', cat, '项目数量:', bizItems.length);
     if (!cat || !container) return;
-    // 标准化：去除首尾空格，转小写比较
     const trimmedCat = cat.trim().toLowerCase();
     const filtered = bizItems.filter(item => {
         if (!item.category) return false;
         return item.category.trim().toLowerCase() === trimmedCat;
     });
-    console.log('[预约] 匹配结果数量:', filtered.length);
     if (filtered.length > 0) {
         container.innerHTML = filtered.map((item, idx) => `
             <label>

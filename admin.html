@@ -468,11 +468,10 @@ async function deletePoi(id){
     }
 }
 
-// ================== 路线管理（含项目顺序支持） ==================
+// ================== 路线管理（含项目顺序支持，时长允许0） ==================
 async function loadPoiOptionsForRoute(){
     const { data } = await sb.from('ztj_poi').select('id,name').order('name');
     window.poiOptions = data || [];
-    // 填充默认出发地点下拉
     const startSel = document.getElementById('route-default-start');
     if(startSel) {
         startSel.innerHTML = '<option value="county">红军广场</option>';
@@ -488,7 +487,7 @@ async function renderRouteNodes(){
     routeNodes.forEach((n, i) => {
         const itemsHtml = (n.items||[]).map((item, idx) => `
             <div class="item-entry">
-                <span>${item.name} (${item.duration}分钟)</span>
+                <span>${item.name}（${item.duration}分钟）</span>
                 <button class="btn btn-default btn-sm" onclick="moveItem(${i}, ${idx}, -1)">▲</button>
                 <button class="btn btn-default btn-sm" onclick="moveItem(${i}, ${idx}, 1)">▼</button>
                 <button class="btn btn-danger btn-sm" onclick="removeItem(${i}, ${idx})">✕</button>
@@ -507,7 +506,7 @@ async function renderRouteNodes(){
                 <div style="background:#f9f9f9; border-radius:4px; padding:6px;">
                     <div style="display:flex; gap:8px; margin-bottom:4px;">
                         <input type="text" placeholder="项目名称" id="item-name-${i}" style="flex:2; padding:4px;">
-                        <input type="number" placeholder="分钟" id="item-dur-${i}" style="width:60px; padding:4px;">
+                        <input type="number" placeholder="分钟（0为自由）" id="item-dur-${i}" style="width:70px; padding:4px;" min="0">
                         <button class="btn btn-primary btn-sm" onclick="addItem(${i})">添加</button>
                     </div>
                     <div id="item-list-${i}">${itemsHtml}</div>
@@ -530,7 +529,7 @@ function addItem(idx){
     const nameInput = document.getElementById(`item-name-${idx}`);
     const durInput = document.getElementById(`item-dur-${idx}`);
     const name = nameInput.value.trim();
-    const dur = parseInt(durInput.value) || 30;
+    const dur = parseInt(durInput.value) || 0;  // 允许为0
     if(!name) return alert('请输入项目名称');
     if(!routeNodes[idx].items) routeNodes[idx].items = [];
     routeNodes[idx].items.push({ name, duration: dur });

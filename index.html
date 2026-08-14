@@ -543,6 +543,7 @@ window.updateReserveContent = function(merchantId) {
     const bizItems = window[`bizItems_${merchantId}`] || [];
     if (!cat || !container) return;
     const filtered = bizItems.filter(item => item.category === cat);
+    // 修改：无论几个项目，都渲染；如果空则显示无相关项目
     if (filtered.length > 0) {
         container.innerHTML = filtered.map((item, idx) => `
             <label>
@@ -786,7 +787,7 @@ async function useRoute(routeId) {
     };
 }
 
-// ===== 路线时间线生成（重构版：就餐时剩余不足60则先完成游览） =====
+// ===== 路线时间线生成 =====
 function generateRouteTimeline(activities, startDate, startTime) {
     let curDate = new Date(startDate);
     let [h, m] = startTime.split(':').map(Number);
@@ -805,10 +806,7 @@ function generateRouteTimeline(activities, startDate, startTime) {
 
     function tryInsertLunch() {
         if (!lunchDone && curMin >= LUNCH_TRIGGER) {
-            if (currentVisitLeft > 0 && currentVisitLeft < 60) {
-                // 剩余不足60，先完成游览，返回false阻止插入
-                return false;
-            }
+            if (currentVisitLeft > 0 && currentVisitLeft < 60) return false;
             addLine(curMin, `🍽️ 午餐时间 (${formatTime(curMin)}-${formatTime(curMin+MEAL_DURATION)})`, curDate);
             curMin += MEAL_DURATION;
             lunchDone = true;
@@ -820,9 +818,7 @@ function generateRouteTimeline(activities, startDate, startTime) {
 
     function tryInsertDinner() {
         if (!dinnerDone && curMin >= DINNER_TRIGGER) {
-            if (currentVisitLeft > 0 && currentVisitLeft < 60) {
-                return false;
-            }
+            if (currentVisitLeft > 0 && currentVisitLeft < 60) return false;
             addLine(curMin, `🍽️ 晚餐时间 (${formatTime(curMin)}-${formatTime(curMin+MEAL_DURATION)})`, curDate);
             curMin += MEAL_DURATION;
             dinnerDone = true;
@@ -851,7 +847,6 @@ function generateRouteTimeline(activities, startDate, startTime) {
 
     function gotoNextDay() {
         if (curMin >= DAY_END) {
-            // 如果当前有游览剩余不足60，先完成（但这里其实不会发生，因为我们在游览循环中处理了）
             if (currentVisitLeft > 0 && currentVisitLeft < 60) {
                 let spend = currentVisitLeft;
                 addLine(curMin, `⏱️ ${formatTime(curMin)}-${formatTime(curMin+spend)} 游览剩余 (${spend}分钟)`, curDate);
@@ -886,7 +881,6 @@ function generateRouteTimeline(activities, startDate, startTime) {
             }
             let endMin = curMin;
             addLine(startMin, `🚗 ${formatTime(startMin)}-${formatTime(endMin)} ${act.name} (${act.duration}分钟)`, curDate);
-            // 交通后不插入就餐
         } else if (act.type === 'visit') {
             let visitLeft = act.duration;
             currentVisitLeft = visitLeft;
@@ -894,21 +888,16 @@ function generateRouteTimeline(activities, startDate, startTime) {
                 if (curMin < DAY_START) curMin = DAY_START;
                 if (curMin >= DAY_END) gotoNextDay();
 
-                // 检查是否可以插入午餐/晚餐
                 let lunchInserted = tryInsertLunch();
                 let dinnerInserted = false;
                 if (!lunchInserted) {
                     dinnerInserted = tryInsertDinner();
                 }
-
-                // 如果插入了一餐，则继续循环（时间已经推进，重新检查）
                 if (lunchInserted || dinnerInserted) {
                     continue;
                 }
 
-                // 未插入任何餐，分配游览时间
                 if (visitLeft < 60) {
-                    // 剩余不足60，一次性完成
                     let spend = visitLeft;
                     let endMin = curMin + spend;
                     addLine(curMin, `⏱️ ${formatTime(curMin)}-${formatTime(endMin)} 游览 ${act.name} (${act.duration}分钟)`, curDate);
@@ -916,7 +905,6 @@ function generateRouteTimeline(activities, startDate, startTime) {
                     visitLeft = 0;
                     currentVisitLeft = 0;
                 } else {
-                    // 剩余足够，分配一段直到下一餐或当天结束
                     let nextBreak = DAY_END;
                     if (!lunchDone && curMin < LUNCH_TRIGGER) nextBreak = LUNCH_TRIGGER;
                     else if (!dinnerDone && curMin < DINNER_TRIGGER) nextBreak = DINNER_TRIGGER;
@@ -930,17 +918,14 @@ function generateRouteTimeline(activities, startDate, startTime) {
                     currentVisitLeft = visitLeft;
                 }
             }
-            // 游览结束后，尝试插入就餐
             if (curMin < DAY_END) {
                 tryInsertLunch();
                 tryInsertDinner();
             }
         }
-        // 每个活动后检查跨天
         if (curMin >= DAY_END) gotoNextDay();
     }
 
-    // 最终清理
     if (curMin < DAY_END) {
         tryInsertLunch();
         tryInsertDinner();
@@ -961,7 +946,7 @@ function generateRouteTimeline(activities, startDate, startTime) {
     return { days, mealCount };
 }
 
-// ==================== 自设行程时间线生成（重构版） ====================
+// ==================== 自设行程时间线生成 ====================
 function generateTimeline(nodes, startDate, startTime) {
     let curDate = new Date(startDate);
     let [h, m] = startTime.split(':').map(Number);
@@ -979,9 +964,7 @@ function generateTimeline(nodes, startDate, startTime) {
 
     function tryInsertLunch() {
         if (!lunchDone && curMin >= LUNCH_TRIGGER) {
-            if (currentVisitLeft > 0 && currentVisitLeft < 60) {
-                return false;
-            }
+            if (currentVisitLeft > 0 && currentVisitLeft < 60) return false;
             addLine(curMin, `🍽️ 午餐时间 (${formatTime(curMin)}-${formatTime(curMin+MEAL_DURATION)})`, curDate);
             curMin += MEAL_DURATION;
             lunchDone = true;
@@ -993,9 +976,7 @@ function generateTimeline(nodes, startDate, startTime) {
 
     function tryInsertDinner() {
         if (!dinnerDone && curMin >= DINNER_TRIGGER) {
-            if (currentVisitLeft > 0 && currentVisitLeft < 60) {
-                return false;
-            }
+            if (currentVisitLeft > 0 && currentVisitLeft < 60) return false;
             addLine(curMin, `🍽️ 晚餐时间 (${formatTime(curMin)}-${formatTime(curMin+MEAL_DURATION)})`, curDate);
             curMin += MEAL_DURATION;
             dinnerDone = true;
@@ -1040,13 +1021,10 @@ function generateTimeline(nodes, startDate, startTime) {
         }
     }
 
-    // 出发
     addLine(curMin, `🚩 ${formatTime(curMin)} 从 ${nodes[0].name} 出发`, curDate);
 
     for (let i = 1; i < nodes.length; i++) {
         const cur = nodes[i];
-
-        // --- 交通 ---
         let travelTime = cur.transportTime || 0;
         if (travelTime > 0) {
             if (curMin >= DAY_END) gotoNextDay();
@@ -1066,7 +1044,6 @@ function generateTimeline(nodes, startDate, startTime) {
             addLine(curMin, `⚠️ 前往 ${cur.name} 交通耗时未知`, curDate);
         }
 
-        // --- 游览或到达 ---
         if (cur.visitDuration > 0 && !isNonVisitPoi(cur.id)) {
             let visitLeft = cur.visitDuration;
             currentVisitLeft = visitLeft;
@@ -1104,13 +1081,11 @@ function generateTimeline(nodes, startDate, startTime) {
                     currentVisitLeft = visitLeft;
                 }
             }
-            // 游览结束，尝试插入就餐
             if (curMin < DAY_END) {
                 tryInsertLunch();
                 tryInsertDinner();
             }
         } else if (isNonVisitPoi(cur.id)) {
-            // 非游览POI：直接“到达”
             addLine(curMin, `📍 ${formatTime(curMin)} 到达 ${cur.name}`, curDate);
             if (curMin < DAY_END) {
                 tryInsertLunch();
@@ -1126,11 +1101,9 @@ function generateTimeline(nodes, startDate, startTime) {
                 if (curMin >= DINNER_TRIGGER) dinnerDone = true;
             }
         }
-        // 每个节点后检查跨天
         if (curMin >= DAY_END) gotoNextDay();
     }
 
-    // 最后清理
     if (curMin < DAY_END) {
         tryInsertLunch();
         tryInsertDinner();
@@ -1146,6 +1119,50 @@ function generateTimeline(nodes, startDate, startTime) {
     });
     const days = Object.keys(daysMap).map(date => ({ date, lines: daysMap[date] }));
     return { days, mealCount };
+}
+
+// ==================== 自设行程界面操作（确保事件绑定正常） ====================
+function toggleCustomTripSection(){
+    document.getElementById('customTripSection').classList.toggle('hidden');
+    if(!document.getElementById('customTripSection').classList.contains('hidden')){
+        buildMainPoiOptions();
+        resetRouteLegs();
+    }
+}
+function buildMainPoiOptions(){
+    const allMain = allPois.filter(p => !p.parent_id);
+    mainPoiOptions = allMain.filter(p => p.id !== 'county');
+    if (currentGcjPos) mainPoiOptions.unshift({ id:'mylocation', name:'📍 我的位置', lat: currentGcjPos.lat, lng: currentGcjPos.lng });
+    mainPoiOptions.unshift(COUNTY);
+    allowedPoiOptions = allMain.filter(p => {
+        if(!p.category) return false;
+        const cats = p.category.split(',');
+        return !cats.some(c => EXCLUDED_FROM_TRIP.includes(c));
+    });
+    if(!allowedPoiOptions.some(p => p.id === 'county')) allowedPoiOptions.unshift(COUNTY);
+}
+function resetRouteLegs(){ routeLegs=[{...COUNTY}]; renderDynamicRoute(); }
+function addRouteLeg(){ routeLegs.push({id:'',name:''}); renderDynamicRoute(); }
+function removeLeg(idx){ if(idx>0){ routeLegs.splice(idx,1); renderDynamicRoute(); } }
+function updateStartPoint(v){ const p=mainPoiOptions.find(p=>String(p.id)===v); routeLegs[0]=p||COUNTY; updateAllTimes(); }
+function updateLeg(idx,v){ const p=allowedPoiOptions.find(p=>String(p.id)===v); if(p) routeLegs[idx]=p; else routeLegs[idx]={id:'',name:''}; renderDynamicRoute(); }
+function renderDynamicRoute(){
+    let h=`<div class="route-node"><select onchange="updateStartPoint(this.value)">${mainPoiOptions.map(p=>`<option value="${p.id}" ${routeLegs[0]?.id==p.id?'selected':''}>${p.name}</option>`).join('')}</select><span>→</span></div>`;
+    routeLegs.forEach((l,i)=>{
+        if(i===0) return;
+        h+=`<div class="route-node"><select onchange="updateLeg(${i},this.value)"><option value="">--选择--</option>${allowedPoiOptions.map(p=>`<option value="${p.id}" ${l.id==p.id?'selected':''}>${p.name}</option>`).join('')}</select>${i<routeLegs.length-1?`<span class="route-time" id="time-${i}"></span>`:''}<button class="btn btn-danger" onclick="removeLeg(${i})">删除</button></div>`;
+    });
+    document.getElementById('dynamic-route').innerHTML=h;
+    updateAllTimes();
+}
+async function updateAllTimes(){
+    for(let i=1;i<routeLegs.length;i++){
+        const span=document.getElementById(`time-${i}`);
+        if(span&&routeLegs[i-1].id&&routeLegs[i].id){
+            const t=getTransportTime(routeLegs[i-1].id, routeLegs[i].id, document.getElementById('trip-mode')?.value||'auto');
+            span.textContent = t !== null ? `⏱️约${t}分钟` : '⏱️暂无数据';
+        }
+    }
 }
 
 async function generateCustomTrip() {
@@ -1238,6 +1255,7 @@ function deleteTrip(idx){
     renderMyTrip();
 }
 
+// ==================== 我的预约 & 反馈 ====================
 async function loadMyReservations(){
     const uid = getUserId();
     const { data } = await sb.from('reservations').select('*').eq('user_id', uid).order('created_at', false);

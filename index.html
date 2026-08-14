@@ -52,6 +52,8 @@
 
         .route-detail-item { margin:4px 0; padding-left:16px; border-left:2px solid #ccc; }
         .route-detail-item .sub-item { margin-left:20px; color:#555; }
+        .overlay-dialog { position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.5); z-index:9998; display:flex; justify-content:center; align-items:center; }
+        .overlay-dialog .dialog-box { background:white; padding:20px; border-radius:8px; max-width:400px; width:90%; }
 
         @media (max-width:480px) { .top-btn { font-size:12px; padding:4px 8px; } .float-btn { width:44px; height:44px; font-size:18px; } .locate-btn { bottom:120px; } .voice-toggle-btn { bottom:175px; } }
     </style>
@@ -625,32 +627,31 @@ async function showRouteDetail(id){
     document.body.appendChild(panel);
 }
 
-// ===== 使用路线生成行程 =====
+// ===== 使用路线生成行程（已修复保存逻辑和取消按钮） =====
 async function useRoute(routeId) {
     // 获取路线数据
     const { data: route } = await sb.from('ztj_routes').select('*').eq('id', routeId).single();
     const { data: nodes } = await sb.from('ztj_route_nodes').select('*').eq('route_id', routeId).order('order_num');
     if (!nodes || nodes.length === 0) { alert('该路线无节点'); return; }
     
-    // 弹出日期和时间选择框（利用现有自设行程的控件，但单独创建）
+    // 弹出日期和时间选择框
     const overlay = document.createElement('div');
-    overlay.style.cssText = 'position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.5); z-index:9998; display:flex; justify-content:center; align-items:center;';
-    const dialog = document.createElement('div');
-    dialog.style.cssText = 'background:white; padding:20px; border-radius:8px; max-width:400px; width:90%;';
-    dialog.innerHTML = `
-        <h3>生成行程 - ${route.name}</h3>
-        <div class="form-group"><label>出发日期</label><input type="date" id="route-use-date" value="${new Date().toISOString().slice(0,10)}"></div>
-        <div class="form-group"><label>出发时间（24小时制）</label><select id="route-use-time"></select></div>
-        <div style="display:flex; gap:10px; margin-top:16px;">
-            <button class="btn btn-primary" id="route-use-confirm">生成并保存</button>
-            <button class="btn btn-secondary" onclick="this.closest('div[style*="fixed"]').remove()">取消</button>
+    overlay.className = 'overlay-dialog';
+    overlay.innerHTML = `
+        <div class="dialog-box">
+            <h3>生成行程 - ${route.name}</h3>
+            <div class="form-group"><label>出发日期</label><input type="date" id="route-use-date" value="${new Date().toISOString().slice(0,10)}"></div>
+            <div class="form-group"><label>出发时间（24小时制）</label><select id="route-use-time"></select></div>
+            <div style="display:flex; gap:10px; margin-top:16px;">
+                <button class="btn btn-primary" id="route-use-confirm">生成并保存</button>
+                <button class="btn btn-secondary" id="route-use-cancel">取消</button>
+            </div>
         </div>
     `;
-    overlay.appendChild(dialog);
     document.body.appendChild(overlay);
     
     // 填充时间下拉框（10分钟间隔）
-    const timeSelect = dialog.querySelector('#route-use-time');
+    const timeSelect = overlay.querySelector('#route-use-time');
     for (let h = 0; h < 24; h++) {
         for (let m = 0; m < 60; m += 10) {
             const val = String(h).padStart(2,'0') + ':' + String(m).padStart(2,'0');
@@ -665,8 +666,13 @@ async function useRoute(routeId) {
     if (m === 60) { m = 0; h = (h+1)%24; }
     timeSelect.value = String(h).padStart(2,'0') + ':' + String(m).padStart(2,'0');
     
+    // 取消按钮
+    overlay.querySelector('#route-use-cancel').onclick = function() {
+        overlay.remove();
+    };
+    
     // 确认按钮
-    dialog.querySelector('#route-use-confirm').onclick = async function() {
+    overlay.querySelector('#route-use-confirm').onclick = async function() {
         const dateStr = document.getElementById('route-use-date').value;
         const startTime = timeSelect.value;
         if (!dateStr || !startTime) { alert('请选择完整日期和时间'); return; }
@@ -674,17 +680,7 @@ async function useRoute(routeId) {
         if (selectedDateTime < new Date()) { alert('出发时间不能早于当前时间'); return; }
         overlay.remove();
         
-        // 构建节点数据（格式与自设行程一致）
-        const routeNodesData = [];
-        // 第一个节点为起点（红军广场或其他），但路线节点已包含起始POI，我们直接使用
-        // 注意：路线节点可能没有包含起点？通常第一个节点即为第一个景点，但我们需要从起点开始交通。
-        // 我们假设路线的第一个节点即为出发地，但实际需要起点POI。我们可以使用红军广场作为起点。
-        // 但为了准确，我们允许用户选择起点？暂定将第一个节点的POI作为起点（或通过预设起点）。
-        // 更好的做法：使用路线第一个节点作为起点，行程从该节点开始，而不是额外的起点。
-        // 但是行程生成逻辑中，第一个节点被视为“出发”节点，不计算交通。我们可将第一个节点作为起点。
-        // 所以构造 nodes 数组：第一个元素为第一个POI，但我们需要知道其经纬度。
-        // 我们直接构建一个列表，包含所有节点，并在生成时间线时处理。
-        // 需要获取每个POI的详细信息。
+        // 构建节点数据
         const poiMap = {};
         allPois.forEach(p => poiMap[p.id] = p);
         const tripNodes = [];
@@ -692,62 +688,47 @@ async function useRoute(routeId) {
             const n = nodes[i];
             const poi = poiMap[n.poi_id];
             if (!poi) { alert(`找不到POI ID ${n.poi_id}`); return; }
-            // 检查是否有项目
             let items = n.items || [];
-            // 如果节点没有项目，则使用POI本身的游览时长作为单项目
             if (items.length === 0) {
                 items = [{ name: poi.name + '游览', duration: n.duration_min || poi.visit_duration || 60 }];
             }
-            // 每个项目视为一个独立的游览活动
-            // 但交通只在节点间计算，节点内项目连续游览
-            // 我们将节点内项目合并为一个“停留”，但在时间线中，我们依次插入每个项目
-            // 为了简化，我们将每个项目作为一个独立的“活动”，交通只在节点间转移。
-            // 但这样会产生多个活动，但交通只需在节点间。
-            // 我们按节点处理：对每个节点，先交通进入（除第一个），然后依次游览所有项目。
-            tripNodes.push({
-                poi: poi,
-                items: items,
-                nodeDuration: n.duration_min || 60
-            });
+            tripNodes.push({ poi, items, nodeDuration: n.duration_min || 60 });
         }
-        // 生成时间线
-        const mode = 'auto'; // 出行方式默认为自驾
+        // 生成行程
+        const mode = 'auto';
         const people = 2;
-        // 调用生成函数
         const generated = await generateRouteTrip(tripNodes, dateStr, startTime, mode, people, route.name);
         if (generated) {
-            // 显示生成的行程
-            // 直接使用自设行程的显示区域
+            // 自动保存到 localStorage
+            const tripData = generated.data;
+            tripData.name = route.name + ' (推荐路线)';
+            const trips = JSON.parse(localStorage.getItem('trips') || '[]');
+            trips.push(tripData);
+            localStorage.setItem('trips', JSON.stringify(trips));
+            alert('行程已保存到"我的行程"！');
+            // 显示在路线面板中
             document.getElementById('generated-trip').innerHTML = `<div class="card">${generated.html}</div>`;
             document.getElementById('trip-warnings').innerHTML = generated.tips.length ? `<div class="warn-list"><strong>💡 温馨提示：</strong>${generated.tips.map(t=>`<div>${t}</div>`).join('')}</div>` : '';
-            document.getElementById('saveGeneratedTripBtn').classList.remove('hidden');
-            // 保存数据到全局变量以便保存
-            generatedTripData = generated.data;
-            // 滚动到行程区域
-            document.getElementById('routesPanel').scrollTop = 0;
+            document.getElementById('saveGeneratedTripBtn').classList.add('hidden'); // 无需再保存
+            // 打开路线面板
             openPanel('routesPanel');
         }
     };
 }
 
-// ===== 生成路线行程（与自设行程逻辑类似，但基于节点和项目） =====
+// ===== 生成路线行程（与自设行程逻辑类似） =====
 async function generateRouteTrip(tripNodes, dateStr, startTime, mode, people, routeName) {
-    // tripNodes: [{ poi, items: [{name, duration}] }]
-    // 构建时间线
     const allItems = [];
     for (let i = 0; i < tripNodes.length; i++) {
         const node = tripNodes[i];
         const poi = node.poi;
         const items = node.items;
-        // 第一个节点：出发
         if (i === 0) {
             allItems.push({ type: 'start', name: poi.name + '出发', poi: poi });
         }
-        // 对每个项目添加游览活动
         items.forEach((item, idx) => {
             allItems.push({ type: 'visit', name: item.name, duration: item.duration, poi: poi });
         });
-        // 如果不是最后一个节点，添加交通
         if (i < tripNodes.length - 1) {
             const nextPoi = tripNodes[i+1].poi;
             const travelTime = getTransportTime(poi.id, nextPoi.id, mode);
@@ -758,42 +739,23 @@ async function generateRouteTrip(tripNodes, dateStr, startTime, mode, people, ro
             }
         }
     }
-    // 现在 allItems 包含按顺序的 start, visit, transport...
-    // 但我们还需要处理就餐插入，使用与自设行程相同的逻辑
-    // 我们直接调用 generateTimelineFromItems 函数，但需要重写
-    // 由于原有 generateTimeline 是基于节点列表，我们新建一个基于 items 列表的时间线生成
     const timeline = generateRouteTimeline(allItems, dateStr, startTime);
-    // 生成显示HTML
     const days = timeline.days;
+    const weatherForecast = await fetchWeatherForecast();
+    for (let i = 0; i < days.length; i++) {
+        let weatherTip = '⚠️ 天气信息暂不可用。';
+        if (weatherForecast && i < weatherForecast.length) {
+            weatherTip = getDayWeatherTip(weatherForecast[i]);
+        }
+        days[i].lines.push({ text: weatherTip, isWeather: true });
+    }
     let html = '';
     days.forEach((d, i) => {
         html += `<div class="day-header">📅 第${i+1}天 (${d.date})</div>`;
         d.lines.forEach(l => {
-            html += `<div class="trip-line">${l.text}</div>`;
+            html += `<div class="trip-line" ${l.isWeather ? 'style="color:#0d47a1;"' : ''}>${l.text}</div>`;
         });
     });
-    // 天气
-    const weatherForecast = await fetchWeatherForecast();
-    const weatherTips = [];
-    for (let i = 0; i < days.length; i++) {
-        if (weatherForecast && i < weatherForecast.length) {
-            weatherTips.push(getDayWeatherTip(weatherForecast[i]));
-        } else {
-            weatherTips.push('⚠️ 该日天气信息暂不可用。');
-        }
-        // 附加到当天末尾
-        days[i].lines.push({ text: weatherTips[i], isWeather: true });
-    }
-    // 重新生成html包含天气
-    let htmlWithWeather = '';
-    days.forEach((d, i) => {
-        htmlWithWeather += `<div class="day-header">📅 第${i+1}天 (${d.date})</div>`;
-        d.lines.forEach(l => {
-            htmlWithWeather += `<div class="trip-line" ${l.isWeather ? 'style="color:#0d47a1;"' : ''}>${l.text}</div>`;
-        });
-    });
-    
-    // 统计信息
     let totalTransport = 0, totalVisit = 0;
     allItems.forEach(item => {
         if (item.type === 'transport') totalTransport += item.duration || 0;
@@ -805,13 +767,9 @@ async function generateRouteTrip(tripNodes, dateStr, startTime, mode, people, ro
     tips.push(`📊 活动总时长：${totalActivity}分钟（约${(totalActivity/60).toFixed(1)}小时），其中交通${totalTransport}分钟，游览${totalVisit}分钟。`);
     if (mealCount > 0) tips.push(`🍴 包含 ${mealCount} 次用餐，预计总耗时约 ${Math.round((totalActivity + mealCount*60)/60)} 小时。`);
     if (days.length > 1) tips.push(`🏨 行程跨${days.length}天，请合理安排住宿。`);
-    // 每日建议（简化）
-    // 可添加类似自设行程的每日建议，这里省略
     if (days.length === 1 && (totalTransport > 120 || totalVisit > 240)) {
         tips.push(`💡 由于当日行程时间较长，建议您考虑将部分景点调整到第二天，或选择更近的景点。`);
     }
-    
-    // 保存数据
     const data = {
         name: routeName || '推荐路线',
         date: dateStr,
@@ -819,13 +777,13 @@ async function generateRouteTrip(tripNodes, dateStr, startTime, mode, people, ro
         mode: mode,
         people: people,
         nodes: tripNodes.map(n => ({ id: n.poi.id, name: n.poi.name })),
-        days: days.map(d => ({ date: d.date, lines: d.lines })),
+        days: days,
         tips: tips
     };
-    return { html: htmlWithWeather, tips, data };
+    return { html, tips, data };
 }
 
-// ===== 路线时间线生成（基于活动列表） =====
+// ===== 路线时间线生成 =====
 function generateRouteTimeline(activities, startDate, startTime) {
     let curDate = new Date(startDate);
     let [h, m] = startTime.split(':').map(Number);
@@ -886,8 +844,6 @@ function generateRouteTimeline(activities, startDate, startTime) {
             mealCount++;
         }
     }
-    
-    // 遍历活动
     for (let i = 0; i < activities.length; i++) {
         const act = activities[i];
         if (act.type === 'start') {
@@ -896,7 +852,6 @@ function generateRouteTimeline(activities, startDate, startTime) {
             if (curMin >= DAY_END) gotoNextDay();
             let startMin = curMin;
             curMin += act.duration;
-            // 如果跨天
             let daysPassed = Math.floor(curMin / 1440);
             if (daysPassed > 0) {
                 curDate.setDate(curDate.getDate() + daysPassed);
@@ -932,8 +887,6 @@ function generateRouteTimeline(activities, startDate, startTime) {
     }
     if (curMin < DAY_END) { tryInsertLunch(); tryInsertDinner(); }
     else ensureMealsForDay();
-    
-    // 按天分组
     const daysMap = {};
     lines.forEach(l => {
         const key = l.date.toLocaleDateString('zh-CN');
@@ -1079,7 +1032,6 @@ function generateTimeline(nodes, startDate, startTime) {
     }
     if (curMin < DAY_END) { tryInsertLunch(); tryInsertDinner(); }
     else ensureMealsForDay();
-    // 按天分组
     const daysMap = {};
     lines.forEach(l => {
         const key = l.date.toLocaleDateString('zh-CN');
@@ -1109,13 +1061,11 @@ async function generateCustomTrip(){
         nodes.push({...p, type:'poi', visitDuration:dur, transportTime: getTransportTime(routeLegs[i-1].id, p.id, mode)});
     }
     const { days, mealCount } = generateTimeline(nodes, dateStr, startTime);
-    // 天气
     const weatherForecast = await fetchWeatherForecast();
     let html = '';
     days.forEach((d, i) => {
         html += `<div class="day-header">📅 第${i+1}天 (${d.date})</div>`;
         d.lines.forEach(l => html += `<div class="trip-line">${l.text}</div>`);
-        // 天气
         let weatherTip = '⚠️ 天气信息暂不可用。';
         if (weatherForecast && i < weatherForecast.length) {
             weatherTip = getDayWeatherTip(weatherForecast[i]);
@@ -1129,11 +1079,6 @@ async function generateCustomTrip(){
     tips.push(`📊 活动总时长：${totalActivity}分钟（约${(totalActivity/60).toFixed(1)}小时），其中交通${totalTransport}分钟，游览${totalVisit}分钟。`);
     if(mealCount > 0) tips.push(`🍴 包含 ${mealCount} 次用餐，预计总耗时约 ${Math.round((totalActivity + mealCount*60)/60)} 小时。`);
     if(days.length > 1) tips.push(`🏨 行程跨${days.length}天，请合理安排住宿。`);
-    // 简单每日建议
-    days.forEach((d, i) => {
-        // 粗略统计该天交通和游览（通过lines中文本判断，简化）
-        // 此处省略，保留通用提示
-    });
     if(days.length === 1 && (totalTransport>120 || totalVisit>240)) {
         tips.push(`💡 由于当日行程时间较长，建议您考虑将部分景点调整到第二天，或选择更近的景点。`);
     }

@@ -537,13 +537,22 @@ async function toggleReserveForm(merchantId) {
     window[`bizItems_${merchantId}`] = businessItems;
     formDiv.classList.remove('hidden');
 }
+
+// ===== 修复：预约子项目显示逻辑（大小写不敏感、去除空格） =====
 window.updateReserveContent = function(merchantId) {
     const cat = document.getElementById(`res-cat-${merchantId}`)?.value;
     const container = document.getElementById(`res-content-${merchantId}`);
     const bizItems = window[`bizItems_${merchantId}`] || [];
+    // 调试：输出当前类别和所有项目
+    console.log('[预约] 类别:', cat, '项目数量:', bizItems.length);
     if (!cat || !container) return;
-    // 使用 trim() 确保匹配
-    const filtered = bizItems.filter(item => item.category && item.category.trim() === cat.trim());
+    // 标准化：去除首尾空格，转小写比较
+    const trimmedCat = cat.trim().toLowerCase();
+    const filtered = bizItems.filter(item => {
+        if (!item.category) return false;
+        return item.category.trim().toLowerCase() === trimmedCat;
+    });
+    console.log('[预约] 匹配结果数量:', filtered.length);
     if (filtered.length > 0) {
         container.innerHTML = filtered.map((item, idx) => `
             <label>
@@ -555,6 +564,7 @@ window.updateReserveContent = function(merchantId) {
         container.innerHTML = '<span style="color:#999;">无相关项目</span>';
     }
 };
+
 async function submitReservationDirect(merchantId) {
     const date = document.getElementById(`res-date-${merchantId}`).value;
     const timeRange = document.getElementById(`res-time-${merchantId}`).value;
@@ -741,13 +751,12 @@ async function useRoute(routeId) {
             if (weatherForecast && i < weatherForecast.length) {
                 weatherTip = getDayWeatherTip(weatherForecast[i]);
             }
-            days[i].lines.push(weatherTip); // 天气作为单独行
+            days[i].lines.push(weatherTip);
         }
         let html = '';
         days.forEach((d, i) => {
             html += `<div class="day-header">📅 第${i+1}天 (${d.date})</div>`;
             d.lines.forEach(l => {
-                // 判断是否为天气行（以"🌤️"或"⚠️"开头）
                 if (l.startsWith('🌤️') || l.startsWith('⚠️')) {
                     html += `<div class="trip-line" style="color:#0d47a1;">${l}</div>`;
                 } else {
@@ -797,7 +806,7 @@ function generateRouteTimeline(activities, startDate, startTime) {
     let curDate = new Date(startDate);
     let [h, m] = startTime.split(':').map(Number);
     let curMin = h * 60 + m;
-    const lines = []; // 每项：{ start, end, text, date, isWeather }
+    const lines = [];
     let lunchDone = false, dinnerDone = false;
     let mealCount = 0;
     let currentVisitLeft = 0;
@@ -806,7 +815,6 @@ function generateRouteTimeline(activities, startDate, startTime) {
     if (curMin >= DINNER_TRIGGER) dinnerDone = true;
 
     function addLine(start, end, text, date, isWeather = false) {
-        // 如果是游览行（以⏱️开头），尝试与上一行合并
         if (text.startsWith('⏱️') && lines.length > 0) {
             const last = lines[lines.length - 1];
             if (last.text && last.text.startsWith('⏱️')) {
@@ -826,7 +834,6 @@ function generateRouteTimeline(activities, startDate, startTime) {
                 }
             }
         }
-        // 复制日期，避免引用问题
         const dateCopy = new Date(date);
         lines.push({ start, end, text, date: dateCopy, isWeather });
     }
@@ -975,7 +982,6 @@ function generateRouteTimeline(activities, startDate, startTime) {
         ensureMealsForDay();
     }
 
-    // 按天分组
     const daysMap = {};
     lines.forEach(l => {
         const key = l.date.toLocaleDateString('zh-CN');
@@ -991,7 +997,7 @@ function generateTimeline(nodes, startDate, startTime) {
     let curDate = new Date(startDate);
     let [h, m] = startTime.split(':').map(Number);
     let curMin = h * 60 + m;
-    const lines = []; // { start, end, text, date }
+    const lines = [];
     let lunchDone = false, dinnerDone = false;
     if (curMin >= LUNCH_TRIGGER) lunchDone = true;
     if (curMin >= DINNER_TRIGGER) dinnerDone = true;

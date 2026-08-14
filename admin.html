@@ -45,7 +45,7 @@
         .item-list { margin-left:20px; border-left:2px solid #2e7d32; padding-left:10px; }
         .item-entry { display:flex; gap:8px; align-items:center; margin:4px 0; }
         .item-entry input { flex:1; }
-        .item-entry .btn-danger { padding:0 6px; }
+        .item-entry .btn { padding:0 4px; font-size:12px; }
     </style>
 </head>
 <body>
@@ -95,6 +95,7 @@
                 <h3 id="route-form-title">新增路线</h3>
                 <input type="hidden" id="edit-route-id" value="">
                 <div class="form-group"><label>路线名称</label><input id="route-name"></div>
+                <div class="form-group"><label>默认出发地点</label><select id="route-default-start"><option value="county">红军广场</option></select></div>
                 <div class="form-group"><label>出发时间</label><input type="time" id="route-start-time" value="08:30"></div>
                 <div class="form-group"><label>交通方式</label><input id="route-transport" placeholder="如 自驾/大巴"></div>
                 <h4>路线节点</h4>
@@ -467,10 +468,17 @@ async function deletePoi(id){
     }
 }
 
-// ================== 路线管理（含项目支持） ==================
+// ================== 路线管理（含项目顺序支持） ==================
 async function loadPoiOptionsForRoute(){
     const { data } = await sb.from('ztj_poi').select('id,name').order('name');
     window.poiOptions = data || [];
+    // 填充默认出发地点下拉
+    const startSel = document.getElementById('route-default-start');
+    if(startSel) {
+        startSel.innerHTML = '<option value="county">红军广场</option>';
+        if(data) data.forEach(p => startSel.innerHTML += `<option value="${p.id}">${p.name}</option>`);
+        startSel.value = 'county';
+    }
 }
 async function renderRouteNodes(){
     if(!window.poiOptions) await loadPoiOptionsForRoute();
@@ -478,6 +486,14 @@ async function renderRouteNodes(){
     const opts = (window.poiOptions||[]).map(p => `<option value="${p.id}">${p.name}</option>`).join('');
     let html = '';
     routeNodes.forEach((n, i) => {
+        const itemsHtml = (n.items||[]).map((item, idx) => `
+            <div class="item-entry">
+                <span>${item.name} (${item.duration}分钟)</span>
+                <button class="btn btn-default btn-sm" onclick="moveItem(${i}, ${idx}, -1)">▲</button>
+                <button class="btn btn-default btn-sm" onclick="moveItem(${i}, ${idx}, 1)">▼</button>
+                <button class="btn btn-danger btn-sm" onclick="removeItem(${i}, ${idx})">✕</button>
+            </div>
+        `).join('');
         html += `<div class="route-node" style="flex-wrap:wrap;">
             <div style="display:flex; gap:8px; align-items:center; width:100%;">
                 <select onchange="updateRouteNode(${i},'poi_id',this.value)" style="flex:1;">
@@ -494,18 +510,12 @@ async function renderRouteNodes(){
                         <input type="number" placeholder="分钟" id="item-dur-${i}" style="width:60px; padding:4px;">
                         <button class="btn btn-primary btn-sm" onclick="addItem(${i})">添加</button>
                     </div>
-                    <div id="item-list-${i}">
-                        ${(n.items||[]).map((item, idx) => `<div class="item-entry">
-                            <span>${item.name} (${item.duration}分钟)</span>
-                            <button class="btn btn-danger btn-sm" onclick="removeItem(${i}, ${idx})">✕</button>
-                        </div>`).join('')}
-                    </div>
+                    <div id="item-list-${i}">${itemsHtml}</div>
                 </div>
             </div>
         </div>`;
     });
     container.innerHTML = html;
-    // 恢复选中值
     routeNodes.forEach((n, i) => {
         const sel = container.querySelectorAll('select')[i];
         if(sel && n.poi_id) sel.value = String(n.poi_id);
@@ -513,11 +523,8 @@ async function renderRouteNodes(){
 }
 function toggleItemsManager(idx){
     const div = document.getElementById(`items-manager-${idx}`);
-    if(div.style.display === 'none' || div.style.display === '') {
-        div.style.display = 'block';
-    } else {
-        div.style.display = 'none';
-    }
+    if(div.style.display === 'none' || div.style.display === '') div.style.display = 'block';
+    else div.style.display = 'none';
 }
 function addItem(idx){
     const nameInput = document.getElementById(`item-name-${idx}`);
@@ -533,6 +540,14 @@ function addItem(idx){
 }
 function removeItem(idx, itemIdx){
     routeNodes[idx].items.splice(itemIdx, 1);
+    renderRouteNodes();
+}
+function moveItem(idx, itemIdx, direction){
+    const items = routeNodes[idx].items;
+    if(!items || items.length < 2) return;
+    const newIdx = itemIdx + direction;
+    if(newIdx < 0 || newIdx >= items.length) return;
+    [items[itemIdx], items[newIdx]] = [items[newIdx], items[itemIdx]];
     renderRouteNodes();
 }
 function updateRouteNode(idx, field, value){
@@ -567,11 +582,11 @@ async function editRoute(id){
     document.getElementById('route-name').value = route.name;
     document.getElementById('route-start-time').value = route.start_time || '08:30';
     document.getElementById('route-transport').value = route.transport || '';
-    // 加载节点，并解析 items
+    document.getElementById('route-default-start').value = route.default_start || 'county';
     routeNodes = (nodes||[]).map(n => ({
         poi_id: n.poi_id,
         duration_min: n.duration_min || 60,
-        items: n.items || []  // 假设数据库有 items JSONB 字段
+        items: n.items || []
     }));
     await loadPoiOptionsForRoute();
     renderRouteNodes();
@@ -583,7 +598,8 @@ async function saveRoute(){
     const editId = document.getElementById('edit-route-id').value;
     const start_time = document.getElementById('route-start-time').value;
     const transport = document.getElementById('route-transport').value;
-    const routeData = { name, start_time, transport };
+    const default_start = document.getElementById('route-default-start').value;
+    const routeData = { name, start_time, transport, default_start };
     let routeId = editId;
     if(editId){
         await sb.from('ztj_routes').update(routeData).eq('id', editId);
@@ -600,7 +616,7 @@ async function saveRoute(){
         duration_min: n.duration_min || 60,
         transport_mode: '步行',
         transport_time: 0,
-        items: n.items || []  // JSON 数组
+        items: n.items || []
     }));
     if(nodesPayload.length === 0){ alert('请至少添加一个有效节点'); return; }
     const { error } = await sb.from('ztj_route_nodes').insert(nodesPayload);

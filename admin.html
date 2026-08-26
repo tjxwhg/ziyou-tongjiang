@@ -135,7 +135,7 @@ const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 let currentUser = null;
 const POI_CATEGORIES = ['自然景区','红色景区','文博场馆','餐饮住宿','交通枢纽','游玩娱乐','特产购物','公共服务'];
 const EXCLUDED_TRANSPORT_CATS = ['公共服务','游玩娱乐','特产购物'];
-let routeNodes = []; // 每个元素：{ poi_id, duration_min, items: [{name, duration}] }
+let routeNodes = [];
 let allTransportPresets = {};
 let mainPoisForTransport = [];
 let allMainPois = [];
@@ -168,14 +168,17 @@ function switchTab(tab){
     if(tab==='feedbacks') loadFeedbacks();
 }
 
-// ================== POI 管理 ==================
+// ================== POI 管理（修复：显示所有分类包括游玩娱乐） ==================
 async function loadPOIs(){
     const { data } = await sb.from('ztj_poi').select('*').eq('status','active').order('sort_order');
     const grouped = {};
     POI_CATEGORIES.forEach(cat => grouped[cat] = []);
     if(data) data.forEach(p => {
         const cats = (p.category||'').split(',');
-        cats.forEach(c => { if(grouped[c]) grouped[c].push(p); });
+        cats.forEach(c => { 
+            const trimmed = c.trim();
+            if(grouped[trimmed]) grouped[trimmed].push(p); 
+        });
     });
     let html = '';
     POI_CATEGORIES.forEach(cat => {
@@ -468,7 +471,7 @@ async function deletePoi(id){
     }
 }
 
-// ================== 路线管理（含项目顺序支持，时长允许0） ==================
+// ================== 路线管理（含项目顺序支持） ==================
 async function loadPoiOptionsForRoute(){
     const { data } = await sb.from('ztj_poi').select('id,name').order('name');
     window.poiOptions = data || [];
@@ -529,7 +532,7 @@ function addItem(idx){
     const nameInput = document.getElementById(`item-name-${idx}`);
     const durInput = document.getElementById(`item-dur-${idx}`);
     const name = nameInput.value.trim();
-    const dur = parseInt(durInput.value) || 0;  // 允许为0
+    const dur = parseInt(durInput.value) || 0;
     if(!name) return alert('请输入项目名称');
     if(!routeNodes[idx].items) routeNodes[idx].items = [];
     routeNodes[idx].items.push({ name, duration: dur });

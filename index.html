@@ -170,6 +170,7 @@ let transportPresets = {};
 const DAY_START=480, DAY_END=1080, LUNCH_TRIGGER=690, LUNCH_END=750, DINNER_TRIGGER=1050, DINNER_END=1110, MEAL_DURATION=60;
 const ALLOWED_CATEGORIES = ['自然景区', '红色景区', '文博场馆'];
 const NON_VISIT_CATEGORIES = ['交通枢纽','餐饮住宿','公共服务','特产购物','游玩娱乐'];
+// 强制整天景区
 const LONG_SPOT_NAMES = ['空山天盆', '诺水河溶洞', '红军烈士陵园'];
 let routeLegs=[], mainPoiOptions=[], allowedPoiOptions=[];
 
@@ -755,7 +756,7 @@ async function useRoute(routeId) {
     alert('推荐路线使用功能已集成，请直接在路线详情页操作。');
 }
 
-// ==================== 智能规划（终极修复） ====================
+// ==================== 核心智能规划（终极修复，长耗时优先独立处理） ====================
 function isLongSpot(spot) {
     return LONG_SPOT_NAMES.some(name => spot.name.includes(name));
 }
@@ -782,6 +783,7 @@ function getCountySpots() {
     }));
 }
 
+// 填充县城景点
 function fillCountySpots(availableCounty, usedCountyIds, lastPoi, currentMin, remaining, currentDate, orderedPois, mode) {
     let totalInserted = 0;
     let tryCount = 0;
@@ -826,7 +828,7 @@ function addReturnToCounty(orderedPois, lastPoi, currentMin, currentDate, mode) 
     if (travelBack === null || travelBack === undefined) travelBack = 0;
     const returnNode = {
         id: 'county',
-        name: '返回红军广场住宿',
+        name: '返回县城住宿（红军广场）',
         lat: COUNTY.lat,
         lng: COUNTY.lng,
         visitDuration: 0,
@@ -840,17 +842,18 @@ function addReturnToCounty(orderedPois, lastPoi, currentMin, currentDate, mode) 
     return { lastPoi, currentMin };
 }
 
-// 核心规划函数（彻底重构）
+// 核心规划函数（彻底重构，长耗时优先独立处理）
 function smartSchedule(spots, startDate, startTime, mode) {
     const countySpots = getCountySpots();
     const usedCountyIds = new Set();
     const allSpotIds = new Set(spots.map(s => s.id));
     const availableCounty = countySpots.filter(c => !allSpotIds.has(c.id));
 
-    // 分类
+    // 分离长耗时景区
     const longSpots = spots.filter(s => isLongSpot(s));
-    const halfSpots = spots.filter(s => !isLongSpot(s) && s.visitDuration >= 100);
-    const shortSpots = spots.filter(s => !isLongSpot(s) && s.visitDuration < 100);
+    const otherSpots = spots.filter(s => !isLongSpot(s));
+    const halfSpots = otherSpots.filter(s => s.visitDuration >= 100);
+    const shortSpots = otherSpots.filter(s => s.visitDuration < 100);
 
     // 排序
     longSpots.sort((a,b) => a.visitDuration - b.visitDuration); // 保持顺序
@@ -871,9 +874,9 @@ function smartSchedule(spots, startDate, startTime, mode) {
         currentMin = DAY_START;
     }
 
-    // ===== 处理长耗时景区 =====
+    // ===== 第一步：处理所有长耗时景区（强制整天，独立占用一天） =====
     for (let spot of longSpots) {
-        // 1. 确保当前时间是08:00，否则填充当天并跳到次日08:00
+        // 如果当前时间不是08:00，则填充当天剩余并返回县城，然后跳到次日08:00
         if (currentMin !== DAY_START) {
             let rem = DAY_END - currentMin;
             if (rem > 0) {
@@ -883,7 +886,6 @@ function smartSchedule(spots, startDate, startTime, mode) {
                     currentMin += result.totalInserted;
                 }
             }
-            // 返回县城
             let ret = addReturnToCounty(orderedPois, lastPoi, currentMin, currentDate, mode);
             lastPoi = ret.lastPoi;
             currentMin = ret.currentMin;
@@ -892,15 +894,15 @@ function smartSchedule(spots, startDate, startTime, mode) {
             currentMin = DAY_START;
         }
 
-        // 2. 计算交通和游览总时间
+        // 现在 currentMin == DAY_START，安排该景区
         let travelTime = getTransportTime(lastPoi.id, spot.id, mode);
         if (travelTime === null || travelTime === undefined) travelTime = 0;
         let totalNeeded = travelTime + spot.visitDuration;
-        let dayAvailable = DAY_END - currentMin; // 从08:00到18:00
+        let dayAvailable = DAY_END - currentMin; // 480分钟
 
-        // 3. 如果当天不够，顺延到第二天（重复检查）
+        // 如果当天不够，顺延（但理论上dayAvailable=480，若景区时间>480则继续顺延）
         while (totalNeeded > dayAvailable) {
-            // 填充当天剩余（实际上当天还没有任何活动，但为了逻辑，填充县城直到18:00）
+            // 当天剩余（其实还没安排任何内容，但为了统一，填充县城）
             let rem = DAY_END - currentMin;
             if (rem > 0) {
                 let result = fillCountySpots(availableCounty, usedCountyIds, lastPoi, currentMin, rem, currentDate, orderedPois, mode);
@@ -909,23 +911,18 @@ function smartSchedule(spots, startDate, startTime, mode) {
                     currentMin += result.totalInserted;
                 }
             }
-            // 返回县城
             let ret = addReturnToCounty(orderedPois, lastPoi, currentMin, currentDate, mode);
             lastPoi = ret.lastPoi;
             currentMin = ret.currentMin;
-            // 跳到次日08:00
             currentDate.setDate(currentDate.getDate() + 1);
             currentMin = DAY_START;
-            // 重新计算交通（因为lastPoi变了，可能从红军广场出发）
             travelTime = getTransportTime(lastPoi.id, spot.id, mode);
             if (travelTime === null || travelTime === undefined) travelTime = 0;
             totalNeeded = travelTime + spot.visitDuration;
             dayAvailable = DAY_END - currentMin;
-            // 避免无限循环，最多顺延5天
-            // 但这里while会自然退出
         }
 
-        // 4. 现在当天足够，安排景区
+        // 现在当天足够，安排景区
         const node = {
             id: spot.id,
             name: spot.name,
@@ -939,7 +936,7 @@ function smartSchedule(spots, startDate, startTime, mode) {
         lastPoi = node;
         currentMin = currentMin + travelTime + spot.visitDuration;
 
-        // 5. 景区结束后，填充剩余时间（县城）直到18:00，然后返回县城，跳到次日08:00
+        // 景区结束后，填充剩余时间（县城）直到18:00，然后返回县城，跳到次日08:00
         if (currentMin < DAY_END) {
             let rem = DAY_END - currentMin;
             if (rem > 0) {
@@ -959,7 +956,7 @@ function smartSchedule(spots, startDate, startTime, mode) {
         currentMin = DAY_START;
     }
 
-    // ===== 处理半日景区 =====
+    // ===== 第二步：处理半日景区 =====
     let halfQueue = [...halfSpots];
     let attempts = 0;
     while (halfQueue.length > 0 && attempts < 100) {
@@ -1096,7 +1093,7 @@ function smartSchedule(spots, startDate, startTime, mode) {
         if (attempts < 100) halfQueue.push(spot); // 重试
     }
 
-    // ===== 处理短耗时景区和县城填充 =====
+    // ===== 第三步：处理短耗时景区和县城填充（作为填充） =====
     let fillers = [...shortSpots, ...availableCounty];
     fillers.sort((a,b) => b.visitDuration - a.visitDuration);
     for (let spot of fillers) {
@@ -1241,7 +1238,7 @@ async function generateCustomTrip() {
     document.getElementById('saveGeneratedTripBtn').classList.remove('hidden');
 }
 
-// ==================== 时间线生成（与之前相同，但增加对 isReturn 的识别） ====================
+// ==================== 时间线生成 ====================
 function generateTimeline(nodes, startDate, startTime) {
     let curDate = new Date(startDate);
     let [h, m] = startTime.split(':').map(Number);
@@ -1366,7 +1363,6 @@ function generateTimeline(nodes, startDate, startTime) {
                 if (curMin >= DINNER_TRIGGER) dinnerDone = true;
             }
             const end = curMin;
-            // 避免重复“前往”
             let destName = cur.name;
             if (!destName.startsWith('前往 ') && !cur.isReturn) {
                 destName = '前往 ' + destName;
@@ -1546,12 +1542,87 @@ function deleteTrip(idx){
 }
 
 // ==================== 我的预约 & 反馈 ====================
-async function loadMyReservations(){ /* 同前，略 */ }
-window.toggleMyReservationDetail = function(idx){ /* 同前，略 */ };
-async function submitFeedback(){ /* 同前，略 */ }
-async function loadFeedbackHistory(){ /* 同前，略 */ }
+async function loadMyReservations(){
+    const uid = getUserId();
+    const { data } = await sb.from('reservations').select('*').eq('user_id', uid).order('created_at', false);
+    if (!data || data.length === 0) {
+        document.getElementById('myReservationContent').innerHTML = '<p>暂无预约</p>';
+        return;
+    }
+    const merchantIds = [...new Set(data.map(r => r.merchant_id))];
+    const { data: merchants } = await sb.from('ztj_merchants').select('id,display_name').in('id', merchantIds);
+    const merchantMap = {};
+    if (merchants) merchants.forEach(m => merchantMap[m.id] = m.display_name);
+    let html = '';
+    data.forEach((r, idx) => {
+        let category = '', content = '';
+        if (r.remark) {
+            const parts = r.remark.split('|');
+            parts.forEach(p => {
+                if (p.startsWith('类别：')) category = p.replace('类别：', '');
+                else if (p.startsWith('内容：')) content = p.replace('内容：', '');
+            });
+        }
+        const merchantName = merchantMap[r.merchant_id] || '未知商户';
+        html += `<div class="card">
+            <div class="collapse-header" onclick="toggleMyReservationDetail(${idx})">
+                <span>${r.reservation_date} | ${r.time_slot_start}-${r.time_slot_end||''} | ${merchantName} | ${category||'未分类'} | ${content||''} | 联系人：${r.name}</span>
+            </div>
+            <div id="my-res-detail-${idx}" class="hidden">
+                <p><b>商户：</b>${merchantName}</p>
+                <p><b>活动类别：</b>${category||'未指定'}</p>
+                <p><b>预约内容：</b>${content||'未指定'}</p>
+                <p><b>单位：</b>${r.unit||''} <b>人数：</b>${r.visitor_count}</p>
+                <p><b>电话：</b>${r.phone}</p>
+                <p><b>地点：</b>${r.room||''}</p>
+                <p><b>状态：</b>${{pending:'预约中',confirmed:'已确认',rejected:'已拒绝'}[r.status]||r.status}</p>
+            </div>
+        </div>`;
+    });
+    document.getElementById('myReservationContent').innerHTML = html;
+}
 
-function switchMyTab(tab){ /* 同前，略 */ }
+window.toggleMyReservationDetail = function(idx){ document.getElementById('my-res-detail-'+idx).classList.toggle('hidden'); };
+
+async function submitFeedback(){
+    const msg = document.getElementById('feedbackMsg').value;
+    if(!msg) return;
+    await sb.from('ztj_feedbacks').insert({ user_id: getUserId(), message: msg });
+    document.getElementById('feedbackMsg').value = '';
+    loadFeedbackHistory();
+}
+
+async function loadFeedbackHistory(){
+    const { data } = await sb.from('ztj_feedbacks').select('*').neq('user_id','system').order('created_at',{ascending:false});
+    let html = '';
+    if (data) {
+        data.forEach(f => {
+            let replyHtml = '';
+            if (f.reply) {
+                replyHtml = `<div class="feedback-reply">🔔 管理员回复：${f.reply}</div>`;
+            }
+            html += `<div class="card">
+                <div><b>${new Date(f.created_at).toLocaleString()}</b></div>
+                <div>${f.message}</div>
+                ${replyHtml}
+            </div>`;
+        });
+    }
+    document.getElementById('feedbackHistory').innerHTML = html || '<p>暂无留言</p>';
+}
+
+function switchMyTab(tab){
+    document.getElementById('my-tab-trip').classList.remove('active');
+    document.getElementById('my-tab-reservation').classList.remove('active');
+    document.getElementById('my-tab-feedback').classList.remove('active');
+    document.getElementById('myTripContent').classList.add('hidden');
+    document.getElementById('myReservationContent').classList.add('hidden');
+    document.getElementById('myFeedbackContent').classList.add('hidden');
+    if(tab==='trip'){ document.getElementById('my-tab-trip').classList.add('active'); document.getElementById('myTripContent').classList.remove('hidden'); renderMyTrip(); }
+    else if(tab==='reservation'){ document.getElementById('my-tab-reservation').classList.add('active'); document.getElementById('myReservationContent').classList.remove('hidden'); loadMyReservations(); }
+    else { document.getElementById('my-tab-feedback').classList.add('active'); document.getElementById('myFeedbackContent').classList.remove('hidden'); loadFeedbackHistory(); }
+}
+
 function openPanel(id){ document.getElementById(id).classList.add('active'); if(id==='routesPanel') loadRoutes(); }
 function closePanel(id){ document.getElementById(id).classList.remove('active'); }
 function startSimulation(){ alert('模拟导航功能即将上线'); }
@@ -1559,7 +1630,7 @@ function startSimulation(){ alert('模拟导航功能即将上线'); }
 // ==================== 启动 ====================
 window.onload = function() {
     initMap();
-    console.log('[系统] 智游通江已启动。');
+    console.log('[系统] 智游通江已启动，长耗时景区已强制整天独立规划。');
 };
 </script>
 </body>

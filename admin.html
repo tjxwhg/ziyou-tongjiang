@@ -168,7 +168,7 @@ function switchTab(tab){
     if(tab==='feedbacks') loadFeedbacks();
 }
 
-// ================== POI 管理（修复：显示所有分类包括游玩娱乐） ==================
+// ================== POI 管理 ==================
 async function loadPOIs(){
     const { data } = await sb.from('ztj_poi').select('*').eq('status','active').order('sort_order');
     const grouped = {};
@@ -642,7 +642,7 @@ async function loadRoutes(){
     document.getElementById('route-list').innerHTML = data.length ? data.map(r => `<div class="card"><b>${r.name}</b> (${r.start_time||'未设'}) <button class="btn btn-default" onclick="editRoute(${r.id})">编辑</button> <button class="btn btn-danger" onclick="deleteRoute(${r.id})">删除</button></div>`).join('') : '<p>暂无路线</p>';
 }
 
-// ================== 交通耗时编辑器 ==================
+// ================== 交通耗时编辑器（修复重复加载） ==================
 function getExcludedTransportPois(){
     const stored = localStorage.getItem('excludedTransportPois');
     return stored ? JSON.parse(stored) : [];
@@ -650,7 +650,10 @@ function getExcludedTransportPois(){
 function setExcludedTransportPois(arr){
     localStorage.setItem('excludedTransportPois', JSON.stringify(arr));
 }
+
 async function loadTransportEditor(){
+    // 清空旧数据，避免重复
+    mainPoisForTransport = [];
     const { data: pois } = await sb.from('ztj_poi').select('id,name,category').is('parent_id', null).order('name');
     allMainPois = pois || [];
     const excludedIds = getExcludedTransportPois();
@@ -671,17 +674,20 @@ async function loadTransportEditor(){
     });
     renderTransportEditor();
 }
+
 function getTransportTimeAdmin(fromId, toId){
     if(allTransportPresets[fromId] && allTransportPresets[fromId][toId] !== undefined) return allTransportPresets[fromId][toId];
     if(allTransportPresets[toId] && allTransportPresets[toId][fromId] !== undefined) return allTransportPresets[toId][fromId];
     return '';
 }
+
 async function saveTransportTime(fromId, toId, time){
     const timeVal = parseInt(time); if(isNaN(timeVal)||timeVal<0) return;
     await sb.from('ztj_transport_presets').upsert({ from_poi_id: fromId, to_poi_id: toId, travel_mode:'auto', time_min: timeVal }, { onConflict:'from_poi_id,to_poi_id' });
     if(!allTransportPresets[fromId]) allTransportPresets[fromId] = {};
     allTransportPresets[fromId][toId] = timeVal;
 }
+
 function renderTransportEditor(){
     const container = document.getElementById('transport-editor');
     if(!mainPoisForTransport.length) { container.innerHTML = '<p>暂无可用景点，请添加</p>'; return; }
@@ -702,8 +708,10 @@ function renderTransportEditor(){
     });
     container.innerHTML = html;
 }
+
 function addTransportPoi(){
     const excludedIds = getExcludedTransportPois();
+    // 从 allMainPois 中找出不在 mainPoisForTransport 中的POI
     const availablePois = allMainPois.filter(p => !mainPoisForTransport.some(mp => mp.id === p.id));
     if(availablePois.length === 0){
         alert('所有POI已添加，或没有更多可添加的POI');
@@ -720,19 +728,25 @@ function addTransportPoi(){
         if(selectedId){
             const poi = allMainPois.find(p => p.id == selectedId);
             if(poi) {
-                mainPoisForTransport.push(poi);
-                const excluded = getExcludedTransportPois();
-                const idx = excluded.indexOf(Number(selectedId));
-                if(idx !== -1) {
-                    excluded.splice(idx, 1);
-                    setExcludedTransportPois(excluded);
+                // 再次检查是否已在列表中（防止并发）
+                if (!mainPoisForTransport.some(mp => mp.id === selectedId)) {
+                    mainPoisForTransport.push(poi);
+                    const excluded = getExcludedTransportPois();
+                    const idx = excluded.indexOf(Number(selectedId));
+                    if(idx !== -1) {
+                        excluded.splice(idx, 1);
+                        setExcludedTransportPois(excluded);
+                    }
+                    renderTransportEditor();
+                } else {
+                    alert('该POI已在列表中');
                 }
-                renderTransportEditor();
             }
         }
         dialog.remove();
     };
 }
+
 function removeTransportPoi(id){
     mainPoisForTransport = mainPoisForTransport.filter(p => p.id != id);
     const excluded = getExcludedTransportPois();
@@ -740,6 +754,7 @@ function removeTransportPoi(id){
     setExcludedTransportPois(excluded);
     renderTransportEditor();
 }
+
 async function handleTransportChange(input){
     const from = parseInt(input.dataset.from), to = parseInt(input.dataset.to), val = input.value.trim();
     const statusEl = input.parentElement.querySelector('.save-status');

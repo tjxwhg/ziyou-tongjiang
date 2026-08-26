@@ -737,7 +737,7 @@ async function useRoute(routeId) {
     alert('推荐路线使用功能已集成，请直接在路线详情页操作。');
 }
 
-// ==================== 智能规划（简洁无死循环） ====================
+// ==================== 智能规划（重写，确保长耗时逻辑） ====================
 function classifySpot(spot) {
     const dur = spot.visitDuration || 0;
     if (dur > 300) return 'long';
@@ -799,7 +799,7 @@ function fillCountySpots(availableCounty, usedCountyIds, lastPoi, currentMin, re
     return { totalInserted, lastPoi };
 }
 
-// 核心时间块分配（无死循环）
+// 核心时间块分配
 function smartSchedule(spots, startDate, startTime, mode) {
     const countySpots = getCountySpots();
     const usedCountyIds = new Set();
@@ -827,8 +827,9 @@ function smartSchedule(spots, startDate, startTime, mode) {
         currentMin = DAY_START;
     }
 
-    // 1. 处理长耗时景区
+    // 1. 处理长耗时景区：强制08:00开始
     for (let spot of longSpots) {
+        // 如果当前时间不是08:00，填充当天剩余并顺延至次日08:00
         if (currentMin !== DAY_START) {
             let rem = DAY_END - currentMin;
             if (rem > 0) {
@@ -841,10 +842,12 @@ function smartSchedule(spots, startDate, startTime, mode) {
             currentDate.setDate(currentDate.getDate() + 1);
             currentMin = DAY_START;
         }
+        // 现在当前时间是08:00
         let travelTime = getTransportTime(lastPoi.id, spot.id, mode);
         if (travelTime === null || travelTime === undefined) travelTime = 0;
         let visitDur = DAY_END - currentMin - travelTime;
         if (visitDur < 0) {
+            // 交通超出，顺延一天
             currentDate.setDate(currentDate.getDate() + 1);
             currentMin = DAY_START;
             travelTime = getTransportTime(lastPoi.id, spot.id, mode);
@@ -862,11 +865,15 @@ function smartSchedule(spots, startDate, startTime, mode) {
         };
         orderedPois.push(node);
         lastPoi = node;
-        currentMin = DAY_END;
+        currentMin = DAY_END; // 全天结束
     }
 
     // 2. 处理中耗时景区
-    for (let spot of halfSpots) {
+    let halfQueue = [...halfSpots];
+    let attempts = 0;
+    while (halfQueue.length > 0 && attempts < 100) {
+        attempts++;
+        let spot = halfQueue.shift();
         let travelTime = getTransportTime(lastPoi.id, spot.id, mode);
         if (travelTime === null || travelTime === undefined) travelTime = 0;
         let needed = travelTime + spot.visitDuration;
@@ -971,140 +978,12 @@ function smartSchedule(spots, startDate, startTime, mode) {
                 }
             }
         }
-        // 顺延到次日8:00，并重试该景点（但不会死循环，因为只尝试一次）
         currentDate.setDate(currentDate.getDate() + 1);
         currentMin = DAY_START;
-        // 将当前景点放回列表尾部，重新尝试（但为了避免无限循环，我们只允许一次顺延）
-        // 使用一个简单的机制：如果已经顺延过一次，则直接跳过该景点（但这里我们让它重新尝试，最多一次）
-        // 但为了简洁，我们采用：如果上午和下午都放不下，就顺延到次日，然后再次尝试上午。
-        // 为确保不无限循环，我们使用一个计数器，但此处由于只有半日景点有限，且每次顺延后次日肯定有上午块，所以不会无限
-        // 但我们增加一个简单检查：如果当前日期已经超过开始日期+7天，则强制跳过。
-        // 但为了简洁，我们假设3天内能安排完。
-        // 我们添加一个简单循环，最多尝试2次
-        // 但为了不引入死循环，我们直接在这里重新插入到列表开头，但会导致重复，我们最好用while循环，但为了简单，我们采用for循环处理，且不重试，直接跳过该景点（但这样会导致景点丢失）
-        // 因此，我们采用 while 循环来处理 halfSpots，但限制总尝试次数。
-        // 改用 while 循环处理 halfSpots，但限制尝试次数。
-    }
-
-    // 由于上面用 for 循环处理 halfSpots 可能导致部分景点无法安排，我们改用 while 循环并限制尝试次数。
-    // 这里我们用更可靠的方式：将 halfSpots 放入队列，循环处理，但每个景点最多尝试3次。
-    let halfQueue = [...halfSpots];
-    let attempts = 0;
-    while (halfQueue.length > 0 && attempts < 100) {
-        attempts++;
-        let spot = halfQueue.shift();
-        let travelTime = getTransportTime(lastPoi.id, spot.id, mode);
-        if (travelTime === null || travelTime === undefined) travelTime = 0;
-        let needed = travelTime + spot.visitDuration;
-
-        if (currentMin >= DAY_END) {
-            currentDate.setDate(currentDate.getDate() + 1);
-            currentMin = DAY_START;
-        }
-        if (currentMin < DAY_START) currentMin = DAY_START;
-        if (currentMin >= DINNER_TRIGGER && currentMin < DAY_END) {
-            let rem = DAY_END - currentMin;
-            if (rem > 0) {
-                let result = fillCountySpots(availableCounty, usedCountyIds, lastPoi, currentMin, rem, currentDate, orderedPois, mode);
-                if (result.totalInserted > 0) {
-                    lastPoi = result.lastPoi;
-                    currentMin += result.totalInserted;
-                }
-            }
-            currentDate.setDate(currentDate.getDate() + 1);
-            currentMin = DAY_START;
-        }
-
-        // 尝试上午块
-        let morningStart = Math.max(currentMin, DAY_START);
-        let morningEnd = LUNCH_TRIGGER;
-        let morningAvailable = morningEnd - morningStart;
-        if (needed <= morningAvailable && currentMin < LUNCH_TRIGGER) {
-            const node = {
-                id: spot.id,
-                name: spot.name,
-                lat: spot.lat,
-                lng: spot.lng,
-                visitDuration: spot.visitDuration,
-                transportTime: travelTime,
-                isCounty: false
-            };
-            orderedPois.push(node);
-            lastPoi = node;
-            currentMin = morningStart + needed;
-            if (currentMin < morningEnd) {
-                let result = fillCountySpots(availableCounty, usedCountyIds, lastPoi, currentMin, morningEnd - currentMin, currentDate, orderedPois, mode);
-                if (result.totalInserted > 0) {
-                    lastPoi = result.lastPoi;
-                    currentMin += result.totalInserted;
-                }
-            }
-            currentMin = LUNCH_END;
-            continue;
-        }
-
-        // 上午不足，填充上午剩余，跳到下午
-        if (currentMin < LUNCH_TRIGGER) {
-            let rem = LUNCH_TRIGGER - currentMin;
-            if (rem > 0) {
-                let result = fillCountySpots(availableCounty, usedCountyIds, lastPoi, currentMin, rem, currentDate, orderedPois, mode);
-                if (result.totalInserted > 0) {
-                    lastPoi = result.lastPoi;
-                    currentMin += result.totalInserted;
-                }
-            }
-            currentMin = LUNCH_END;
-            travelTime = getTransportTime(lastPoi.id, spot.id, mode);
-            if (travelTime === null || travelTime === undefined) travelTime = 0;
-            needed = travelTime + spot.visitDuration;
-        }
-
-        // 尝试下午块
-        let afternoonStart = Math.max(currentMin, LUNCH_END);
-        let afternoonEnd = DINNER_TRIGGER;
-        let afternoonAvailable = afternoonEnd - afternoonStart;
-        if (needed <= afternoonAvailable && currentMin < DINNER_TRIGGER) {
-            const node = {
-                id: spot.id,
-                name: spot.name,
-                lat: spot.lat,
-                lng: spot.lng,
-                visitDuration: spot.visitDuration,
-                transportTime: travelTime,
-                isCounty: false
-            };
-            orderedPois.push(node);
-            lastPoi = node;
-            currentMin = afternoonStart + needed;
-            if (currentMin < afternoonEnd) {
-                let result = fillCountySpots(availableCounty, usedCountyIds, lastPoi, currentMin, afternoonEnd - currentMin, currentDate, orderedPois, mode);
-                if (result.totalInserted > 0) {
-                    lastPoi = result.lastPoi;
-                    currentMin += result.totalInserted;
-                }
-            }
-            currentMin = DINNER_END;
-            continue;
-        }
-
-        // 下午也不足，填充下午剩余，顺延到次日
-        if (currentMin < DINNER_TRIGGER) {
-            let rem = DINNER_TRIGGER - currentMin;
-            if (rem > 0) {
-                let result = fillCountySpots(availableCounty, usedCountyIds, lastPoi, currentMin, rem, currentDate, orderedPois, mode);
-                if (result.totalInserted > 0) {
-                    lastPoi = result.lastPoi;
-                    currentMin += result.totalInserted;
-                }
-            }
-        }
-        currentDate.setDate(currentDate.getDate() + 1);
-        currentMin = DAY_START;
-        // 重新放回队列，但限制尝试次数
         if (attempts < 100) halfQueue.push(spot);
     }
 
-    // 3. 处理短耗时景区和县城填充（作为填充）
+    // 3. 处理短耗时景区和县城填充
     let fillers = [...shortSpots, ...availableCounty];
     fillers.sort((a,b) => b.visitDuration - a.visitDuration);
     for (let spot of fillers) {
@@ -1126,7 +1005,7 @@ function smartSchedule(spots, startDate, startTime, mode) {
             lastPoi = node;
             currentMin += needed;
         } else {
-            // 放不下，跳过，允许空闲
+            // 放不下，跳过（允许空闲）
         }
     }
 
@@ -1241,7 +1120,7 @@ async function generateCustomTrip() {
     document.getElementById('saveGeneratedTripBtn').classList.remove('hidden');
 }
 
-// ==================== 时间线生成（交通与到达连续） ====================
+// ==================== 时间线生成 ====================
 function generateTimeline(nodes, startDate, startTime) {
     let curDate = new Date(startDate);
     let [h, m] = startTime.split(':').map(Number);
@@ -1465,11 +1344,10 @@ function buildMainPoiOptions(){
     mainPoiOptions = allMain.filter(p => p.id !== 'county');
     if (currentGcjPos) mainPoiOptions.unshift({ id:'mylocation', name:'📍 我的位置', lat: currentGcjPos.lat, lng: currentGcjPos.lng });
     mainPoiOptions.unshift(COUNTY);
-    // 严格过滤
+    // 严格过滤：排除 EXCLUDED_FROM_TRIP 分类
     allowedPoiOptions = allMain.filter(p => {
         if(!p.category) return false;
         const cats = p.category.split(',').map(c => c.trim().toLowerCase());
-        // 检查是否包含排除项（排除列表使用小写）
         const excludedLower = EXCLUDED_FROM_TRIP.map(c => c.toLowerCase());
         return !cats.some(c => excludedLower.includes(c));
     });
@@ -1488,16 +1366,13 @@ function renderDynamicRoute(){
     const sortByName = (a,b) => a.name.localeCompare(b.name);
     longGroup.sort(sortByName); halfGroup.sort(sortByName); shortGroup.sort(sortByName);
 
-    // 不显示分类标题，只显示景点列表
     let html = '';
     const allSpots = [...longGroup, ...halfGroup, ...shortGroup];
     allSpots.forEach(p => {
         const checked = routeLegs.some(l => l.id === p.id) ? 'checked' : '';
-        // 判断时长类型，用于显示后缀（但不显示分类标题）
         const dur = p.visit_duration || 0;
         let suffix = '景区';
         if (dur < 100) suffix = '景点';
-        // 显示名称和时长，但不显示分类
         html += `<div style="margin:4px 0;"><label><input type="checkbox" value="${p.id}" ${checked} onchange="toggleSpot('${p.id}')"> ${p.name}（${dur}分钟）</label></div>`;
     });
     document.getElementById('dynamic-route').innerHTML = html || '<p>暂无可用景点</p>';
@@ -1553,12 +1428,85 @@ function deleteTrip(idx){
 }
 
 // ==================== 我的预约 & 反馈 ====================
-async function loadMyReservations(){ /* 同前，略 */ }
-window.toggleMyReservationDetail = function(idx){ /* 同前，略 */ };
-async function submitFeedback(){ /* 同前，略 */ }
-async function loadFeedbackHistory(){ /* 同前，略 */ }
+async function loadMyReservations(){
+    const uid = getUserId();
+    const { data } = await sb.from('reservations').select('*').eq('user_id', uid).order('created_at', false);
+    if (!data || data.length === 0) {
+        document.getElementById('myReservationContent').innerHTML = '<p>暂无预约</p>';
+        return;
+    }
+    const merchantIds = [...new Set(data.map(r => r.merchant_id))];
+    const { data: merchants } = await sb.from('ztj_merchants').select('id,display_name').in('id', merchantIds);
+    const merchantMap = {};
+    if (merchants) merchants.forEach(m => merchantMap[m.id] = m.display_name);
+    let html = '';
+    data.forEach((r, idx) => {
+        let category = '', content = '';
+        if (r.remark) {
+            const parts = r.remark.split('|');
+            parts.forEach(p => {
+                if (p.startsWith('类别：')) category = p.replace('类别：', '');
+                else if (p.startsWith('内容：')) content = p.replace('内容：', '');
+            });
+        }
+        const merchantName = merchantMap[r.merchant_id] || '未知商户';
+        html += `<div class="card">
+            <div class="collapse-header" onclick="toggleMyReservationDetail(${idx})">
+                <span>${r.reservation_date} | ${r.time_slot_start}-${r.time_slot_end||''} | ${merchantName} | ${category||'未分类'} | ${content||''} | 联系人：${r.name}</span>
+            </div>
+            <div id="my-res-detail-${idx}" class="hidden">
+                <p><b>商户：</b>${merchantName}</p>
+                <p><b>活动类别：</b>${category||'未指定'}</p>
+                <p><b>预约内容：</b>${content||'未指定'}</p>
+                <p><b>单位：</b>${r.unit||''} <b>人数：</b>${r.visitor_count}</p>
+                <p><b>电话：</b>${r.phone}</p>
+                <p><b>地点：</b>${r.room||''}</p>
+                <p><b>状态：</b>${{pending:'预约中',confirmed:'已确认',rejected:'已拒绝'}[r.status]||r.status}</p>
+            </div>
+        </div>`;
+    });
+    document.getElementById('myReservationContent').innerHTML = html;
+}
+window.toggleMyReservationDetail = function(idx){ document.getElementById('my-res-detail-'+idx).classList.toggle('hidden'); };
 
-function switchMyTab(tab){ /* 同前，略 */ }
+async function submitFeedback(){
+    const msg = document.getElementById('feedbackMsg').value;
+    if(!msg) return;
+    await sb.from('ztj_feedbacks').insert({ user_id: getUserId(), message: msg });
+    document.getElementById('feedbackMsg').value = '';
+    loadFeedbackHistory();
+}
+async function loadFeedbackHistory(){
+    const { data } = await sb.from('ztj_feedbacks').select('*').neq('user_id','system').order('created_at',{ascending:false});
+    let html = '';
+    if (data) {
+        data.forEach(f => {
+            let replyHtml = '';
+            if (f.reply) {
+                replyHtml = `<div class="feedback-reply">🔔 管理员回复：${f.reply}</div>`;
+            }
+            html += `<div class="card">
+                <div><b>${new Date(f.created_at).toLocaleString()}</b></div>
+                <div>${f.message}</div>
+                ${replyHtml}
+            </div>`;
+        });
+    }
+    document.getElementById('feedbackHistory').innerHTML = html || '<p>暂无留言</p>';
+}
+
+function switchMyTab(tab){
+    document.getElementById('my-tab-trip').classList.remove('active');
+    document.getElementById('my-tab-reservation').classList.remove('active');
+    document.getElementById('my-tab-feedback').classList.remove('active');
+    document.getElementById('myTripContent').classList.add('hidden');
+    document.getElementById('myReservationContent').classList.add('hidden');
+    document.getElementById('myFeedbackContent').classList.add('hidden');
+    if(tab==='trip'){ document.getElementById('my-tab-trip').classList.add('active'); document.getElementById('myTripContent').classList.remove('hidden'); renderMyTrip(); }
+    else if(tab==='reservation'){ document.getElementById('my-tab-reservation').classList.add('active'); document.getElementById('myReservationContent').classList.remove('hidden'); loadMyReservations(); }
+    else { document.getElementById('my-tab-feedback').classList.add('active'); document.getElementById('myFeedbackContent').classList.remove('hidden'); loadFeedbackHistory(); }
+}
+
 function openPanel(id){ document.getElementById(id).classList.add('active'); if(id==='routesPanel') loadRoutes(); }
 function closePanel(id){ document.getElementById(id).classList.remove('active'); }
 function startSimulation(){ alert('模拟导航功能即将上线'); }

@@ -254,6 +254,17 @@ async function saveNewPoi(){
     alert('新增成功');
     toggleAddPoiForm();
     loadPOIs();
+    // 新增POI后，刷新交通耗时编辑器，并确保该POI不在排除列表中
+    // 从排除列表中移除该POI的ID，使其在交通耗时中可见
+    let excluded = getExcludedTransportPois();
+    if(inserted && inserted.length){
+        const newId = inserted[0].id;
+        const idx = excluded.indexOf(newId);
+        if(idx !== -1) excluded.splice(idx, 1);
+        setExcludedTransportPois(excluded);
+    }
+    // 重新加载交通耗时编辑器
+    loadTransportEditor();
 }
 
 async function toggleEditPoi(id){
@@ -471,7 +482,7 @@ async function deletePoi(id){
     }
 }
 
-// ================== 路线管理（含项目顺序支持） ==================
+// ================== 路线管理 ==================
 async function loadPoiOptionsForRoute(){
     const { data } = await sb.from('ztj_poi').select('id,name').order('name');
     window.poiOptions = data || [];
@@ -642,7 +653,7 @@ async function loadRoutes(){
     document.getElementById('route-list').innerHTML = data.length ? data.map(r => `<div class="card"><b>${r.name}</b> (${r.start_time||'未设'}) <button class="btn btn-default" onclick="editRoute(${r.id})">编辑</button> <button class="btn btn-danger" onclick="deleteRoute(${r.id})">删除</button></div>`).join('') : '<p>暂无路线</p>';
 }
 
-// ================== 交通耗时编辑器（修复重复加载） ==================
+// ================== 交通耗时编辑器（修复重复和显示问题） ==================
 function getExcludedTransportPois(){
     const stored = localStorage.getItem('excludedTransportPois');
     return stored ? JSON.parse(stored) : [];
@@ -652,17 +663,20 @@ function setExcludedTransportPois(arr){
 }
 
 async function loadTransportEditor(){
-    // 清空旧数据，避免重复
+    // 清空主列表，重新构建
     mainPoisForTransport = [];
     const { data: pois } = await sb.from('ztj_poi').select('id,name,category').is('parent_id', null).order('name');
     allMainPois = pois || [];
     const excludedIds = getExcludedTransportPois();
+    // 添加红军广场作为起点
     mainPoisForTransport = [ { id: 0, name: '红军广场', category: '' } ];
     (pois||[]).forEach(p => {
+        // 如果该POI在排除列表中，则跳过
         if (excludedIds.includes(p.id)) return;
+        // 检查分类，排除公共服务、游玩娱乐、特产购物
         if (!p.category) { mainPoisForTransport.push(p); return; }
         const cats = p.category.split(',');
-        if (!cats.some(c => EXCLUDED_TRANSPORT_CATS.includes(c))) {
+        if (!cats.some(c => EXCLUDED_TRANSPORT_CATS.includes(c.trim()))) {
             mainPoisForTransport.push(p);
         }
     });
@@ -711,8 +725,17 @@ function renderTransportEditor(){
 
 function addTransportPoi(){
     const excludedIds = getExcludedTransportPois();
-    // 从 allMainPois 中找出不在 mainPoisForTransport 中的POI
-    const availablePois = allMainPois.filter(p => !mainPoisForTransport.some(mp => mp.id === p.id));
+    // 从 allMainPois 中找出不在 mainPoisForTransport 中的POI，且不在排除列表中
+    const availablePois = allMainPois.filter(p => {
+        // 如果已经在主列表中，跳过
+        if (mainPoisForTransport.some(mp => mp.id === p.id)) return false;
+        // 如果在排除列表中，跳过
+        if (excludedIds.includes(p.id)) return false;
+        // 检查分类
+        if (!p.category) return true;
+        const cats = p.category.split(',');
+        return !cats.some(c => EXCLUDED_TRANSPORT_CATS.includes(c.trim()));
+    });
     if(availablePois.length === 0){
         alert('所有POI已添加，或没有更多可添加的POI');
         return;
@@ -728,19 +751,25 @@ function addTransportPoi(){
         if(selectedId){
             const poi = allMainPois.find(p => p.id == selectedId);
             if(poi) {
-                // 再次检查是否已在列表中（防止并发）
-                if (!mainPoisForTransport.some(mp => mp.id === selectedId)) {
-                    mainPoisForTransport.push(poi);
-                    const excluded = getExcludedTransportPois();
-                    const idx = excluded.indexOf(Number(selectedId));
-                    if(idx !== -1) {
-                        excluded.splice(idx, 1);
-                        setExcludedTransportPois(excluded);
-                    }
-                    renderTransportEditor();
-                } else {
+                // 再次检查是否已在列表中或排除列表中
+                if (mainPoisForTransport.some(mp => mp.id === selectedId)) {
                     alert('该POI已在列表中');
+                    dialog.remove();
+                    return;
                 }
+                if (excludedIds.includes(selectedId)) {
+                    alert('该POI已被排除，请先在“移除”列表中恢复');
+                    dialog.remove();
+                    return;
+                }
+                mainPoisForTransport.push(poi);
+                // 从排除列表中移除（如果有）
+                const idx = excludedIds.indexOf(Number(selectedId));
+                if(idx !== -1) {
+                    excludedIds.splice(idx, 1);
+                    setExcludedTransportPois(excludedIds);
+                }
+                renderTransportEditor();
             }
         }
         dialog.remove();
@@ -748,7 +777,11 @@ function addTransportPoi(){
 }
 
 function removeTransportPoi(id){
+    // 如果id是0（红军广场），不允许移除
+    if(id === 0) { alert('红军广场为必选项，不能移除'); return; }
+    // 从主列表中移除
     mainPoisForTransport = mainPoisForTransport.filter(p => p.id != id);
+    // 加入排除列表
     const excluded = getExcludedTransportPois();
     if(!excluded.includes(id)) excluded.push(id);
     setExcludedTransportPois(excluded);

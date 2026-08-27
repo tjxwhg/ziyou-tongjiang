@@ -6,7 +6,6 @@
     <title>智游通江</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
-        /* ===== 全部样式保持不变 ===== */
         * { margin:0; padding:0; box-sizing:border-box; }
         body { font-family: system-ui, sans-serif; height:100vh; overflow:hidden; background:#f5f5f5; }
         #map { height:100vh; width:100vw; z-index:1; }
@@ -173,33 +172,250 @@ const COUNTY_SPOT_KEYWORDS = ['轿房沟美食街', '银耳博物馆', '红四�
 let routeLegs=[], mainPoiOptions=[], allowedPoiOptions=[];
 
 // ==================== 辅助函数 ====================
-function wgs84ToGcj02(lat, lon) { /* 相同，省略 */ }
-function getDistance(lat1, lng1, lat2, lng2) { /* 相同，省略 */ }
+function wgs84ToGcj02(lat, lon) {
+    const a = 6378245.0;
+    const ee = 0.00669342162296594323;
+    function transformLat(x, y) {
+        let ret = -100.0 + 2.0 * x + 3.0 * y + 0.2 * y * y + 0.1 * x * y + 0.2 * Math.sqrt(Math.abs(x));
+        ret += (20.0 * Math.sin(6.0 * x * Math.PI) + 20.0 * Math.sin(2.0 * x * Math.PI)) * 2.0 / 3.0;
+        ret += (20.0 * Math.sin(y * Math.PI) + 40.0 * Math.sin(y / 3.0 * Math.PI)) * 2.0 / 3.0;
+        ret += (160.0 * Math.sin(y / 12.0 * Math.PI) + 320 * Math.sin(y * Math.PI / 30.0)) * 2.0 / 3.0;
+        return ret;
+    }
+    function transformLon(x, y) {
+        let ret = 300.0 + x + 2.0 * y + 0.1 * x * x + 0.1 * x * y + 0.1 * Math.sqrt(Math.abs(x));
+        ret += (20.0 * Math.sin(6.0 * x * Math.PI) + 20.0 * Math.sin(2.0 * x * Math.PI)) * 2.0 / 3.0;
+        ret += (20.0 * Math.sin(x * Math.PI) + 40.0 * Math.sin(x / 3.0 * Math.PI)) * 2.0 / 3.0;
+        ret += (150.0 * Math.sin(x / 12.0 * Math.PI) + 300.0 * Math.sin(x / 30.0 * Math.PI)) * 2.0 / 3.0;
+        return ret;
+    }
+    const dLat = transformLat(lon - 105.0, lat - 35.0);
+    const dLon = transformLon(lon - 105.0, lat - 35.0);
+    const radLat = lat / 180.0 * Math.PI;
+    let magic = Math.sin(radLat);
+    magic = 1 - ee * magic * magic;
+    const sqrtMagic = Math.sqrt(magic);
+    const dLatFinal = (dLat * 180.0) / ((a * (1 - ee)) / (magic * sqrtMagic) * Math.PI);
+    const dLonFinal = (dLon * 180.0) / (a / sqrtMagic * Math.cos(radLat) * Math.PI);
+    return { lat: lat + dLatFinal, lng: lon + dLonFinal };
+}
+
+function getDistance(lat1, lng1, lat2, lng2) {
+    const R = 6371000;
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLng = (lng2 - lng1) * Math.PI / 180;
+    const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180) * Math.cos(lat2*Math.PI/180) * Math.sin(dLng/2)**2;
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+
 function formatTime(m){ 
     let hours = Math.floor(m / 60);
     let minutes = m % 60;
     if (hours >= 24) hours = hours % 24;
     return `${hours.toString().padStart(2,'0')}:${minutes.toString().padStart(2,'0')}`; 
 }
-function isNonVisitPoi(poiId){ /* 相同，省略 */ }
-function getUserId(){ /* 相同，省略 */ }
+
+function isNonVisitPoi(poiId){
+    if(poiId==='county') return false;
+    const poi = allPois.find(p=>p.id==poiId);
+    if(!poi || !poi.category) return false;
+    return poi.category.split(',').some(c=>NON_VISIT_CATEGORIES.includes(c.trim()));
+}
+
+function getUserId(){
+    return anonymousUserId || (localStorage.getItem('vid') || (()=>{
+        let uid='v_'+Date.now()+Math.random().toString(36);
+        localStorage.setItem('vid',uid);
+        return uid;
+    })());
+}
+
 function getTodayStr(){ return new Date().toISOString().slice(0,10); }
 
-// ==================== 天气获取（相同）====================
-async function fetchWeatherForecast() { /* 相同，省略 */ }
-function getDayWeatherTip(weatherObj) { /* 相同，省略 */ }
+// ==================== 天气获取 ====================
+async function fetchWeatherForecast() {
+    const now = Date.now();
+    if (weatherCache && (now - weatherCache.time < 3600000)) {
+        return weatherCache.data;
+    }
+    try {
+        const url = `https://api.open-meteo.com/v1/forecast?latitude=31.911705&longitude=107.245033&daily=weathercode,temperature_2m_max,temperature_2m_min,windspeed_10m_max&timezone=Asia/Shanghai&forecast_days=16`;
+        const response = await fetch(url);
+        if (!response.ok) throw new Error('天气API请求失败');
+        const data = await response.json();
+        if (!data.daily || !data.daily.time) throw new Error('天气数据格式异常');
+        const codes = data.daily.weathercode || [];
+        const tempsMax = data.daily.temperature_2m_max || [];
+        const tempsMin = data.daily.temperature_2m_min || [];
+        const winds = data.daily.windspeed_10m_max || [];
+        const dates = data.daily.time || [];
+        const codeMap = {
+            0: '晴', 1: '晴', 2: '晴间多云', 3: '多云',
+            45: '雾', 48: '雾',
+            51: '小毛毛雨', 53: '毛毛雨', 55: '大毛毛雨',
+            61: '小雨', 63: '中雨', 65: '大雨',
+            71: '小雪', 73: '中雪', 75: '大雪',
+            80: '阵雨', 81: '中阵雨', 82: '强阵雨',
+            95: '雷暴', 96: '雷暴加冰雹', 99: '强雷暴加冰雹'
+        };
+        const forecast = dates.map((date, i) => ({
+            date: date,
+            weather: codeMap[codes[i]] || '未知天气',
+            tempMax: tempsMax[i] !== undefined ? Math.round(tempsMax[i]) : '--',
+            tempMin: tempsMin[i] !== undefined ? Math.round(tempsMin[i]) : '--',
+            wind: winds[i] !== undefined ? Math.round(winds[i]) : '--'
+        }));
+        weatherCache = { time: Date.now(), data: forecast };
+        return forecast;
+    } catch (e) {
+        console.warn('[天气] 获取失败:', e);
+        return null;
+    }
+}
 
-// ==================== 语音引擎（相同）====================
-function activateSpeech() { /* 相同，省略 */ }
-function toggleAutoVoice() { /* 相同，省略 */ }
-function triggerVoice(poi) { /* 相同，省略 */ }
-function playTTS(poi) { /* 相同，省略 */ }
-function checkVoiceTrigger(userLat, userLng) { /* 相同，省略 */ }
+function getDayWeatherTip(weatherObj) {
+    if (!weatherObj) return '⚠️ 天气信息获取失败，请自行关注天气变化。';
+    const { weather, tempMax, tempMin, wind } = weatherObj;
+    let tip = `🌤️ 天气：${weather}`;
+    if (tempMin !== '--' && tempMax !== '--') tip += `，气温 ${tempMin}℃ ～ ${tempMax}℃`;
+    else if (tempMax !== '--') tip += `，最高气温 ${tempMax}℃`;
+    if (wind !== '--') tip += `，风力 ${wind} km/h`;
+    if (weather.includes('雨') || weather.includes('雷') || weather.includes('雾')) tip += '，☔ 有降雨或大雾，建议携带雨具，注意出行安全。';
+    else if (tempMax !== '--' && tempMax > 33) tip += '，☀️ 气温较高，注意防暑防晒，多补充水分。';
+    else if (tempMax !== '--' && tempMax < 10) tip += '，🧥 气温较低，注意保暖。';
+    else tip += '，🌿 天气适宜出行，祝您旅途愉快！';
+    return tip;
+}
 
-// ==================== 定位（相同）====================
-function locateUser() { /* 相同，省略 */ }
-function startWatching() { /* 相同，省略 */ }
-function setSimulatedPosition(lat, lng) { /* 相同，省略 */ }
+// ==================== 语音引擎 ====================
+function activateSpeech() {
+    if ('speechSynthesis' in window) {
+        speechSynthesis.getVoices();
+        const silent = new SpeechSynthesisUtterance(' ');
+        silent.volume = 0;
+        silent.lang = 'zh-CN';
+        speechSynthesis.speak(silent);
+        setTimeout(() => speechSynthesis.cancel(), 100);
+    }
+}
+
+function toggleAutoVoice() {
+    voiceEnabled = !voiceEnabled;
+    const btn = document.getElementById('voiceToggleBtn');
+    if (voiceEnabled) {
+        btn.textContent = '🔊';
+        const testMsg = new SpeechSynthesisUtterance('语音已开启');
+        testMsg.lang = 'zh-CN';
+        speechSynthesis.speak(testMsg);
+        if (currentGcjPos) checkVoiceTrigger(currentGcjPos.lat, currentGcjPos.lng);
+    } else {
+        btn.textContent = '🔇';
+        speechSynthesis.cancel();
+        if (currentAudio) { currentAudio.pause(); currentAudio = null; }
+        const closeMsg = new SpeechSynthesisUtterance('语音已关闭');
+        closeMsg.lang = 'zh-CN';
+        speechSynthesis.speak(closeMsg);
+    }
+}
+
+function triggerVoice(poi) {
+    if (!voiceEnabled) return;
+    speechSynthesis.cancel();
+    if (currentAudio) { currentAudio.pause(); currentAudio = null; }
+    if (poi.voice_mp3) {
+        const audio = new Audio(poi.voice_mp3);
+        currentAudio = audio;
+        audio.play().catch(() => playTTS(poi));
+        return;
+    }
+    if (poi.voice_cn && poi.voice_cn.startsWith('http')) {
+        const audio = new Audio(poi.voice_cn);
+        currentAudio = audio;
+        audio.play().catch(() => playTTS(poi));
+        return;
+    }
+    playTTS(poi);
+}
+
+function playTTS(poi) {
+    const lang = document.getElementById('langSelect')?.value || 'cn';
+    let text = poi['voice_' + lang] || poi.voice_cn || poi.description || poi.name;
+    if (text && text.startsWith('http')) text = poi.description || poi.name;
+    if (!text) return;
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = { cn:'zh-CN', en:'en-US', ja:'ja-JP', ko:'ko-KR' }[lang] || 'zh-CN';
+    utterance.rate = 0.9;
+    speechSynthesis.speak(utterance);
+}
+
+function checkVoiceTrigger(userLat, userLng) {
+    if (!voiceEnabled || !allPois.length) return;
+    const today = getTodayStr();
+    const threshold = TRIGGER_RADIUS + GPS_ACCURACY_TOLERANCE;
+    allPois.forEach(poi => {
+        if (!poi.lat || !poi.lng) return;
+        const dist = getDistance(userLat, userLng, poi.lat, poi.lng);
+        if (dist <= threshold && lastTriggeredPoiIds[poi.id] !== today) {
+            triggerVoice(poi);
+            lastTriggeredPoiIds[poi.id] = today;
+        }
+    });
+}
+
+// ==================== 定位 ====================
+function locateUser() {
+    if (!navigator.geolocation) { alert('您的浏览器不支持定位'); return; }
+    activateSpeech();
+    navigator.geolocation.getCurrentPosition(
+        (position) => {
+            const raw = { lat: position.coords.latitude, lng: position.coords.longitude };
+            const gcj = wgs84ToGcj02(raw.lat, raw.lng);
+            currentGcjPos = gcj;
+            if (userMarker) map.removeLayer(userMarker);
+            userMarker = L.marker([gcj.lat, gcj.lng], {
+                icon: L.divIcon({
+                    html: '<div style="background:#2196F3; width:20px; height:20px; border-radius:50%; border:2px solid white; box-shadow:0 0 8px rgba(0,0,0,0.3);"></div>',
+                    iconSize: [20,20]
+                })
+            }).addTo(map).bindPopup('我的位置').openPopup();
+            map.setView([gcj.lat, gcj.lng], 15);
+            startWatching();
+            checkVoiceTrigger(gcj.lat, gcj.lng);
+        },
+        (error) => { console.warn('定位失败:', error.message); },
+        { enableHighAccuracy: true, timeout: 10000 }
+    );
+}
+
+function startWatching() {
+    if (!navigator.geolocation) return;
+    if (watchId) navigator.geolocation.clearWatch(watchId);
+    watchId = navigator.geolocation.watchPosition(
+        (pos) => {
+            const raw = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+            const gcj = wgs84ToGcj02(raw.lat, raw.lng);
+            currentGcjPos = gcj;
+            if (userMarker) map.removeLayer(userMarker);
+            userMarker = L.marker([gcj.lat, gcj.lng], { icon: L.divIcon({ html: '<div style="background:#2196F3; width:20px; height:20px; border-radius:50%; border:2px solid white; box-shadow:0 0 8px rgba(0,0,0,0.3);"></div>', iconSize: [20,20] }) }).addTo(map);
+            checkVoiceTrigger(gcj.lat, gcj.lng);
+        },
+        (err) => { console.warn('定位监听错误', err); },
+        { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 }
+    );
+}
+
+function setSimulatedPosition(lat, lng) {
+    currentGcjPos = { lat, lng };
+    if (simMarker) map.removeLayer(simMarker);
+    simMarker = L.marker([lat, lng], {
+        icon: L.divIcon({
+            html: '<div style="background:#FF5722; width:16px; height:16px; border-radius:50%; border:2px solid white; box-shadow:0 0 8px rgba(0,0,0,0.3);"></div>',
+            iconSize: [16,16]
+        })
+    }).addTo(map).bindPopup('模拟位置').openPopup();
+    checkVoiceTrigger(lat, lng);
+    map.setView([lat, lng], 15);
+}
 
 // ==================== 初始化地图 ====================
 function initMap() {
@@ -219,31 +435,325 @@ function initMap() {
     setTimeout(() => locateUser(), 1000);
 }
 
-function initTimeSelectors() { /* 相同，省略 */ }
+function initTimeSelectors() {
+    const select = document.getElementById('trip-time');
+    select.innerHTML = '';
+    for (let h = 0; h < 24; h++) {
+        for (let m = 0; m < 60; m += 10) {
+            const value = String(h).padStart(2,'0') + ':' + String(m).padStart(2,'0');
+            const opt = document.createElement('option');
+            opt.value = value;
+            opt.textContent = value;
+            select.appendChild(opt);
+        }
+    }
+    const now = new Date();
+    let h = now.getHours(), m = Math.floor(now.getMinutes()/10)*10;
+    if (m === 60) { m = 0; h = (h+1)%24; }
+    select.value = String(h).padStart(2,'0') + ':' + String(m).padStart(2,'0');
+}
+
 function getSelectedTime() { return document.getElementById('trip-time').value; }
 
 // ==================== 匿名登录 & POI加载 ====================
-async function initAnonymousAuth() { /* 相同，省略 */ }
-async function loadAllPOIs() { /* 相同，省略 */ }
-async function loadTransportPresets() { /* 相同，省略 */ }
-function getTransportTime(fromId, toId, mode) { /* 相同，省略 */ }
-function renderPOIs(pois) { /* 相同，省略 */ }
+async function initAnonymousAuth() {
+    const { data: { session } } = await sb.auth.getSession();
+    if (session) { anonymousUserId = session.user.id; }
+    else {
+        const { data, error } = await sb.auth.signInAnonymously();
+        if (!error && data.session) anonymousUserId = data.session.user.id;
+    }
+}
+
+async function loadAllPOIs() {
+    const { data } = await sb.from('ztj_poi').select('*').eq('status','active');
+    allPois = data || [];
+    renderPOIs(allPois);
+    window.subPoisMap = {};
+    allPois.forEach(p => { if(p.parent_id){ if(!window.subPoisMap[p.parent_id]) window.subPoisMap[p.parent_id]=[]; window.subPoisMap[p.parent_id].push(p); } });
+    await loadTransportPresets();
+}
+
+async function loadTransportPresets() {
+    const { data } = await sb.from('ztj_transport_presets').select('*');
+    transportPresets = {};
+    if(data) data.forEach(p => { transportPresets[`${p.from_poi_id}_${p.to_poi_id}`] = p.time_min; });
+}
+
+function getTransportTime(fromId, toId, mode) {
+    if (fromId === 'mylocation' || toId === 'mylocation') {
+        const fromPoi = fromId === 'mylocation' ? { lat: currentGcjPos?.lat || 0, lng: currentGcjPos?.lng || 0 } : allPois.find(p => p.id == fromId) || COUNTY;
+        const toPoi = toId === 'mylocation' ? { lat: currentGcjPos?.lat || 0, lng: currentGcjPos?.lng || 0 } : allPois.find(p => p.id == toId) || COUNTY;
+        if (!fromPoi || !toPoi) return null;
+        const dist = getDistance(fromPoi.lat, fromPoi.lng, toPoi.lat, toPoi.lng);
+        const speed = mode === 'auto' ? 40000 : (mode === 'bus' ? 20000 : 5000);
+        return Math.round(dist / speed * 60);
+    }
+    const fId = fromId === 'county' ? 0 : fromId;
+    const tId = toId === 'county' ? 0 : toId;
+    let t = transportPresets[`${fId}_${tId}`];
+    if (t !== undefined) return t;
+    t = transportPresets[`${tId}_${fId}`];
+    return t !== undefined ? t : null;
+}
+
+function renderPOIs(pois) {
+    poiMarkers.forEach(m => map.removeLayer(m));
+    poiMarkers = [];
+    pois.forEach(p => {
+        const cat = (p.category||'').split(',')[0]||'其他';
+        const color = poiColors[cat]||'#999';
+        const icon = L.divIcon({html:`<div style="background:${color}; width:20px; height:20px; border-radius:50%; border:2px solid white;"></div>`, iconSize:[20,20]});
+        const marker = L.marker([p.lat,p.lng],{icon}).addTo(map).on('click', ()=> showPoiDetail(p));
+        marker.poiData = p;
+        poiMarkers.push(marker);
+    });
+    if (currentFilterCategory) applyFilter(currentFilterCategory);
+}
 
 // ==================== 分类筛选 ====================
-function filterPOI(category) { /* 相同，省略 */ }
-function applyFilter(category) { /* 相同，省略 */ }
-function clearFilter() { /* 相同，省略 */ }
-function toggleCategoryBar() { /* 相同，省略 */ }
+function filterPOI(category) {
+    currentFilterCategory = category;
+    applyFilter(category);
+    clearTimeout(filterTimeoutId);
+    filterTimeoutId = setTimeout(() => {
+        document.getElementById('categoryBar').classList.remove('show');
+        document.getElementById('catTrigger').style.display = 'block';
+    }, 5000);
+    document.getElementById('categoryBar').classList.add('show');
+    document.getElementById('catTrigger').style.display = 'none';
+    document.querySelectorAll('.cat-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.category === category);
+    });
+}
 
-// ==================== 商户详情 & 预约 ====================
-async function showPoiDetail(poi) { /* 相同，省略 */ }
-async function toggleReserveForm(merchantId) { /* 相同，省略 */ }
-window.updateReserveContent = function(merchantId) { /* 相同，省略 */ };
-async function submitReservationDirect(merchantId) { /* 相同，省略 */ }
+function applyFilter(category) {
+    poiMarkers.forEach(marker => {
+        const poi = marker.poiData;
+        if (!poi) return;
+        const cats = (poi.category||'').split(',').map(c => c.trim());
+        const match = cats.some(c => c === category);
+        if (match) {
+            if (!marker._icon) map.addLayer(marker);
+            marker.setIcon(L.divIcon({
+                html: `<div style="background:${poiColors[category]||'#999'}; width:30px; height:30px; border-radius:50%; border:3px solid #fff; box-shadow:0 0 12px rgba(0,0,0,0.5);"></div>`,
+                iconSize: [30,30]
+            }));
+        } else {
+            if (marker._icon) map.removeLayer(marker);
+        }
+    });
+}
+
+function clearFilter() {
+    currentFilterCategory = null;
+    document.querySelectorAll('.cat-btn').forEach(btn => btn.classList.remove('active'));
+    poiMarkers.forEach(marker => {
+        if (!marker._icon) map.addLayer(marker);
+        const poi = marker.poiData;
+        if (poi) {
+            const cat = (poi.category||'').split(',')[0]||'其他';
+            const color = poiColors[cat]||'#999';
+            marker.setIcon(L.divIcon({
+                html: `<div style="background:${color}; width:20px; height:20px; border-radius:50%; border:2px solid white;"></div>`,
+                iconSize: [20,20]
+            }));
+        }
+    });
+    document.getElementById('categoryBar').classList.remove('show');
+    document.getElementById('catTrigger').style.display = 'block';
+    clearTimeout(filterTimeoutId);
+}
+
+function toggleCategoryBar() {
+    const bar = document.getElementById('categoryBar');
+    if (bar.classList.contains('show')) {
+        bar.classList.remove('show');
+        document.getElementById('catTrigger').style.display = 'block';
+    } else {
+        bar.classList.add('show');
+        document.getElementById('catTrigger').style.display = 'none';
+        if (currentFilterCategory) {
+            clearTimeout(filterTimeoutId);
+            filterTimeoutId = setTimeout(() => {
+                document.getElementById('categoryBar').classList.remove('show');
+                document.getElementById('catTrigger').style.display = 'block';
+            }, 5000);
+        }
+    }
+}
+
+// ==================== 商户详情 ====================
+async function showPoiDetail(poi) {
+    const { data: m } = await sb.from('ztj_merchants').select('*').eq('poi_id', poi.id).maybeSingle();
+    document.getElementById('merchantDetailTitle').textContent = poi.name;
+    let html = '';
+    if (m) {
+        const sd = m.service_data || {};
+        const categories = sd.businessCategories || [];
+        const items = sd.businessItems || [];
+        if (categories.length > 0 && items.length > 0) {
+            categories.forEach(cat => {
+                const catItems = items.filter(item => item.category === cat);
+                if (catItems.length === 0) return;
+                html += `<div class="category-group"><div class="category-title" onclick="this.nextElementSibling.classList.toggle('hidden')"><span>📁 ${cat} (${catItems.length})</span><span>▼</span></div><div class="category-items hidden">`;
+                catItems.forEach((item, idx) => {
+                    if (!item.name) return;
+                    let priceStr = item.price ? ` ${item.price}` : '';
+                    let durationStr = item.duration ? ` ${item.duration}` : '';
+                    let descStr = item.description ? `<p>${item.description}</p>` : '';
+                    let imgHtml = item.image ? `<div class="biz-image-box"><img src="${item.image}" alt="${item.name}"></div>` : '';
+                    html += `<div class="card"><div><b>${idx+1}. ${item.name}</b>${priceStr}${durationStr}${descStr}</div>${imgHtml}</div>`;
+                });
+                html += `</div></div>`;
+            });
+        } else {
+            const flatItems = sd.items || [];
+            flatItems.filter(item => item.name).forEach((item, idx) => {
+                let priceStr = item.price ? ` ${item.price}` : '';
+                let durationStr = item.duration ? ` ${item.duration}` : '';
+                let descStr = item.description ? `<p>${item.description}</p>` : '';
+                let imgHtml = item.image ? `<div class="biz-image-box"><img src="${item.image}" alt="${item.name}"></div>` : '';
+                html += `<div class="card"><div><b>${idx+1}. ${item.name}</b>${priceStr}${durationStr}${descStr}</div>${imgHtml}</div>`;
+            });
+        }
+        html += `<button class="reserve-btn" onclick="toggleReserveForm('${m.id}')">📋 预约管理</button>`;
+        html += `<div id="reserve-form-${m.id}" class="hidden" style="margin-top:10px;"></div>`;
+        let phone = m.phone || '未提供';
+        let status = m.status === 'open' ? '营业中' : (m.status === 'closed' ? '休息' : '繁忙');
+        let parking = m.parking_spots ?? 0;
+        html += `<hr style="margin:10px 0;"><p>📞 ${phone} | 状态：${status} | 停车位：${parking}</p><p>${poi.description||''}</p>`;
+    } else {
+        html += '<p style="color:#999;">该商户信息暂未录入，请稍后再来。</p>';
+        html += `<hr style="margin:10px 0;"><p>📞 未提供 | 状态：未知 | 停车位：0</p><p>${poi.description||''}</p>`;
+    }
+    document.getElementById('merchantDetailContent').innerHTML = html;
+    openPanel('merchantDetailPanel');
+}
+
+// ==================== 预约表单 ====================
+async function toggleReserveForm(merchantId) {
+    const formDiv = document.getElementById(`reserve-form-${merchantId}`);
+    if(!formDiv.classList.contains('hidden')){ formDiv.classList.add('hidden'); return; }
+    const { data: m } = await sb.from('ztj_merchants').select('service_data').eq('id', merchantId).single();
+    const categories = (m && m.service_data && m.service_data.categories) ? m.service_data.categories : [];
+    const businessItems = (m && m.service_data && m.service_data.businessItems) ? m.service_data.businessItems : [];
+    let catOptions = categories.map(c => `<option value="${c}">${c}</option>`).join('');
+    let timeOptions = '';
+    for(let h=8; h<17; h++) timeOptions += `<option value="${h.toString().padStart(2,'0')}:00-${(h+1).toString().padStart(2,'0')}:00">${h.toString().padStart(2,'0')}:00-${(h+1).toString().padStart(2,'0')}:00</option>`;
+    formDiv.innerHTML = `
+        <div class="form-group"><label><span class="required-star">*</span> 预约日期</label><input type="date" id="res-date-${merchantId}"></div>
+        <div class="form-group"><label><span class="required-star">*</span> 预约时段</label><select id="res-time-${merchantId}">${timeOptions}</select></div>
+        <div class="form-group"><label><span class="required-star">*</span> 活动类别</label><select id="res-cat-${merchantId}" onchange="updateReserveContent('${merchantId}')">${catOptions}</select></div>
+        <div class="form-group"><label>预约内容（可多选）</label><div id="res-content-${merchantId}" class="checkbox-group"><span style="color:#999;">请先选择活动类别</span></div></div>
+        <div class="form-group"><label><span class="required-star">*</span> 预约人数</label><input type="number" id="res-count-${merchantId}" min="1"></div>
+        <div class="form-group"><label><span class="required-star">*</span> 联系电话</label><input id="res-phone-${merchantId}"></div>
+        <div class="form-group"><label>单位名称（团队或个人）</label><input id="res-unit-${merchantId}"></div>
+        <div class="form-group"><label>联系人</label><input id="res-name-${merchantId}"></div>
+        <div class="form-group"><label>预约地点</label><input id="res-room-${merchantId}"></div>
+        <div class="form-group"><label>备注</label><textarea id="res-remark-${merchantId}" rows="2"></textarea></div>
+        <button class="btn btn-primary" onclick="submitReservationDirect('${merchantId}')">提交预约</button>
+        <button class="btn btn-secondary" onclick="toggleReserveForm('${merchantId}')">取消</button>
+    `;
+    window[`bizItems_${merchantId}`] = businessItems;
+    formDiv.classList.remove('hidden');
+    updateReserveContent(merchantId);
+}
+
+window.updateReserveContent = function(merchantId) {
+    const cat = document.getElementById(`res-cat-${merchantId}`)?.value;
+    const container = document.getElementById(`res-content-${merchantId}`);
+    const bizItems = window[`bizItems_${merchantId}`] || [];
+    if (!cat || !container) return;
+    const trimmedCat = cat.trim().toLowerCase();
+    const filtered = bizItems.filter(item => {
+        if (!item.category) return false;
+        return item.category.trim().toLowerCase() === trimmedCat;
+    });
+    if (filtered.length > 0) {
+        container.innerHTML = filtered.map((item, idx) => `
+            <label>
+                <input type="checkbox" value="${item.name}" data-price="${item.price||''}">
+                <span>${item.name} ${item.price ? ' - ' + item.price : ''}</span>
+            </label>
+        `).join('');
+    } else {
+        container.innerHTML = '<span style="color:#999;">无相关项目</span>';
+    }
+};
+
+async function submitReservationDirect(merchantId) {
+    const date = document.getElementById(`res-date-${merchantId}`).value;
+    const timeRange = document.getElementById(`res-time-${merchantId}`).value;
+    const count = document.getElementById(`res-count-${merchantId}`).value;
+    const phone = document.getElementById(`res-phone-${merchantId}`).value.trim();
+    const category = document.getElementById(`res-cat-${merchantId}`).value;
+    if(!date || !timeRange || !category || !count || !phone){
+        alert('请填写所有必填项（带 * 号）');
+        return;
+    }
+    const [start, end] = timeRange.split('-');
+    const unit = document.getElementById(`res-unit-${merchantId}`).value.trim();
+    const name = document.getElementById(`res-name-${merchantId}`).value.trim();
+    const room = document.getElementById(`res-room-${merchantId}`).value.trim();
+    const remark = document.getElementById(`res-remark-${merchantId}`).value.trim();
+    const checkboxes = document.querySelectorAll(`#res-content-${merchantId} input[type="checkbox"]:checked`);
+    let selectedItems = [];
+    checkboxes.forEach(cb => selectedItems.push(cb.value));
+    const contentStr = selectedItems.join('、');
+    let finalRemark = '';
+    if(category) finalRemark += `类别：${category}`;
+    if(contentStr) finalRemark += (finalRemark ? '|' : '') + `内容：${contentStr}`;
+    if(remark) finalRemark += (finalRemark ? '|' : '') + remark;
+    const { error } = await sb.from('reservations').insert({
+        merchant_id: merchantId,
+        reservation_date: date,
+        time_slot_start: start,
+        time_slot_end: end,
+        phone,
+        unit,
+        name,
+        room,
+        visitor_count: parseInt(count) || 0,
+        remark: finalRemark,
+        status:'pending',
+        user_id: getUserId()
+    });
+    if(error) alert('提交失败：'+error.message);
+    else { alert('预约已提交'); document.getElementById(`reserve-form-${merchantId}`).classList.add('hidden'); }
+}
 
 // ==================== 路线 ====================
-async function loadRoutes(){ /* 相同，省略 */ }
-async function showRouteDetail(id){ /* 相同，省略 */ }
+async function loadRoutes(){
+    const { data } = await sb.from('ztj_routes').select('*');
+    document.getElementById('routeList').innerHTML = data.map(r => `<div class="card"><h3>${r.name}</h3><p>${r.days||1}天 | ${r.transport||'自驾'}</p><button class="btn btn-primary" onclick="showRouteDetail(${r.id})">查看详情</button></div>`).join('');
+}
+
+async function showRouteDetail(id){
+    const { data:route } = await sb.from('ztj_routes').select('*').eq('id',id).single();
+    const { data:nodes } = await sb.from('ztj_route_nodes').select('*, poi:poi_id(name)').eq('route_id',id).order('order_num');
+    
+    let html = `<h3>${route.name}</h3><p>交通方式：${route.transport||'自驾'}</p><p>出发时间：${route.start_time||'08:30'}</p>`;
+    html += `<div style="margin:10px 0;"><b>节点列表：</b></div>`;
+    nodes.forEach((n, idx) => {
+        html += `<div class="route-detail-item"><b>${idx+1}. ${n.poi?.name||'未知'}</b>（停留${n.duration_min}分钟）`;
+        if (n.items && n.items.length) {
+            html += `<div style="margin-left:20px; color:#555;">包含项目：`;
+            n.items.forEach(item => {
+                html += `<div class="sub-item">• ${item.name}（${item.duration}分钟）</div>`;
+            });
+            html += `</div>`;
+        }
+        html += `</div>`;
+    });
+    html += `<div style="margin-top:20px; display:flex; gap:10px; flex-wrap:wrap;">
+        <button class="btn btn-primary" onclick="useRoute(${id})">🚀 使用此路线生成行程</button>
+    </div>`;
+    
+    const panel = document.createElement('div'); panel.className='panel active'; panel.id='routeDetailPanel';
+    panel.innerHTML = `<div class="panel-header"><h2>路线详情</h2><button onclick="this.parentElement.parentElement.remove()">✕</button></div><div class="panel-body">${html}</div>`;
+    document.body.appendChild(panel);
+}
 
 // ==================== 全新行程规划引擎（最终版） ====================
 function isLongSpot(spot) {
@@ -510,7 +1020,7 @@ function generateTrip(selectedSpots, startDate, startTime, mode) {
             if (result.error) continue;
             allNodes.push(...result.nodes);
             let newTime = result.newTime;
-            let newPoi = result.newPoi;
+            let newPoi = result.newLastPoi;
             if (result.remainingVisit > 0) {
                 if (result.remainingVisit >= 60) {
                     let newSpot = { ...item, visitDuration: result.remainingVisit };
@@ -529,11 +1039,7 @@ function generateTrip(selectedSpots, startDate, startTime, mode) {
         // 如果当前时间不是08:00，则结束当天（添加结束标记），跳到次日08:00
         if (currentMin !== DAY_START) {
             // 如果当天有活动节点（非dayEnd），则添加结束标记
-            // 但我们只在实际有活动时添加结束标记，避免空行
-            // 由于我们没有日期标记，我们用当前日期来判断
-            // 我们使用一个简单方法：如果allNodes中有节点且最后一个不是dayEnd，则添加
             if (allNodes.length > 0 && allNodes[allNodes.length-1].type !== 'dayEnd') {
-                // 检查最后一个节点是否在当天（通过时间判断，但简化：只要有节点就添加）
                 allNodes.push({ type: 'dayEnd' });
             }
             // 跳到次日08:00
@@ -891,41 +1397,32 @@ function generateTimeline(nodes) {
         if (text) lines.push(text);
     }
 
-    // 按天分组：用dayEnd分割，但确保不出现空天
+    // 按天分组：用dayEnd分割
     let daysArray = [];
     let currentDayLines = [];
     for (let text of lines) {
-        if (text.includes('当天行程结束') && currentDayLines.length > 0) {
-            // 将当天结束添加到当前天末尾
-            currentDayLines.push(text);
-            daysArray.push(currentDayLines);
-            currentDayLines = [];
-        } else if (!text.includes('当天行程结束')) {
+        if (text.includes('当天行程结束')) {
+            if (currentDayLines.length > 0) {
+                currentDayLines.push(text);
+                daysArray.push(currentDayLines);
+                currentDayLines = [];
+            } else {
+                // 单独出现的dayEnd，忽略（这种情况应避免）
+            }
+        } else {
             currentDayLines.push(text);
         }
     }
-    // 处理剩余（如果没有结束标记，则作为最后一天）
     if (currentDayLines.length > 0) {
         daysArray.push(currentDayLines);
     }
 
-    // 如果有些天只有结束标记，则去掉（但这种情况应避免）
+    // 过滤掉只有结束标记的假天
     daysArray = daysArray.filter(day => day.some(line => !line.includes('当天行程结束')));
 
     let days = [];
     let baseDate = new Date();
-    // 使用第一天的时间作为基准，但这里我们无法从nodes中获取日期，所以用当前日期
-    // 我们通过第一个节点的起始时间计算日期
-    let firstTime = null;
-    for (let node of nodes) {
-        if (node.startTime !== undefined && node.startTime !== null) {
-            firstTime = node.startTime;
-            break;
-        }
-    }
-    // 简化为从今天开始
-    let startDate = new Date();
-    // 但更好的方法是用外部传入的日期，我们无法获取，用当前日期
+    // 使用外部传入的日期，但我们无法从nodes获取，用当前日期
     for (let i = 0; i < daysArray.length; i++) {
         let date = new Date();
         date.setDate(date.getDate() + i);
@@ -1071,28 +1568,175 @@ async function useRoute(routeId) {
 }
 
 // ==================== 自设行程界面操作（含上下移动） ====================
-function toggleCustomTripSection(){ /* 相同，省略 */ }
-function buildMainPoiOptions(){ /* 相同，省略 */ }
-function resetRouteLegs(){ /* 相同，省略 */ }
-function renderDynamicRoute(){ /* 相同，省略 */ }
-function moveRouteItem(index, direction){ /* 相同，省略 */ }
-function toggleSpot(id){ /* 相同，省略 */ }
+function toggleCustomTripSection(){
+    document.getElementById('customTripSection').classList.toggle('hidden');
+    if(!document.getElementById('customTripSection').classList.contains('hidden')){
+        buildMainPoiOptions();
+        resetRouteLegs();
+    }
+}
+
+function buildMainPoiOptions(){
+    const allMain = allPois.filter(p => !p.parent_id);
+    mainPoiOptions = allMain.filter(p => p.id !== 'county');
+    if (currentGcjPos) mainPoiOptions.unshift({ id:'mylocation', name:'📍 我的位置', lat: currentGcjPos.lat, lng: currentGcjPos.lng });
+    mainPoiOptions.unshift(COUNTY);
+    const allowedLower = ALLOWED_CATEGORIES.map(c => c.toLowerCase());
+    allowedPoiOptions = allMain.filter(p => {
+        if(!p.category) return false;
+        const cats = p.category.split(',').map(c => c.trim().toLowerCase());
+        return cats.some(c => allowedLower.includes(c));
+    });
+    if(!allowedPoiOptions.some(p => p.id === 'county')) allowedPoiOptions.unshift(COUNTY);
+}
+
+function resetRouteLegs(){ routeLegs=[]; renderDynamicRoute(); }
+
+function renderDynamicRoute(){
+    const poiList = allowedPoiOptions.filter(p => p.id !== 'county' && p.id !== 'mylocation');
+    let html = '';
+    poiList.forEach((p, index) => {
+        const dur = p.visit_duration || 0;
+        const checked = routeLegs.some(l => l.id === p.id) ? 'checked' : '';
+        html += `<div class="checkbox-item">
+            <input type="checkbox" value="${p.id}" ${checked} onchange="toggleSpot('${p.id}')" id="chk-${p.id}">
+            <label for="chk-${p.id}">${p.name}（${dur}分钟）</label>
+            <button class="move-btn" onclick="moveRouteItem(${index}, -1)" title="上移">▲</button>
+            <button class="move-btn" onclick="moveRouteItem(${index}, 1)" title="下移">▼</button>
+        </div>`;
+    });
+    document.getElementById('dynamic-route').innerHTML = html || '<p>暂无可用景点</p>';
+}
+
+function moveRouteItem(index, direction) {
+    const newIndex = index + direction;
+    if (newIndex < 0 || newIndex >= allowedPoiOptions.length) return;
+    [allowedPoiOptions[index], allowedPoiOptions[newIndex]] = [allowedPoiOptions[newIndex], allowedPoiOptions[index]];
+    renderDynamicRoute();
+}
+
+function toggleSpot(id) {
+    const idx = routeLegs.findIndex(l => l.id === id);
+    if (idx >= 0) routeLegs.splice(idx, 1);
+    else {
+        const poi = allPois.find(p => p.id == id);
+        if (poi) routeLegs.push({ id: poi.id, name: poi.name, lat: poi.lat, lng: poi.lng });
+    }
+}
 
 // ==================== 保存行程（手动） ====================
-function saveGeneratedTrip() { /* 相同，省略 */ }
+function saveGeneratedTrip() {
+    if(!generatedTripData) return;
+    const name = prompt('行程名称', generatedTripData.name);
+    if(!name) return;
+    generatedTripData.name = name;
+    const trips = JSON.parse(localStorage.getItem('trips')||'[]');
+    trips.push(generatedTripData);
+    localStorage.setItem('trips', JSON.stringify(trips));
+    alert('行程已保存');
+    document.getElementById('saveGeneratedTripBtn').classList.add('hidden');
+    document.getElementById('generated-trip').innerHTML = '';
+    generatedTripData = null;
+    resetRouteLegs();
+}
 
 // ==================== 我的面板功能 ====================
-function switchMyTab(tab) { /* 相同，省略 */ }
-function renderMyTrip() { /* 相同，省略 */ }
-window.toggleTripDetail = function(idx){ /* 相同，省略 */ };
-function deleteTrip(idx){ /* 相同，省略 */ }
-async function loadMyReservations() { /* 相同，省略 */ }
-async function loadFeedbackHistory() { /* 相同，省略 */ }
-async function submitFeedback() { /* 相同，省略 */ }
+function switchMyTab(tab) {
+    document.querySelectorAll('.my-tab').forEach(btn => btn.classList.remove('active'));
+    document.getElementById('my-tab-' + tab).classList.add('active');
+    document.getElementById('myTripContent').classList.toggle('hidden', tab !== 'trip');
+    document.getElementById('myReservationContent').classList.toggle('hidden', tab !== 'reservation');
+    document.getElementById('myFeedbackContent').classList.toggle('hidden', tab !== 'feedback');
+    if(tab === 'trip') renderMyTrip();
+    if(tab === 'reservation') loadMyReservations();
+    if(tab === 'feedback') loadFeedbackHistory();
+}
+
+function renderMyTrip() {
+    const trips = JSON.parse(localStorage.getItem('trips')||'[]');
+    let html = '';
+    trips.forEach((trip, i) => {
+        html += `<div class="card"><div class="collapse-header" onclick="toggleTripDetail(${i})">📅 ${trip.name} | ${trip.date} ${trip.time}</div><div id="trip-detail-${i}" class="hidden">`;
+        if(trip.days) trip.days.forEach(day => {
+            html += `<div class="day-header">📅 ${day.date}</div>`;
+            day.lines.forEach(l => html += `<div class="trip-line">${l}</div>`);
+            if (day.weatherTip) {
+                html += `<div class="trip-line" style="color:#0d47a1;">${day.weatherTip}</div>`;
+            }
+        });
+        if(trip.tips) html += `<div class="warn-list">${trip.tips.map(t=>`<div>${t}</div>`).join('')}</div>`;
+        html += `<button class="btn btn-danger" onclick="event.stopPropagation(); deleteTrip(${i})">删除</button></div></div>`;
+    });
+    document.getElementById('myTripContent').innerHTML = html || '<p>暂无保存的行程</p>';
+}
+
+window.toggleTripDetail = function(idx){ document.getElementById('trip-detail-'+idx).classList.toggle('hidden'); };
+
+function deleteTrip(idx){
+    const trips = JSON.parse(localStorage.getItem('trips')||'[]');
+    trips.splice(idx,1);
+    localStorage.setItem('trips', JSON.stringify(trips));
+    renderMyTrip();
+}
+
+async function loadMyReservations() {
+    const { data } = await sb.from('reservations').select('*').eq('user_id', getUserId()).order('created_at', { ascending: false });
+    let html = '';
+    if(data && data.length) {
+        data.forEach(r => {
+            html += `<div class="card"><p><b>${r.reservation_date}</b> ${r.time_slot_start}-${r.time_slot_end}</p><p>${r.name} | ${r.phone}</p><p>${r.remark||''}</p><p>状态：${r.status}</p></div>`;
+        });
+    } else {
+        html = '<p>暂无预约</p>';
+    }
+    document.getElementById('myReservationContent').innerHTML = html;
+}
+
+async function loadFeedbackHistory() {
+    const { data } = await sb.from('ztj_feedbacks').select('*').eq('user_id', getUserId()).order('created_at', { ascending: false });
+    let html = '';
+    if(data && data.length) {
+        data.forEach(f => {
+            html += `<div class="card"><p>${f.message}</p><small>${new Date(f.created_at).toLocaleString()}</small>`;
+            if(f.reply) html += `<div class="feedback-reply">回复：${f.reply}</div>`;
+            html += `</div>`;
+        });
+    } else {
+        html = '<p>暂无留言</p>';
+    }
+    document.getElementById('feedbackHistory').innerHTML = html;
+}
+
+async function submitFeedback() {
+    const msg = document.getElementById('feedbackMsg').value.trim();
+    if(!msg) return alert('请输入内容');
+    const { error } = await sb.from('ztj_feedbacks').insert({
+        user_id: getUserId(),
+        message: msg,
+        merchant_id: null
+    });
+    if(error) alert('提交失败：'+error.message);
+    else {
+        alert('提交成功');
+        document.getElementById('feedbackMsg').value = '';
+        loadFeedbackHistory();
+    }
+}
 
 // ==================== 面板控制 ====================
-function openPanel(id){ /* 相同，省略 */ }
-function closePanel(id){ /* 相同，省略 */ }
+function openPanel(id){
+    document.getElementById(id).classList.add('active');
+    if(id === 'routesPanel') {
+        loadRoutes();
+        buildMainPoiOptions();
+        resetRouteLegs();
+    }
+    if(id === 'myPanel') {
+        switchMyTab('trip');
+    }
+}
+function closePanel(id){ document.getElementById(id).classList.remove('active'); }
+
 function startSimulation(){ alert('模拟导航功能即将上线'); }
 
 // ==================== 启动 ====================

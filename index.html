@@ -755,7 +755,7 @@ async function showRouteDetail(id){
     document.body.appendChild(panel);
 }
 
-// ==================== 全新行程规划引擎（最终版） ====================
+// ==================== 行程规划引擎（最终稳定版） ====================
 function isLongSpot(spot) {
     return LONG_SPOT_NAMES.some(name => spot.name.includes(name));
 }
@@ -778,13 +778,12 @@ function getTravelTime(fromId, toId, mode) {
     return getTransportTime(fromId, toId, mode);
 }
 
-// ---- 核心：安排单个景区（交通+游览+餐饮打断） ----
+// ---- 核心安排函数 ----
 function arrangeSpot(spot, travelTime, startTime, lastPoi, mode) {
     let nodes = [];
     let time = startTime;
     let poi = lastPoi;
 
-    // 1. 交通
     if (travelTime > 0) {
         if (time + travelTime > 1440) {
             return { nodes, newTime: time, newPoi: poi, remainingVisit: 0, error: '交通跨天' };
@@ -803,7 +802,6 @@ function arrangeSpot(spot, travelTime, startTime, lastPoi, mode) {
         poi = { id: spot.id, name: spot.name, lat: spot.lat, lng: spot.lng };
     }
 
-    // 2. 游览分段（自动插入午餐/晚餐）
     let remainingVisit = spot.visitDuration;
     if (time >= DAY_END) {
         return { nodes, newTime: time, newPoi: poi, remainingVisit: remainingVisit, error: '游览开始已超过18:00' };
@@ -813,7 +811,6 @@ function arrangeSpot(spot, travelTime, startTime, lastPoi, mode) {
     }
 
     while (remainingVisit > 0) {
-        // 检查时间边界
         if (time >= DAY_END) {
             if (remainingVisit <= 60) {
                 let segment = Math.min(remainingVisit, DAY_END + 60 - time);
@@ -836,7 +833,6 @@ function arrangeSpot(spot, travelTime, startTime, lastPoi, mode) {
             }
         }
 
-        // 午餐窗口 (11:30-12:30)
         if (time >= LUNCH_TRIGGER && time < LUNCH_END) {
             if (remainingVisit > 60) {
                 if (time + MEAL_DURATION <= DAY_END + 30) {
@@ -851,7 +847,6 @@ function arrangeSpot(spot, travelTime, startTime, lastPoi, mode) {
                     continue;
                 }
             } else {
-                // 剩余 ≤ 60，先完成游览
                 let segment = remainingVisit;
                 if (time + segment > DAY_END + 60) segment = DAY_END + 60 - time;
                 if (segment > 0) {
@@ -879,7 +874,6 @@ function arrangeSpot(spot, travelTime, startTime, lastPoi, mode) {
                 break;
             }
         }
-        // 晚餐窗口 (17:30-18:30)
         else if (time >= DINNER_TRIGGER && time < DINNER_END) {
             if (remainingVisit > 60) {
                 if (time + MEAL_DURATION <= DAY_END + 30) {
@@ -922,7 +916,6 @@ function arrangeSpot(spot, travelTime, startTime, lastPoi, mode) {
             }
         }
 
-        // 正常游览片段
         let nextMealTime = DAY_END;
         if (time < LUNCH_TRIGGER) nextMealTime = Math.min(nextMealTime, LUNCH_TRIGGER);
         else if (time < DINNER_TRIGGER) nextMealTime = Math.min(nextMealTime, DINNER_TRIGGER);
@@ -953,7 +946,6 @@ function arrangeSpot(spot, travelTime, startTime, lastPoi, mode) {
 // ---- 主生成函数 ----
 function generateTrip(selectedSpots, startDate, startTime, mode) {
     let spots = selectedSpots.map(s => ({ ...s }));
-    // 分类
     const longSpots = spots.filter(s => isLongSpot(s));
     const halfSpots = spots.filter(s => !isLongSpot(s) && s.visitDuration >= 100);
     const shortSpots = spots.filter(s => !isLongSpot(s) && s.visitDuration < 100);
@@ -975,7 +967,6 @@ function generateTrip(selectedSpots, startDate, startTime, mode) {
     }
     let lastPoi = { id: 'county', name: '红军广场', lat: COUNTY.lat, lng: COUNTY.lng };
 
-    // 辅助：添加返回县城，并强制插入晚餐（17:00-20:00）
     function addReturnAndDinner(fromPoi, time) {
         let travelBack = getTravelTime(fromPoi.id, 'county', mode);
         if (travelBack === null || travelBack === undefined) travelBack = 0;
@@ -991,7 +982,6 @@ function generateTrip(selectedSpots, startDate, startTime, mode) {
             isReturn: true
         });
         let newTime = time + travelBack;
-        // 强制晚餐：如果返回结束时间在 17:00-20:00 之间或之后（20:00前），插入晚餐
         if (newTime >= 1020 && newTime <= 1200) {
             let dinnerEnd = Math.min(newTime + MEAL_DURATION, 1200);
             if (dinnerEnd > newTime) {
@@ -1008,7 +998,6 @@ function generateTrip(selectedSpots, startDate, startTime, mode) {
         return { newTime, newPoi: { id: 'county', name: '红军广场', lat: COUNTY.lat, lng: COUNTY.lng } };
     }
 
-    // 辅助：尝试安排短时或县城
     function tryArrangeShort(list, usedSet, time, poi, dayEndLimit) {
         for (let item of list) {
             if (usedSet.has(item.id)) continue;
@@ -1033,33 +1022,24 @@ function generateTrip(selectedSpots, startDate, startTime, mode) {
         return { success: false };
     }
 
-    // ---- 阶段1：长耗时景区（优先处理，独立整天） ----
+    // ---- 长耗时 ----
     for (let spot of longSpots) {
         if (usedLong.has(spot.id)) continue;
-        // 如果当前时间不是08:00，则结束当天（添加结束标记），跳到次日08:00
         if (currentMin !== DAY_START) {
-            // 如果当天有活动节点（非dayEnd），则添加结束标记
             if (allNodes.length > 0 && allNodes[allNodes.length-1].type !== 'dayEnd') {
                 allNodes.push({ type: 'dayEnd' });
             }
-            // 跳到次日08:00
             currentDate.setDate(currentDate.getDate() + 1);
             currentMin = DAY_START;
-            // 位置重置为红军广场
             lastPoi = { id: 'county', name: '红军广场', lat: COUNTY.lat, lng: COUNTY.lng };
         }
-
-        // 计算交通
         let travel = getTravelTime(lastPoi.id, spot.id, mode);
         if (travel === null || travel === undefined) travel = 0;
         let needed = travel + spot.visitDuration;
-        // 检查是否能在当天完成（18:00 + 60分钟缓冲）
         if (currentMin + needed > DAY_END + 60) {
             alert(`长耗时景区 "${spot.name}" 所需时间（含交通）${needed}分钟，当天剩余时间不足，无法安排。`);
             return { nodes: [], error: true };
         }
-
-        // 安排交通+游览
         let result = arrangeSpot(spot, travel, currentMin, lastPoi, mode);
         if (result.error) {
             alert(`长耗时景区 "${spot.name}" 安排失败: ${result.error}`);
@@ -1072,28 +1052,21 @@ function generateTrip(selectedSpots, startDate, startTime, mode) {
             alert(`长耗时景区 "${spot.name}" 剩余游览 ${result.remainingVisit} 分钟无法在当天完成。`);
             return { nodes: [], error: true };
         }
-
-        // 返回县城 + 强制晚餐
         let returnResult = addReturnAndDinner(lastPoi, currentMin);
-        if (returnResult) {
-            currentMin = returnResult.newTime;
-            lastPoi = returnResult.newPoi;
-        } else {
+        if (!returnResult) {
             alert(`长耗时景区 "${spot.name}" 返回县城交通跨天。`);
             return { nodes: [], error: true };
         }
-
-        // 添加当天结束标记（实际有活动）
+        currentMin = returnResult.newTime;
+        lastPoi = returnResult.newPoi;
         allNodes.push({ type: 'dayEnd' });
-
-        // 跳到次日08:00
         currentDate.setDate(currentDate.getDate() + 1);
         currentMin = DAY_START;
         lastPoi = { id: 'county', name: '红军广场', lat: COUNTY.lat, lng: COUNTY.lng };
         usedLong.add(spot.id);
     }
 
-    // ---- 阶段2：半日景区（上午/下午块） ----
+    // ---- 半日景区 ----
     let halfQueue = [...halfSpots];
     let attempts = 0;
     while (halfQueue.length > 0 && attempts < 200) {
@@ -1103,13 +1076,11 @@ function generateTrip(selectedSpots, startDate, startTime, mode) {
         let travel = getTravelTime(lastPoi.id, spot.id, mode);
         if (travel === null || travel === undefined) travel = 0;
 
-        // 判断当前时段
         let currentSlot = 'morning';
         if (currentMin >= LUNCH_END && currentMin < DINNER_TRIGGER) currentSlot = 'afternoon';
         else if (currentMin >= DINNER_TRIGGER) currentSlot = 'night';
 
         if (currentSlot === 'night') {
-            // 结束当天
             if (allNodes.length > 0 && allNodes[allNodes.length-1].type !== 'dayEnd') {
                 allNodes.push({ type: 'dayEnd' });
             }
@@ -1126,7 +1097,6 @@ function generateTrip(selectedSpots, startDate, startTime, mode) {
             currentSlot = 'afternoon';
         }
 
-        // 尝试上午 (08:00-11:30)
         if (currentSlot === 'morning') {
             let blockStart = Math.max(currentMin, DAY_START);
             let blockEnd = LUNCH_TRIGGER;
@@ -1140,7 +1110,6 @@ function generateTrip(selectedSpots, startDate, startTime, mode) {
                 allNodes.push(...result.nodes);
                 let time = result.newTime;
                 let poi = result.newLastPoi;
-                // 填充上午剩余（短时/县城）
                 while (time < blockEnd) {
                     let res = tryArrangeShort(shortSpots, usedShort, time, poi, blockEnd);
                     if (res.success) {
@@ -1167,7 +1136,6 @@ function generateTrip(selectedSpots, startDate, startTime, mode) {
                         if (!countyRes) break;
                     }
                 }
-                // 强制插入午餐（如果时间在窗口）
                 if (time < LUNCH_END && time >= LUNCH_TRIGGER) {
                     allNodes.push({
                         type: 'meal',
@@ -1180,15 +1148,13 @@ function generateTrip(selectedSpots, startDate, startTime, mode) {
                 }
                 currentMin = time;
                 lastPoi = poi;
-                // 半日结束返回县城 + 强制晚餐
                 let returnResult = addReturnAndDinner(lastPoi, currentMin);
-                if (returnResult) {
-                    currentMin = returnResult.newTime;
-                    lastPoi = returnResult.newPoi;
-                } else {
+                if (!returnResult) {
                     alert(`半日景区 "${spot.name}" 返回县城交通跨天。`);
                     return { nodes: [], error: true };
                 }
+                currentMin = returnResult.newTime;
+                lastPoi = returnResult.newPoi;
                 allNodes.push({ type: 'dayEnd' });
                 currentDate.setDate(currentDate.getDate() + 1);
                 currentMin = DAY_START;
@@ -1196,7 +1162,6 @@ function generateTrip(selectedSpots, startDate, startTime, mode) {
                 usedHalf.add(spot.id);
                 continue;
             } else {
-                // 上午放不下，填充上午剩余，转入下午
                 while (currentMin < LUNCH_TRIGGER) {
                     let res = tryArrangeShort(shortSpots, usedShort, currentMin, lastPoi, LUNCH_TRIGGER);
                     if (res.success) {
@@ -1211,12 +1176,10 @@ function generateTrip(selectedSpots, startDate, startTime, mode) {
             }
         }
 
-        // 尝试下午 (12:30-17:30)
         if (currentSlot === 'afternoon') {
             let blockStart = Math.max(currentMin, LUNCH_END);
             let blockEnd = DINNER_TRIGGER;
             if (blockStart >= NEW_ARRIVAL_CUTOFF) {
-                // 已过17:00，结束当天
                 if (allNodes.length > 0 && allNodes[allNodes.length-1].type !== 'dayEnd') {
                     allNodes.push({ type: 'dayEnd' });
                 }
@@ -1236,7 +1199,6 @@ function generateTrip(selectedSpots, startDate, startTime, mode) {
                 allNodes.push(...result.nodes);
                 let time = result.newTime;
                 let poi = result.newLastPoi;
-                // 填充下午剩余
                 while (time < blockEnd) {
                     let res = tryArrangeShort(shortSpots, usedShort, time, poi, blockEnd);
                     if (res.success) {
@@ -1263,7 +1225,6 @@ function generateTrip(selectedSpots, startDate, startTime, mode) {
                         if (!countyRes) break;
                     }
                 }
-                // 填充剩余到18:00
                 while (time < DAY_END) {
                     let res = tryArrangeShort(shortSpots, usedShort, time, poi, DAY_END);
                     if (res.success) {
@@ -1292,15 +1253,13 @@ function generateTrip(selectedSpots, startDate, startTime, mode) {
                 }
                 currentMin = time;
                 lastPoi = poi;
-                // 半日结束返回县城 + 强制晚餐
                 let returnResult = addReturnAndDinner(lastPoi, currentMin);
-                if (returnResult) {
-                    currentMin = returnResult.newTime;
-                    lastPoi = returnResult.newPoi;
-                } else {
+                if (!returnResult) {
                     alert(`半日景区 "${spot.name}" 返回县城交通跨天。`);
                     return { nodes: [], error: true };
                 }
+                currentMin = returnResult.newTime;
+                lastPoi = returnResult.newPoi;
                 allNodes.push({ type: 'dayEnd' });
                 currentDate.setDate(currentDate.getDate() + 1);
                 currentMin = DAY_START;
@@ -1308,7 +1267,6 @@ function generateTrip(selectedSpots, startDate, startTime, mode) {
                 usedHalf.add(spot.id);
                 continue;
             } else {
-                // 下午放不下，填充剩余，结束当天
                 while (currentMin < DINNER_TRIGGER) {
                     let res = tryArrangeShort(shortSpots, usedShort, currentMin, lastPoi, DINNER_TRIGGER);
                     if (res.success) {
@@ -1328,7 +1286,7 @@ function generateTrip(selectedSpots, startDate, startTime, mode) {
         }
     }
 
-    // ---- 阶段3：短时和县城填充 ----
+    // ---- 短时和县城填充 ----
     let anyInserted = true;
     while (anyInserted) {
         anyInserted = false;
@@ -1340,7 +1298,6 @@ function generateTrip(selectedSpots, startDate, startTime, mode) {
             anyInserted = true;
             continue;
         }
-        // 尝试县城
         for (let c of countySpots) {
             if (usedCounty.has(c.id)) continue;
             let t = getTravelTime(lastPoi.id, c.id, mode);
@@ -1359,7 +1316,6 @@ function generateTrip(selectedSpots, startDate, startTime, mode) {
         }
     }
 
-    // 当天结束（如果当天有活动）
     if (allNodes.length > 0 && allNodes[allNodes.length-1].type !== 'dayEnd') {
         allNodes.push({ type: 'dayEnd' });
     }
@@ -1367,12 +1323,11 @@ function generateTrip(selectedSpots, startDate, startTime, mode) {
     return { nodes: allNodes, error: false };
 }
 
-// ---- 生成时间线显示 ----
+// ---- 时间线生成 ----
 function generateTimeline(nodes) {
     if (!nodes || nodes.length === 0) return { days: [], mealCount: 0 };
     let lines = [];
     let mealCount = 0;
-
     for (let node of nodes) {
         let text = '';
         if (node.type === 'transport') {
@@ -1397,7 +1352,6 @@ function generateTimeline(nodes) {
         if (text) lines.push(text);
     }
 
-    // 按天分组：用dayEnd分割
     let daysArray = [];
     let currentDayLines = [];
     for (let text of lines) {
@@ -1406,8 +1360,6 @@ function generateTimeline(nodes) {
                 currentDayLines.push(text);
                 daysArray.push(currentDayLines);
                 currentDayLines = [];
-            } else {
-                // 单独出现的dayEnd，忽略（这种情况应避免）
             }
         } else {
             currentDayLines.push(text);
@@ -1416,20 +1368,16 @@ function generateTimeline(nodes) {
     if (currentDayLines.length > 0) {
         daysArray.push(currentDayLines);
     }
-
-    // 过滤掉只有结束标记的假天
     daysArray = daysArray.filter(day => day.some(line => !line.includes('当天行程结束')));
 
     let days = [];
     let baseDate = new Date();
-    // 使用外部传入的日期，但我们无法从nodes获取，用当前日期
     for (let i = 0; i < daysArray.length; i++) {
         let date = new Date();
         date.setDate(date.getDate() + i);
         let dateStr = date.toLocaleDateString('zh-CN');
         days.push({ date: dateStr, lines: daysArray[i] });
     }
-
     return { days, mealCount };
 }
 
@@ -1443,12 +1391,21 @@ async function generateCustomTrip() {
             selectedIds.push(id);
         }
     });
-    if (selectedIds.length === 0) return alert('请至少选择一个景区');
+    if (selectedIds.length === 0) {
+        alert('请至少选择一个景区');
+        return;
+    }
 
     const dateStr = document.getElementById('trip-date').value;
     const startTime = getSelectedTime();
-    if (!dateStr) return alert('选择出发日期');
-    if (!startTime) return alert('选择出发时间');
+    if (!dateStr) {
+        alert('选择出发日期');
+        return;
+    }
+    if (!startTime) {
+        alert('选择出发时间');
+        return;
+    }
     const now = new Date();
     if (new Date(dateStr + 'T' + startTime) < now) {
         alert('出发时间不能早于当前时间');
@@ -1460,7 +1417,10 @@ async function generateCustomTrip() {
     const userSpots = [];
     for (let id of selectedIds) {
         const poi = allPois.find(p => p.id == id);
-        if (!poi) continue;
+        if (!poi) {
+            console.warn('未找到POI:', id);
+            continue;
+        }
         userSpots.push({
             id: poi.id,
             name: poi.name,
@@ -1469,10 +1429,17 @@ async function generateCustomTrip() {
             visitDuration: poi.visit_duration || 60
         });
     }
+    if (userSpots.length === 0) {
+        alert('选中的景区数据异常，请重新选择');
+        return;
+    }
 
     const startMinutes = parseInt(startTime.slice(0,2))*60 + parseInt(startTime.slice(3));
     const result = generateTrip(userSpots, dateStr, startMinutes, mode);
-    if (result.error) return;
+    if (result.error) {
+        console.error('生成行程失败:', result.error);
+        return;
+    }
 
     const { days, mealCount } = generateTimeline(result.nodes);
 
@@ -1523,7 +1490,7 @@ async function generateCustomTrip() {
     document.getElementById('saveGeneratedTripBtn').classList.remove('hidden');
 }
 
-// ---- 推荐路线使用（自动保存） ----
+// ---- 推荐路线使用 ----
 async function useRoute(routeId) {
     const detailPanel = document.getElementById('routeDetailPanel');
     if(detailPanel) detailPanel.remove();
@@ -1547,7 +1514,6 @@ async function useRoute(routeId) {
         return poi ? { id: poi.id, name: poi.name, lat: poi.lat, lng: poi.lng } : null;
     }).filter(p => p);
 
-    // 强制使用次日 08:00
     const tomorrow = new Date();
     tomorrow.setDate(tomorrow.getDate() + 1);
     const dateStr = tomorrow.toISOString().slice(0,10);
@@ -1567,7 +1533,7 @@ async function useRoute(routeId) {
     }
 }
 
-// ==================== 自设行程界面操作（含上下移动） ====================
+// ==================== 自设行程界面操作 ====================
 function toggleCustomTripSection(){
     document.getElementById('customTripSection').classList.toggle('hidden');
     if(!document.getElementById('customTripSection').classList.contains('hidden')){
@@ -1624,7 +1590,7 @@ function toggleSpot(id) {
     }
 }
 
-// ==================== 保存行程（手动） ====================
+// ==================== 保存行程 ====================
 function saveGeneratedTrip() {
     if(!generatedTripData) return;
     const name = prompt('行程名称', generatedTripData.name);
@@ -1640,7 +1606,7 @@ function saveGeneratedTrip() {
     resetRouteLegs();
 }
 
-// ==================== 我的面板功能 ====================
+// ==================== 我的面板 ====================
 function switchMyTab(tab) {
     document.querySelectorAll('.my-tab').forEach(btn => btn.classList.remove('active'));
     document.getElementById('my-tab-' + tab).classList.add('active');
@@ -1742,7 +1708,7 @@ function startSimulation(){ alert('模拟导航功能即将上线'); }
 // ==================== 启动 ====================
 window.onload = function() {
     initMap();
-    console.log('[系统] 智游通江已启动，最终修复版。');
+    console.log('[系统] 智游通江已启动，最终稳定版。');
 };
 </script>
 </body>

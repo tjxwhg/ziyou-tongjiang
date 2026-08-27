@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>管理后台 - 通江文旅</title>
     <style>
-        /* 样式代码与之前完全相同，此处省略，实际使用时保留完整样式 */
         body { font-family: system-ui; background:#f0f2f5; margin:0; }
         .header { background:#1b5e20; color:white; padding:12px; display:flex; justify-content:space-between; align-items:center; }
         .container { max-width:1200px; margin:20px auto; background:white; padding:20px; border-radius:8px; }
@@ -646,11 +645,10 @@ async function saveRoute(){
     const editId = document.getElementById('edit-route-id').value;
     const start_time = document.getElementById('route-start-time').value;
     const transport = document.getElementById('route-transport').value;
-    // 关键修复：添加 days 字段，默认值为 1（满足数据库 NOT NULL 约束）
-    const routeData = { name, start_time, transport, days: 1 };
+    // 关键修复：添加 days 和 group_type 字段，满足数据库非空约束
+    const routeData = { name, start_time, transport, days: 1, group_type: 'default' };
     let routeId = editId;
     if(editId){
-        // 更新时同样包含 days，防止更新时被置 null
         await sb.from('ztj_routes').update(routeData).eq('id', editId);
         await sb.from('ztj_route_nodes').delete().eq('route_id', editId);
     } else {

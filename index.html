@@ -163,6 +163,7 @@ const COUNTY = { lat:31.911705, lng:107.245033, name:'红军广场', id:'county'
 const poiColors = { '自然景区':'#2E7D32', '红色景区':'#9C27B0', '文博场馆':'#9C27B0', '餐饮住宿':'#FF9800', '停车场':'#00BCD4', '公共服务':'#607D8B' };
 let transportPresets = {};
 const DAY_START=480, DAY_END=1080, LUNCH_TRIGGER=690, LUNCH_END=750, DINNER_TRIGGER=1050, DINNER_END=1110, MEAL_DURATION=60;
+const NEW_ARRIVAL_CUTOFF = 1020; // 17:00
 const ALLOWED_CATEGORIES = ['自然景区', '红色景区', '文博场馆'];
 const NON_VISIT_CATEGORIES = ['交通枢纽','餐饮住宿','公共服务','特产购物','游玩娱乐'];
 const LONG_SPOT_NAMES = ['空山天盆', '诺水河溶洞', '王坪烈士陵园', '红军烈士陵园'];
@@ -754,7 +755,7 @@ async function showRouteDetail(id){
     document.body.appendChild(panel);
 }
 
-// ==================== 核心行程生成算法（最终修复版） ====================
+// ==================== 核心行程生成算法（强制时间边界） ====================
 
 function isLongSpot(spot) {
     return LONG_SPOT_NAMES.some(name => spot.name.includes(name));
@@ -802,9 +803,19 @@ function generateTrip(selectedSpots, startDate, startTime, mode) {
     if (currentMin < DAY_START) currentMin = DAY_START;
     let lastPoi = { id: 'county', name: '红军广场', lat: COUNTY.lat, lng: COUNTY.lng, visitDuration: 0, transportTime: 0 };
 
-    // 辅助：插入就餐（午餐/晚餐），返回是否插入
+    // ---- 辅助函数：检查景点是否能在当前天的剩余时间完成 ----
+    function canFitInDay(travelTime, visitDuration) {
+        let needed = travelTime + visitDuration;
+        let available = DAY_END - currentMin;
+        // 游览开始时间不能晚于17:00
+        if (currentMin + travelTime > NEW_ARRIVAL_CUTOFF) {
+            return false; // 交通结束后到达时间已超过17:00，不能开始游览
+        }
+        return needed <= available;
+    }
+
+    // ---- 辅助函数：插入就餐（午餐/晚餐），返回是否插入 ----
     function insertMealIfNeeded(allowInterrupt = true, remainingVisit = 0) {
-        // 如果当前在游览中且剩余时间<=60，则不打断（由调用者控制）
         if (!allowInterrupt) return false;
         // 检查午餐窗口
         if (currentMin >= LUNCH_TRIGGER && currentMin < LUNCH_END && (DAY_END - currentMin) >= 30) {
@@ -823,115 +834,46 @@ function generateTrip(selectedSpots, startDate, startTime, mode) {
         return false;
     }
 
-    // 辅助：添加返回县城节点
+    // ---- 辅助函数：添加返回县城节点 ----
     function addReturnToCounty() {
         if (orderedPois.length > 0 && !orderedPois[orderedPois.length-1].isReturn) {
             let travelBack = getTravelTime(lastPoi.id, 'county', mode);
             if (travelBack === null || travelBack === undefined) travelBack = 0;
-            // 确保返回交通不会导致跨天（如果跨天则截断到24:00，但实际不会）
+            // 确保返回交通不会导致跨天（但实际最长<140分钟，不会跨天）
             if (currentMin + travelBack > 1440) {
-                // 极端情况，但实际最长<140分钟，不会跨天
                 travelBack = 1440 - currentMin;
             }
-            const returnNode = {
-                id: 'county', name: '返回县城', lat: COUNTY.lat, lng: COUNTY.lng,
-                visitDuration: 0, transportTime: travelBack, isReturn: true
+            if (travelBack > 0) {
+                const returnNode = {
+                    id: 'county', name: '返回县城', lat: COUNTY.lat, lng: COUNTY.lng,
+                    visitDuration: 0, transportTime: travelBack, isReturn: true
+                };
+                orderedPois.push(returnNode);
+                lastPoi = returnNode;
+                currentMin += travelBack;
+            }
+        }
+    }
+
+    // ---- 辅助函数：安排一个景点的交通和游览（自动分段处理就餐） ----
+    function arrangeSpot(spot, travelTime) {
+        // 先安排交通
+        if (travelTime > 0) {
+            const transportNode = {
+                id: 'transport_' + spot.id,
+                name: spot.name,
+                transportTime: travelTime,
+                visitDuration: 0,
+                isTransport: true,
+                _spot: spot
             };
-            orderedPois.push(returnNode);
-            lastPoi = returnNode;
-            currentMin += travelBack;
+            orderedPois.push(transportNode);
+            currentMin += travelTime;
         }
-    }
-
-    // 辅助：填充空窗期（短时或县城），直到 endMin
-    function fillGap(endMin) {
-        while (currentMin < endMin) {
-            // 尝试插入就餐（只有在非游览且剩余时间足够）
-            if (insertMealIfNeeded(true)) continue;
-            let inserted = false;
-            // 尝试短时
-            for (let i = 0; i < shortSpots.length; i++) {
-                const spot = shortSpots[i];
-                if (usedShortIds.has(spot.id)) continue;
-                let travel = getTravelTime(lastPoi.id, spot.id, mode);
-                if (travel === null || travel === undefined) travel = 0;
-                let needed = travel + spot.visitDuration;
-                if (currentMin + needed <= endMin) {
-                    const node = {
-                        id: spot.id, name: spot.name, lat: spot.lat, lng: spot.lng,
-                        visitDuration: spot.visitDuration, transportTime: travel,
-                        isShort: true
-                    };
-                    orderedPois.push(node);
-                    lastPoi = node;
-                    currentMin += needed;
-                    usedShortIds.add(spot.id);
-                    inserted = true;
-                    break;
-                }
-            }
-            if (inserted) continue;
-            // 尝试县城
-            for (let c of countySpots) {
-                if (usedCountyIds.has(c.id)) continue;
-                let travel = getTravelTime(lastPoi.id, c.id, mode);
-                if (travel === null || travel === undefined) travel = 0;
-                let needed = travel + c.visitDuration;
-                if (currentMin + needed <= endMin) {
-                    const node = {
-                        id: c.id, name: c.name, lat: c.lat, lng: c.lng,
-                        visitDuration: c.visitDuration, transportTime: travel,
-                        isCounty: true
-                    };
-                    orderedPois.push(node);
-                    lastPoi = node;
-                    currentMin += needed;
-                    usedCountyIds.add(c.id);
-                    inserted = true;
-                    break;
-                }
-            }
-            if (!inserted) break;
-        }
-    }
-
-    // ---- 阶段一：长耗时景区 ----
-    for (let spot of longSpots) {
-        // 强制从08:00开始
-        if (currentMin !== DAY_START) {
-            // 先结束当天（填充剩余，添加返回县城）
-            fillGap(DAY_END);
-            addReturnToCounty();
-            // 跳到次日08:00
-            currentDate.setDate(currentDate.getDate() + 1);
-            currentMin = DAY_START;
-        }
-        // 计算交通
-        let travelTime = getTravelTime(lastPoi.id, spot.id, mode);
-        if (travelTime === null || travelTime === undefined) travelTime = 0;
-        let needed = travelTime + spot.visitDuration;
-        // 检查是否能在当天完成（必须 <= DAY_END）
-        if (currentMin + needed > DAY_END) {
-            alert(`长耗时景区 "${spot.name}" 所需时间（含交通）${needed}分钟，当天剩余时间不足。请调整出发时间或减少景点。`);
-            return { nodes: [], error: true };
-        }
-        // 安排交通+游览
-        const transportNode = {
-            id: 'transport_' + spot.id,
-            name: spot.name,
-            transportTime: travelTime,
-            visitDuration: 0,
-            isTransport: true,
-            _spot: spot
-        };
-        orderedPois.push(transportNode);
-        // 处理就餐打断（游览过程中）
+        // 再安排游览（分段处理就餐）
         let remainingVisit = spot.visitDuration;
-        let visitStart = currentMin + travelTime;
+        let visitStart = currentMin;
         let visitEnd = visitStart + remainingVisit;
-        // 检查游览区间是否跨就餐窗口
-        let mealInserted = false;
-        // 我们分段处理游览：每次检查是否遇到就餐窗口
         let currentVisitPos = visitStart;
         while (remainingVisit > 0) {
             // 检查下一个就餐窗口
@@ -946,7 +888,6 @@ function generateTrip(selectedSpots, startDate, startTime, mode) {
             if (nextMealStart !== null) {
                 let timeToMeal = nextMealStart - currentVisitPos;
                 if (timeToMeal > 0) {
-                    // 先游览到餐点
                     let segment = Math.min(timeToMeal, remainingVisit);
                     orderedPois.push({
                         id: spot.id,
@@ -959,9 +900,9 @@ function generateTrip(selectedSpots, startDate, startTime, mode) {
                     remainingVisit -= segment;
                     currentVisitPos += segment;
                 }
-                // 检查是否剩余 <= 60，若是则先完成游览再就餐
+                // 检查剩余游览是否 <= 60
                 if (remainingVisit <= 60) {
-                    // 完成剩余游览
+                    // 先完成剩余游览
                     if (remainingVisit > 0) {
                         orderedPois.push({
                             id: spot.id,
@@ -986,7 +927,7 @@ function generateTrip(selectedSpots, startDate, startTime, mode) {
                     }
                 } else {
                     // 插入就餐
-                    const mealNode = { id: 'meal_lunch', name: '午餐', visitDuration: MEAL_DURATION, transportTime: 0, isMeal: true };
+                    const mealNode = { id: 'meal_dinner', name: '晚餐', visitDuration: MEAL_DURATION, transportTime: 0, isMeal: true };
                     orderedPois.push(mealNode);
                     currentVisitPos += MEAL_DURATION;
                     // 继续循环
@@ -1007,13 +948,65 @@ function generateTrip(selectedSpots, startDate, startTime, mode) {
                 }
             }
         }
-        // 更新当前时间到游览结束
+        // 更新当前时间和最后一个POI
         currentMin = currentVisitPos;
         lastPoi = { id: spot.id, name: spot.name, lat: spot.lat, lng: spot.lng };
+    }
 
-        // 长耗时景区结束后，填充剩余时间（短时/县城）但不超过18:00
-        if (currentMin < DAY_END) {
-            fillGap(DAY_END);
+    // ---- 阶段一：长耗时景区 ----
+    for (let spot of longSpots) {
+        // 强制从08:00开始
+        if (currentMin !== DAY_START) {
+            // 结束当前天（填充剩余，返回县城）
+            // 但当前天可能已有活动，我们只添加返回（如果有活动）
+            if (orderedPois.length > 0 && !orderedPois[orderedPois.length-1].isReturn) {
+                addReturnToCounty();
+            }
+            // 跳到次日08:00
+            currentDate.setDate(currentDate.getDate() + 1);
+            currentMin = DAY_START;
+        }
+        // 计算交通
+        let travelTime = getTravelTime(lastPoi.id, spot.id, mode);
+        if (travelTime === null || travelTime === undefined) travelTime = 0;
+        // 检查是否能在当天完成
+        if (!canFitInDay(travelTime, spot.visitDuration)) {
+            alert(`长耗时景区 "${spot.name}" 所需时间（含交通）${travelTime + spot.visitDuration}分钟，当天剩余时间不足，无法安排。`);
+            return { nodes: [], error: true };
+        }
+        // 安排交通和游览
+        arrangeSpot(spot, travelTime);
+        // 填充剩余时间（短时/县城）
+        while (currentMin < DAY_END) {
+            if (insertMealIfNeeded(true)) continue;
+            let inserted = false;
+            // 尝试短时
+            for (let i = 0; i < shortSpots.length; i++) {
+                const s = shortSpots[i];
+                if (usedShortIds.has(s.id)) continue;
+                let t = getTravelTime(lastPoi.id, s.id, mode);
+                if (t === null || t === undefined) t = 0;
+                if (canFitInDay(t, s.visitDuration)) {
+                    arrangeSpot(s, t);
+                    usedShortIds.add(s.id);
+                    inserted = true;
+                    break;
+                }
+            }
+            if (inserted) continue;
+            // 尝试县城
+            for (let c of countySpots) {
+                if (usedCountyIds.has(c.id)) continue;
+                let t = getTravelTime(lastPoi.id, c.id, mode);
+                if (t === null || t === undefined) t = 0;
+                if (canFitInDay(t, c.visitDuration)) {
+                    arrangeSpot(c, t);
+                    usedCountyIds.add(c.id);
+                    inserted = true;
+                    break;
+                }
+            }
+            if (!inserted) break;
         }
         // 必须返回县城
         addReturnToCounty();
@@ -1030,7 +1023,6 @@ function generateTrip(selectedSpots, startDate, startTime, mode) {
         let spot = halfQueue.shift();
         let travelTime = getTravelTime(lastPoi.id, spot.id, mode);
         if (travelTime === null || travelTime === undefined) travelTime = 0;
-        let needed = travelTime + spot.visitDuration;
 
         // 判断当前时段
         let currentSlot = 'morning';
@@ -1038,15 +1030,13 @@ function generateTrip(selectedSpots, startDate, startTime, mode) {
         else if (currentMin >= DINNER_TRIGGER) currentSlot = 'night';
 
         if (currentSlot === 'night') {
-            // 结束当天
-            fillGap(DAY_END);
+            // 结束当前天
             addReturnToCounty();
             currentDate.setDate(currentDate.getDate() + 1);
             currentMin = DAY_START;
             currentSlot = 'morning';
             travelTime = getTravelTime(lastPoi.id, spot.id, mode);
             if (travelTime === null || travelTime === undefined) travelTime = 0;
-            needed = travelTime + spot.visitDuration;
         }
 
         if (currentMin >= LUNCH_TRIGGER && currentMin < LUNCH_END) {
@@ -1058,97 +1048,41 @@ function generateTrip(selectedSpots, startDate, startTime, mode) {
         if (currentSlot === 'morning') {
             let blockStart = Math.max(currentMin, DAY_START);
             let blockEnd = LUNCH_TRIGGER;
+            // 检查是否能在上午完成
             let available = blockEnd - blockStart;
-            if (needed <= available) {
-                // 安排交通+游览（类似长耗时，但较短）
-                const transportNode = {
-                    id: 'transport_' + spot.id,
-                    name: spot.name,
-                    transportTime: travelTime,
-                    visitDuration: 0,
-                    isTransport: true,
-                    _spot: spot
-                };
-                orderedPois.push(transportNode);
-                // 游览分段（同上，可能打断）
-                let remainingVisit = spot.visitDuration;
-                let visitStart = currentMin + travelTime;
-                let visitEnd = visitStart + remainingVisit;
-                let currentVisitPos = visitStart;
-                while (remainingVisit > 0) {
-                    let nextMealStart = null, nextMealEnd = null;
-                    if (currentVisitPos < LUNCH_TRIGGER && visitEnd > LUNCH_TRIGGER) {
-                        nextMealStart = LUNCH_TRIGGER;
-                        nextMealEnd = LUNCH_END;
-                    } else if (currentVisitPos < DINNER_TRIGGER && visitEnd > DINNER_TRIGGER) {
-                        nextMealStart = DINNER_TRIGGER;
-                        nextMealEnd = DINNER_END;
-                    }
-                    if (nextMealStart !== null) {
-                        let timeToMeal = nextMealStart - currentVisitPos;
-                        if (timeToMeal > 0) {
-                            let segment = Math.min(timeToMeal, remainingVisit);
-                            orderedPois.push({
-                                id: spot.id,
-                                name: spot.name,
-                                visitDuration: segment,
-                                transportTime: 0,
-                                isVisitSegment: true,
-                                _spot: spot
-                            });
-                            remainingVisit -= segment;
-                            currentVisitPos += segment;
-                        }
-                        if (remainingVisit <= 60) {
-                            if (remainingVisit > 0) {
-                                orderedPois.push({
-                                    id: spot.id,
-                                    name: spot.name,
-                                    visitDuration: remainingVisit,
-                                    transportTime: 0,
-                                    isVisitSegment: true,
-                                    _spot: spot
-                                });
-                                currentVisitPos += remainingVisit;
-                                remainingVisit = 0;
-                            }
-                            if (currentVisitPos >= LUNCH_TRIGGER && currentVisitPos < LUNCH_END) {
-                                const mealNode = { id: 'meal_lunch', name: '午餐', visitDuration: MEAL_DURATION, transportTime: 0, isMeal: true };
-                                orderedPois.push(mealNode);
-                                currentVisitPos += MEAL_DURATION;
-                            } else if (currentVisitPos >= DINNER_TRIGGER && currentVisitPos < DINNER_END) {
-                                const mealNode = { id: 'meal_dinner', name: '晚餐', visitDuration: MEAL_DURATION, transportTime: 0, isMeal: true };
-                                orderedPois.push(mealNode);
-                                currentVisitPos += MEAL_DURATION;
-                            }
-                        } else {
-                            const mealNode = { id: 'meal_lunch', name: '午餐', visitDuration: MEAL_DURATION, transportTime: 0, isMeal: true };
-                            orderedPois.push(mealNode);
-                            currentVisitPos += MEAL_DURATION;
-                        }
-                    } else {
-                        if (remainingVisit > 0) {
-                            orderedPois.push({
-                                id: spot.id,
-                                name: spot.name,
-                                visitDuration: remainingVisit,
-                                transportTime: 0,
-                                isVisitSegment: true,
-                                _spot: spot
-                            });
-                            currentVisitPos += remainingVisit;
-                            remainingVisit = 0;
-                        }
-                    }
-                }
-                currentMin = currentVisitPos;
-                lastPoi = { id: spot.id, name: spot.name, lat: spot.lat, lng: spot.lng };
-
+            if (canFitInDay(travelTime, spot.visitDuration) && travelTime + spot.visitDuration <= available) {
+                arrangeSpot(spot, travelTime);
                 // 填充上午剩余
-                if (currentMin < blockEnd) {
-                    fillGap(blockEnd);
+                while (currentMin < blockEnd) {
+                    if (insertMealIfNeeded(true)) continue;
+                    let inserted = false;
+                    for (let i = 0; i < shortSpots.length; i++) {
+                        const s = shortSpots[i];
+                        if (usedShortIds.has(s.id)) continue;
+                        let t = getTravelTime(lastPoi.id, s.id, mode);
+                        if (t === null || t === undefined) t = 0;
+                        if (canFitInDay(t, s.visitDuration) && currentMin + t + s.visitDuration <= blockEnd) {
+                            arrangeSpot(s, t);
+                            usedShortIds.add(s.id);
+                            inserted = true;
+                            break;
+                        }
+                    }
+                    if (inserted) continue;
+                    for (let c of countySpots) {
+                        if (usedCountyIds.has(c.id)) continue;
+                        let t = getTravelTime(lastPoi.id, c.id, mode);
+                        if (t === null || t === undefined) t = 0;
+                        if (canFitInDay(t, c.visitDuration) && currentMin + t + c.visitDuration <= blockEnd) {
+                            arrangeSpot(c, t);
+                            usedCountyIds.add(c.id);
+                            inserted = true;
+                            break;
+                        }
+                    }
+                    if (!inserted) break;
                 }
-                // 强制插入午餐（如果还没吃且时间进入午餐窗口）
+                // 强制插入午餐
                 if (currentMin < LUNCH_END) {
                     const mealNode = { id: 'meal_lunch', name: '午餐', visitDuration: MEAL_DURATION, transportTime: 0, isMeal: true };
                     orderedPois.push(mealNode);
@@ -1161,12 +1095,40 @@ function generateTrip(selectedSpots, startDate, startTime, mode) {
                 continue;
             } else {
                 // 上午不够，填充上午，转入下午
-                fillGap(LUNCH_TRIGGER);
+                while (currentMin < LUNCH_TRIGGER) {
+                    if (insertMealIfNeeded(true)) continue;
+                    let inserted = false;
+                    for (let i = 0; i < shortSpots.length; i++) {
+                        const s = shortSpots[i];
+                        if (usedShortIds.has(s.id)) continue;
+                        let t = getTravelTime(lastPoi.id, s.id, mode);
+                        if (t === null || t === undefined) t = 0;
+                        if (canFitInDay(t, s.visitDuration) && currentMin + t + s.visitDuration <= LUNCH_TRIGGER) {
+                            arrangeSpot(s, t);
+                            usedShortIds.add(s.id);
+                            inserted = true;
+                            break;
+                        }
+                    }
+                    if (inserted) continue;
+                    for (let c of countySpots) {
+                        if (usedCountyIds.has(c.id)) continue;
+                        let t = getTravelTime(lastPoi.id, c.id, mode);
+                        if (t === null || t === undefined) t = 0;
+                        if (canFitInDay(t, c.visitDuration) && currentMin + t + c.visitDuration <= LUNCH_TRIGGER) {
+                            arrangeSpot(c, t);
+                            usedCountyIds.add(c.id);
+                            inserted = true;
+                            break;
+                        }
+                    }
+                    if (!inserted) break;
+                }
                 currentMin = LUNCH_END;
                 currentSlot = 'afternoon';
                 travelTime = getTravelTime(lastPoi.id, spot.id, mode);
                 if (travelTime === null || travelTime === undefined) travelTime = 0;
-                needed = travelTime + spot.visitDuration;
+                // 继续尝试下午
             }
         }
 
@@ -1174,114 +1136,114 @@ function generateTrip(selectedSpots, startDate, startTime, mode) {
         if (currentSlot === 'afternoon') {
             let blockStart = Math.max(currentMin, LUNCH_END);
             let blockEnd = DINNER_TRIGGER;
-            let available = blockEnd - blockStart;
-            const NEW_ARRIVAL_CUTOFF = 1020; // 17:00
+            // 检查17:00后不新安排
             if (blockStart >= NEW_ARRIVAL_CUTOFF) {
-                // 已过17:00，不能安排新游览
-                fillGap(DAY_END);
+                // 已过17:00，不能安排新游览，结束当天
                 addReturnToCounty();
                 currentDate.setDate(currentDate.getDate() + 1);
                 currentMin = DAY_START;
                 halfQueue.push(spot);
                 continue;
             }
-            if (needed <= available) {
-                // 安排交通+游览（类似）
-                const transportNode = {
-                    id: 'transport_' + spot.id,
-                    name: spot.name,
-                    transportTime: travelTime,
-                    visitDuration: 0,
-                    isTransport: true,
-                    _spot: spot
-                };
-                orderedPois.push(transportNode);
-                let remainingVisit = spot.visitDuration;
-                let visitStart = currentMin + travelTime;
-                let visitEnd = visitStart + remainingVisit;
-                let currentVisitPos = visitStart;
-                while (remainingVisit > 0) {
-                    let nextMealStart = null, nextMealEnd = null;
-                    if (currentVisitPos < LUNCH_TRIGGER && visitEnd > LUNCH_TRIGGER) {
-                        nextMealStart = LUNCH_TRIGGER;
-                        nextMealEnd = LUNCH_END;
-                    } else if (currentVisitPos < DINNER_TRIGGER && visitEnd > DINNER_TRIGGER) {
-                        nextMealStart = DINNER_TRIGGER;
-                        nextMealEnd = DINNER_END;
-                    }
-                    if (nextMealStart !== null) {
-                        let timeToMeal = nextMealStart - currentVisitPos;
-                        if (timeToMeal > 0) {
-                            let segment = Math.min(timeToMeal, remainingVisit);
-                            orderedPois.push({
-                                id: spot.id,
-                                name: spot.name,
-                                visitDuration: segment,
-                                transportTime: 0,
-                                isVisitSegment: true,
-                                _spot: spot
-                            });
-                            remainingVisit -= segment;
-                            currentVisitPos += segment;
-                        }
-                        if (remainingVisit <= 60) {
-                            if (remainingVisit > 0) {
-                                orderedPois.push({
-                                    id: spot.id,
-                                    name: spot.name,
-                                    visitDuration: remainingVisit,
-                                    transportTime: 0,
-                                    isVisitSegment: true,
-                                    _spot: spot
-                                });
-                                currentVisitPos += remainingVisit;
-                                remainingVisit = 0;
-                            }
-                            if (currentVisitPos >= LUNCH_TRIGGER && currentVisitPos < LUNCH_END) {
-                                const mealNode = { id: 'meal_lunch', name: '午餐', visitDuration: MEAL_DURATION, transportTime: 0, isMeal: true };
-                                orderedPois.push(mealNode);
-                                currentVisitPos += MEAL_DURATION;
-                            } else if (currentVisitPos >= DINNER_TRIGGER && currentVisitPos < DINNER_END) {
-                                const mealNode = { id: 'meal_dinner', name: '晚餐', visitDuration: MEAL_DURATION, transportTime: 0, isMeal: true };
-                                orderedPois.push(mealNode);
-                                currentVisitPos += MEAL_DURATION;
-                            }
-                        } else {
-                            const mealNode = { id: 'meal_dinner', name: '晚餐', visitDuration: MEAL_DURATION, transportTime: 0, isMeal: true };
-                            orderedPois.push(mealNode);
-                            currentVisitPos += MEAL_DURATION;
-                        }
-                    } else {
-                        if (remainingVisit > 0) {
-                            orderedPois.push({
-                                id: spot.id,
-                                name: spot.name,
-                                visitDuration: remainingVisit,
-                                transportTime: 0,
-                                isVisitSegment: true,
-                                _spot: spot
-                            });
-                            currentVisitPos += remainingVisit;
-                            remainingVisit = 0;
+            let available = blockEnd - blockStart;
+            if (canFitInDay(travelTime, spot.visitDuration) && travelTime + spot.visitDuration <= available) {
+                arrangeSpot(spot, travelTime);
+                // 填充下午剩余
+                while (currentMin < blockEnd) {
+                    if (insertMealIfNeeded(true)) continue;
+                    let inserted = false;
+                    for (let i = 0; i < shortSpots.length; i++) {
+                        const s = shortSpots[i];
+                        if (usedShortIds.has(s.id)) continue;
+                        let t = getTravelTime(lastPoi.id, s.id, mode);
+                        if (t === null || t === undefined) t = 0;
+                        if (canFitInDay(t, s.visitDuration) && currentMin + t + s.visitDuration <= blockEnd) {
+                            arrangeSpot(s, t);
+                            usedShortIds.add(s.id);
+                            inserted = true;
+                            break;
                         }
                     }
+                    if (inserted) continue;
+                    for (let c of countySpots) {
+                        if (usedCountyIds.has(c.id)) continue;
+                        let t = getTravelTime(lastPoi.id, c.id, mode);
+                        if (t === null || t === undefined) t = 0;
+                        if (canFitInDay(t, c.visitDuration) && currentMin + t + c.visitDuration <= blockEnd) {
+                            arrangeSpot(c, t);
+                            usedCountyIds.add(c.id);
+                            inserted = true;
+                            break;
+                        }
+                    }
+                    if (!inserted) break;
                 }
-                currentMin = currentVisitPos;
-                lastPoi = { id: spot.id, name: spot.name, lat: spot.lat, lng: spot.lng };
-
-                if (currentMin < blockEnd) {
-                    fillGap(blockEnd);
+                // 填充剩余到18:00
+                while (currentMin < DAY_END) {
+                    if (insertMealIfNeeded(true)) continue;
+                    let inserted = false;
+                    for (let i = 0; i < shortSpots.length; i++) {
+                        const s = shortSpots[i];
+                        if (usedShortIds.has(s.id)) continue;
+                        let t = getTravelTime(lastPoi.id, s.id, mode);
+                        if (t === null || t === undefined) t = 0;
+                        if (canFitInDay(t, s.visitDuration) && currentMin + t + s.visitDuration <= DAY_END) {
+                            arrangeSpot(s, t);
+                            usedShortIds.add(s.id);
+                            inserted = true;
+                            break;
+                        }
+                    }
+                    if (inserted) continue;
+                    for (let c of countySpots) {
+                        if (usedCountyIds.has(c.id)) continue;
+                        let t = getTravelTime(lastPoi.id, c.id, mode);
+                        if (t === null || t === undefined) t = 0;
+                        if (canFitInDay(t, c.visitDuration) && currentMin + t + c.visitDuration <= DAY_END) {
+                            arrangeSpot(c, t);
+                            usedCountyIds.add(c.id);
+                            inserted = true;
+                            break;
+                        }
+                    }
+                    if (!inserted) break;
                 }
-                if (currentMin < DAY_END) {
-                    fillGap(DAY_END);
-                }
+                // 半日结束返回县城
                 addReturnToCounty();
                 currentDate.setDate(currentDate.getDate() + 1);
                 currentMin = DAY_START;
                 continue;
             } else {
                 // 下午不够，填充剩余，返回县城，次日再试
-                fillGap(DINNER_TRIGGER);
+                while (currentMin < DINNER_TRIGGER) {
+                    if (insertMealIfNeeded(true)) continue;
+                    let inserted = false;
+                    for (let i = 0; i < shortSpots.length; i++) {
+                        const s = shortSpots[i];
+                        if (usedShortIds.has(s.id)) continue;
+                        let t = getTravelTime(lastPoi.id, s.id, mode);
+                        if (t === null || t === undefined) t = 0;
+                        if (canFitInDay(t, s.visitDuration) && currentMin + t + s.visitDuration <= DINNER_TRIGGER) {
+                            arrangeSpot(s, t);
+                            usedShortIds.add(s.id);
+                            inserted = true;
+                            break;
+                        }
+                    }
+                    if (inserted) continue;
+                    for (let c of countySpots) {
+                        if (usedCountyIds.has(c.id)) continue;
+                        let t = getTravelTime(lastPoi.id, c.id, mode);
+                        if (t === null || t === undefined) t = 0;
+                        if (canFitInDay(t, c.visitDuration) && currentMin + t + c.visitDuration <= DINNER_TRIGGER) {
+                            arrangeSpot(c, t);
+                            usedCountyIds.add(c.id);
+                            inserted = true;
+                            break;
+                        }
+                    }
+                    if (!inserted) break;
+                }
                 addReturnToCounty();
                 currentDate.setDate(currentDate.getDate() + 1);
                 currentMin = DAY_START;
@@ -1291,138 +1253,33 @@ function generateTrip(selectedSpots, startDate, startTime, mode) {
         }
     }
 
-    // ---- 阶段三：短时景区和县城填充 ----
+    // ---- 阶段三：短时景区和县城填充（剩余时间） ----
     let anyInserted = true;
     while (anyInserted) {
         anyInserted = false;
         // 检查是否已过17:00
-        if (currentMin >= 1020) break;
+        if (currentMin >= NEW_ARRIVAL_CUTOFF) break;
         // 尝试短时
         for (let i = 0; i < shortSpots.length; i++) {
-            const spot = shortSpots[i];
-            if (usedShortIds.has(spot.id)) continue;
-            let travel = getTravelTime(lastPoi.id, spot.id, mode);
-            if (travel === null || travel === undefined) travel = 0;
-            let needed = travel + spot.visitDuration;
-            let remaining = DAY_END - currentMin;
-            if (needed <= remaining) {
-                // 安排交通+游览（分段）
-                const transportNode = {
-                    id: 'transport_' + spot.id,
-                    name: spot.name,
-                    transportTime: travel,
-                    visitDuration: 0,
-                    isTransport: true,
-                    _spot: spot
-                };
-                orderedPois.push(transportNode);
-                let remainingVisit = spot.visitDuration;
-                let visitStart = currentMin + travel;
-                let visitEnd = visitStart + remainingVisit;
-                let currentVisitPos = visitStart;
-                while (remainingVisit > 0) {
-                    let nextMealStart = null, nextMealEnd = null;
-                    if (currentVisitPos < LUNCH_TRIGGER && visitEnd > LUNCH_TRIGGER) {
-                        nextMealStart = LUNCH_TRIGGER;
-                        nextMealEnd = LUNCH_END;
-                    } else if (currentVisitPos < DINNER_TRIGGER && visitEnd > DINNER_TRIGGER) {
-                        nextMealStart = DINNER_TRIGGER;
-                        nextMealEnd = DINNER_END;
-                    }
-                    if (nextMealStart !== null) {
-                        let timeToMeal = nextMealStart - currentVisitPos;
-                        if (timeToMeal > 0) {
-                            let segment = Math.min(timeToMeal, remainingVisit);
-                            orderedPois.push({
-                                id: spot.id,
-                                name: spot.name,
-                                visitDuration: segment,
-                                transportTime: 0,
-                                isVisitSegment: true,
-                                _spot: spot
-                            });
-                            remainingVisit -= segment;
-                            currentVisitPos += segment;
-                        }
-                        if (remainingVisit <= 60) {
-                            if (remainingVisit > 0) {
-                                orderedPois.push({
-                                    id: spot.id,
-                                    name: spot.name,
-                                    visitDuration: remainingVisit,
-                                    transportTime: 0,
-                                    isVisitSegment: true,
-                                    _spot: spot
-                                });
-                                currentVisitPos += remainingVisit;
-                                remainingVisit = 0;
-                            }
-                            if (currentVisitPos >= LUNCH_TRIGGER && currentVisitPos < LUNCH_END) {
-                                const mealNode = { id: 'meal_lunch', name: '午餐', visitDuration: MEAL_DURATION, transportTime: 0, isMeal: true };
-                                orderedPois.push(mealNode);
-                                currentVisitPos += MEAL_DURATION;
-                            } else if (currentVisitPos >= DINNER_TRIGGER && currentVisitPos < DINNER_END) {
-                                const mealNode = { id: 'meal_dinner', name: '晚餐', visitDuration: MEAL_DURATION, transportTime: 0, isMeal: true };
-                                orderedPois.push(mealNode);
-                                currentVisitPos += MEAL_DURATION;
-                            }
-                        } else {
-                            const mealNode = { id: 'meal_dinner', name: '晚餐', visitDuration: MEAL_DURATION, transportTime: 0, isMeal: true };
-                            orderedPois.push(mealNode);
-                            currentVisitPos += MEAL_DURATION;
-                        }
-                    } else {
-                        if (remainingVisit > 0) {
-                            orderedPois.push({
-                                id: spot.id,
-                                name: spot.name,
-                                visitDuration: remainingVisit,
-                                transportTime: 0,
-                                isVisitSegment: true,
-                                _spot: spot
-                            });
-                            currentVisitPos += remainingVisit;
-                            remainingVisit = 0;
-                        }
-                    }
-                }
-                currentMin = currentVisitPos;
-                lastPoi = { id: spot.id, name: spot.name, lat: spot.lat, lng: spot.lng };
-                usedShortIds.add(spot.id);
+            const s = shortSpots[i];
+            if (usedShortIds.has(s.id)) continue;
+            let t = getTravelTime(lastPoi.id, s.id, mode);
+            if (t === null || t === undefined) t = 0;
+            if (canFitInDay(t, s.visitDuration)) {
+                arrangeSpot(s, t);
+                usedShortIds.add(s.id);
                 anyInserted = true;
-                // 短时景区结束后不返回县城
                 break;
             }
         }
         if (anyInserted) continue;
-        // 尝试县城景点
+        // 尝试县城
         for (let c of countySpots) {
             if (usedCountyIds.has(c.id)) continue;
-            let travel = getTravelTime(lastPoi.id, c.id, mode);
-            if (travel === null || travel === undefined) travel = 0;
-            let needed = travel + c.visitDuration;
-            let remaining = DAY_END - currentMin;
-            if (needed <= remaining) {
-                const transportNode = {
-                    id: 'transport_' + c.id,
-                    name: c.name,
-                    transportTime: travel,
-                    visitDuration: 0,
-                    isTransport: true,
-                    _spot: c
-                };
-                orderedPois.push(transportNode);
-                // 县城景点视为游览（计入时长）
-                orderedPois.push({
-                    id: c.id,
-                    name: c.name,
-                    visitDuration: c.visitDuration,
-                    transportTime: 0,
-                    isVisitSegment: true,
-                    _spot: c
-                });
-                currentMin += travel + c.visitDuration;
-                lastPoi = { id: c.id, name: c.name, lat: c.lat, lng: c.lng };
+            let t = getTravelTime(lastPoi.id, c.id, mode);
+            if (t === null || t === undefined) t = 0;
+            if (canFitInDay(t, c.visitDuration)) {
+                arrangeSpot(c, t);
                 usedCountyIds.add(c.id);
                 anyInserted = true;
                 break;
@@ -1430,7 +1287,7 @@ function generateTrip(selectedSpots, startDate, startTime, mode) {
         }
     }
 
-    // 当天结束，如果还有剩余时间且最后一项不是返回，则添加返回（仅当最后一项是长/半日）
+    // 当天结束，如果还有剩余时间且最后一项不是返回，则根据最后一项类型决定
     if (currentMin < DAY_END) {
         if (orderedPois.length > 0 && !orderedPois[orderedPois.length-1].isReturn) {
             let lastNode = orderedPois[orderedPois.length-1];
@@ -1474,7 +1331,7 @@ function generateTimelineNew(nodes, startDate, startTime) {
         if (cur.transportTime > 0 && !cur.isVisitSegment) {
             const start = curMin;
             curMin += cur.transportTime;
-            // 交通不跨天（但安全处理）
+            // 交通不跨天（安全处理）
             let daysPassed = Math.floor(curMin / 1440);
             if (daysPassed > 0) {
                 curDate.setDate(curDate.getDate() + daysPassed);
@@ -1698,9 +1555,7 @@ function renderDynamicRoute(){
 function moveRouteItem(index, direction) {
     const newIndex = index + direction;
     if (newIndex < 0 || newIndex >= allowedPoiOptions.length) return;
-    // 交换数组元素
     [allowedPoiOptions[index], allowedPoiOptions[newIndex]] = [allowedPoiOptions[newIndex], allowedPoiOptions[index]];
-    // 更新 routeLegs 以匹配新顺序（如果需要）
     renderDynamicRoute();
 }
 
@@ -1831,7 +1686,7 @@ function startSimulation(){ alert('模拟导航功能即将上线'); }
 // ==================== 启动 ====================
 window.onload = function() {
     initMap();
-    console.log('[系统] 智游通江已启动，行程规划算法已最终修复。');
+    console.log('[系统] 智游通江已启动，行程规划算法已强制时间边界。');
 };
 </script>
 </body>

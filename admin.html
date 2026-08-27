@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>管理后台 - 通江文旅</title>
     <style>
+        /* 样式代码与之前完全相同，此处省略，实际使用时保留完整样式 */
         body { font-family: system-ui; background:#f0f2f5; margin:0; }
         .header { background:#1b5e20; color:white; padding:12px; display:flex; justify-content:space-between; align-items:center; }
         .container { max-width:1200px; margin:20px auto; background:white; padding:20px; border-radius:8px; }
@@ -645,10 +646,11 @@ async function saveRoute(){
     const editId = document.getElementById('edit-route-id').value;
     const start_time = document.getElementById('route-start-time').value;
     const transport = document.getElementById('route-transport').value;
-    // 添加 days 字段，默认1天
+    // 关键修复：添加 days 字段，默认值为 1（满足数据库 NOT NULL 约束）
     const routeData = { name, start_time, transport, days: 1 };
     let routeId = editId;
     if(editId){
+        // 更新时同样包含 days，防止更新时被置 null
         await sb.from('ztj_routes').update(routeData).eq('id', editId);
         await sb.from('ztj_route_nodes').delete().eq('route_id', editId);
     } else {
@@ -749,18 +751,15 @@ async function saveTransportTime(fromId, toId, time){
         { from_poi_id: fromId, to_poi_id: toId, travel_mode: 'auto', time_min: timeVal },
         { onConflict: 'from_poi_id,to_poi_id' }
     );
-    // 更新内存缓存正向
     if(!allTransportPresets[fromId]) allTransportPresets[fromId] = {};
     allTransportPresets[fromId][toId] = timeVal;
-    // 检查反向是否存在，如果不存在则自动填充相同值
+    // 检查反向是否存在，如果不存在则自动填充
     const reverseExists = (allTransportPresets[toId] && allTransportPresets[toId][fromId] !== undefined);
     if(!reverseExists) {
-        // 插入反向
         await sb.from('ztj_transport_presets').upsert(
             { from_poi_id: toId, to_poi_id: fromId, travel_mode: 'auto', time_min: timeVal },
             { onConflict: 'from_poi_id,to_poi_id' }
         );
-        // 更新内存缓存反向
         if(!allTransportPresets[toId]) allTransportPresets[toId] = {};
         allTransportPresets[toId][fromId] = timeVal;
     }
@@ -850,9 +849,7 @@ async function handleTransportChange(input){
     await saveTransportTime(from, to, val);
     statusEl.textContent = '✓已保存';
     setTimeout(() => statusEl.textContent='', 1500);
-    // 刷新显示（因为反向可能被自动填充，重新渲染以更新所有输入框）
-    // 但为了不丢失焦点，仅更新相关输入框的值，但更简单是重新渲染整个编辑器（但会导致滚动重置）
-    // 这里我们只更新相关输入框的值，重新获取缓存并设置
+    // 刷新所有输入框的值，显示双向同步后的数据
     const allInputs = document.querySelectorAll('#transport-editor input[type="number"]');
     allInputs.forEach(inp => {
         const f = parseInt(inp.dataset.from);

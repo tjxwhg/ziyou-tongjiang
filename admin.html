@@ -137,7 +137,7 @@ const EXCLUDED_TRANSPORT_CATS = ['公共服务','游玩娱乐','特产购物'];
 let routeNodes = [];
 let allTransportPresets = {};
 let mainPoisForTransport = [];
-let allMainPois = []; // 所有主景区（parent_id is null）
+let allMainPois = [];
 
 // ========== 会话 ==========
 async function checkSession(){
@@ -177,8 +177,7 @@ async function loadAllMainPois(){
 
 // ================== POI 管理 ==================
 async function loadPOIs(){
-    await loadAllMainPois(); // 刷新缓存
-    // 分组显示
+    await loadAllMainPois();
     const grouped = {};
     POI_CATEGORIES.forEach(cat => grouped[cat] = []);
     grouped['其他'] = [];
@@ -194,7 +193,6 @@ async function loadPOIs(){
             if(!matched) grouped['其他'].push(p);
         }
     });
-    // 显示子点（不分组显示，但单独列出）
     const { data: subPois } = await sb.from('ztj_poi').select('*').eq('status','active').not('parent_id', 'is', null).order('sort_order');
     let html = '';
     [...POI_CATEGORIES, '其他'].forEach(cat => {
@@ -219,7 +217,6 @@ async function loadPOIs(){
         });
         html += `</div></div>`;
     });
-    // 显示子点（独立列出）
     if(subPois && subPois.length) {
         html += `<div class="category-group"><div class="category-title" onclick="this.nextElementSibling.classList.toggle('hidden')">子景点 (${subPois.length})</div><div class="category-content hidden">`;
         subPois.forEach(p => {
@@ -285,7 +282,6 @@ async function saveNewPoi(){
     }
     alert('新增成功');
     toggleAddPoiForm();
-    // 刷新所有相关模块
     await loadAllMainPois();
     loadPOIs();
     loadTransportEditor();
@@ -510,23 +506,16 @@ async function removeFromParent(subId, parentId){
 
 async function deletePoi(id){
     if(!confirm('确定删除此POI？将同时解除关联的商户、交通预设、路线节点，并删除子点。')) return;
-    // 1. 解除商户关联
     await sb.from('ztj_merchants').update({ poi_id: null }).eq('poi_id', id);
-    // 2. 删除交通预设（双向）
     await sb.from('ztj_transport_presets').delete().or(`from_poi_id.eq.${id},to_poi_id.eq.${id}`);
-    // 3. 删除路线节点
     await sb.from('ztj_route_nodes').delete().eq('poi_id', id);
-    // 4. 删除所有子点（递归删除，但简单处理为删除所有 parent_id=id 的）
     await sb.from('ztj_poi').delete().eq('parent_id', id);
-    // 5. 删除自身
     const { error } = await sb.from('ztj_poi').delete().eq('id', id);
     if(error) { alert('删除失败：'+error.message); return; }
-    // 6. 从排除列表中移除该ID
     let excluded = getExcludedTransportPois();
     const idx = excluded.indexOf(Number(id));
     if(idx !== -1) excluded.splice(idx, 1);
     setExcludedTransportPois(excluded);
-    // 7. 刷新所有
     await loadAllMainPois();
     loadPOIs();
     loadTransportEditor();
@@ -536,10 +525,8 @@ async function deletePoi(id){
 
 // ================== 路线管理 ==================
 async function loadPoiOptionsForRoute(){
-    await loadAllMainPois(); // 确保缓存最新
-    // 直接使用 allMainPois
+    await loadAllMainPois();
     window.poiOptions = allMainPois.map(p => ({ id: p.id, name: p.name }));
-    // 不再需要 default_start 下拉
 }
 
 async function renderRouteNodes(){
@@ -658,7 +645,8 @@ async function saveRoute(){
     const editId = document.getElementById('edit-route-id').value;
     const start_time = document.getElementById('route-start-time').value;
     const transport = document.getElementById('route-transport').value;
-    const routeData = { name, start_time, transport };
+    // 添加 days 字段，默认1天
+    const routeData = { name, start_time, transport, days: 1 };
     let routeId = editId;
     if(editId){
         await sb.from('ztj_routes').update(routeData).eq('id', editId);
@@ -668,7 +656,6 @@ async function saveRoute(){
         if(error){ alert('创建路线失败：'+error.message); return; }
         routeId = data[0].id;
     }
-    // 检查重复节点
     const poiIds = routeNodes.filter(n => n.poi_id).map(n => n.poi_id);
     const uniqueIds = new Set(poiIds);
     if(poiIds.length !== uniqueIds.size){
@@ -712,22 +699,18 @@ function getExcludedTransportPois(){
     if(!stored) return [];
     try {
         const arr = JSON.parse(stored);
-        // 确保所有元素为数字
         return arr.map(v => Number(v)).filter(v => !isNaN(v));
     } catch(e) { return []; }
 }
 function setExcludedTransportPois(arr){
-    // 确保数组元素为数字
     const clean = arr.map(v => Number(v)).filter(v => !isNaN(v));
     localStorage.setItem('excludedTransportPois', JSON.stringify(clean));
 }
 
 async function loadTransportEditor(){
-    await loadAllMainPois(); // 刷新缓存
+    await loadAllMainPois();
     const excludedIds = getExcludedTransportPois();
-    // 红军广场作为起点
     mainPoisForTransport = [ { id: 0, name: '红军广场', category: '' } ];
-    // 遍历所有主景区，过滤排除和分类
     allMainPois.forEach(p => {
         if (excludedIds.includes(Number(p.id))) return;
         if (!p.category) { mainPoisForTransport.push(p); return; }
@@ -736,7 +719,6 @@ async function loadTransportEditor(){
             mainPoisForTransport.push(p);
         }
     });
-    // 去重（虽然id唯一，但加一层保险）
     const seen = new Set();
     mainPoisForTransport = mainPoisForTransport.filter(p => {
         if (seen.has(p.id)) return false;
@@ -758,11 +740,30 @@ function getTransportTimeAdmin(fromId, toId){
     return '';
 }
 
+// 核心保存：自动填充反向
 async function saveTransportTime(fromId, toId, time){
-    const timeVal = parseInt(time); if(isNaN(timeVal)||timeVal<0) return;
-    await sb.from('ztj_transport_presets').upsert({ from_poi_id: fromId, to_poi_id: toId, travel_mode:'auto', time_min: timeVal }, { onConflict:'from_poi_id,to_poi_id' });
+    const timeVal = parseInt(time);
+    if(isNaN(timeVal) || timeVal < 0) return;
+    // 保存正向
+    await sb.from('ztj_transport_presets').upsert(
+        { from_poi_id: fromId, to_poi_id: toId, travel_mode: 'auto', time_min: timeVal },
+        { onConflict: 'from_poi_id,to_poi_id' }
+    );
+    // 更新内存缓存正向
     if(!allTransportPresets[fromId]) allTransportPresets[fromId] = {};
     allTransportPresets[fromId][toId] = timeVal;
+    // 检查反向是否存在，如果不存在则自动填充相同值
+    const reverseExists = (allTransportPresets[toId] && allTransportPresets[toId][fromId] !== undefined);
+    if(!reverseExists) {
+        // 插入反向
+        await sb.from('ztj_transport_presets').upsert(
+            { from_poi_id: toId, to_poi_id: fromId, travel_mode: 'auto', time_min: timeVal },
+            { onConflict: 'from_poi_id,to_poi_id' }
+        );
+        // 更新内存缓存反向
+        if(!allTransportPresets[toId]) allTransportPresets[toId] = {};
+        allTransportPresets[toId][fromId] = timeVal;
+    }
 }
 
 function renderTransportEditor(){
@@ -821,11 +822,9 @@ function addTransportPoi(){
                     dialog.remove();
                     return;
                 }
-                // 从排除列表中移除（如果有）
                 const idx = excludedIds.indexOf(Number(selectedId));
                 if(idx !== -1) excludedIds.splice(idx, 1);
                 setExcludedTransportPois(excludedIds);
-                // 重新加载整个编辑器
                 loadTransportEditor();
             }
         }
@@ -841,7 +840,6 @@ function removeTransportPoi(id){
         excluded.push(numId);
         setExcludedTransportPois(excluded);
     }
-    // 重新加载
     loadTransportEditor();
 }
 
@@ -850,7 +848,20 @@ async function handleTransportChange(input){
     const statusEl = input.parentElement.querySelector('.save-status');
     if(val === '') return;
     await saveTransportTime(from, to, val);
-    statusEl.textContent = '✓已保存'; setTimeout(() => statusEl.textContent='', 1500);
+    statusEl.textContent = '✓已保存';
+    setTimeout(() => statusEl.textContent='', 1500);
+    // 刷新显示（因为反向可能被自动填充，重新渲染以更新所有输入框）
+    // 但为了不丢失焦点，仅更新相关输入框的值，但更简单是重新渲染整个编辑器（但会导致滚动重置）
+    // 这里我们只更新相关输入框的值，重新获取缓存并设置
+    const allInputs = document.querySelectorAll('#transport-editor input[type="number"]');
+    allInputs.forEach(inp => {
+        const f = parseInt(inp.dataset.from);
+        const t = parseInt(inp.dataset.to);
+        const newVal = getTransportTimeAdmin(f, t);
+        if (inp.value !== String(newVal)) {
+            inp.value = newVal;
+        }
+    });
 }
 
 // ================== 商户账号 ==================

@@ -137,7 +137,7 @@ const EXCLUDED_TRANSPORT_CATS = ['公共服务','游玩娱乐','特产购物'];
 let routeNodes = [];
 let allTransportPresets = {};
 let mainPoisForTransport = [];
-let allMainPois = [];
+let allMainPois = []; // 所有主景区（parent_id is null）
 
 // ========== 会话 ==========
 async function checkSession(){
@@ -162,41 +162,40 @@ function switchTab(tab){
     document.querySelectorAll('.tab button').forEach((b,i) => b.classList.toggle('active', tabs[i]===tab));
     tabs.forEach(t => document.getElementById('tab-'+t).classList.toggle('hidden', t!==tab));
     if(tab==='poi') loadPOIs();
-    if(tab==='routes') loadRoutes();
+    if(tab==='routes') { loadRoutes(); loadPoiOptionsForRoute(); }
     if(tab==='transport') loadTransportEditor();
     if(tab==='feedbacks') loadFeedbacks();
 }
 
+// ================== 统一加载主景区 ==================
+async function loadAllMainPois(){
+    const { data } = await sb.from('ztj_poi').select('id,name,category,lat,lng,visit_duration,voice_mp3')
+        .eq('status','active').is('parent_id', null).order('name');
+    allMainPois = data || [];
+    return allMainPois;
+}
+
 // ================== POI 管理 ==================
 async function loadPOIs(){
-    const { data } = await sb.from('ztj_poi').select('*').eq('status','active').order('sort_order');
-    // 构建分组，包含所有主景区（parent_id is null）和子景区
+    await loadAllMainPois(); // 刷新缓存
+    // 分组显示
     const grouped = {};
-    // 初始化所有预设分类
     POI_CATEGORIES.forEach(cat => grouped[cat] = []);
-    grouped['其他'] = []; // 用于存放未分类或分类不在预设中的
-    if(data) {
-        data.forEach(p => {
-            const cats = (p.category||'').split(',').map(c => c.trim()).filter(c => c);
-            if(cats.length === 0) {
-                // 无分类，归入“其他”
-                grouped['其他'].push(p);
-            } else {
-                let matched = false;
-                cats.forEach(c => {
-                    if(grouped[c]) {
-                        grouped[c].push(p);
-                        matched = true;
-                    }
-                });
-                if(!matched) {
-                    // 分类不在预设中，归入其他
-                    grouped['其他'].push(p);
-                }
-            }
-        });
-    }
-    // 构建HTML，先显示预设分类，再显示其他
+    grouped['其他'] = [];
+    allMainPois.forEach(p => {
+        const cats = (p.category||'').split(',').map(c => c.trim()).filter(c => c);
+        if(cats.length === 0) {
+            grouped['其他'].push(p);
+        } else {
+            let matched = false;
+            cats.forEach(c => {
+                if(grouped[c]) { grouped[c].push(p); matched = true; }
+            });
+            if(!matched) grouped['其他'].push(p);
+        }
+    });
+    // 显示子点（不分组显示，但单独列出）
+    const { data: subPois } = await sb.from('ztj_poi').select('*').eq('status','active').not('parent_id', 'is', null).order('sort_order');
     let html = '';
     [...POI_CATEGORIES, '其他'].forEach(cat => {
         const pois = grouped[cat] || [];
@@ -205,13 +204,12 @@ async function loadPOIs(){
             <div class="category-title" onclick="this.nextElementSibling.classList.toggle('hidden')">${cat} (${pois.length})</div>
             <div class="category-content hidden">`;
         pois.forEach(p => {
-            const hasParent = p.parent_id ? true : false;
-            html += `<div class="card ${hasParent?'sub-poi-card':''}" id="poi-card-${p.id}">
+            html += `<div class="card" id="poi-card-${p.id}">
                 <div class="poi-name-header">
                     <span><b>${p.name}</b> [${p.category||'未分类'}] 游览时长：${p.visit_duration != null ? p.visit_duration+'分钟' : '未设置'} | MP3: ${p.voice_mp3 ? '✅' : '❌'}</span>
                     <div>
                         <button class="btn btn-default" onclick="toggleEditPoi(${p.id})">编辑</button>
-                        ${!hasParent ? `<button class="btn btn-default" onclick="manageSubPois(${p.id})">子点管理</button>` : ''}
+                        <button class="btn btn-default" onclick="manageSubPois(${p.id})">子点管理</button>
                         <button class="btn btn-danger" onclick="deletePoi(${p.id})">删除</button>
                     </div>
                 </div>
@@ -221,6 +219,23 @@ async function loadPOIs(){
         });
         html += `</div></div>`;
     });
+    // 显示子点（独立列出）
+    if(subPois && subPois.length) {
+        html += `<div class="category-group"><div class="category-title" onclick="this.nextElementSibling.classList.toggle('hidden')">子景点 (${subPois.length})</div><div class="category-content hidden">`;
+        subPois.forEach(p => {
+            html += `<div class="card sub-poi-card" id="poi-card-${p.id}">
+                <div class="poi-name-header">
+                    <span><b>${p.name}</b> [${p.category||'未分类'}] 游览时长：${p.visit_duration != null ? p.visit_duration+'分钟' : '未设置'} | MP3: ${p.voice_mp3 ? '✅' : '❌'}</span>
+                    <div>
+                        <button class="btn btn-default" onclick="toggleEditPoi(${p.id})">编辑</button>
+                        <button class="btn btn-danger" onclick="deletePoi(${p.id})">删除</button>
+                    </div>
+                </div>
+                <div id="edit-poi-${p.id}" class="inline-edit hidden"></div>
+            </div>`;
+        });
+        html += `</div></div>`;
+    }
     document.getElementById('poi-list').innerHTML = html || '<p>暂无POI</p>';
     loadParentOptions();
 }
@@ -270,21 +285,11 @@ async function saveNewPoi(){
     }
     alert('新增成功');
     toggleAddPoiForm();
+    // 刷新所有相关模块
+    await loadAllMainPois();
     loadPOIs();
-    // 确保新POI不在排除列表中（如果是主景区且分类允许）
-    if(inserted && inserted.length){
-        const newId = inserted[0].id;
-        if(parent_id === null) {
-            const cats = category.split(',').map(c => c.trim());
-            if(!cats.some(c => EXCLUDED_TRANSPORT_CATS.includes(c))) {
-                let excluded = getExcludedTransportPois();
-                const idx = excluded.indexOf(newId);
-                if(idx !== -1) excluded.splice(idx, 1);
-                setExcludedTransportPois(excluded);
-            }
-        }
-    }
-    await loadTransportEditor();
+    loadTransportEditor();
+    loadPoiOptionsForRoute();
 }
 
 async function toggleEditPoi(id){
@@ -341,8 +346,10 @@ async function savePoiEdit(id){
     }
     document.getElementById(`edit-poi-${id}`).classList.add('hidden');
     alert('保存成功');
+    await loadAllMainPois();
     loadPOIs();
-    await loadTransportEditor();
+    loadTransportEditor();
+    loadPoiOptionsForRoute();
 }
 
 async function uploadPoiVoice(poiId, input){
@@ -429,7 +436,10 @@ async function addSubPoi(parentId){
     }
     alert('子点添加成功');
     loadSubPois(parentId);
+    await loadAllMainPois();
     loadPOIs();
+    loadTransportEditor();
+    loadPoiOptionsForRoute();
 }
 async function toggleEditSubPoi(subId, parentId){
     const container = document.getElementById(`edit-sub-poi-${subId}`);
@@ -470,7 +480,10 @@ async function saveSubPoiEdit(subId, parentId){
     alert('子点更新成功');
     document.getElementById(`edit-sub-poi-${subId}`).classList.add('hidden');
     loadSubPois(parentId);
+    await loadAllMainPois();
     loadPOIs();
+    loadTransportEditor();
+    loadPoiOptionsForRoute();
 }
 async function uploadSubPoiVoice(subId, input){
     const file = input.files[0];
@@ -489,46 +502,46 @@ async function removeFromParent(subId, parentId){
     if(!confirm('确定将此子点移出（变为独立主景区）？')) return;
     await sb.from('ztj_poi').update({ parent_id: null }).eq('id', subId);
     loadSubPois(parentId);
+    await loadAllMainPois();
     loadPOIs();
-    await loadTransportEditor();
+    loadTransportEditor();
+    loadPoiOptionsForRoute();
 }
+
 async function deletePoi(id){
-    if(confirm('确定删除此POI？将同时解除关联的商户、交通预设、路线节点，并删除子点。')){
-        // 1. 解除商户关联
-        await sb.from('ztj_merchants').update({ poi_id: null }).eq('poi_id', id);
-        // 2. 删除交通预设（双向）
-        await sb.from('ztj_transport_presets').delete().or(`from_poi_id.eq.${id},to_poi_id.eq.${id}`);
-        // 3. 删除路线节点
-        await sb.from('ztj_route_nodes').delete().eq('poi_id', id);
-        // 4. 删除子点（递归删除，但这里只删除直接子点，若子点还有子点则需递归，但简单处理为删除所有parent_id=id的）
-        await sb.from('ztj_poi').delete().eq('parent_id', id);
-        // 5. 删除自身
-        const { error } = await sb.from('ztj_poi').delete().eq('id', id);
-        if(error) { alert('删除失败：'+error.message); }
-        else {
-            // 从排除列表中移除
-            let excluded = getExcludedTransportPois();
-            const idx = excluded.indexOf(id);
-            if(idx !== -1) excluded.splice(idx, 1);
-            setExcludedTransportPois(excluded);
-            loadPOIs();
-            await loadTransportEditor();
-        }
-    }
+    if(!confirm('确定删除此POI？将同时解除关联的商户、交通预设、路线节点，并删除子点。')) return;
+    // 1. 解除商户关联
+    await sb.from('ztj_merchants').update({ poi_id: null }).eq('poi_id', id);
+    // 2. 删除交通预设（双向）
+    await sb.from('ztj_transport_presets').delete().or(`from_poi_id.eq.${id},to_poi_id.eq.${id}`);
+    // 3. 删除路线节点
+    await sb.from('ztj_route_nodes').delete().eq('poi_id', id);
+    // 4. 删除所有子点（递归删除，但简单处理为删除所有 parent_id=id 的）
+    await sb.from('ztj_poi').delete().eq('parent_id', id);
+    // 5. 删除自身
+    const { error } = await sb.from('ztj_poi').delete().eq('id', id);
+    if(error) { alert('删除失败：'+error.message); return; }
+    // 6. 从排除列表中移除该ID
+    let excluded = getExcludedTransportPois();
+    const idx = excluded.indexOf(Number(id));
+    if(idx !== -1) excluded.splice(idx, 1);
+    setExcludedTransportPois(excluded);
+    // 7. 刷新所有
+    await loadAllMainPois();
+    loadPOIs();
+    loadTransportEditor();
+    loadPoiOptionsForRoute();
+    alert('删除成功');
 }
 
 // ================== 路线管理 ==================
 async function loadPoiOptionsForRoute(){
-    const { data } = await sb.from('ztj_poi').select('id,name').eq('status','active').is('parent_id', null).order('name');
-    // 去重（虽然id唯一，但加一层保险）
-    const unique = [];
-    const seen = new Set();
-    (data||[]).forEach(p => {
-        if(!seen.has(p.id)) { seen.add(p.id); unique.push(p); }
-    });
-    window.poiOptions = unique;
-    // 不再需要 default_start 下拉框，但保留其他
+    await loadAllMainPois(); // 确保缓存最新
+    // 直接使用 allMainPois
+    window.poiOptions = allMainPois.map(p => ({ id: p.id, name: p.name }));
+    // 不再需要 default_start 下拉
 }
+
 async function renderRouteNodes(){
     if(!window.poiOptions) await loadPoiOptionsForRoute();
     const container = document.getElementById('route-node-selects');
@@ -603,12 +616,7 @@ function updateRouteNode(idx, field, value){
     if(field==='poi_id') routeNodes[idx].poi_id = value || '';
     else routeNodes[idx].duration_min = parseInt(value)||60;
 }
-function addRouteNode(){ 
-    // 检查是否已存在相同POI，若存在则提示
-    // 但允许添加空节点，这里只做警告
-    routeNodes.push({ poi_id: '', duration_min: 60, items: [] }); 
-    renderRouteNodes(); 
-}
+function addRouteNode(){ routeNodes.push({ poi_id: '', duration_min: 60, items: [] }); renderRouteNodes(); }
 function removeRouteNode(idx){ routeNodes.splice(idx,1); renderRouteNodes(); }
 
 function toggleRouteForm(editMode = false){
@@ -650,7 +658,6 @@ async function saveRoute(){
     const editId = document.getElementById('edit-route-id').value;
     const start_time = document.getElementById('route-start-time').value;
     const transport = document.getElementById('route-transport').value;
-    // 移除 default_start
     const routeData = { name, start_time, transport };
     let routeId = editId;
     if(editId){
@@ -661,7 +668,7 @@ async function saveRoute(){
         if(error){ alert('创建路线失败：'+error.message); return; }
         routeId = data[0].id;
     }
-    // 检查节点是否有重复poi_id
+    // 检查重复节点
     const poiIds = routeNodes.filter(n => n.poi_id).map(n => n.poi_id);
     const uniqueIds = new Set(poiIds);
     if(poiIds.length !== uniqueIds.size){
@@ -702,28 +709,34 @@ async function loadRoutes(){
 // ================== 交通耗时编辑器 ==================
 function getExcludedTransportPois(){
     const stored = localStorage.getItem('excludedTransportPois');
-    return stored ? JSON.parse(stored) : [];
+    if(!stored) return [];
+    try {
+        const arr = JSON.parse(stored);
+        // 确保所有元素为数字
+        return arr.map(v => Number(v)).filter(v => !isNaN(v));
+    } catch(e) { return []; }
 }
 function setExcludedTransportPois(arr){
-    localStorage.setItem('excludedTransportPois', JSON.stringify(arr));
+    // 确保数组元素为数字
+    const clean = arr.map(v => Number(v)).filter(v => !isNaN(v));
+    localStorage.setItem('excludedTransportPois', JSON.stringify(clean));
 }
 
 async function loadTransportEditor(){
-    mainPoisForTransport = [];
-    const { data: pois } = await sb.from('ztj_poi').select('id,name,category').eq('status','active').is('parent_id', null).order('name');
-    allMainPois = pois || [];
+    await loadAllMainPois(); // 刷新缓存
     const excludedIds = getExcludedTransportPois();
     // 红军广场作为起点
     mainPoisForTransport = [ { id: 0, name: '红军广场', category: '' } ];
-    (pois||[]).forEach(p => {
-        if (excludedIds.includes(p.id)) return;
+    // 遍历所有主景区，过滤排除和分类
+    allMainPois.forEach(p => {
+        if (excludedIds.includes(Number(p.id))) return;
         if (!p.category) { mainPoisForTransport.push(p); return; }
         const cats = p.category.split(',').map(c => c.trim());
         if (!cats.some(c => EXCLUDED_TRANSPORT_CATS.includes(c))) {
             mainPoisForTransport.push(p);
         }
     });
-    // 去重
+    // 去重（虽然id唯一，但加一层保险）
     const seen = new Set();
     mainPoisForTransport = mainPoisForTransport.filter(p => {
         if (seen.has(p.id)) return false;
@@ -756,11 +769,11 @@ function renderTransportEditor(){
     const container = document.getElementById('transport-editor');
     if(!mainPoisForTransport.length) { container.innerHTML = '<p>暂无可用景点，请添加</p>'; return; }
     let html = '';
-    mainPoisForTransport.forEach((poi, index) => {
+    mainPoisForTransport.forEach((poi) => {
         html += `<div class="poi-transport-group">
             <div class="poi-transport-header">
                 <span onclick="this.parentElement.nextElementSibling.classList.toggle('hidden')">🚩 ${poi.name}</span>
-                <button class="btn btn-danger" onclick="event.stopPropagation(); removeTransportPoi('${poi.id}')" style="font-size:12px; padding:2px 8px;">移除</button>
+                <button class="btn btn-danger" onclick="event.stopPropagation(); removeTransportPoi(${poi.id})" style="font-size:12px; padding:2px 8px;">移除</button>
             </div>
             <div class="poi-transport-list hidden">
                 ${mainPoisForTransport.filter(p => p.id !== poi.id).map(target => {
@@ -775,9 +788,10 @@ function renderTransportEditor(){
 
 function addTransportPoi(){
     const excludedIds = getExcludedTransportPois();
+    const currentIds = mainPoisForTransport.map(p => p.id);
     const availablePois = allMainPois.filter(p => {
-        if (mainPoisForTransport.some(mp => mp.id === p.id)) return false;
-        if (excludedIds.includes(p.id)) return false;
+        if (currentIds.includes(p.id)) return false;
+        if (excludedIds.includes(Number(p.id))) return false;
         if (!p.category) return true;
         const cats = p.category.split(',').map(c => c.trim());
         return !cats.some(c => EXCLUDED_TRANSPORT_CATS.includes(c));
@@ -797,7 +811,7 @@ function addTransportPoi(){
         if(selectedId){
             const poi = allMainPois.find(p => p.id == selectedId);
             if(poi) {
-                if (mainPoisForTransport.some(mp => mp.id === selectedId)) {
+                if (currentIds.includes(Number(selectedId))) {
                     alert('该POI已在列表中');
                     dialog.remove();
                     return;
@@ -807,11 +821,10 @@ function addTransportPoi(){
                     dialog.remove();
                     return;
                 }
+                // 从排除列表中移除（如果有）
                 const idx = excludedIds.indexOf(Number(selectedId));
-                if(idx !== -1) {
-                    excludedIds.splice(idx, 1);
-                    setExcludedTransportPois(excludedIds);
-                }
+                if(idx !== -1) excludedIds.splice(idx, 1);
+                setExcludedTransportPois(excludedIds);
                 // 重新加载整个编辑器
                 loadTransportEditor();
             }
@@ -822,10 +835,12 @@ function addTransportPoi(){
 
 function removeTransportPoi(id){
     if(id === 0) { alert('红军广场为必选项，不能移除'); return; }
-    // 从主列表中移除（但下次加载会重新构建，实际控制通过排除列表）
     const excluded = getExcludedTransportPois();
-    if(!excluded.includes(id)) excluded.push(id);
-    setExcludedTransportPois(excluded);
+    const numId = Number(id);
+    if(!excluded.includes(numId)) {
+        excluded.push(numId);
+        setExcludedTransportPois(excluded);
+    }
     // 重新加载
     loadTransportEditor();
 }

@@ -254,17 +254,23 @@ async function saveNewPoi(){
     alert('新增成功');
     toggleAddPoiForm();
     loadPOIs();
-    // 新增POI后，刷新交通耗时编辑器，并确保该POI不在排除列表中
-    // 从排除列表中移除该POI的ID，使其在交通耗时中可见
-    let excluded = getExcludedTransportPois();
+    // 确保新POI不在排除列表中（如果是主景区且分类允许）
     if(inserted && inserted.length){
         const newId = inserted[0].id;
-        const idx = excluded.indexOf(newId);
-        if(idx !== -1) excluded.splice(idx, 1);
-        setExcludedTransportPois(excluded);
+        // 如果新增的是主景区（parent_id为null），并且分类不在排除列表，则从排除列表中移除
+        if(parent_id === null) {
+            // 检查分类是否在排除列表
+            const cats = category.split(',').map(c => c.trim());
+            if(!cats.some(c => EXCLUDED_TRANSPORT_CATS.includes(c))) {
+                let excluded = getExcludedTransportPois();
+                const idx = excluded.indexOf(newId);
+                if(idx !== -1) excluded.splice(idx, 1);
+                setExcludedTransportPois(excluded);
+            }
+        }
     }
     // 重新加载交通耗时编辑器
-    loadTransportEditor();
+    await loadTransportEditor();
 }
 
 async function toggleEditPoi(id){
@@ -322,6 +328,8 @@ async function savePoiEdit(id){
     document.getElementById(`edit-poi-${id}`).classList.add('hidden');
     alert('保存成功');
     loadPOIs();
+    // 如果修改了parent_id或分类，可能影响交通显示，刷新
+    await loadTransportEditor();
 }
 
 async function uploadPoiVoice(poiId, input){
@@ -469,6 +477,7 @@ async function removeFromParent(subId, parentId){
     await sb.from('ztj_poi').update({ parent_id: null }).eq('id', subId);
     loadSubPois(parentId);
     loadPOIs();
+    await loadTransportEditor();
 }
 async function deletePoi(id){
     if(confirm('确定删除此POI？将同时解除关联的商户、交通预设、路线节点，并删除子点。')){
@@ -478,7 +487,7 @@ async function deletePoi(id){
         await sb.from('ztj_poi').delete().eq('parent_id', id);
         const { error } = await sb.from('ztj_poi').delete().eq('id', id);
         if(error) { alert('删除失败：'+error.message); }
-        else { loadPOIs(); }
+        else { loadPOIs(); await loadTransportEditor(); }
     }
 }
 
@@ -680,6 +689,13 @@ async function loadTransportEditor(){
             mainPoisForTransport.push(p);
         }
     });
+    // 【修复】去重：按id去重，确保每个POI只出现一次
+    const seen = new Set();
+    mainPoisForTransport = mainPoisForTransport.filter(p => {
+        if (seen.has(p.id)) return false;
+        seen.add(p.id);
+        return true;
+    });
     const { data: presets } = await sb.from('ztj_transport_presets').select('*');
     allTransportPresets = {};
     if(presets) presets.forEach(p => {
@@ -723,6 +739,7 @@ function renderTransportEditor(){
     container.innerHTML = html;
 }
 
+// 【修复】重构添加景点逻辑，统一通过 loadTransportEditor 刷新
 function addTransportPoi(){
     const excludedIds = getExcludedTransportPois();
     // 从 allMainPois 中找出不在 mainPoisForTransport 中的POI，且不在排除列表中
@@ -757,19 +774,19 @@ function addTransportPoi(){
                     dialog.remove();
                     return;
                 }
-                if (excludedIds.includes(selectedId)) {
+                if (excludedIds.includes(Number(selectedId))) {
                     alert('该POI已被排除，请先在“移除”列表中恢复');
                     dialog.remove();
                     return;
                 }
-                mainPoisForTransport.push(poi);
-                // 从排除列表中移除（如果有）
+                // 从排除列表中移除
                 const idx = excludedIds.indexOf(Number(selectedId));
                 if(idx !== -1) {
                     excludedIds.splice(idx, 1);
                     setExcludedTransportPois(excludedIds);
                 }
-                renderTransportEditor();
+                // 直接重新加载整个编辑器，它会自动包含新添加的POI
+                loadTransportEditor();
             }
         }
         dialog.remove();

@@ -30,9 +30,6 @@
         input, select, textarea { width:100%; padding:8px; border:1px solid #ccc; border-radius:4px; }
         .my-tab { padding:8px 16px; border:none; background:#eee; border-radius:20px; cursor:pointer; }
         .my-tab.active { background:#2e7d32; color:white; }
-        .route-node { display:flex; gap:6px; align-items:center; margin:6px 0; flex-wrap:nowrap; }
-        .route-node select { flex:1; min-width:0; }
-        .route-node .btn-danger { font-size:12px; padding:2px 6px; line-height:1.4; flex:0 0 auto; min-width:0; white-space:nowrap; }
         .day-header { font-weight:bold; background:#e9f5ea; padding:6px; border-radius:4px; margin:12px 0 6px; }
         .trip-line { padding:4px 0; border-bottom:1px dotted #eee; }
         .warn-list { background:#fafafa; padding:10px; border-radius:8px; margin-top:10px; }
@@ -90,7 +87,7 @@
     <button class="cat-btn" data-category="游玩娱乐" onclick="filterPOI('游玩娱乐')">🎢 游玩娱乐</button>
     <button class="cat-btn" data-category="特产购物" onclick="filterPOI('特产购物')">🛍️ 特产购物</button>
     <button class="cat-btn" data-category="公共服务" onclick="filterPOI('公共服务')">🏛️ 公共服务</button>
-    <button class="cat-btn" onclick="clearFilter()">✕ 清除</button>
+    <button class="cat-btn" onclick="closeCategoryBar()">🔙 返回</button>
 </div>
 
 <div class="top-bar">
@@ -98,8 +95,8 @@
 </div>
 
 <div class="bottom-bar">
-    <button class="btn btn-secondary" onclick="openPanel('routesPanel')">📋 路线</button>
-    <button class="btn btn-primary" id="navBtn" onclick="startSimulation()">📍 模拟导航</button>
+    <button class="btn btn-secondary" onclick="openRouteTab('recommend')">📌 推荐路线</button>
+    <button class="btn btn-primary" onclick="openRouteTab('custom')">✏️ 自设行程</button>
 </div>
 
 <button class="float-btn locate-btn" onclick="locateUser()" title="定位我的位置">📍</button>
@@ -197,7 +194,7 @@ let transportPresets = {};
 
 const DAY_START=480, DAY_END=1080, LUNCH_TRIGGER=690, LUNCH_END=750, DINNER_TRIGGER=1050, DINNER_END=1110, MEAL_DURATION=60;
 const NEW_ARRIVAL_CUTOFF = 1020;
-const MAX_RETURN_TIME = 1260; // 21:00
+const MAX_RETURN_TIME = 1260;
 const ALLOWED_CATEGORIES = ['自然景区', '红色景区', '文博场馆'];
 const NON_VISIT_CATEGORIES = ['交通枢纽','餐饮住宿','公共服务','特产购物','游玩娱乐'];
 const LONG_SPOT_NAMES = ['空山天盆', '诺水河溶洞', '王坪烈士陵园', '红军烈士陵园'];
@@ -613,6 +610,12 @@ function clearFilter() {
     clearTimeout(filterTimeoutId);
 }
 
+function closeCategoryBar() {
+    document.getElementById('categoryBar').classList.remove('show');
+    document.getElementById('catTrigger').style.display = 'block';
+    clearTimeout(filterTimeoutId);
+}
+
 function toggleCategoryBar() {
     const bar = document.getElementById('categoryBar');
     if (bar.classList.contains('show')) {
@@ -628,6 +631,15 @@ function toggleCategoryBar() {
                 document.getElementById('catTrigger').style.display = 'block';
             }, 5000);
         }
+    }
+}
+
+function openRouteTab(tab) {
+    openPanel('routesPanel');
+    if (tab === 'recommend') {
+        switchRouteTab('recommend');
+    } else {
+        switchRouteTab('custom');
     }
 }
 
@@ -843,12 +855,14 @@ async function generateRecommendRoute(routeId) {
             if (!n || n.poi_id == null) continue;
             const poi = allPois.find(p => p.id == n.poi_id);
             if (poi) {
+                // 使用POI的游览时长，忽略节点自定义时长
+                const duration = poi.visit_duration || 60;
                 allSpots.push({
                     id: poi.id,
                     name: poi.name,
                     lat: poi.lat,
                     lng: poi.lng,
-                    visitDuration: n.duration_min || poi.visit_duration || 60,
+                    visitDuration: duration,
                 });
             }
         }
@@ -859,14 +873,14 @@ async function generateRecommendRoute(routeId) {
 
         const startMinutes = parseInt(timeStr.slice(0,2))*60 + parseInt(timeStr.slice(3));
         const mode = 'auto';
-        // 禁用填充（推荐路线绝对禁止）
-        let result = generateTripPlan(allSpots, dateStr, startMinutes, mode, false);
+        // 推荐路线：允许填充但仅填充就餐，不填充额外景点（通过fillOnlyMeals参数）
+        let result = generateTripPlan(allSpots, dateStr, startMinutes, mode, false, true); // fillOnlyMeals=true
         let droppedCount = 0;
         if (result.error && result.errorMsg && result.errorMsg.includes('超过')) {
             for (let i = allSpots.length - 1; i >= 0; i--) {
                 let testSpots = allSpots.slice(0, i);
                 if (testSpots.length === 0) break;
-                let testResult = generateTripPlan(testSpots, dateStr, startMinutes, mode, false);
+                let testResult = generateTripPlan(testSpots, dateStr, startMinutes, mode, false, true);
                 if (!testResult.error) {
                     result = testResult;
                     droppedCount = allSpots.length - i;
@@ -1042,23 +1056,23 @@ async function generateCustomTrip() {
         }
 
         const startMinutes = parseInt(startTime.slice(0,2))*60 + parseInt(startTime.slice(3));
-        const result = generateTripPlan(userSpots, dateStr, startMinutes, mode, allowFill);
+        // 自设行程：根据开关决定是否填充景点，但始终保留就餐
+        const result = generateTripPlan(userSpots, dateStr, startMinutes, mode, allowFill, false);
         if (result.error) {
             // 如果是因为长耗时造成空窗且允许填充，但用户未开启填充，则提示
             if (result.errorMsg && result.errorMsg.includes('空窗')) {
                 const userConfirm = confirm('检测到长耗时景区造成时间空窗，是否自动填充县城景点？');
                 if (userConfirm) {
                     // 重新生成，开启填充
-                    const resultFill = generateTripPlan(userSpots, dateStr, startMinutes, mode, true);
+                    const resultFill = generateTripPlan(userSpots, dateStr, startMinutes, mode, true, false);
                     if (resultFill.error) {
                         alert('填充后仍生成失败：' + (resultFill.errorMsg || '未知错误'));
                         return;
                     }
-                    processTripResult(resultFill, dateStr, startTime, mode, people);
+                    await processTripResult(resultFill, dateStr, startTime, mode, people);
                     return;
                 } else {
                     // 用户选择不填充，直接显示当前结果（可能不完整）
-                    // 我们可以强制不填充重新生成，但可能无法完成，建议直接提示并终止
                     alert('取消生成，请调整景点或开启填充。');
                     return;
                 }
@@ -1068,29 +1082,79 @@ async function generateCustomTrip() {
             }
         }
 
-        processTripResult(result, dateStr, startTime, mode, people);
+        await processTripResult(result, dateStr, startTime, mode, people);
     } catch (e) {
         console.error('自设行程生成出错:', e);
         alert('生成行程时发生错误：' + (e.message || '未知错误'));
     }
 }
 
-function processTripResult(result, dateStr, startTime, mode, people) {
+async function processTripResult(result, dateStr, startTime, mode, people) {
     const { days, mealCount } = generateTimeline(result.nodes);
-    const weatherForecast = fetchWeatherForecast(); // 异步，但为了同步，我们使用 await 在外部
-    // 为简化，我们直接在 generateCustomTrip 中处理 weather，但这里用 async 调整，我们重构一下：
-    // 将实际生成逻辑移到内部，我们重构一下 generateCustomTrip 结构。
-    // 由于代码长度，我们快速调整：在 generateCustomTrip 中调用 process 前获取天气。
-    // 实际上，我们应重构，但时间关系，我们在 generateCustomTrip 中完成所有。
+    const weatherForecast = await fetchWeatherForecast();
+    const daysWithWeather = days.map((d, i) => {
+        let weatherTip = '⚠️ 天气信息暂不可用。';
+        if (weatherForecast && i < weatherForecast.length) {
+            weatherTip = getDayWeatherTip(weatherForecast[i]);
+        }
+        return { ...d, weatherTip };
+    });
+
+    let html = '';
+    daysWithWeather.forEach((d, i) => {
+        html += `<div class="day-header">📅 第${i+1}天 (${d.date})</div>`;
+        if (d.lines.length === 0) {
+            html += `<div class="trip-line">🚫 当天无行程安排</div>`;
+        } else {
+            d.lines.forEach(l => html += `<div class="trip-line">${l}</div>`);
+        }
+        html += `<div class="trip-line" style="color:#0d47a1;">${d.weatherTip}</div>`;
+    });
+
+    let totalTransport = 0, totalVisit = 0;
+    for (let node of result.nodes) {
+        if (node && node.type === 'transport') totalTransport += node.duration || 0;
+        else if (node && node.type === 'visit') totalVisit += node.duration || 0;
+    }
+    let totalActivity = totalTransport + totalVisit;
+    let tips = [];
+    tips.push(`📊 活动总时长：${totalActivity}分钟（约${(totalActivity/60).toFixed(1)}小时），其中交通${totalTransport}分钟，游览${totalVisit}分钟。`);
+    if (mealCount > 0) tips.push(`🍴 包含 ${mealCount} 次用餐。`);
+    if (days.length > 1) tips.push(`🏨 行程跨${days.length}天，请合理安排住宿。`);
+
+    customGeneratedTripData = {
+        name: '自设行程',
+        date: dateStr,
+        time: startTime,
+        mode: mode,
+        people: people,
+        nodes: result.nodes,
+        days: daysWithWeather,
+        tips: tips
+    };
+
+    document.getElementById('custom-generated-trip').innerHTML = `<div class="card">${html}</div>`;
+    document.getElementById('custom-trip-warnings').innerHTML = tips.length ? `<div class="warn-list"><strong>💡 温馨提示：</strong>${tips.map(t=>`<div>${t}</div>`).join('')}</div>` : '';
+    document.getElementById('custom-save-generated-btn').classList.remove('hidden');
 }
 
-// 重新实现 generateCustomTrip 以支持异步天气
-// 我们将上面的 generateCustomTrip 替换为以下完整版本
-// 但为了保持代码整洁，我将在函数内重写，但会保留之前的声明。由于篇幅，我直接覆盖。
-// 我将在最终代码中提供正确的实现。
+function saveCustomTrip() {
+    if(!customGeneratedTripData) return;
+    const name = prompt('行程名称', customGeneratedTripData.name);
+    if(!name) return;
+    customGeneratedTripData.name = name;
+    const trips = JSON.parse(localStorage.getItem('trips')||'[]');
+    trips.push(customGeneratedTripData);
+    localStorage.setItem('trips', JSON.stringify(trips));
+    alert('行程已保存');
+    document.getElementById('custom-save-generated-btn').classList.add('hidden');
+    document.getElementById('custom-generated-trip').innerHTML = '';
+    customGeneratedTripData = null;
+    resetCustomRouteLegs();
+}
 
 // ==========================================================================
-// 全新核心行程规划引擎（PlanGenerator 类）- 修复版
+// 全新核心行程规划引擎（PlanGenerator 类）- 终极修复版
 // ==========================================================================
 (function() {
     'use strict';
@@ -1112,14 +1176,15 @@ function processTripResult(result, dateStr, startTime, mode, people) {
     }
 
     class PlanGenerator {
-        constructor(spots, startDate, startTime, mode, getTravelTimeFn, countySpots, allowFill) {
+        constructor(spots, startDate, startTime, mode, getTravelTimeFn, countySpots, allowFill, fillOnlyMeals) {
             this.spots = spots;
             this.startDate = new Date(startDate);
             this.startTime = startTime;
             this.mode = mode;
             this.getTravelTime = getTravelTimeFn || ((a,b) => 0);
             this.countySpots = countySpots || [];
-            this.allowFill = allowFill !== undefined ? allowFill : true; // 默认允许填充
+            this.allowFill = allowFill !== undefined ? allowFill : true;
+            this.fillOnlyMeals = fillOnlyMeals === true; // 仅插入就餐，不填充其他景点
 
             this.currentDate = new Date(this.startDate);
             this.currentMin = this.startTime;
@@ -1132,6 +1197,8 @@ function processTripResult(result, dateStr, startTime, mode, people) {
             this.shortSpots = [];
             this.classifySpots();
             this.halfSpots.sort((a,b) => b.visitDuration - a.visitDuration);
+            this.lunchInserted = false;
+            this.dinnerInserted = false;
         }
 
         classifySpots() {
@@ -1153,14 +1220,27 @@ function processTripResult(result, dateStr, startTime, mode, people) {
             }
         }
 
-        // 插入晚餐（允许在交通结束后插入，即使超过18:30）
-        insertDinner(currentTime) {
-            // 如果当前时间在晚餐窗口内，或已经超过但还没吃晚餐，且未超过21:00，则插入
-            if (this.dinnerInserted) return currentTime;
-            if (currentTime >= DINNER_START_LOCAL && currentTime <= DINNER_END_LOCAL + 30) {
-                // 在窗口内，立即插入
-                let start = currentTime;
-                let end = currentTime + MEAL_DURATION_LOCAL;
+        // 插入午餐或晚餐（强制，即使时间略微超出）
+        insertMeal(currentTime) {
+            let time = currentTime;
+            // 优先午餐
+            if (!this.lunchInserted && time >= LUNCH_START_LOCAL && time < LUNCH_END_LOCAL + 30) {
+                let start = Math.max(time, LUNCH_START_LOCAL);
+                let end = start + MEAL_DURATION_LOCAL;
+                this.allNodes.push({
+                    type: 'meal',
+                    name: '午餐',
+                    startTime: start,
+                    endTime: end,
+                    duration: MEAL_DURATION_LOCAL
+                });
+                this.lunchInserted = true;
+                return end;
+            }
+            // 晚餐
+            if (!this.dinnerInserted && time >= DINNER_START_LOCAL && time < DINNER_END_LOCAL + 30) {
+                let start = Math.max(time, DINNER_START_LOCAL);
+                let end = start + MEAL_DURATION_LOCAL;
                 this.allNodes.push({
                     type: 'meal',
                     name: '晚餐',
@@ -1171,7 +1251,7 @@ function processTripResult(result, dateStr, startTime, mode, people) {
                 this.dinnerInserted = true;
                 return end;
             }
-            return currentTime;
+            return time;
         }
 
         arrangeSpot(spot, travelTime, startTime) {
@@ -1197,10 +1277,8 @@ function processTripResult(result, dateStr, startTime, mode, people) {
                 poi = { id: spot.id, name: spot.name, lat: spot.lat, lng: spot.lng };
             }
 
-            // 交通结束后，检查是否可插入晚餐
-            if (this.allowFill) {
-                time = this.insertDinner(time);
-            }
+            // 交通结束后立即检查就餐
+            time = this.insertMeal(time);
 
             let remaining = spot.visitDuration || 0;
             if (time >= DAY_END_LOCAL) {
@@ -1215,57 +1293,20 @@ function processTripResult(result, dateStr, startTime, mode, people) {
                     return { nodes, newTime: time, newPoi: poi, remaining: remaining, error: null };
                 }
 
+                // 尝试插入午餐/晚餐（仅在游览过程中，如果剩余时间>60则插入，否则先完成游览）
                 let mealInserted = false;
-                if (this.allowFill && time >= LUNCH_START_LOCAL && time < LUNCH_END_LOCAL) {
-                    // 午餐插入逻辑
-                    if (remaining > 60) {
-                        if (time + MEAL_DURATION_LOCAL <= DAY_END_LOCAL + 30) {
-                            nodes.push({ type: 'meal', name: '午餐', startTime: time, endTime: time + MEAL_DURATION_LOCAL, duration: MEAL_DURATION_LOCAL });
-                            time += MEAL_DURATION_LOCAL;
-                            mealInserted = true;
-                        }
-                    } else {
-                        let seg = Math.min(remaining, DAY_END_LOCAL - time);
-                        if (seg > 0) {
-                            nodes.push({ type: 'visit', name: spot.name, startTime: time, endTime: time + seg, duration: seg, spotId: spot.id });
-                            time += seg;
-                            remaining -= seg;
-                        }
-                        if (remaining === 0 && time >= LUNCH_START_LOCAL && time < LUNCH_END_LOCAL && time + MEAL_DURATION_LOCAL <= DAY_END_LOCAL + 30) {
-                            nodes.push({ type: 'meal', name: '午餐', startTime: time, endTime: time + MEAL_DURATION_LOCAL, duration: MEAL_DURATION_LOCAL });
-                            time += MEAL_DURATION_LOCAL;
-                        }
-                        break;
-                    }
-                } else if (this.allowFill && time >= DINNER_START_LOCAL && time < DINNER_END_LOCAL + 30) {
-                    // 晚餐插入逻辑（允许延后到18:30）
-                    if (remaining > 60) {
-                        if (time + MEAL_DURATION_LOCAL <= DAY_END_LOCAL + 30) {
-                            nodes.push({ type: 'meal', name: '晚餐', startTime: time, endTime: time + MEAL_DURATION_LOCAL, duration: MEAL_DURATION_LOCAL });
-                            time += MEAL_DURATION_LOCAL;
-                            mealInserted = true;
-                        }
-                    } else {
-                        let seg = Math.min(remaining, DAY_END_LOCAL - time);
-                        if (seg > 0) {
-                            nodes.push({ type: 'visit', name: spot.name, startTime: time, endTime: time + seg, duration: seg, spotId: spot.id });
-                            time += seg;
-                            remaining -= seg;
-                        }
-                        if (remaining === 0 && time >= DINNER_START_LOCAL && time < DINNER_END_LOCAL + 30 && time + MEAL_DURATION_LOCAL <= DAY_END_LOCAL + 30) {
-                            nodes.push({ type: 'meal', name: '晚餐', startTime: time, endTime: time + MEAL_DURATION_LOCAL, duration: MEAL_DURATION_LOCAL });
-                            time += MEAL_DURATION_LOCAL;
-                        }
-                        break;
+                if (remaining > 60) {
+                    let newTime = this.insertMeal(time);
+                    if (newTime > time) {
+                        time = newTime;
+                        mealInserted = true;
                     }
                 }
-
                 if (!mealInserted) {
+                    // 计算到下一个餐点或结束
                     let nextMeal = DAY_END_LOCAL;
-                    if (this.allowFill) {
-                        if (time < LUNCH_START_LOCAL) nextMeal = Math.min(nextMeal, LUNCH_START_LOCAL);
-                        else if (time < DINNER_START_LOCAL) nextMeal = Math.min(nextMeal, DINNER_START_LOCAL);
-                    }
+                    if (!this.lunchInserted && time < LUNCH_START_LOCAL) nextMeal = Math.min(nextMeal, LUNCH_START_LOCAL);
+                    else if (!this.dinnerInserted && time < DINNER_START_LOCAL) nextMeal = Math.min(nextMeal, DINNER_START_LOCAL);
                     let maxSeg = nextMeal - time;
                     if (maxSeg <= 0) maxSeg = 1;
                     let seg = Math.min(remaining, maxSeg, DAY_END_LOCAL - time);
@@ -1299,29 +1340,24 @@ function processTripResult(result, dateStr, startTime, mode, people) {
                 toPoi: 'county',
                 isReturn: true
             });
-            // 返回后插入晚餐（若允许填充且时间合适）
-            if (this.allowFill) {
-                newTime = this.insertDinner(newTime);
-            }
+            // 返回后插入就餐
+            newTime = this.insertMeal(newTime);
             this.lastPoi = { id: 'county', name: '红军广场', lat: 0, lng: 0 };
             return { newTime };
         }
 
+        // 填充空窗期（仅当 allowFill 且不是 fillOnlyMeals）
         fillGap(maxEndTime) {
-            if (!this.allowFill) return; // 推荐路线禁用填充
+            if (!this.allowFill || this.fillOnlyMeals) return;
             while (this.currentMin < maxEndTime) {
-                if (this.currentMin >= LUNCH_START_LOCAL && this.currentMin < LUNCH_END_LOCAL && this.currentMin + MEAL_DURATION_LOCAL <= maxEndTime) {
-                    this.allNodes.push({ type: 'meal', name: '午餐', startTime: this.currentMin, endTime: this.currentMin + MEAL_DURATION_LOCAL, duration: MEAL_DURATION_LOCAL });
-                    this.currentMin += MEAL_DURATION_LOCAL;
+                // 先尝试插入就餐
+                let newTime = this.insertMeal(this.currentMin);
+                if (newTime > this.currentMin) {
+                    this.currentMin = newTime;
                     continue;
                 }
-                if (this.currentMin >= DINNER_START_LOCAL && this.currentMin < DINNER_END_LOCAL + 30 && this.currentMin + MEAL_DURATION_LOCAL <= maxEndTime + 30) {
-                    this.allNodes.push({ type: 'meal', name: '晚餐', startTime: this.currentMin, endTime: this.currentMin + MEAL_DURATION_LOCAL, duration: MEAL_DURATION_LOCAL });
-                    this.currentMin += MEAL_DURATION_LOCAL;
-                    continue;
-                }
-
                 let found = false;
+                // 尝试短时景点
                 for (let s of this.shortSpots) {
                     if (this.usedIds.has(s.id)) continue;
                     let t = this.getTravelTime(this.lastPoi.id, s.id, this.mode);
@@ -1338,7 +1374,7 @@ function processTripResult(result, dateStr, startTime, mode, people) {
                     break;
                 }
                 if (found) continue;
-
+                // 尝试县城景点
                 for (let c of this.countySpots) {
                     if (this.usedIds.has(c.id)) continue;
                     let t = this.getTravelTime(this.lastPoi.id, c.id, this.mode);
@@ -1366,6 +1402,8 @@ function processTripResult(result, dateStr, startTime, mode, people) {
                     this.currentDate.setDate(this.currentDate.getDate() + 1);
                     this.currentMin = DAY_START_LOCAL;
                     this.lastPoi = { id: 'county', name: '红军广场', lat: 0, lng: 0 };
+                    this.lunchInserted = false;
+                    this.dinnerInserted = false;
                 }
 
                 let travel = this.getTravelTime(this.lastPoi.id, spot.id, this.mode);
@@ -1386,11 +1424,12 @@ function processTripResult(result, dateStr, startTime, mode, people) {
                     throw new Error(`长耗时 "${spot.name}" 剩余 ${result.remaining} 分钟无法完成`);
                 }
 
-                // 长耗时结束后，填充剩余时间（仅当允许填充且用户有剩余短时景点）
-                if (this.allowFill && (this.shortSpots.length > 0 || this.countySpots.length > 0)) {
+                // 填充当天剩余时间（仅当允许填充且不是仅餐）
+                if (this.allowFill && !this.fillOnlyMeals) {
                     this.fillGap(DAY_END_LOCAL);
                 }
 
+                // 返回县城
                 let ret = this.addReturnToCounty(this.currentMin);
                 if (ret.error) throw new Error(`返回县城失败: ${ret.error}`);
                 this.currentMin = ret.newTime;
@@ -1399,6 +1438,8 @@ function processTripResult(result, dateStr, startTime, mode, people) {
                 this.currentDate.setDate(this.currentDate.getDate() + 1);
                 this.currentMin = DAY_START_LOCAL;
                 this.lastPoi = { id: 'county', name: '红军广场', lat: 0, lng: 0 };
+                this.lunchInserted = false;
+                this.dinnerInserted = false;
                 this.usedIds.add(spot.id);
             }
         }
@@ -1423,6 +1464,8 @@ function processTripResult(result, dateStr, startTime, mode, people) {
                     this.currentDate.setDate(this.currentDate.getDate() + 1);
                     this.currentMin = DAY_START_LOCAL;
                     this.lastPoi = { id: 'county', name: '红军广场', lat: 0, lng: 0 };
+                    this.lunchInserted = false;
+                    this.dinnerInserted = false;
                     slot = 'morning';
                     travel = this.getTravelTime(this.lastPoi.id, spot.id, this.mode);
                 }
@@ -1445,12 +1488,14 @@ function processTripResult(result, dateStr, startTime, mode, people) {
                         this.allNodes.push(...result.nodes);
                         this.currentMin = result.newTime;
                         this.lastPoi = result.newPoi;
-                        if (this.allowFill) {
+                        if (this.allowFill && !this.fillOnlyMeals) {
                             this.fillGap(blockEnd);
-                            if (this.currentMin < LUNCH_END_LOCAL && this.currentMin >= LUNCH_START_LOCAL && this.currentMin + MEAL_DURATION_LOCAL <= DAY_END_LOCAL + 30) {
-                                this.allNodes.push({ type: 'meal', name: '午餐', startTime: this.currentMin, endTime: this.currentMin + MEAL_DURATION_LOCAL, duration: MEAL_DURATION_LOCAL });
-                                this.currentMin += MEAL_DURATION_LOCAL;
-                            }
+                        }
+                        // 午餐
+                        this.currentMin = this.insertMeal(this.currentMin);
+                        // 下午继续填充
+                        if (this.allowFill && !this.fillOnlyMeals) {
+                            this.fillGap(DINNER_START_LOCAL);
                         }
                         let ret = this.addReturnToCounty(this.currentMin);
                         if (ret.error) throw new Error(`返回县城失败: ${ret.error}`);
@@ -1459,10 +1504,12 @@ function processTripResult(result, dateStr, startTime, mode, people) {
                         this.currentDate.setDate(this.currentDate.getDate() + 1);
                         this.currentMin = DAY_START_LOCAL;
                         this.lastPoi = { id: 'county', name: '红军广场', lat: 0, lng: 0 };
+                        this.lunchInserted = false;
+                        this.dinnerInserted = false;
                         this.usedIds.add(spot.id);
                         continue;
                     } else {
-                        if (this.allowFill) this.fillGap(LUNCH_START_LOCAL);
+                        if (this.allowFill && !this.fillOnlyMeals) this.fillGap(LUNCH_START_LOCAL);
                         this.currentMin = LUNCH_END_LOCAL;
                         slot = 'afternoon';
                         travel = this.getTravelTime(this.lastPoi.id, spot.id, this.mode);
@@ -1477,6 +1524,8 @@ function processTripResult(result, dateStr, startTime, mode, people) {
                         this.currentDate.setDate(this.currentDate.getDate() + 1);
                         this.currentMin = DAY_START_LOCAL;
                         this.lastPoi = { id: 'county', name: '红军广场', lat: 0, lng: 0 };
+                        this.lunchInserted = false;
+                        this.dinnerInserted = false;
                         queue.push(spot);
                         continue;
                     }
@@ -1490,7 +1539,7 @@ function processTripResult(result, dateStr, startTime, mode, people) {
                         this.allNodes.push(...result.nodes);
                         this.currentMin = result.newTime;
                         this.lastPoi = result.newPoi;
-                        if (this.allowFill) {
+                        if (this.allowFill && !this.fillOnlyMeals) {
                             this.fillGap(blockEnd);
                             this.fillGap(DAY_END_LOCAL);
                         }
@@ -1501,14 +1550,18 @@ function processTripResult(result, dateStr, startTime, mode, people) {
                         this.currentDate.setDate(this.currentDate.getDate() + 1);
                         this.currentMin = DAY_START_LOCAL;
                         this.lastPoi = { id: 'county', name: '红军广场', lat: 0, lng: 0 };
+                        this.lunchInserted = false;
+                        this.dinnerInserted = false;
                         this.usedIds.add(spot.id);
                         continue;
                     } else {
-                        if (this.allowFill) this.fillGap(DINNER_START_LOCAL);
+                        if (this.allowFill && !this.fillOnlyMeals) this.fillGap(DINNER_START_LOCAL);
                         this.endDay();
                         this.currentDate.setDate(this.currentDate.getDate() + 1);
                         this.currentMin = DAY_START_LOCAL;
                         this.lastPoi = { id: 'county', name: '红军广场', lat: 0, lng: 0 };
+                        this.lunchInserted = false;
+                        this.dinnerInserted = false;
                         queue.push(spot);
                         continue;
                     }
@@ -1517,7 +1570,7 @@ function processTripResult(result, dateStr, startTime, mode, people) {
         }
 
         processShortSpots() {
-            if (!this.allowFill) return; // 推荐路线不填充
+            if (!this.allowFill || this.fillOnlyMeals) return;
             let anyInserted = true;
             while (anyInserted) {
                 anyInserted = false;
@@ -1563,14 +1616,19 @@ function processTripResult(result, dateStr, startTime, mode, people) {
                     this.currentDate.setDate(this.currentDate.getDate() + 1);
                     this.currentMin = DAY_START_LOCAL;
                 }
-                this.dinnerInserted = false; // 标记是否已插入晚餐
                 this.processLongSpots();
                 this.processHalfSpots();
                 this.processShortSpots();
-                // 检查是否有未插入的晚餐（兜底）
-                if (this.allowFill && !this.dinnerInserted && this.currentMin >= DINNER_START_LOCAL && this.currentMin <= DINNER_END_LOCAL + 30) {
+                // 兜底，确保每天都有至少一次午餐和晚餐（如果时间允许）
+                if (!this.lunchInserted && this.currentMin >= LUNCH_START_LOCAL && this.currentMin < LUNCH_END_LOCAL + 30) {
+                    this.allNodes.push({ type: 'meal', name: '午餐', startTime: this.currentMin, endTime: this.currentMin + MEAL_DURATION_LOCAL, duration: MEAL_DURATION_LOCAL });
+                    this.currentMin += MEAL_DURATION_LOCAL;
+                    this.lunchInserted = true;
+                }
+                if (!this.dinnerInserted && this.currentMin >= DINNER_START_LOCAL && this.currentMin < DINNER_END_LOCAL + 30) {
                     this.allNodes.push({ type: 'meal', name: '晚餐', startTime: this.currentMin, endTime: this.currentMin + MEAL_DURATION_LOCAL, duration: MEAL_DURATION_LOCAL });
                     this.currentMin += MEAL_DURATION_LOCAL;
+                    this.dinnerInserted = true;
                 }
                 if (this.allNodes.length > 0 && this.allNodes[this.allNodes.length-1].type !== 'dayEnd') {
                     this.allNodes.push({ type: 'dayEnd' });
@@ -1583,7 +1641,7 @@ function processTripResult(result, dateStr, startTime, mode, people) {
     }
 
     // 对外接口
-    window.generateTripPlan = function(spots, startDate, startTime, mode, allowFill = true) {
+    window.generateTripPlan = function(spots, startDate, startTime, mode, allowFill = true, fillOnlyMeals = false) {
         if (!spots || !Array.isArray(spots) || spots.length === 0) {
             return { nodes: [], error: true, errorMsg: '没有有效的景点数据' };
         }
@@ -1599,7 +1657,7 @@ function processTripResult(result, dateStr, startTime, mode, people) {
 
         const countySpots = window.getCountySpots ? window.getCountySpots() : [];
 
-        const generator = new PlanGenerator(validSpots, startDate, startTime, mode, getTravelTimeFn, countySpots, allowFill);
+        const generator = new PlanGenerator(validSpots, startDate, startTime, mode, getTravelTimeFn, countySpots, allowFill, fillOnlyMeals);
         return generator.generate();
     };
 
@@ -1629,7 +1687,6 @@ function generateTimeline(nodes) {
     for (let node of nodes) {
         if (!node) continue;
         if (node.type === 'visit' && merged.length > 0 && merged[merged.length-1].type === 'visit' && merged[merged.length-1].spotId === node.spotId) {
-            // 合并
             let last = merged[merged.length-1];
             last.endTime = node.endTime;
             last.duration += node.duration;
@@ -1796,14 +1853,12 @@ function openPanel(id){
 }
 function closePanel(id){ document.getElementById(id).classList.remove('active'); }
 
-function startSimulation(){ alert('模拟导航功能即将上线'); }
-
 // ==========================================================================
 // 启动
 // ==========================================================================
 window.onload = function() {
     initMap();
-    console.log('[系统] 智游通江已启动，全新引擎已部署。');
+    console.log('[系统] 智游通江已启动，终极修复版已部署。');
 };
 </script>
 </body>

@@ -6,6 +6,7 @@
     <title>智游通江</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
+        /* ===== 样式（完整保留） ===== */
         * { margin:0; padding:0; box-sizing:border-box; }
         body { font-family: system-ui, sans-serif; height:100vh; overflow:hidden; background:#f5f5f5; }
         #map { height:100vh; width:100vw; z-index:1; }
@@ -112,19 +113,18 @@
 <div class="panel" id="routesPanel">
     <div class="panel-header"><h2>路线</h2><button onclick="closePanel('routesPanel')">✕</button></div>
     <div class="panel-body">
-        <!-- 切换标签 -->
         <div class="tab-switch">
             <button class="active" onclick="switchRouteTab('recommend')">📌 推荐路线</button>
             <button onclick="switchRouteTab('custom')">✏️ 自设行程</button>
         </div>
 
-        <!-- 推荐路线区域 -->
+        <!-- 推荐路线 -->
         <div id="recommendTab" class="tab-content">
             <h3>📌 推荐路线</h3>
             <div id="recommendRouteList"></div>
         </div>
 
-        <!-- 自设行程区域 -->
+        <!-- 自设行程 -->
         <div id="customTab" class="tab-content hidden">
             <h3>✏️ 自设行程</h3>
             <div class="form-group"><label>出发日期</label><input type="date" id="custom-trip-date"></div>
@@ -748,7 +748,6 @@ async function submitReservationDirect(merchantId) {
 }
 
 // ==================== 路线 ====================
-// 切换路线标签
 function switchRouteTab(tab) {
     document.querySelectorAll('.tab-switch button').forEach(btn => btn.classList.remove('active'));
     if (tab === 'recommend') {
@@ -760,13 +759,11 @@ function switchRouteTab(tab) {
         document.querySelector('.tab-switch button:last-child').classList.add('active');
         document.getElementById('recommendTab').classList.add('hidden');
         document.getElementById('customTab').classList.remove('hidden');
-        // 初始化自设行程界面
         buildCustomPoiOptions();
         resetCustomRouteLegs();
     }
 }
 
-// 加载推荐路线列表
 async function loadRecommendRoutes() {
     const { data } = await sb.from('ztj_routes').select('*');
     const container = document.getElementById('recommendRouteList');
@@ -776,7 +773,6 @@ async function loadRecommendRoutes() {
     }
     let html = '';
     for (let route of data) {
-        // 获取节点
         const { data: nodes } = await sb.from('ztj_route_nodes').select('*, poi:poi_id(name)').eq('route_id', route.id).order('order_num');
         const nodeNames = nodes ? nodes.map(n => n.poi?.name || '未知').join(' → ') : '';
         html += `
@@ -796,12 +792,10 @@ async function loadRecommendRoutes() {
     container.innerHTML = html;
 }
 
-// 生成推荐路线行程
 async function generateRecommendRoute(routeId) {
     const resultDiv = document.getElementById(`recommend-result-${routeId}`);
     resultDiv.innerHTML = '⏳ 生成中...';
     try {
-        // 获取用户选择的日期和时间
         const dateInput = document.querySelector(`.recommend-date[data-route="${routeId}"]`);
         const timeInput = document.querySelector(`.recommend-time[data-route="${routeId}"]`);
         const dateStr = dateInput ? dateInput.value : '';
@@ -811,13 +805,11 @@ async function generateRecommendRoute(routeId) {
             return;
         }
 
-        // 获取路线预设节点
         const { data: nodes } = await sb.from('ztj_route_nodes').select('poi_id, duration_min, items').eq('route_id', routeId).order('order_num');
         if (!nodes || nodes.length === 0) {
             resultDiv.innerHTML = '❌ 该路线无景点节点';
             return;
         }
-        // 构建景点列表
         const spots = [];
         for (let n of nodes) {
             const poi = allPois.find(p => p.id == n.poi_id);
@@ -838,16 +830,14 @@ async function generateRecommendRoute(routeId) {
             return;
         }
 
-        // 解析时间
         const startMinutes = parseInt(timeStr.slice(0,2))*60 + parseInt(timeStr.slice(3));
-        const mode = 'auto'; // 推荐路线默认自驾
+        const mode = 'auto';
         const result = generateTrip(spots, dateStr, startMinutes, mode);
         if (result.error) {
             resultDiv.innerHTML = '❌ 生成失败：' + (result.errorMsg || '请检查时间是否充足');
             return;
         }
 
-        // 生成时间线显示
         const { days, mealCount } = generateTimeline(result.nodes);
         const weatherForecast = await fetchWeatherForecast();
         const daysWithWeather = days.map((d, i) => {
@@ -875,7 +865,6 @@ async function generateRecommendRoute(routeId) {
         if (mealCount > 0) tips.push(`🍴 包含 ${mealCount} 次用餐。`);
         if (days.length > 1) tips.push(`🏨 行程跨${days.length}天，请合理安排住宿。`);
 
-        // 自动保存
         const routeNameResult = await sb.from('ztj_routes').select('name').eq('id', routeId).single();
         const routeName = routeNameResult.data?.name || '推荐路线';
         const today = new Date().toISOString().slice(0,10);
@@ -952,7 +941,6 @@ function toggleCustomSpot(id) {
     }
 }
 
-// 自设行程生成
 async function generateCustomTrip() {
     try {
         const checkboxes = document.querySelectorAll('#custom-dynamic-route input[type="checkbox"]:checked');
@@ -1071,7 +1059,6 @@ async function generateCustomTrip() {
     }
 }
 
-// 保存自设行程
 function saveCustomTrip() {
     if(!customGeneratedTripData) return;
     const name = prompt('行程名称', customGeneratedTripData.name);
@@ -1087,14 +1074,16 @@ function saveCustomTrip() {
     resetCustomRouteLegs();
 }
 
-// ==================== 核心行程规划引擎 ====================
+// ==================== 核心行程规划引擎（已修复 undefined 问题） ====================
 function isLongSpot(spot) {
+    if (!spot || !spot.name) return false;
     return LONG_SPOT_NAMES.some(name => spot.name.includes(name));
 }
 
 function getCountySpots() {
+    if (!allPois || allPois.length === 0) return [];
     return allPois.filter(p => {
-        if (!p.name) return false;
+        if (!p || !p.name) return false;
         return COUNTY_SPOT_KEYWORDS.some(kw => p.name.includes(kw));
     }).map(p => ({
         id: p.id,
@@ -1108,15 +1097,14 @@ function getCountySpots() {
 
 function getTravelTime(fromId, toId, mode) {
     let t = getTransportTime(fromId, toId, mode);
-    if (t === null || t === undefined) {
-        // 如果没有预设，返回一个默认值（0 或保守估计）
-        return 0;
-    }
+    if (t === null || t === undefined) return 0;
     return t;
 }
 
-// ---- 核心：安排单个景区 ----
 function arrangeSpot(spot, travelTime, startTime, lastPoi, mode) {
+    if (!spot || !spot.id) {
+        return { nodes: [], newTime: startTime, newPoi: lastPoi, remainingVisit: 0, error: '无效景点' };
+    }
     let nodes = [];
     let time = startTime;
     let poi = lastPoi;
@@ -1139,7 +1127,7 @@ function arrangeSpot(spot, travelTime, startTime, lastPoi, mode) {
         poi = { id: spot.id, name: spot.name, lat: spot.lat, lng: spot.lng };
     }
 
-    let remainingVisit = spot.visitDuration;
+    let remainingVisit = spot.visitDuration || 0;
     if (time >= DAY_END) {
         return { nodes, newTime: time, newPoi: poi, remainingVisit: remainingVisit, error: '游览开始已超过18:00' };
     }
@@ -1280,11 +1268,14 @@ function arrangeSpot(spot, travelTime, startTime, lastPoi, mode) {
     return { nodes, newTime: time, newPoi: poi, remainingVisit: remainingVisit, error: null };
 }
 
-// ---- 主生成函数 ----
 function generateTrip(selectedSpots, startDate, startTime, mode) {
-    console.log('generateTrip called with', selectedSpots, startDate, startTime, mode);
     try {
-        let spots = selectedSpots.map(s => ({ ...s }));
+        // 过滤掉无效项
+        let spots = (selectedSpots || []).filter(s => s && s.id);
+        if (spots.length === 0) {
+            return { nodes: [], error: true, errorMsg: '没有有效的景点数据' };
+        }
+
         const longSpots = spots.filter(s => isLongSpot(s));
         const halfSpots = spots.filter(s => !isLongSpot(s) && s.visitDuration >= 100);
         const shortSpots = spots.filter(s => !isLongSpot(s) && s.visitDuration < 100);
@@ -1339,6 +1330,7 @@ function generateTrip(selectedSpots, startDate, startTime, mode) {
 
         function tryArrangeShort(list, usedSet, time, poi, dayEndLimit) {
             for (let item of list) {
+                if (!item || !item.id) continue;
                 if (usedSet.has(item.id)) continue;
                 let travel = getTravelTime(poi.id, item.id, mode);
                 if (travel === null || travel === undefined) travel = 0;
@@ -1361,7 +1353,7 @@ function generateTrip(selectedSpots, startDate, startTime, mode) {
             return { success: false };
         }
 
-        // ---- 长耗时景区 ----
+        // ---- 长耗时 ----
         for (let spot of longSpots) {
             if (usedLong.has(spot.id)) continue;
             if (currentMin !== DAY_START) {
@@ -1377,7 +1369,7 @@ function generateTrip(selectedSpots, startDate, startTime, mode) {
             if (travel === null || travel === undefined) travel = 0;
             let needed = travel + spot.visitDuration;
             if (currentMin + needed > DAY_END + 60) {
-                return { nodes: [], error: true, errorMsg: `长耗时景区 "${spot.name}" 所需时间（含交通）${needed}分钟，当天剩余时间不足，无法安排。` };
+                return { nodes: [], error: true, errorMsg: `长耗时景区 "${spot.name}" 所需时间（含交通）${needed}分钟，当天剩余时间不足。` };
             }
 
             let result = arrangeSpot(spot, travel, currentMin, lastPoi, mode);
@@ -1406,7 +1398,7 @@ function generateTrip(selectedSpots, startDate, startTime, mode) {
             usedLong.add(spot.id);
         }
 
-        // ---- 半日景区 ----
+        // ---- 半日 ----
         let halfQueue = [...halfSpots];
         let attempts = 0;
         while (halfQueue.length > 0 && attempts < 200) {
@@ -1628,7 +1620,7 @@ function generateTrip(selectedSpots, startDate, startTime, mode) {
             }
         }
 
-        // ---- 短时和县城填充 ----
+        // ---- 短时填充 ----
         let anyInserted = true;
         while (anyInserted) {
             anyInserted = false;
@@ -1662,7 +1654,6 @@ function generateTrip(selectedSpots, startDate, startTime, mode) {
             allNodes.push({ type: 'dayEnd' });
         }
 
-        console.log('Generated nodes:', allNodes);
         return { nodes: allNodes, error: false };
     } catch (e) {
         console.error('generateTrip 异常:', e);
@@ -1670,7 +1661,6 @@ function generateTrip(selectedSpots, startDate, startTime, mode) {
     }
 }
 
-// ---- 生成时间线显示 ----
 function generateTimeline(nodes) {
     if (!nodes || nodes.length === 0) return { days: [], mealCount: 0 };
     let lines = [];
@@ -1719,7 +1709,6 @@ function generateTimeline(nodes) {
     daysArray = daysArray.filter(day => day.some(line => !line.includes('当天行程结束')));
 
     let days = [];
-    let baseDate = new Date();
     for (let i = 0; i < daysArray.length; i++) {
         let date = new Date();
         date.setDate(date.getDate() + i);
@@ -1817,9 +1806,7 @@ async function submitFeedback() {
 function openPanel(id){
     document.getElementById(id).classList.add('active');
     if(id === 'routesPanel') {
-        // 默认打开推荐路线
         switchRouteTab('recommend');
-        // 初始化自设行程选项（但不显示）
         buildCustomPoiOptions();
         resetCustomRouteLegs();
     }

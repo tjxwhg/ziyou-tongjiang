@@ -62,6 +62,20 @@
         .move-btn { background:#e0e0e0; border:none; border-radius:4px; padding:2px 6px; cursor:pointer; font-size:12px; }
         .move-btn:hover { background:#ccc; }
         .route-item-container { display:flex; align-items:center; gap:8px; }
+        /* 新样式：分离后的布局 */
+        .section-divider { border-top:2px solid #e0e0e0; margin:20px 0; padding-top:10px; }
+        .route-card { border:1px solid #ddd; padding:12px; margin:10px 0; border-radius:8px; background:#f9f9f9; }
+        .route-card h4 { margin-bottom:6px; }
+        .route-card .route-meta { font-size:14px; color:#666; }
+        .route-card .route-nodes { font-size:13px; margin:6px 0; }
+        .route-card .route-actions { display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-top:8px; }
+        .route-card .route-actions input[type="date"], .route-card .route-actions input[type="time"] { width:auto; padding:4px 8px; }
+        .route-card .route-actions button { padding:4px 12px; }
+        .tab-switch { display:flex; gap:8px; margin-bottom:12px; }
+        .tab-switch button { padding:6px 16px; border:1px solid #ccc; background:white; border-radius:4px; cursor:pointer; }
+        .tab-switch button.active { background:#2e7d32; color:white; border-color:#2e7d32; }
+        .tab-content { display:block; }
+        .tab-content.hidden { display:none; }
     </style>
 </head>
 <body>
@@ -99,21 +113,32 @@
 <div class="panel" id="routesPanel">
     <div class="panel-header"><h2>路线</h2><button onclick="closePanel('routesPanel')">✕</button></div>
     <div class="panel-body">
-        <h3>📌 推荐路线</h3>
-        <div id="routeList"></div>
-        <div class="toggle-section" onclick="toggleCustomTripSection()"><h4>✏️ 自设行程 <span id="customTripArrow">▼</span></h4></div>
-        <div id="customTripSection" class="hidden" style="margin-top:10px;">
-            <div class="form-group"><label>出发日期</label><input type="date" id="trip-date"></div>
+        <!-- 切换标签 -->
+        <div class="tab-switch">
+            <button class="active" onclick="switchRouteTab('recommend')">📌 推荐路线</button>
+            <button onclick="switchRouteTab('custom')">✏️ 自设行程</button>
+        </div>
+
+        <!-- 推荐路线区域 -->
+        <div id="recommendTab" class="tab-content">
+            <h3>📌 推荐路线</h3>
+            <div id="recommendRouteList"></div>
+        </div>
+
+        <!-- 自设行程区域 -->
+        <div id="customTab" class="tab-content hidden">
+            <h3>✏️ 自设行程</h3>
+            <div class="form-group"><label>出发日期</label><input type="date" id="custom-trip-date"></div>
             <div class="form-group"><label>出发时间（24小时制，10分钟间隔）</label>
-                <select id="trip-time"></select>
+                <select id="custom-trip-time"></select>
             </div>
-            <div class="form-group"><label>出行方式</label><select id="trip-mode"><option value="auto">自驾</option><option value="bus">公交</option><option value="walk">步行</option></select></div>
-            <div class="form-group"><label>人数</label><input type="number" id="trip-people" min="1" value="2"></div>
-            <div class="form-group"><label>行程路线（点击复选框选择，可上下移动调整顺序）</label><div id="dynamic-route"></div></div>
+            <div class="form-group"><label>出行方式</label><select id="custom-trip-mode"><option value="auto">自驾</option><option value="bus">公交</option><option value="walk">步行</option></select></div>
+            <div class="form-group"><label>人数</label><input type="number" id="custom-trip-people" min="1" value="2"></div>
+            <div class="form-group"><label>行程路线（点击复选框选择，可上下移动调整顺序）</label><div id="custom-dynamic-route"></div></div>
             <button class="btn btn-primary" onclick="generateCustomTrip()" style="width:100%; margin-top:12px;">生成行程</button>
-            <div id="generated-trip" style="margin-top:12px;"></div>
-            <div id="trip-warnings" style="margin-top:12px;"></div>
-            <button class="btn btn-primary hidden" id="saveGeneratedTripBtn" onclick="saveGeneratedTrip()" style="width:100%; margin-top:8px;">保存至我的行程</button>
+            <div id="custom-generated-trip" style="margin-top:12px;"></div>
+            <div id="custom-trip-warnings" style="margin-top:12px;"></div>
+            <button class="btn btn-primary hidden" id="custom-save-generated-btn" onclick="saveCustomTrip()" style="width:100%; margin-top:8px;">保存至我的行程</button>
         </div>
     </div>
 </div>
@@ -429,14 +454,14 @@ function initMap() {
     setTimeout(activateSpeech, 500);
 
     const now = new Date();
-    document.getElementById('trip-date').value = now.toISOString().slice(0,10);
-    initTimeSelectors();
+    document.getElementById('custom-trip-date').value = now.toISOString().slice(0,10);
+    initCustomTimeSelectors();
 
     setTimeout(() => locateUser(), 1000);
 }
 
-function initTimeSelectors() {
-    const select = document.getElementById('trip-time');
+function initCustomTimeSelectors() {
+    const select = document.getElementById('custom-trip-time');
     select.innerHTML = '';
     for (let h = 0; h < 24; h++) {
         for (let m = 0; m < 60; m += 10) {
@@ -453,7 +478,7 @@ function initTimeSelectors() {
     select.value = String(h).padStart(2,'0') + ':' + String(m).padStart(2,'0');
 }
 
-function getSelectedTime() { return document.getElementById('trip-time').value; }
+function getCustomSelectedTime() { return document.getElementById('custom-trip-time').value; }
 
 // ==================== 匿名登录 & POI加载 ====================
 async function initAnonymousAuth() {
@@ -724,42 +749,333 @@ async function submitReservationDirect(merchantId) {
 }
 
 // ==================== 路线 ====================
-async function loadRoutes(){
-    const { data } = await sb.from('ztj_routes').select('*');
-    if (data && data.length > 0) {
-        document.getElementById('routeList').innerHTML = data.map(r => `<div class="card"><h3>${r.name}</h3><p>${r.days||1}天 | ${r.transport||'自驾'}</p><button class="btn btn-primary" onclick="showRouteDetail(${r.id})">查看详情</button></div>`).join('');
+// 切换路线标签
+function switchRouteTab(tab) {
+    document.querySelectorAll('.tab-switch button').forEach(btn => btn.classList.remove('active'));
+    if (tab === 'recommend') {
+        document.querySelector('.tab-switch button:first-child').classList.add('active');
+        document.getElementById('recommendTab').classList.remove('hidden');
+        document.getElementById('customTab').classList.add('hidden');
+        loadRecommendRoutes();
     } else {
-        document.getElementById('routeList').innerHTML = '<p>暂无推荐路线</p>';
+        document.querySelector('.tab-switch button:last-child').classList.add('active');
+        document.getElementById('recommendTab').classList.add('hidden');
+        document.getElementById('customTab').classList.remove('hidden');
+        // 初始化自设行程界面
+        buildCustomPoiOptions();
+        resetCustomRouteLegs();
     }
 }
 
-async function showRouteDetail(id){
-    const { data:route } = await sb.from('ztj_routes').select('*').eq('id',id).single();
-    const { data:nodes } = await sb.from('ztj_route_nodes').select('*, poi:poi_id(name)').eq('route_id',id).order('order_num');
-    
-    let html = `<h3>${route.name}</h3><p>交通方式：${route.transport||'自驾'}</p><p>出发时间：${route.start_time||'08:30'}</p>`;
-    html += `<div style="margin:10px 0;"><b>节点列表：</b></div>`;
-    nodes.forEach((n, idx) => {
-        html += `<div class="route-detail-item"><b>${idx+1}. ${n.poi?.name||'未知'}</b>（停留${n.duration_min}分钟）`;
-        if (n.items && n.items.length) {
-            html += `<div style="margin-left:20px; color:#555;">包含项目：`;
-            n.items.forEach(item => {
-                html += `<div class="sub-item">• ${item.name}（${item.duration}分钟）</div>`;
-            });
-            html += `</div>`;
-        }
-        html += `</div>`;
-    });
-    html += `<div style="margin-top:20px; display:flex; gap:10px; flex-wrap:wrap;">
-        <button class="btn btn-primary" onclick="useRoute(${id})">🚀 使用此路线生成行程</button>
-    </div>`;
-    
-    const panel = document.createElement('div'); panel.className='panel active'; panel.id='routeDetailPanel';
-    panel.innerHTML = `<div class="panel-header"><h2>路线详情</h2><button onclick="this.parentElement.parentElement.remove()">✕</button></div><div class="panel-body">${html}</div>`;
-    document.body.appendChild(panel);
+// 加载推荐路线列表
+async function loadRecommendRoutes() {
+    const { data } = await sb.from('ztj_routes').select('*');
+    const container = document.getElementById('recommendRouteList');
+    if (!data || data.length === 0) {
+        container.innerHTML = '<p>暂无推荐路线</p>';
+        return;
+    }
+    let html = '';
+    for (let route of data) {
+        // 获取节点
+        const { data: nodes } = await sb.from('ztj_route_nodes').select('*, poi:poi_id(name)').eq('route_id', route.id).order('order_num');
+        const nodeNames = nodes ? nodes.map(n => n.poi?.name || '未知').join(' → ') : '';
+        html += `
+            <div class="route-card">
+                <h4>${route.name}</h4>
+                <div class="route-meta">交通方式：${route.transport||'自驾'} | 出发时间：${route.start_time||'08:30'}</div>
+                <div class="route-nodes">📌 节点：${nodeNames}</div>
+                <div class="route-actions">
+                    <label>出发日期：<input type="date" class="recommend-date" data-route="${route.id}" value="${new Date().toISOString().slice(0,10)}"></label>
+                    <label>出发时间：<input type="time" class="recommend-time" data-route="${route.id}" value="${route.start_time||'08:30'}"></label>
+                    <button class="btn btn-primary" onclick="generateRecommendRoute(${route.id})">🚀 生成并保存</button>
+                </div>
+                <div id="recommend-result-${route.id}" style="margin-top:6px;"></div>
+            </div>
+        `;
+    }
+    container.innerHTML = html;
 }
 
-// ==================== 行程规划引擎（最终完整版） ====================
+// 生成推荐路线行程
+async function generateRecommendRoute(routeId) {
+    const resultDiv = document.getElementById(`recommend-result-${routeId}`);
+    resultDiv.innerHTML = '⏳ 生成中...';
+    
+    // 获取用户选择的日期和时间
+    const dateInput = document.querySelector(`.recommend-date[data-route="${routeId}"]`);
+    const timeInput = document.querySelector(`.recommend-time[data-route="${routeId}"]`);
+    const dateStr = dateInput ? dateInput.value : '';
+    const timeStr = timeInput ? timeInput.value : '08:00';
+    if (!dateStr) {
+        resultDiv.innerHTML = '❌ 请选择出发日期';
+        return;
+    }
+    
+    // 获取路线预设节点
+    const { data: nodes } = await sb.from('ztj_route_nodes').select('poi_id, duration_min, items').eq('route_id', routeId).order('order_num');
+    if (!nodes || nodes.length === 0) {
+        resultDiv.innerHTML = '❌ 该路线无景点节点';
+        return;
+    }
+    // 构建景点列表
+    const spots = [];
+    for (let n of nodes) {
+        const poi = allPois.find(p => p.id == n.poi_id);
+        if (poi) {
+            spots.push({
+                id: poi.id,
+                name: poi.name,
+                lat: poi.lat,
+                lng: poi.lng,
+                visitDuration: n.duration_min || poi.visit_duration || 60,
+                // 如果有项目，可附加
+            });
+        }
+    }
+    if (spots.length === 0) {
+        resultDiv.innerHTML = '❌ 路线节点数据无效';
+        return;
+    }
+    
+    // 解析时间
+    const startMinutes = parseInt(timeStr.slice(0,2))*60 + parseInt(timeStr.slice(3));
+    // 使用统一生成函数
+    const mode = 'auto'; // 推荐路线默认自驾
+    const result = generateTrip(spots, dateStr, startMinutes, mode);
+    if (result.error) {
+        resultDiv.innerHTML = '❌ 生成失败：' + (result.errorMsg || '请检查时间是否充足');
+        return;
+    }
+    
+    // 生成时间线显示
+    const { days, mealCount } = generateTimeline(result.nodes);
+    const weatherForecast = await fetchWeatherForecast();
+    const daysWithWeather = days.map((d, i) => {
+        let weatherTip = '⚠️ 天气信息暂不可用。';
+        if (weatherForecast && i < weatherForecast.length) {
+            weatherTip = getDayWeatherTip(weatherForecast[i]);
+        }
+        return { ...d, weatherTip };
+    });
+    
+    let html = '';
+    daysWithWeather.forEach((d, i) => {
+        html += `<div class="day-header">📅 第${i+1}天 (${d.date})</div>`;
+        d.lines.forEach(l => html += `<div class="trip-line">${l}</div>`);
+        html += `<div class="trip-line" style="color:#0d47a1;">${d.weatherTip}</div>`;
+    });
+    let totalTransport = 0, totalVisit = 0;
+    for (let node of result.nodes) {
+        if (node.type === 'transport') totalTransport += node.duration || 0;
+        else if (node.type === 'visit') totalVisit += node.duration || 0;
+    }
+    let totalActivity = totalTransport + totalVisit;
+    let tips = [];
+    tips.push(`📊 活动总时长：${totalActivity}分钟（约${(totalActivity/60).toFixed(1)}小时），其中交通${totalTransport}分钟，游览${totalVisit}分钟。`);
+    if (mealCount > 0) tips.push(`🍴 包含 ${mealCount} 次用餐。`);
+    if (days.length > 1) tips.push(`🏨 行程跨${days.length}天，请合理安排住宿。`);
+    
+    // 自动保存
+    const routeName = (await sb.from('ztj_routes').select('name').eq('id', routeId).single()).data?.name || '推荐路线';
+    const today = new Date().toISOString().slice(0,10);
+    const tripData = {
+        name: `${routeName}-${today}`,
+        date: dateStr,
+        time: timeStr,
+        mode: mode,
+        people: 1,
+        nodes: result.nodes,
+        days: daysWithWeather,
+        tips: tips
+    };
+    const trips = JSON.parse(localStorage.getItem('trips')||'[]');
+    trips.push(tripData);
+    localStorage.setItem('trips', JSON.stringify(trips));
+    
+    resultDiv.innerHTML = `✅ 已生成并自动保存到“我的行程”<br>${html}<div class="warn-list">${tips.map(t=>`<div>${t}</div>`).join('')}</div>`;
+}
+
+// ==================== 自设行程独立逻辑 ====================
+let customRouteLegs = [];
+let customGeneratedTripData = null;
+
+function buildCustomPoiOptions() {
+    const allMain = allPois.filter(p => !p.parent_id);
+    mainPoiOptions = allMain.filter(p => p.id !== 'county');
+    if (currentGcjPos) mainPoiOptions.unshift({ id:'mylocation', name:'📍 我的位置', lat: currentGcjPos.lat, lng: currentGcjPos.lng });
+    mainPoiOptions.unshift(COUNTY);
+    const allowedLower = ALLOWED_CATEGORIES.map(c => c.toLowerCase());
+    allowedPoiOptions = allMain.filter(p => {
+        if(!p.category) return false;
+        const cats = p.category.split(',').map(c => c.trim().toLowerCase());
+        return cats.some(c => allowedLower.includes(c));
+    });
+    if(!allowedPoiOptions.some(p => p.id === 'county')) allowedPoiOptions.unshift(COUNTY);
+}
+
+function resetCustomRouteLegs(){ customRouteLegs=[]; renderCustomDynamicRoute(); }
+
+function renderCustomDynamicRoute(){
+    const poiList = allowedPoiOptions.filter(p => p.id !== 'county' && p.id !== 'mylocation');
+    let html = '';
+    poiList.forEach((p, index) => {
+        const dur = p.visit_duration || 0;
+        const checked = customRouteLegs.some(l => l.id === p.id) ? 'checked' : '';
+        html += `<div class="checkbox-item">
+            <input type="checkbox" value="${p.id}" ${checked} onchange="toggleCustomSpot('${p.id}')" id="custom-chk-${p.id}">
+            <label for="custom-chk-${p.id}">${p.name}（${dur}分钟）</label>
+            <button class="move-btn" onclick="moveCustomRouteItem(${index}, -1)" title="上移">▲</button>
+            <button class="move-btn" onclick="moveCustomRouteItem(${index}, 1)" title="下移">▼</button>
+        </div>`;
+    });
+    document.getElementById('custom-dynamic-route').innerHTML = html || '<p>暂无可用景点</p>';
+}
+
+function moveCustomRouteItem(index, direction) {
+    const newIndex = index + direction;
+    if (newIndex < 0 || newIndex >= allowedPoiOptions.length) return;
+    [allowedPoiOptions[index], allowedPoiOptions[newIndex]] = [allowedPoiOptions[newIndex], allowedPoiOptions[index]];
+    renderCustomDynamicRoute();
+}
+
+function toggleCustomSpot(id) {
+    const idx = customRouteLegs.findIndex(l => l.id === id);
+    if (idx >= 0) customRouteLegs.splice(idx, 1);
+    else {
+        const poi = allPois.find(p => p.id == id);
+        if (poi) customRouteLegs.push({ id: poi.id, name: poi.name, lat: poi.lat, lng: poi.lng });
+    }
+}
+
+// 自设行程生成
+async function generateCustomTrip() {
+    const checkboxes = document.querySelectorAll('#custom-dynamic-route input[type="checkbox"]:checked');
+    const selectedIds = [];
+    checkboxes.forEach(cb => {
+        const id = cb.value;
+        if (id && id !== 'county' && id !== 'mylocation') {
+            selectedIds.push(id);
+        }
+    });
+    if (selectedIds.length === 0) {
+        alert('请至少选择一个景区');
+        return;
+    }
+
+    const dateStr = document.getElementById('custom-trip-date').value;
+    const startTime = getCustomSelectedTime();
+    if (!dateStr) {
+        alert('请选择出发日期');
+        return;
+    }
+    if (!startTime) {
+        alert('请选择出发时间');
+        return;
+    }
+
+    const selectedDateTime = new Date(dateStr + 'T' + startTime);
+    const now = new Date();
+    if (selectedDateTime < now) {
+        if (!confirm('出发时间早于当前时间，是否继续？')) {
+            return;
+        }
+    }
+
+    const mode = document.getElementById('custom-trip-mode').value;
+    const people = document.getElementById('custom-trip-people').value;
+
+    const userSpots = [];
+    for (let id of selectedIds) {
+        const poi = allPois.find(p => p.id == id);
+        if (!poi) {
+            console.warn('POI not found for id:', id);
+            continue;
+        }
+        userSpots.push({
+            id: poi.id,
+            name: poi.name,
+            lat: poi.lat,
+            lng: poi.lng,
+            visitDuration: poi.visit_duration || 60
+        });
+    }
+
+    if (userSpots.length === 0) {
+        alert('未找到有效的景区数据，请刷新页面重试。');
+        return;
+    }
+
+    const startMinutes = parseInt(startTime.slice(0,2))*60 + parseInt(startTime.slice(3));
+    const result = generateTrip(userSpots, dateStr, startMinutes, mode);
+    if (result.error) return;
+
+    const { days, mealCount } = generateTimeline(result.nodes);
+
+    const weatherForecast = await fetchWeatherForecast();
+    const daysWithWeather = days.map((d, i) => {
+        let weatherTip = '⚠️ 天气信息暂不可用。';
+        if (weatherForecast && i < weatherForecast.length) {
+            weatherTip = getDayWeatherTip(weatherForecast[i]);
+        }
+        return { ...d, weatherTip };
+    });
+
+    let html = '';
+    daysWithWeather.forEach((d, i) => {
+        html += `<div class="day-header">📅 第${i+1}天 (${d.date})</div>`;
+        if (d.lines.length === 0) {
+            html += `<div class="trip-line">🚫 当天无行程安排</div>`;
+        } else {
+            d.lines.forEach(l => html += `<div class="trip-line">${l}</div>`);
+        }
+        html += `<div class="trip-line" style="color:#0d47a1;">${d.weatherTip}</div>`;
+    });
+
+    let totalTransport = 0, totalVisit = 0;
+    for (let node of result.nodes) {
+        if (node.type === 'transport') totalTransport += node.duration || 0;
+        else if (node.type === 'visit') totalVisit += node.duration || 0;
+    }
+    let totalActivity = totalTransport + totalVisit;
+    let tips = [];
+    tips.push(`📊 活动总时长：${totalActivity}分钟（约${(totalActivity/60).toFixed(1)}小时），其中交通${totalTransport}分钟，游览${totalVisit}分钟。`);
+    if (mealCount > 0) tips.push(`🍴 包含 ${mealCount} 次用餐。`);
+    if (days.length > 1) tips.push(`🏨 行程跨${days.length}天，请合理安排住宿。`);
+
+    customGeneratedTripData = {
+        name: '自设行程',
+        date: dateStr,
+        time: startTime,
+        mode: mode,
+        people: people,
+        nodes: result.nodes,
+        days: daysWithWeather,
+        tips: tips
+    };
+
+    document.getElementById('custom-generated-trip').innerHTML = `<div class="card">${html}</div>`;
+    document.getElementById('custom-trip-warnings').innerHTML = tips.length ? `<div class="warn-list"><strong>💡 温馨提示：</strong>${tips.map(t=>`<div>${t}</div>`).join('')}</div>` : '';
+    document.getElementById('custom-save-generated-btn').classList.remove('hidden');
+}
+
+// 保存自设行程
+function saveCustomTrip() {
+    if(!customGeneratedTripData) return;
+    const name = prompt('行程名称', customGeneratedTripData.name);
+    if(!name) return;
+    customGeneratedTripData.name = name;
+    const trips = JSON.parse(localStorage.getItem('trips')||'[]');
+    trips.push(customGeneratedTripData);
+    localStorage.setItem('trips', JSON.stringify(trips));
+    alert('行程已保存');
+    document.getElementById('custom-save-generated-btn').classList.add('hidden');
+    document.getElementById('custom-generated-trip').innerHTML = '';
+    customGeneratedTripData = null;
+    resetCustomRouteLegs();
+}
+
+// ==================== 核心行程规划引擎（与之前相同，但独立函数） ====================
 function isLongSpot(spot) {
     return LONG_SPOT_NAMES.some(name => spot.name.includes(name));
 }
@@ -1398,237 +1714,6 @@ function generateTimeline(nodes) {
     return { days, mealCount };
 }
 
-// ---- 自设行程生成入口 ----
-async function generateCustomTrip() {
-    console.log('generateCustomTrip called');
-    const checkboxes = document.querySelectorAll('#dynamic-route input[type="checkbox"]:checked');
-    const selectedIds = [];
-    checkboxes.forEach(cb => {
-        const id = cb.value;
-        if (id && id !== 'county' && id !== 'mylocation') {
-            selectedIds.push(id);
-        }
-    });
-    if (selectedIds.length === 0) {
-        alert('请至少选择一个景区');
-        return;
-    }
-
-    const dateStr = document.getElementById('trip-date').value;
-    const startTime = getSelectedTime();
-    if (!dateStr) {
-        alert('请选择出发日期');
-        return;
-    }
-    if (!startTime) {
-        alert('请选择出发时间');
-        return;
-    }
-
-    const selectedDateTime = new Date(dateStr + 'T' + startTime);
-    const now = new Date();
-    if (selectedDateTime < now) {
-        if (!confirm('出发时间早于当前时间，是否继续？')) {
-            return;
-        }
-    }
-
-    const mode = document.getElementById('trip-mode').value;
-    const people = document.getElementById('trip-people').value;
-
-    const userSpots = [];
-    for (let id of selectedIds) {
-        const poi = allPois.find(p => p.id == id);
-        if (!poi) {
-            console.warn('POI not found for id:', id);
-            continue;
-        }
-        userSpots.push({
-            id: poi.id,
-            name: poi.name,
-            lat: poi.lat,
-            lng: poi.lng,
-            visitDuration: poi.visit_duration || 60
-        });
-    }
-
-    if (userSpots.length === 0) {
-        alert('未找到有效的景区数据，请刷新页面重试。');
-        return;
-    }
-
-    const startMinutes = parseInt(startTime.slice(0,2))*60 + parseInt(startTime.slice(3));
-    const result = generateTrip(userSpots, dateStr, startMinutes, mode);
-    if (result.error) return;
-
-    const { days, mealCount } = generateTimeline(result.nodes);
-
-    const weatherForecast = await fetchWeatherForecast();
-    const daysWithWeather = days.map((d, i) => {
-        let weatherTip = '⚠️ 天气信息暂不可用。';
-        if (weatherForecast && i < weatherForecast.length) {
-            weatherTip = getDayWeatherTip(weatherForecast[i]);
-        }
-        return { ...d, weatherTip };
-    });
-
-    let html = '';
-    daysWithWeather.forEach((d, i) => {
-        html += `<div class="day-header">📅 第${i+1}天 (${d.date})</div>`;
-        if (d.lines.length === 0) {
-            html += `<div class="trip-line">🚫 当天无行程安排</div>`;
-        } else {
-            d.lines.forEach(l => html += `<div class="trip-line">${l}</div>`);
-        }
-        html += `<div class="trip-line" style="color:#0d47a1;">${d.weatherTip}</div>`;
-    });
-
-    let totalTransport = 0, totalVisit = 0;
-    for (let node of result.nodes) {
-        if (node.type === 'transport') totalTransport += node.duration || 0;
-        else if (node.type === 'visit') totalVisit += node.duration || 0;
-    }
-    let totalActivity = totalTransport + totalVisit;
-    let tips = [];
-    tips.push(`📊 活动总时长：${totalActivity}分钟（约${(totalActivity/60).toFixed(1)}小时），其中交通${totalTransport}分钟，游览${totalVisit}分钟。`);
-    if (mealCount > 0) tips.push(`🍴 包含 ${mealCount} 次用餐。`);
-    if (days.length > 1) tips.push(`🏨 行程跨${days.length}天，请合理安排住宿。`);
-
-    generatedTripData = {
-        name: '自设行程',
-        date: dateStr,
-        time: startTime,
-        mode: mode,
-        people: people,
-        nodes: result.nodes,
-        days: daysWithWeather,
-        tips: tips
-    };
-
-    document.getElementById('generated-trip').innerHTML = `<div class="card">${html}</div>`;
-    document.getElementById('trip-warnings').innerHTML = tips.length ? `<div class="warn-list"><strong>💡 温馨提示：</strong>${tips.map(t=>`<div>${t}</div>`).join('')}</div>` : '';
-    document.getElementById('saveGeneratedTripBtn').classList.remove('hidden');
-}
-
-// ---- 推荐路线使用（自动保存） ----
-async function useRoute(routeId) {
-    const detailPanel = document.getElementById('routeDetailPanel');
-    if(detailPanel) detailPanel.remove();
-    openPanel('routesPanel');
-    document.getElementById('customTripSection').classList.remove('hidden');
-    
-    const { data: route } = await sb.from('ztj_routes').select('*').eq('id', routeId).single();
-    if (!route) { alert('路线不存在'); return; }
-
-    const { data: nodes } = await sb.from('ztj_route_nodes').select('poi_id').eq('route_id', routeId).order('order_num');
-    if (!nodes || nodes.length === 0) { alert('该路线无节点'); return; }
-    const poiIds = nodes.map(n => n.poi_id);
-
-    document.querySelectorAll('#dynamic-route input[type="checkbox"]').forEach(cb => cb.checked = false);
-    poiIds.forEach(id => {
-        const cb = document.querySelector(`#dynamic-route input[value="${id}"]`);
-        if(cb) cb.checked = true;
-    });
-    routeLegs = poiIds.map(id => {
-        const poi = allPois.find(p => p.id == id);
-        return poi ? { id: poi.id, name: poi.name, lat: poi.lat, lng: poi.lng } : null;
-    }).filter(p => p);
-
-    // 强制使用次日 08:00
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    const dateStr = tomorrow.toISOString().slice(0,10);
-    document.getElementById('trip-date').value = dateStr;
-    document.getElementById('trip-time').value = '08:00';
-
-    await generateCustomTrip();
-
-    if (generatedTripData) {
-        const today = new Date().toISOString().slice(0,10);
-        generatedTripData.name = `${route.name}-${today}`;
-        const trips = JSON.parse(localStorage.getItem('trips')||'[]');
-        trips.push(generatedTripData);
-        localStorage.setItem('trips', JSON.stringify(trips));
-        alert(`✅ 推荐路线 "${route.name}" 已自动保存到“我的行程”`);
-        document.getElementById('saveGeneratedTripBtn').classList.add('hidden');
-    } else {
-        alert('生成行程失败，请重试。');
-    }
-}
-
-// ==================== 自设行程界面操作 ====================
-function toggleCustomTripSection(){
-    document.getElementById('customTripSection').classList.toggle('hidden');
-    if(!document.getElementById('customTripSection').classList.contains('hidden')){
-        buildMainPoiOptions();
-        resetRouteLegs();
-    }
-}
-
-function buildMainPoiOptions(){
-    const allMain = allPois.filter(p => !p.parent_id);
-    mainPoiOptions = allMain.filter(p => p.id !== 'county');
-    if (currentGcjPos) mainPoiOptions.unshift({ id:'mylocation', name:'📍 我的位置', lat: currentGcjPos.lat, lng: currentGcjPos.lng });
-    mainPoiOptions.unshift(COUNTY);
-    const allowedLower = ALLOWED_CATEGORIES.map(c => c.toLowerCase());
-    allowedPoiOptions = allMain.filter(p => {
-        if(!p.category) return false;
-        const cats = p.category.split(',').map(c => c.trim().toLowerCase());
-        return cats.some(c => allowedLower.includes(c));
-    });
-    if(!allowedPoiOptions.some(p => p.id === 'county')) allowedPoiOptions.unshift(COUNTY);
-}
-
-function resetRouteLegs(){ routeLegs=[]; renderDynamicRoute(); }
-
-function renderDynamicRoute(){
-    const poiList = allowedPoiOptions.filter(p => p.id !== 'county' && p.id !== 'mylocation');
-    let html = '';
-    poiList.forEach((p, index) => {
-        const dur = p.visit_duration || 0;
-        const checked = routeLegs.some(l => l.id === p.id) ? 'checked' : '';
-        html += `<div class="checkbox-item">
-            <input type="checkbox" value="${p.id}" ${checked} onchange="toggleSpot('${p.id}')" id="chk-${p.id}">
-            <label for="chk-${p.id}">${p.name}（${dur}分钟）</label>
-            <button class="move-btn" onclick="moveRouteItem(${index}, -1)" title="上移">▲</button>
-            <button class="move-btn" onclick="moveRouteItem(${index}, 1)" title="下移">▼</button>
-        </div>`;
-    });
-    document.getElementById('dynamic-route').innerHTML = html || '<p>暂无可用景点</p>';
-}
-
-function moveRouteItem(index, direction) {
-    const newIndex = index + direction;
-    if (newIndex < 0 || newIndex >= allowedPoiOptions.length) return;
-    [allowedPoiOptions[index], allowedPoiOptions[newIndex]] = [allowedPoiOptions[newIndex], allowedPoiOptions[index]];
-    renderDynamicRoute();
-}
-
-function toggleSpot(id) {
-    const idx = routeLegs.findIndex(l => l.id === id);
-    if (idx >= 0) routeLegs.splice(idx, 1);
-    else {
-        const poi = allPois.find(p => p.id == id);
-        if (poi) routeLegs.push({ id: poi.id, name: poi.name, lat: poi.lat, lng: poi.lng });
-    }
-}
-
-// ==================== 保存行程（手动） ====================
-function saveGeneratedTrip() {
-    if(!generatedTripData) return;
-    const name = prompt('行程名称', generatedTripData.name);
-    if(!name) return;
-    generatedTripData.name = name;
-    const trips = JSON.parse(localStorage.getItem('trips')||'[]');
-    trips.push(generatedTripData);
-    localStorage.setItem('trips', JSON.stringify(trips));
-    alert('行程已保存');
-    document.getElementById('saveGeneratedTripBtn').classList.add('hidden');
-    document.getElementById('generated-trip').innerHTML = '';
-    generatedTripData = null;
-    resetRouteLegs();
-}
-
 // ==================== 我的面板功能 ====================
 function switchMyTab(tab) {
     document.querySelectorAll('.my-tab').forEach(btn => btn.classList.remove('active'));
@@ -1716,9 +1801,11 @@ async function submitFeedback() {
 function openPanel(id){
     document.getElementById(id).classList.add('active');
     if(id === 'routesPanel') {
-        loadRoutes();
-        buildMainPoiOptions();
-        resetRouteLegs();
+        // 默认打开推荐路线
+        switchRouteTab('recommend');
+        // 初始化自设行程选项（但不显示）
+        buildCustomPoiOptions();
+        resetCustomRouteLegs();
     }
     if(id === 'myPanel') {
         switchMyTab('trip');
@@ -1731,7 +1818,7 @@ function startSimulation(){ alert('模拟导航功能即将上线'); }
 // ==================== 启动 ====================
 window.onload = function() {
     initMap();
-    console.log('[系统] 智游通江已启动，最终完整版。');
+    console.log('[系统] 智游通江已启动，推荐路线与自设行程已完全分离。');
 };
 </script>
 </body>

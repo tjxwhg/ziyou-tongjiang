@@ -6,7 +6,6 @@
     <title>智游通江</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
-        /* ===== 样式（完整保留） ===== */
         * { margin:0; padding:0; box-sizing:border-box; }
         body { font-family: system-ui, sans-serif; height:100vh; overflow:hidden; background:#f5f5f5; }
         #map { height:100vh; width:100vw; z-index:1; }
@@ -812,6 +811,10 @@ async function generateRecommendRoute(routeId) {
         }
         const spots = [];
         for (let n of nodes) {
+            if (!n || n.poi_id === undefined || n.poi_id === null) {
+                console.warn('Invalid node:', n);
+                continue;
+            }
             const poi = allPois.find(p => p.id == n.poi_id);
             if (poi) {
                 spots.push({
@@ -856,8 +859,8 @@ async function generateRecommendRoute(routeId) {
         });
         let totalTransport = 0, totalVisit = 0;
         for (let node of result.nodes) {
-            if (node.type === 'transport') totalTransport += node.duration || 0;
-            else if (node.type === 'visit') totalVisit += node.duration || 0;
+            if (node && node.type === 'transport') totalTransport += node.duration || 0;
+            else if (node && node.type === 'visit') totalVisit += node.duration || 0;
         }
         let totalActivity = totalTransport + totalVisit;
         let tips = [];
@@ -980,6 +983,7 @@ async function generateCustomTrip() {
 
         const userSpots = [];
         for (let id of selectedIds) {
+            if (!id) continue;
             const poi = allPois.find(p => p.id == id);
             if (!poi) {
                 console.warn('POI not found for id:', id);
@@ -1030,8 +1034,8 @@ async function generateCustomTrip() {
 
         let totalTransport = 0, totalVisit = 0;
         for (let node of result.nodes) {
-            if (node.type === 'transport') totalTransport += node.duration || 0;
-            else if (node.type === 'visit') totalVisit += node.duration || 0;
+            if (node && node.type === 'transport') totalTransport += node.duration || 0;
+            else if (node && node.type === 'visit') totalVisit += node.duration || 0;
         }
         let totalActivity = totalTransport + totalVisit;
         let tips = [];
@@ -1074,7 +1078,7 @@ function saveCustomTrip() {
     resetCustomRouteLegs();
 }
 
-// ==================== 核心行程规划引擎（已修复 undefined 问题） ====================
+// ==================== 核心行程规划引擎（全面防御） ====================
 function isLongSpot(spot) {
     if (!spot || !spot.name) return false;
     return LONG_SPOT_NAMES.some(name => spot.name.includes(name));
@@ -1096,6 +1100,9 @@ function getCountySpots() {
 }
 
 function getTravelTime(fromId, toId, mode) {
+    if (fromId === undefined || fromId === null || toId === undefined || toId === null) {
+        return 0;
+    }
     let t = getTransportTime(fromId, toId, mode);
     if (t === null || t === undefined) return 0;
     return t;
@@ -1270,8 +1277,8 @@ function arrangeSpot(spot, travelTime, startTime, lastPoi, mode) {
 
 function generateTrip(selectedSpots, startDate, startTime, mode) {
     try {
-        // 过滤掉无效项
-        let spots = (selectedSpots || []).filter(s => s && s.id);
+        // 过滤无效景点
+        let spots = (selectedSpots || []).filter(s => s && s.id && s.name);
         if (spots.length === 0) {
             return { nodes: [], error: true, errorMsg: '没有有效的景点数据' };
         }
@@ -1298,6 +1305,7 @@ function generateTrip(selectedSpots, startDate, startTime, mode) {
         let lastPoi = { id: 'county', name: '红军广场', lat: COUNTY.lat, lng: COUNTY.lng };
 
         function addReturnAndDinner(fromPoi, time) {
+            if (!fromPoi || !fromPoi.id) return null;
             let travelBack = getTravelTime(fromPoi.id, 'county', mode);
             if (travelBack === null || travelBack === undefined) travelBack = 0;
             if (time + travelBack > 1440) return null;
@@ -1329,7 +1337,8 @@ function generateTrip(selectedSpots, startDate, startTime, mode) {
         }
 
         function tryArrangeShort(list, usedSet, time, poi, dayEndLimit) {
-            for (let item of list) {
+            for (let i = 0; i < list.length; i++) {
+                const item = list[i];
                 if (!item || !item.id) continue;
                 if (usedSet.has(item.id)) continue;
                 let travel = getTravelTime(poi.id, item.id, mode);
@@ -1344,7 +1353,7 @@ function generateTrip(selectedSpots, startDate, startTime, mode) {
                 if (result.remainingVisit > 0) {
                     if (result.remainingVisit >= 60) {
                         let newSpot = { ...item, visitDuration: result.remainingVisit };
-                        shortSpots.push(newSpot);
+                        list.push(newSpot);
                     }
                 }
                 usedSet.add(item.id);
@@ -1667,6 +1676,7 @@ function generateTimeline(nodes) {
     let mealCount = 0;
 
     for (let node of nodes) {
+        if (!node) continue;
         let text = '';
         if (node.type === 'transport') {
             let start = formatTime(node.startTime);
@@ -1821,7 +1831,7 @@ function startSimulation(){ alert('模拟导航功能即将上线'); }
 // ==================== 启动 ====================
 window.onload = function() {
     initMap();
-    console.log('[系统] 智游通江已启动，推荐路线与自设行程已完全分离并修复生成问题。');
+    console.log('[系统] 智游通江已启动，所有生成问题已全面修复。');
 };
 </script>
 </body>

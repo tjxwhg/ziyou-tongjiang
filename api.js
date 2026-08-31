@@ -1,3 +1,4 @@
+// api.js - Supabase 数据操作
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from './config.js';
 
@@ -29,6 +30,14 @@ export async function deletePoi(id) {
 }
 export async function getSubPois(parentId) {
   const { data, error } = await supabase.from('ztj_poi').select('*').eq('parent_id', parentId).order('sort_order');
+  if (error) throw error;
+  return data;
+}
+export async function getPoisWithFilter(filter) {
+  let query = supabase.from('ztj_poi').select('*');
+  if (filter.parent_id !== undefined) query = query.eq('parent_id', filter.parent_id);
+  if (filter.status) query = query.eq('status', filter.status);
+  const { data, error } = await query;
   if (error) throw error;
   return data;
 }
@@ -103,6 +112,10 @@ export async function getMerchantsByPoi(poiId) {
   const { data, error } = await supabase.from('ztj_merchants').select('*').eq('poi_id', poiId);
   if (error) throw error;
   return data;
+}
+export async function createMerchantRecord(id, displayName, poiId) {
+  const { error } = await supabase.from('ztj_merchants').insert({ id, display_name: displayName, poi_id: poiId });
+  if (error) throw error;
 }
 
 // ---------- 预约 ----------

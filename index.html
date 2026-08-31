@@ -9,6 +9,7 @@
   <!-- Leaflet CSS -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <style>
+    /* === 样式与之前完全相同，此处省略以节省篇幅，实际部署请保留完整样式 === */
     * { margin:0; padding:0; box-sizing:border-box; }
     body { font-family: system-ui, sans-serif; height:100vh; overflow:hidden; background:#f5f5f5; }
     #map { height:100vh; width:100vw; z-index:1; }
@@ -71,41 +72,41 @@
 <body>
 <div id="map"></div>
 
-<div class="cat-trigger" id="catTrigger" onclick="toggleCategoryBar()">📂 分类</div>
+<div class="cat-trigger" id="catTrigger" onclick="window.toggleCategoryBar()">📂 分类</div>
 <div class="category-bar" id="categoryBar">
-  <button class="cat-btn" data-category="餐饮住宿" onclick="filterPOI('餐饮住宿')">🍽️ 餐饮住宿</button>
-  <button class="cat-btn" data-category="交通枢纽" onclick="filterPOI('交通枢纽')">🚌 交通枢纽</button>
-  <button class="cat-btn" data-category="游玩娱乐" onclick="filterPOI('游玩娱乐')">🎢 游玩娱乐</button>
-  <button class="cat-btn" data-category="特产购物" onclick="filterPOI('特产购物')">🛍️ 特产购物</button>
-  <button class="cat-btn" data-category="公共服务" onclick="filterPOI('公共服务')">🏛️ 公共服务</button>
-  <button class="cat-btn" onclick="closeCategoryBar()">🔙 返回</button>
+  <button class="cat-btn" data-category="餐饮住宿" onclick="window.filterPOI('餐饮住宿')">🍽️ 餐饮住宿</button>
+  <button class="cat-btn" data-category="交通枢纽" onclick="window.filterPOI('交通枢纽')">🚌 交通枢纽</button>
+  <button class="cat-btn" data-category="游玩娱乐" onclick="window.filterPOI('游玩娱乐')">🎢 游玩娱乐</button>
+  <button class="cat-btn" data-category="特产购物" onclick="window.filterPOI('特产购物')">🛍️ 特产购物</button>
+  <button class="cat-btn" data-category="公共服务" onclick="window.filterPOI('公共服务')">🏛️ 公共服务</button>
+  <button class="cat-btn" onclick="window.closeCategoryBar()">🔙 返回</button>
 </div>
 
 <div class="top-bar">
-  <button class="top-btn" onclick="openPanel('myPanel')">👤 我的</button>
+  <button class="top-btn" onclick="window.openPanel('myPanel')">👤 我的</button>
 </div>
 
 <div class="bottom-bar">
-  <button class="btn btn-secondary" onclick="openRouteTab('recommend')">📌 推荐路线</button>
-  <button class="btn btn-primary" onclick="openRouteTab('custom')">✏️ 自设行程</button>
+  <button class="btn btn-secondary" onclick="window.openRouteTab('recommend')">📌 推荐路线</button>
+  <button class="btn btn-primary" onclick="window.openRouteTab('custom')">✏️ 自设行程</button>
 </div>
 
-<button class="float-btn locate-btn" onclick="locateUser()" title="定位我的位置">📍</button>
-<button class="float-btn voice-toggle-btn" id="voiceToggleBtn" onclick="toggleAutoVoice()" title="自动语音开关">🔊</button>
+<button class="float-btn locate-btn" onclick="window.locateUser()" title="定位我的位置">📍</button>
+<button class="float-btn voice-toggle-btn" id="voiceToggleBtn" onclick="window.toggleAutoVoice()" title="自动语音开关">🔊</button>
 
 <!-- 商户详情面板 -->
 <div class="panel" id="merchantDetailPanel">
-  <div class="panel-header"><h2 id="merchantDetailTitle"></h2><button onclick="closePanel('merchantDetailPanel')">✕</button></div>
+  <div class="panel-header"><h2 id="merchantDetailTitle"></h2><button onclick="window.closePanel('merchantDetailPanel')">✕</button></div>
   <div class="panel-body" id="merchantDetailContent"></div>
 </div>
 
 <!-- 路线面板 -->
 <div class="panel" id="routesPanel">
-  <div class="panel-header"><h2>路线</h2><button onclick="closePanel('routesPanel')">✕</button></div>
+  <div class="panel-header"><h2>路线</h2><button onclick="window.closePanel('routesPanel')">✕</button></div>
   <div class="panel-body">
     <div class="tab-switch" id="routeTabSwitch">
-      <button class="active" onclick="switchRouteTab('recommend')">📌 推荐路线</button>
-      <button onclick="switchRouteTab('custom')">✏️ 自设行程</button>
+      <button class="active" onclick="window.switchRouteTab('recommend')">📌 推荐路线</button>
+      <button onclick="window.switchRouteTab('custom')">✏️ 自设行程</button>
     </div>
     <div id="recommendTab" class="tab-content">
       <h3>📌 推荐路线</h3>
@@ -119,29 +120,29 @@
       <div class="form-group"><label>人数</label><input type="number" id="custom-trip-people" min="1" value="2"></div>
       <div class="toggle-switch"><input type="checkbox" id="custom-fill-switch" checked><label>自动填充空窗期</label></div>
       <div class="form-group"><label>选择景点（点击复选框，可拖动调整顺序）</label><div id="custom-dynamic-route"></div></div>
-      <button class="btn btn-primary" onclick="generateCustomTrip()" style="width:100%; margin-top:12px;">生成行程</button>
+      <button class="btn btn-primary" onclick="window.generateCustomTrip()" style="width:100%; margin-top:12px;">生成行程</button>
       <div id="custom-generated-trip" style="margin-top:12px;"></div>
       <div id="custom-trip-warnings" style="margin-top:12px;"></div>
-      <button class="btn btn-primary hidden" id="custom-save-generated-btn" onclick="saveCustomTrip()" style="width:100%; margin-top:8px;">保存至我的行程</button>
+      <button class="btn btn-primary hidden" id="custom-save-generated-btn" onclick="window.saveCustomTrip()" style="width:100%; margin-top:8px;">保存至我的行程</button>
     </div>
   </div>
 </div>
 
 <!-- 我的面板 -->
 <div class="panel" id="myPanel">
-  <div class="panel-header"><h2>我的</h2><button onclick="closePanel('myPanel')">✕</button></div>
+  <div class="panel-header"><h2>我的</h2><button onclick="window.closePanel('myPanel')">✕</button></div>
   <div class="panel-body">
     <div><label>语言</label><select id="langSelect" style="width:100%"><option value="cn">中文</option><option value="en">English</option><option value="ja">日本語</option></select></div>
     <div style="display:flex; gap:10px; margin-bottom:15px;">
-      <button id="my-tab-trip" class="my-tab active" onclick="switchMyTab('trip')">📅 行程</button>
-      <button id="my-tab-reservation" class="my-tab" onclick="switchMyTab('reservation')">📋 预约</button>
-      <button id="my-tab-feedback" class="my-tab" onclick="switchMyTab('feedback')">💬 留言</button>
+      <button id="my-tab-trip" class="my-tab active" onclick="window.switchMyTab('trip')">📅 行程</button>
+      <button id="my-tab-reservation" class="my-tab" onclick="window.switchMyTab('reservation')">📋 预约</button>
+      <button id="my-tab-feedback" class="my-tab" onclick="window.switchMyTab('feedback')">💬 留言</button>
     </div>
     <div id="myTripContent"></div>
     <div id="myReservationContent" class="hidden"></div>
     <div id="myFeedbackContent" class="hidden">
       <textarea id="feedbackMsg" rows="3" placeholder="建议或问题..."></textarea>
-      <button class="btn btn-primary" onclick="submitFeedback()" style="width:100%; margin-top:8px;">提交</button>
+      <button class="btn btn-primary" onclick="window.submitFeedback()" style="width:100%; margin-top:8px;">提交</button>
       <div id="feedbackHistory" style="margin-top:12px;"></div>
     </div>
   </div>
@@ -168,19 +169,26 @@
 </script>
 
 <script type="module">
+  // ============================================================
+  // 导入所有需要的模块
+  // ============================================================
   import { getPois } from './api.js';
   import { getCurrentUser, signInAnonymously, onAuthStateChange } from './auth.js';
-  import { getCountySpots, fetchWeatherForecast, formatTime } from './utils.js';
-  import { initMap, loadPoisToMap, locateUser, setVoiceEnabled, getAllPois } from './map.js';
+  import { getCountySpots, fetchWeatherForecast, getDayWeatherTip } from './utils.js';
+  import { initMap, loadPoisToMap, locateUser, setVoiceEnabled, getAllPois, applyFilter } from './map.js';
   import { generateTripPlan, generateTimeline, loadTransportPresets } from './trip.js';
   import { getMyTrips, saveTrip, deleteTrip, submitFeedback, getMyFeedbacks, loadMyReservations } from './user.js';
 
-  // -------------------- 全局变量 --------------------
+  // ============================================================
+  // 全局变量
+  // ============================================================
   let generatedTripData = null;
   let customRouteLegs = [];
   let allowedPoiOptions = [];
 
-  // -------------------- 面板控制 --------------------
+  // ============================================================
+  // 面板控制
+  // ============================================================
   window.openPanel = (id) => {
     document.getElementById(id).classList.add('active');
   };
@@ -188,7 +196,9 @@
     document.getElementById(id).classList.remove('active');
   };
 
-  // -------------------- 语音控制 --------------------
+  // ============================================================
+  // 语音控制
+  // ============================================================
   window._voiceEnabled = true;
   window.toggleAutoVoice = () => {
     window._voiceEnabled = !window._voiceEnabled;
@@ -196,15 +206,16 @@
     document.getElementById('voiceToggleBtn').textContent = window._voiceEnabled ? '🔊' : '🔇';
   };
 
-  // -------------------- 地图定位 --------------------
+  // ============================================================
+  // 地图定位
+  // ============================================================
   window.locateUser = locateUser;
 
-  // -------------------- 分类筛选 --------------------
+  // ============================================================
+  // 分类筛选
+  // ============================================================
   window.filterPOI = (category) => {
-    import('./map.js').then(module => {
-      module.applyFilter(category);
-    });
-    // 显示分类栏并自动隐藏
+    applyFilter(category);
     const bar = document.getElementById('categoryBar');
     bar.classList.add('show');
     document.getElementById('catTrigger').style.display = 'none';
@@ -233,7 +244,9 @@
     }
   };
 
-  // -------------------- 路线面板切换 --------------------
+  // ============================================================
+  // 路线面板切换
+  // ============================================================
   window.switchRouteTab = (tab) => {
     document.querySelectorAll('#routeTabSwitch button').forEach(btn => btn.classList.remove('active'));
     if (tab === 'recommend') {
@@ -249,11 +262,13 @@
     }
   };
   window.openRouteTab = (tab) => {
-    openPanel('routesPanel');
-    switchRouteTab(tab);
+    window.openPanel('routesPanel');
+    window.switchRouteTab(tab);
   };
 
-  // -------------------- 推荐路线 --------------------
+  // ============================================================
+  // 推荐路线
+  // ============================================================
   async function loadRecommendRoutes() {
     const { default: api } = await import('./api.js');
     const { data } = await api.getRoutes();
@@ -277,7 +292,7 @@
           <div class="route-actions">
             <label>出发日期：<input type="date" class="recommend-date" data-route="${route.id}" value="${new Date().toISOString().slice(0,10)}"></label>
             <label>出发时间：<input type="time" class="recommend-time" data-route="${route.id}" value="${route.start_time||'08:30'}" readonly></label>
-            <button class="btn btn-primary" onclick="generateRecommendRoute(${route.id})">🚀 生成并保存</button>
+            <button class="btn btn-primary" onclick="window.generateRecommendRoute(${route.id})">🚀 生成并保存</button>
           </div>
           <div id="recommend-result-${route.id}" style="margin-top:6px;"></div>
         </div>
@@ -385,7 +400,9 @@
     }
   };
 
-  // -------------------- 自设行程 --------------------
+  // ============================================================
+  // 自设行程
+  // ============================================================
   function initCustomTab() {
     const allPois = getAllPois();
     const allMain = allPois.filter(p => !p.parent_id);
@@ -396,7 +413,7 @@
       return cats.some(c => ALLOWED_CATEGORIES.map(ac => ac.toLowerCase()).includes(c));
     });
     allowedPoiOptions = allowedPoiOptions.filter(p => p.id !== 'county');
-    // 确保没有重复
+    // 去重
     const seen = new Set();
     allowedPoiOptions = allowedPoiOptions.filter(p => {
       if (seen.has(p.id)) return false;
@@ -413,10 +430,10 @@
       const dur = p.visit_duration || 0;
       const checked = customRouteLegs.some(l => l.id === p.id) ? 'checked' : '';
       html += `<div class="checkbox-item">
-        <input type="checkbox" value="${p.id}" ${checked} onchange="toggleCustomSpot('${p.id}')" id="custom-chk-${p.id}">
+        <input type="checkbox" value="${p.id}" ${checked} onchange="window.toggleCustomSpot('${p.id}')" id="custom-chk-${p.id}">
         <label for="custom-chk-${p.id}">${p.name}（${dur}分钟）</label>
-        <button class="move-btn" onclick="moveCustomRouteItem(${index}, -1)" title="上移">▲</button>
-        <button class="move-btn" onclick="moveCustomRouteItem(${index}, 1)" title="下移">▼</button>
+        <button class="move-btn" onclick="window.moveCustomRouteItem(${index}, -1)" title="上移">▲</button>
+        <button class="move-btn" onclick="window.moveCustomRouteItem(${index}, 1)" title="下移">▼</button>
       </div>`;
     });
     document.getElementById('custom-dynamic-route').innerHTML = html || '<p>暂无可用景点</p>';
@@ -556,7 +573,9 @@
     renderCustomDynamicRoute();
   };
 
-  // -------------------- 我的面板 --------------------
+  // ============================================================
+  // 我的面板
+  // ============================================================
   window.switchMyTab = (tab) => {
     document.querySelectorAll('.my-tab').forEach(btn => btn.classList.remove('active'));
     document.getElementById('my-tab-' + tab).classList.add('active');
@@ -572,14 +591,14 @@
     const trips = getMyTrips();
     let html = '';
     trips.forEach((trip, i) => {
-      html += `<div class="card"><div onclick="toggleTripDetail(${i})" style="cursor:pointer;">📅 ${trip.name} | ${trip.date} ${trip.time}</div><div id="trip-detail-${i}" class="hidden">`;
+      html += `<div class="card"><div onclick="window.toggleTripDetail(${i})" style="cursor:pointer;">📅 ${trip.name} | ${trip.date} ${trip.time}</div><div id="trip-detail-${i}" class="hidden">`;
       if (trip.days) trip.days.forEach(day => {
         html += `<div class="day-header">📅 ${day.date}</div>`;
         day.lines.forEach(l => html += `<div class="trip-line">${l}</div>`);
         if (day.weatherTip) html += `<div class="trip-line" style="color:#0d47a1;">${day.weatherTip}</div>`;
       });
       if (trip.tips) html += `<div class="warn-list">${trip.tips.map(t => `<div>${t}</div>`).join('')}</div>`;
-      html += `<button class="btn btn-danger btn-sm" onclick="event.stopPropagation(); deleteTripHandler(${i})">删除</button></div></div>`;
+      html += `<button class="btn btn-danger btn-sm" onclick="event.stopPropagation(); window.deleteTripHandler(${i})">删除</button></div></div>`;
     });
     document.getElementById('myTripContent').innerHTML = html || '<p>暂无保存的行程</p>';
   }
@@ -625,8 +644,12 @@
     const msg = document.getElementById('feedbackMsg').value.trim();
     if (!msg) return alert('请输入内容');
     const user = await getCurrentUser();
+    if (!user) {
+      alert('您尚未登录，请先登录或开启匿名登录功能。');
+      return;
+    }
     try {
-      await submitFeedback(msg, user?.id);
+      await submitFeedback(msg, user.id);
       alert('提交成功');
       document.getElementById('feedbackMsg').value = '';
       loadFeedbackHistory();
@@ -635,7 +658,9 @@
     }
   };
 
-  // -------------------- 商户详情（简化，仅展示） --------------------
+  // ============================================================
+  // 商户详情（点击地图标记调用）
+  // ============================================================
   window.showPoiDetail = async function(poi) {
     const { default: api } = await import('./api.js');
     const { data: m } = await api.getMerchantsByPoi(poi.id);
@@ -679,14 +704,12 @@
       html += '<p style="color:#999;">该商户信息暂未录入，请稍后再来。</p><hr><p>📞 未提供 | 状态：未知 | 停车位：0</p><p>' + (poi.description || '') + '</p>';
     }
     document.getElementById('merchantDetailContent').innerHTML = html;
-    openPanel('merchantDetailPanel');
+    window.openPanel('merchantDetailPanel');
   };
 
-  // 点击地图标记调用（由 map.js 触发，需暴露）
-  // 在 map.js 中已经绑定了 marker 的 click 事件，但需要调用 window.showPoiDetail
-  // 此处我们暂时不覆盖，但保留功能。
-
-  // -------------------- 初始化时间选择器 --------------------
+  // ============================================================
+  // 初始化时间选择器
+  // ============================================================
   function initCustomTimeSelectors() {
     const sel = document.getElementById('custom-trip-time');
     sel.innerHTML = '';
@@ -705,17 +728,26 @@
     document.getElementById('custom-trip-date').value = now.toISOString().slice(0, 10);
   }
 
-  // -------------------- 初始化应用 --------------------
+  // ============================================================
+  // 初始化应用（修复：匿名登录失败不阻塞页面加载）
+  // ============================================================
   async function init() {
     try {
-      // 匿名登录
-      await signInAnonymously();
+      // 尝试匿名登录（非必需，失败则继续）
+      try {
+        await signInAnonymously();
+        console.log('[系统] 匿名登录成功');
+      } catch (anonError) {
+        console.warn('[系统] 匿名登录失败（不影响地图浏览）:', anonError.message);
+        // 不阻塞，继续执行
+      }
+
       // 初始化地图
       initMap('map');
       // 加载POI
       const pois = await getPois();
       loadPoisToMap(pois);
-      // 关键：设置全局 countySpots 供 trip.js 使用
+      // 设置 countySpots
       window.__countySpots = getCountySpots(pois);
       // 加载交通预设
       await loadTransportPresets();
@@ -725,22 +757,16 @@
       locateUser();
       // 渲染我的行程
       renderMyTrip();
-      // 加载留言历史
-      loadFeedbackHistory();
-      // 手动初始化 Bootstrap 选项卡（确保切换）
-      document.querySelectorAll('#routeTabs a, #myTabs a').forEach(el => {
-        if (typeof bootstrap !== 'undefined') {
-          new bootstrap.Tab(el);
-        }
-      });
+      // 加载留言历史（如果有用户则加载，无用户则提示）
+      await loadFeedbackHistory();
       console.log('[系统] 初始化完成');
     } catch (e) {
       console.error('[系统] 初始化失败:', e);
-      alert('初始化失败，请刷新重试或检查控制台错误。');
+      alert('初始化失败：' + e.message + '\n请检查网络或刷新重试。');
     }
   }
 
-  // 页面加载完成后启动
+  // 启动
   init();
 </script>
 </body>

@@ -1,6 +1,8 @@
+// user.js - 游客端“我的”功能
 import { getReservations, insertFeedback, getFeedbacks } from './api.js';
+import { getCurrentUser } from './auth.js';
 
-// 行程本地存储
+// ---------- 行程本地存储 ----------
 export function getMyTrips() {
   return JSON.parse(localStorage.getItem('trips') || '[]');
 }
@@ -15,17 +17,17 @@ export function deleteTrip(index) {
   localStorage.setItem('trips', JSON.stringify(trips));
 }
 
-// 预约（需按 user_id 过滤，此处简化）
+// ---------- 预约 ----------
 export async function loadMyReservations(userId) {
-  // 实际应加 user_id 字段，这里返回全部（仅供演示）
+  // 实际应增加 user_id 字段过滤，此处暂返回全部（可优化）
   return getReservations(null);
 }
 
-// 留言
+// ---------- 留言 ----------
 export async function submitFeedback(message, userId, merchantId = null) {
   return insertFeedback({ user_id: userId, message, merchant_id: merchantId });
 }
 export async function getMyFeedbacks(userId) {
-  // 同理需过滤 user_id
+  // 同样需要过滤 user_id，但现有接口不支持，可后续扩展
   return getFeedbacks(null);
 }

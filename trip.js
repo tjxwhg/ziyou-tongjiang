@@ -1,11 +1,11 @@
-// trip.js - 行程规划核心
+// trip.js - 行程规划引擎
 import { getTransportPresets } from './api.js';
 import {
   DAY_START, DAY_END, LUNCH_START, LUNCH_END, DINNER_START, DINNER_END,
   MEAL_DURATION, NEW_ARRIVAL_CUTOFF, MAX_RETURN_TIME,
-  LONG_SPOT_NAMES, COUNTY_SPOT_KEYWORDS, ALLOWED_CATEGORIES
+  LONG_SPOT_NAMES
 } from './config.js';
-import { getDistance, formatTime, getCountySpots as getCountySpotsUtil } from './utils.js';
+import { formatTime } from './utils.js';
 
 // ---------- 交通预设缓存 ----------
 let transportPresets = {};
@@ -22,7 +22,6 @@ export async function loadTransportPresets() {
 
 export function getTransportTime(fromId, toId, mode) {
   if (fromId === 'mylocation' || toId === 'mylocation') {
-    // 若需要，可调用外部位置，但这里简化返回0
     return 0;
   }
   const fId = fromId === 'county' ? 0 : fromId;
@@ -33,7 +32,7 @@ export function getTransportTime(fromId, toId, mode) {
   return t !== undefined ? t : null;
 }
 
-// ---------- 行程规划引擎（PlanGenerator） ----------
+// ---------- PlanGenerator 类 ----------
 class PlanGenerator {
   constructor(spots, startDate, startTime, mode, getTravelTimeFn, countySpots, allowFill, fillOnlyMeals) {
     this.spots = spots;
@@ -499,8 +498,11 @@ export function generateTripPlan(spots, startDate, startTime, mode, allowFill = 
     return (t != null && !isNaN(t)) ? t : 0;
   };
 
-  // 获取县城景点（依赖 utils 中的函数）
-  const countySpots = getCountySpotsUtil();
+  // 优先从 window.__countySpots 获取县城景点
+  let countySpots = [];
+  if (typeof window !== 'undefined' && window.__countySpots) {
+    countySpots = window.__countySpots;
+  }
 
   const generator = new PlanGenerator(validSpots, startDate, startTime, mode, getTravelTimeFn, countySpots, allowFill, fillOnlyMeals);
   return generator.generate();

@@ -1,3 +1,4 @@
+// merchant.js - 商户端核心功能
 import { getMerchant, updateMerchant, getReservations, insertReservation, updateReservation, getFeedbacks, updateFeedback, uploadFile } from './api.js';
 import { getCurrentUser } from './auth.js';
 
@@ -28,8 +29,11 @@ export async function saveBusinessData(categories, items) {
   sd.businessItems = items;
   // 兼容旧格式
   sd.items = items.map(item => ({
-    name: item.name, price: item.price, duration: item.duration,
-    description: item.description, image: item.image
+    name: item.name,
+    price: item.price,
+    duration: item.duration,
+    description: item.description,
+    image: item.image
   }));
   await updateMerchant(merchant.id, { service_data: sd });
   merchant.service_data = sd;

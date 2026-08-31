@@ -1,7 +1,7 @@
-// utils.js
-import { COUNTY, LONG_SPOT_NAMES, COUNTY_SPOT_KEYWORDS } from './config.js';
+// utils.js - 工具函数
+import { COUNTY_SPOT_KEYWORDS } from './config.js';
 
-// 坐标转换
+// 坐标转换 WGS84 → GCJ02
 export function wgs84ToGcj02(lat, lon) {
   const a = 6378245.0;
   const ee = 0.00669342162296594323;
@@ -16,7 +16,7 @@ export function wgs84ToGcj02(lat, lon) {
     let ret = 300.0 + x + 2.0 * y + 0.1 * x * x + 0.1 * x * y + 0.1 * Math.sqrt(Math.abs(x));
     ret += (20.0 * Math.sin(6.0 * x * Math.PI) + 20.0 * Math.sin(2.0 * x * Math.PI)) * 2.0 / 3.0;
     ret += (20.0 * Math.sin(x * Math.PI) + 40.0 * Math.sin(x / 3.0 * Math.PI)) * 2.0 / 3.0;
-    ret += (150.0 * Math.sin(x / 12.0 * Math.PI) + 300.0 * Math.sin(x / 30.0 * Math.PI)) * 2.0 / 3.0;
+    ret += (150.0 * Math.sin(x / 12.0 * Math.PI) + 320 * Math.sin(x * Math.PI / 30.0)) * 2.0 / 3.0;
     return ret;
   }
   const dLat = transformLat(lon - 105.0, lat - 35.0);
@@ -30,6 +30,7 @@ export function wgs84ToGcj02(lat, lon) {
   return { lat: lat + dLatFinal, lng: lon + dLonFinal };
 }
 
+// 计算两点距离（米）
 export function getDistance(lat1, lng1, lat2, lng2) {
   const R = 6371000;
   const dLat = (lat2 - lat1) * Math.PI / 180;
@@ -38,6 +39,7 @@ export function getDistance(lat1, lng1, lat2, lng2) {
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
 }
 
+// 分钟 → HH:MM
 export function formatTime(m) {
   let hours = Math.floor(m / 60);
   let minutes = m % 60;
@@ -45,7 +47,22 @@ export function formatTime(m) {
   return `${hours.toString().padStart(2,'0')}:${minutes.toString().padStart(2,'0')}`;
 }
 
-// 天气
+// 获取县城景点（用于行程填充）
+export function getCountySpots(allPois) {
+  if (!allPois || allPois.length === 0) return [];
+  return allPois
+    .filter(p => p && p.name && COUNTY_SPOT_KEYWORDS.some(kw => p.name.includes(kw)))
+    .map(p => ({
+      id: p.id,
+      name: p.name,
+      lat: p.lat,
+      lng: p.lng,
+      visitDuration: p.visit_duration || 90,
+      isCounty: true
+    }));
+}
+
+// 天气获取
 let weatherCache = null;
 export async function fetchWeatherForecast() {
   const now = Date.now();
@@ -101,42 +118,14 @@ export function getDayWeatherTip(weatherObj) {
   return tip;
 }
 
-// 语音
-let utterance = null;
+// 语音合成
 export function speak(text, lang = 'zh-CN') {
   if (!('speechSynthesis' in window)) return;
-  cancelSpeech();
-  const u = new SpeechSynthesisUtterance(text);
-  u.lang = lang;
-  u.rate = 0.9;
-  utterance = u;
-  window.speechSynthesis.speak(u);
+  const utterance = new SpeechSynthesisUtterance(text);
+  utterance.lang = lang;
+  utterance.rate = 0.9;
+  window.speechSynthesis.speak(utterance);
 }
 export function cancelSpeech() {
-  if (window.speechSynthesis) {
-    window.speechSynthesis.cancel();
-  }
-  if (utterance) utterance = null;
-}
-
-// 检测长耗时景点
-export function isLongSpot(spot) {
-  if (!spot || !spot.name) return false;
-  return LONG_SPOT_NAMES.some(name => spot.name.includes(name));
-}
-
-// 获取县城景点列表（需要传入 allPois）
-export function getCountySpots(allPois) {
-  if (!allPois) return [];
-  return allPois.filter(p => {
-    if (!p || !p.name) return false;
-    return COUNTY_SPOT_KEYWORDS.some(kw => p.name.includes(kw));
-  }).map(p => ({
-    id: p.id,
-    name: p.name,
-    lat: p.lat,
-    lng: p.lng,
-    visitDuration: p.visit_duration || 90,
-    isCounty: true
-  }));
+  if ('speechSynthesis' in window) window.speechSynthesis.cancel();
 }

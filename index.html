@@ -4,7 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>智游通江</title>
+  <!-- Bootstrap 5 CSS -->
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <!-- Leaflet CSS -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <style>
     * { margin:0; padding:0; box-sizing:border-box; }
@@ -150,765 +152,123 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 
-<script>
-  // ==================== 配置 ====================
-  const SUPABASE_URL = 'YOUR_SUPABASE_URL';      // 请替换
-  const SUPABASE_ANON_KEY = 'YOUR_SUPABASE_ANON_KEY';
-  const POI_CATEGORIES = ['自然景区','红色景区','文博场馆','餐饮住宿','交通枢纽','游玩娱乐','特产购物','公共服务'];
-  const EXCLUDED_TRANSPORT_CATS = ['公共服务','游玩娱乐','特产购物'];
-  const DAY_START = 480, DAY_END = 1080, LUNCH_START = 690, LUNCH_END = 750, DINNER_START = 1050, DINNER_END = 1110, MEAL_DURATION = 60;
-  const NEW_ARRIVAL_CUTOFF = 1020, MAX_RETURN_TIME = 1260;
-  const COUNTY = { lat:31.911705, lng:107.245033, name:'红军广场', id:'county' };
-  const LONG_SPOT_NAMES = ['空山天盆', '诺水河溶洞', '王坪烈士陵园', '红军烈士陵园'];
-  const COUNTY_SPOT_KEYWORDS = ['轿房沟美食街', '银耳博物馆', '红四方面军总指挥部旧址纪念馆', '省委党校旧址纪念馆', '通江花月夜'];
-  const ALLOWED_CATEGORIES = ['自然景区','红色景区','文博场馆'];
-  const NON_VISIT_CATEGORIES = ['交通枢纽','餐饮住宿','公共服务','特产购物','游玩娱乐'];
+<!-- 模块加载（使用 importmap） -->
+<script type="importmap">
+{
+  "imports": {
+    "./config.js": "./config.js",
+    "./api.js": "./api.js",
+    "./auth.js": "./auth.js",
+    "./utils.js": "./utils.js",
+    "./trip.js": "./trip.js",
+    "./map.js": "./map.js",
+    "./user.js": "./user.js"
+  }
+}
+</script>
 
-  // ==================== Supabase 客户端 ====================
-  const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-  let allPois = [], transportPresets = {}, currentGcjPos = null;
-  let userMarker = null, simMarker = null, poiMarkers = [], currentFilterCategory = null;
-  let voiceEnabled = true, lastTriggeredPoiIds = {}, watchId = null, currentAudio = null;
-  let anonymousUserId = null;
-  let generatedTripData = null, customRouteLegs = [], allowedPoiOptions = [];
-  let weatherCache = null;
+<script type="module">
+  import { getPois } from './api.js';
+  import { getCurrentUser, signInAnonymously, onAuthStateChange } from './auth.js';
+  import { getCountySpots, fetchWeatherForecast, formatTime } from './utils.js';
+  import { initMap, loadPoisToMap, locateUser, setVoiceEnabled, getAllPois } from './map.js';
+  import { generateTripPlan, generateTimeline, loadTransportPresets } from './trip.js';
+  import { getMyTrips, saveTrip, deleteTrip, submitFeedback, getMyFeedbacks, loadMyReservations } from './user.js';
 
-  // ==================== 工具函数 ====================
-  function wgs84ToGcj02(lat, lon) {
-    const a = 6378245.0, ee = 0.00669342162296594323;
-    function transformLat(x, y) {
-      let ret = -100.0 + 2.0 * x + 3.0 * y + 0.2 * y * y + 0.1 * x * y + 0.2 * Math.sqrt(Math.abs(x));
-      ret += (20.0 * Math.sin(6.0 * x * Math.PI) + 20.0 * Math.sin(2.0 * x * Math.PI)) * 2.0 / 3.0;
-      ret += (20.0 * Math.sin(y * Math.PI) + 40.0 * Math.sin(y / 3.0 * Math.PI)) * 2.0 / 3.0;
-      ret += (160.0 * Math.sin(y / 12.0 * Math.PI) + 320 * Math.sin(y * Math.PI / 30.0)) * 2.0 / 3.0;
-      return ret;
-    }
-    function transformLon(x, y) {
-      let ret = 300.0 + x + 2.0 * y + 0.1 * x * x + 0.1 * x * y + 0.1 * Math.sqrt(Math.abs(x));
-      ret += (20.0 * Math.sin(6.0 * x * Math.PI) + 20.0 * Math.sin(2.0 * x * Math.PI)) * 2.0 / 3.0;
-      ret += (20.0 * Math.sin(x * Math.PI) + 40.0 * Math.sin(x / 3.0 * Math.PI)) * 2.0 / 3.0;
-      ret += (150.0 * Math.sin(x / 12.0 * Math.PI) + 320 * Math.sin(x * Math.PI / 30.0)) * 2.0 / 3.0;
-      return ret;
-    }
-    const dLat = transformLat(lon - 105.0, lat - 35.0);
-    const dLon = transformLon(lon - 105.0, lat - 35.0);
-    const radLat = lat / 180.0 * Math.PI;
-    let magic = Math.sin(radLat);
-    magic = 1 - ee * magic * magic;
-    const sqrtMagic = Math.sqrt(magic);
-    const dLatFinal = (dLat * 180.0) / ((a * (1 - ee)) / (magic * sqrtMagic) * Math.PI);
-    const dLonFinal = (dLon * 180.0) / (a / sqrtMagic * Math.cos(radLat) * Math.PI);
-    return { lat: lat + dLatFinal, lng: lon + dLonFinal };
-  }
-  function getDistance(lat1, lng1, lat2, lng2) {
-    const R = 6371000;
-    const dLat = (lat2 - lat1) * Math.PI / 180;
-    const dLng = (lng2 - lng1) * Math.PI / 180;
-    const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180) * Math.cos(lat2*Math.PI/180) * Math.sin(dLng/2)**2;
-    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-  }
-  function formatTime(m){ let h=Math.floor(m/60), min=m%60; if(h>=24) h%=24; return `${h.toString().padStart(2,'0')}:${min.toString().padStart(2,'0')}`; }
-  function isNonVisitPoi(poiId){ if(poiId==='county') return false; const p=allPois.find(x=>x.id==poiId); if(!p||!p.category) return false; return p.category.split(',').some(c=>NON_VISIT_CATEGORIES.includes(c.trim())); }
-  function getUserId(){ return anonymousUserId || (localStorage.getItem('vid') || (()=>{ let uid='v_'+Date.now()+Math.random().toString(36); localStorage.setItem('vid',uid); return uid; })()); }
-  function getTodayStr(){ return new Date().toISOString().slice(0,10); }
+  // -------------------- 全局变量 --------------------
+  let generatedTripData = null;
+  let customRouteLegs = [];
+  let allowedPoiOptions = [];
 
-  // ==================== 天气 ====================
-  async function fetchWeatherForecast() {
-    const now = Date.now();
-    if(weatherCache && (now - weatherCache.time < 3600000)) return weatherCache.data;
-    try {
-      const url = `https://api.open-meteo.com/v1/forecast?latitude=31.911705&longitude=107.245033&daily=weathercode,temperature_2m_max,temperature_2m_min,windspeed_10m_max&timezone=Asia/Shanghai&forecast_days=16`;
-      const resp = await fetch(url);
-      if(!resp.ok) throw new Error('天气API请求失败');
-      const data = await resp.json();
-      if(!data.daily || !data.daily.time) throw new Error('天气数据格式异常');
-      const codes = data.daily.weathercode || [], tempsMax = data.daily.temperature_2m_max || [], tempsMin = data.daily.temperature_2m_min || [], winds = data.daily.windspeed_10m_max || [], dates = data.daily.time || [];
-      const codeMap = {0:'晴',1:'晴',2:'晴间多云',3:'多云',45:'雾',48:'雾',51:'小毛毛雨',53:'毛毛雨',55:'大毛毛雨',61:'小雨',63:'中雨',65:'大雨',71:'小雪',73:'中雪',75:'大雪',80:'阵雨',81:'中阵雨',82:'强阵雨',95:'雷暴',96:'雷暴加冰雹',99:'强雷暴加冰雹'};
-      const forecast = dates.map((date,i)=>({date, weather:codeMap[codes[i]]||'未知天气', tempMax:tempsMax[i]!==undefined?Math.round(tempsMax[i]):'--', tempMin:tempsMin[i]!==undefined?Math.round(tempsMin[i]):'--', wind:winds[i]!==undefined?Math.round(winds[i]):'--'}));
-      weatherCache = { time: Date.now(), data: forecast };
-      return forecast;
-    } catch(e){ console.warn('[天气] 获取失败:', e); return null; }
-  }
-  function getDayWeatherTip(w){
-    if(!w) return '⚠️ 天气信息获取失败';
-    let tip = `🌤️ 天气：${w.weather}`;
-    if(w.tempMin!=='--' && w.tempMax!=='--') tip += `，气温 ${w.tempMin}℃ ～ ${w.tempMax}℃`;
-    else if(w.tempMax!=='--') tip += `，最高气温 ${w.tempMax}℃`;
-    if(w.wind!=='--') tip += `，风力 ${w.wind} km/h`;
-    if(w.weather.includes('雨')||w.weather.includes('雷')||w.weather.includes('雾')) tip += '，☔ 有降雨或大雾，建议携带雨具，注意出行安全。';
-    else if(w.tempMax!=='--' && w.tempMax>33) tip += '，☀️ 气温较高，注意防暑防晒，多补充水分。';
-    else if(w.tempMax!=='--' && w.tempMax<10) tip += '，🧥 气温较低，注意保暖。';
-    else tip += '，🌿 天气适宜出行，祝您旅途愉快！';
-    return tip;
-  }
+  // -------------------- 面板控制 --------------------
+  window.openPanel = (id) => {
+    document.getElementById(id).classList.add('active');
+  };
+  window.closePanel = (id) => {
+    document.getElementById(id).classList.remove('active');
+  };
 
-  // ==================== 语音 ====================
-  function activateSpeech(){ if('speechSynthesis' in window){ speechSynthesis.getVoices(); const silent=new SpeechSynthesisUtterance(' '); silent.volume=0; silent.lang='zh-CN'; speechSynthesis.speak(silent); setTimeout(()=>speechSynthesis.cancel(),100); } }
-  function toggleAutoVoice(){
-    voiceEnabled = !voiceEnabled;
-    const btn = document.getElementById('voiceToggleBtn');
-    if(voiceEnabled){ btn.textContent='🔊'; const msg=new SpeechSynthesisUtterance('语音已开启'); msg.lang='zh-CN'; speechSynthesis.speak(msg); if(currentGcjPos) checkVoiceTrigger(currentGcjPos.lat,currentGcjPos.lng); }
-    else { btn.textContent='🔇'; speechSynthesis.cancel(); if(currentAudio){ currentAudio.pause(); currentAudio=null; } const msg=new SpeechSynthesisUtterance('语音已关闭'); msg.lang='zh-CN'; speechSynthesis.speak(msg); }
-  }
-  function triggerVoice(poi){
-    if(!voiceEnabled) return;
-    speechSynthesis.cancel();
-    if(currentAudio){ currentAudio.pause(); currentAudio=null; }
-    if(poi.voice_mp3){ const audio=new Audio(poi.voice_mp3); currentAudio=audio; audio.play().catch(()=>playTTS(poi)); return; }
-    if(poi.voice_cn && poi.voice_cn.startsWith('http')){ const audio=new Audio(poi.voice_cn); currentAudio=audio; audio.play().catch(()=>playTTS(poi)); return; }
-    playTTS(poi);
-  }
-  function playTTS(poi){
-    const lang = document.getElementById('langSelect')?.value || 'cn';
-    let text = poi['voice_'+lang] || poi.voice_cn || poi.description || poi.name;
-    if(text && text.startsWith('http')) text = poi.description || poi.name;
-    if(!text) return;
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = { cn:'zh-CN', en:'en-US', ja:'ja-JP' }[lang] || 'zh-CN';
-    utterance.rate = 0.9;
-    speechSynthesis.speak(utterance);
-  }
-  function checkVoiceTrigger(userLat, userLng){
-    if(!voiceEnabled || !allPois.length) return;
-    const today = getTodayStr();
-    const threshold = 30 + 10;
-    allPois.forEach(poi => {
-      if(!poi.lat || !poi.lng) return;
-      const dist = getDistance(userLat, userLng, poi.lat, poi.lng);
-      if(dist <= threshold && lastTriggeredPoiIds[poi.id] !== today){
-        triggerVoice(poi);
-        lastTriggeredPoiIds[poi.id] = today;
-      }
+  // -------------------- 语音控制 --------------------
+  window._voiceEnabled = true;
+  window.toggleAutoVoice = () => {
+    window._voiceEnabled = !window._voiceEnabled;
+    setVoiceEnabled(window._voiceEnabled);
+    document.getElementById('voiceToggleBtn').textContent = window._voiceEnabled ? '🔊' : '🔇';
+  };
+
+  // -------------------- 地图定位 --------------------
+  window.locateUser = locateUser;
+
+  // -------------------- 分类筛选 --------------------
+  window.filterPOI = (category) => {
+    import('./map.js').then(module => {
+      module.applyFilter(category);
     });
-  }
-
-  // ==================== 定位 ====================
-  function locateUser(){
-    if(!navigator.geolocation){ alert('您的浏览器不支持定位'); return; }
-    activateSpeech();
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        const raw = { lat: position.coords.latitude, lng: position.coords.longitude };
-        const gcj = wgs84ToGcj02(raw.lat, raw.lng);
-        currentGcjPos = gcj;
-        if(userMarker) map.removeLayer(userMarker);
-        userMarker = L.marker([gcj.lat, gcj.lng], { icon: L.divIcon({ html: '<div style="background:#2196F3; width:20px; height:20px; border-radius:50%; border:2px solid white; box-shadow:0 0 8px rgba(0,0,0,0.3);"></div>', iconSize: [20,20] }) }).addTo(map).bindPopup('我的位置').openPopup();
-        map.setView([gcj.lat, gcj.lng], 15);
-        startWatching();
-        checkVoiceTrigger(gcj.lat, gcj.lng);
-      },
-      (error) => { console.warn('定位失败:', error.message); },
-      { enableHighAccuracy: true, timeout: 10000 }
-    );
-  }
-  function startWatching(){
-    if(!navigator.geolocation) return;
-    if(watchId) navigator.geolocation.clearWatch(watchId);
-    watchId = navigator.geolocation.watchPosition(
-      (pos) => {
-        const raw = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-        const gcj = wgs84ToGcj02(raw.lat, raw.lng);
-        currentGcjPos = gcj;
-        if(userMarker) map.removeLayer(userMarker);
-        userMarker = L.marker([gcj.lat, gcj.lng], { icon: L.divIcon({ html: '<div style="background:#2196F3; width:20px; height:20px; border-radius:50%; border:2px solid white; box-shadow:0 0 8px rgba(0,0,0,0.3);"></div>', iconSize: [20,20] }) }).addTo(map);
-        checkVoiceTrigger(gcj.lat, gcj.lng);
-      },
-      (err) => { console.warn('定位监听错误', err); },
-      { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 }
-    );
-  }
-
-  // ==================== 地图初始化 ====================
-  let map = null;
-  function initMap() {
-    map = L.map('map', { zoomControl: false }).setView([31.911705, 107.245033], 12);
-    L.tileLayer('https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}', { subdomains:['1','2','3','4'], maxZoom:18 }).addTo(map);
-    L.control.zoom({ position: 'topleft' }).addTo(map);
-    return map;
-  }
-
-  // ==================== POI 加载与渲染 ====================
-  async function loadAllPOIs() {
-    const { data } = await sb.from('ztj_poi').select('*').eq('status','active');
-    allPois = data || [];
-    renderPOIs(allPois);
-    await loadTransportPresets();
-  }
-  function renderPOIs(pois) {
-    poiMarkers.forEach(m => map.removeLayer(m));
-    poiMarkers = [];
-    const poiColors = { '自然景区':'#2E7D32', '红色景区':'#9C27B0', '文博场馆':'#9C27B0', '餐饮住宿':'#FF9800', '停车场':'#00BCD4', '公共服务':'#607D8B' };
-    pois.forEach(p => {
-      const cat = (p.category||'').split(',')[0]||'其他';
-      const color = poiColors[cat]||'#999';
-      const icon = L.divIcon({ html:`<div style="background:${color}; width:20px; height:20px; border-radius:50%; border:2px solid white;"></div>`, iconSize:[20,20] });
-      const marker = L.marker([p.lat,p.lng],{icon}).addTo(map).on('click', ()=> showPoiDetail(p));
-      marker.poiData = p;
-      poiMarkers.push(marker);
-    });
-    if(currentFilterCategory) applyFilter(currentFilterCategory);
-  }
-  function applyFilter(category){
-    poiMarkers.forEach(marker => {
-      const poi = marker.poiData;
-      if(!poi) return;
-      const cats = (poi.category||'').split(',').map(c=>c.trim());
-      const match = cats.some(c=>c===category);
-      if(match){
-        if(!marker._icon) map.addLayer(marker);
-        const color = { '餐饮住宿':'#FF9800','交通枢纽':'#00BCD4','游玩娱乐':'#FF5722','特产购物':'#FFC107','公共服务':'#607D8B' }[category] || '#999';
-        marker.setIcon(L.divIcon({ html:`<div style="background:${color}; width:30px; height:30px; border-radius:50%; border:3px solid #fff; box-shadow:0 0 12px rgba(0,0,0,0.5);"></div>`, iconSize:[30,30] }));
-      } else {
-        if(marker._icon) map.removeLayer(marker);
-      }
-    });
-  }
-  function clearFilter(){
-    currentFilterCategory = null;
-    document.querySelectorAll('.cat-btn').forEach(btn=>btn.classList.remove('active'));
-    poiMarkers.forEach(marker => {
-      if(!marker._icon) map.addLayer(marker);
-      const poi = marker.poiData;
-      if(poi){
-        const cat = (poi.category||'').split(',')[0]||'其他';
-        const color = { '自然景区':'#2E7D32','红色景区':'#9C27B0','文博场馆':'#9C27B0','餐饮住宿':'#FF9800','停车场':'#00BCD4','公共服务':'#607D8B' }[cat]||'#999';
-        marker.setIcon(L.divIcon({ html:`<div style="background:${color}; width:20px; height:20px; border-radius:50%; border:2px solid white;"></div>`, iconSize:[20,20] }));
-      }
-    });
-    document.getElementById('categoryBar').classList.remove('show');
-    document.getElementById('catTrigger').style.display = 'block';
-    clearTimeout(window.filterTimeoutId);
-  }
-  function filterPOI(category){
-    currentFilterCategory = category;
-    applyFilter(category);
-    clearTimeout(window.filterTimeoutId);
-    window.filterTimeoutId = setTimeout(() => {
-      document.getElementById('categoryBar').classList.remove('show');
-      document.getElementById('catTrigger').style.display = 'block';
-    }, 5000);
-    document.getElementById('categoryBar').classList.add('show');
+    // 显示分类栏并自动隐藏
+    const bar = document.getElementById('categoryBar');
+    bar.classList.add('show');
     document.getElementById('catTrigger').style.display = 'none';
     document.querySelectorAll('.cat-btn').forEach(btn => {
       btn.classList.toggle('active', btn.dataset.category === category);
     });
-  }
-  function closeCategoryBar(){
+    clearTimeout(window.filterTimeoutId);
+    window.filterTimeoutId = setTimeout(() => {
+      bar.classList.remove('show');
+      document.getElementById('catTrigger').style.display = 'block';
+    }, 5000);
+  };
+  window.closeCategoryBar = () => {
     document.getElementById('categoryBar').classList.remove('show');
     document.getElementById('catTrigger').style.display = 'block';
     clearTimeout(window.filterTimeoutId);
-  }
-  function toggleCategoryBar(){
+  };
+  window.toggleCategoryBar = () => {
     const bar = document.getElementById('categoryBar');
-    if(bar.classList.contains('show')){ bar.classList.remove('show'); document.getElementById('catTrigger').style.display='block'; }
-    else { bar.classList.add('show'); document.getElementById('catTrigger').style.display='none'; if(currentFilterCategory){ clearTimeout(window.filterTimeoutId); window.filterTimeoutId=setTimeout(()=>{ document.getElementById('categoryBar').classList.remove('show'); document.getElementById('catTrigger').style.display='block'; },5000); } }
-  }
-
-  // ==================== 商户详情 ====================
-  async function showPoiDetail(poi){
-    const { data: m } = await sb.from('ztj_merchants').select('*').eq('poi_id', poi.id).maybeSingle();
-    document.getElementById('merchantDetailTitle').textContent = poi.name;
-    let html = '';
-    if(m){
-      const sd = m.service_data || {};
-      const categories = sd.businessCategories || [];
-      const items = sd.businessItems || [];
-      if(categories.length>0 && items.length>0){
-        categories.forEach(cat => {
-          const catItems = items.filter(item => item.category === cat);
-          if(catItems.length===0) return;
-          html += `<div class="category-group"><div onclick="this.nextElementSibling.classList.toggle('hidden')" style="cursor:pointer;background:#f9f9f9;padding:8px;border:1px solid #ddd;border-radius:4px;margin:4px 0;">📁 ${cat} (${catItems.length})</div><div class="hidden">`;
-          catItems.forEach((item, idx) => {
-            if(!item.name) return;
-            let priceStr = item.price ? ` ${item.price}` : '';
-            let durStr = item.duration ? ` ${item.duration}` : '';
-            let descStr = item.description ? `<p>${item.description}</p>` : '';
-            let imgHtml = item.image ? `<div class="biz-image-box"><img src="${item.image}" alt="${item.name}"></div>` : '';
-            html += `<div class="card"><div><b>${idx+1}. ${item.name}</b>${priceStr}${durStr}${descStr}</div>${imgHtml}</div>`;
-          });
-          html += `</div></div>`;
-        });
-      } else {
-        const flatItems = sd.items || [];
-        flatItems.filter(item=>item.name).forEach((item,idx)=>{
-          let priceStr = item.price ? ` ${item.price}` : '';
-          let durStr = item.duration ? ` ${item.duration}` : '';
-          let descStr = item.description ? `<p>${item.description}</p>` : '';
-          let imgHtml = item.image ? `<div class="biz-image-box"><img src="${item.image}" alt="${item.name}"></div>` : '';
-          html += `<div class="card"><div><b>${idx+1}. ${item.name}</b>${priceStr}${durStr}${descStr}</div>${imgHtml}</div>`;
-        });
-      }
-      html += `<button class="reserve-btn" onclick="toggleReserveForm('${m.id}')">📋 预约管理</button>`;
-      html += `<div id="reserve-form-${m.id}" class="hidden" style="margin-top:10px;"></div>`;
-      let phone = m.phone || '未提供';
-      let status = m.status === 'open' ? '营业中' : (m.status === 'closed' ? '休息' : '繁忙');
-      let parking = m.parking_spots ?? 0;
-      html += `<hr><p>📞 ${phone} | 状态：${status} | 停车位：${parking}</p><p>${poi.description||''}</p>`;
+    if (bar.classList.contains('show')) {
+      bar.classList.remove('show');
+      document.getElementById('catTrigger').style.display = 'block';
     } else {
-      html += '<p style="color:#999;">该商户信息暂未录入，请稍后再来。</p><hr><p>📞 未提供 | 状态：未知 | 停车位：0</p><p>'+ (poi.description||'') +'</p>';
-    }
-    document.getElementById('merchantDetailContent').innerHTML = html;
-    openPanel('merchantDetailPanel');
-  }
-  async function toggleReserveForm(merchantId){
-    const formDiv = document.getElementById(`reserve-form-${merchantId}`);
-    if(!formDiv.classList.contains('hidden')){ formDiv.classList.add('hidden'); return; }
-    const { data: m } = await sb.from('ztj_merchants').select('service_data').eq('id', merchantId).single();
-    const categories = (m && m.service_data && m.service_data.categories) ? m.service_data.categories : [];
-    const businessItems = (m && m.service_data && m.service_data.businessItems) ? m.service_data.businessItems : [];
-    let catOptions = categories.map(c=>`<option value="${c}">${c}</option>`).join('');
-    let timeOptions = '';
-    for(let h=8; h<17; h++) timeOptions += `<option value="${h.toString().padStart(2,'0')}:00-${(h+1).toString().padStart(2,'0')}:00">${h.toString().padStart(2,'0')}:00-${(h+1).toString().padStart(2,'0')}:00</option>`;
-    formDiv.innerHTML = `
-      <div class="form-group"><label><span class="required-star">*</span> 预约日期</label><input type="date" id="res-date-${merchantId}"></div>
-      <div class="form-group"><label><span class="required-star">*</span> 预约时段</label><select id="res-time-${merchantId}">${timeOptions}</select></div>
-      <div class="form-group"><label><span class="required-star">*</span> 活动类别</label><select id="res-cat-${merchantId}" onchange="updateReserveContent('${merchantId}')">${catOptions}</select></div>
-      <div class="form-group"><label>预约内容（可多选）</label><div id="res-content-${merchantId}" class="checkbox-group"><span style="color:#999;">请先选择活动类别</span></div></div>
-      <div class="form-group"><label><span class="required-star">*</span> 预约人数</label><input type="number" id="res-count-${merchantId}" min="1"></div>
-      <div class="form-group"><label><span class="required-star">*</span> 联系电话</label><input id="res-phone-${merchantId}"></div>
-      <div class="form-group"><label>单位名称</label><input id="res-unit-${merchantId}"></div>
-      <div class="form-group"><label>联系人</label><input id="res-name-${merchantId}"></div>
-      <div class="form-group"><label>预约地点</label><input id="res-room-${merchantId}"></div>
-      <div class="form-group"><label>备注</label><textarea id="res-remark-${merchantId}" rows="2"></textarea></div>
-      <button class="btn btn-primary" onclick="submitReservationDirect('${merchantId}')">提交预约</button>
-      <button class="btn btn-secondary" onclick="toggleReserveForm('${merchantId}')">取消</button>
-    `;
-    window[`bizItems_${merchantId}`] = businessItems;
-    formDiv.classList.remove('hidden');
-    updateReserveContent(merchantId);
-  }
-  window.updateReserveContent = function(merchantId){
-    const cat = document.getElementById(`res-cat-${merchantId}`)?.value;
-    const container = document.getElementById(`res-content-${merchantId}`);
-    const bizItems = window[`bizItems_${merchantId}`] || [];
-    if(!cat || !container) return;
-    const trimmedCat = cat.trim().toLowerCase();
-    const filtered = bizItems.filter(item => { if(!item.category) return false; return item.category.trim().toLowerCase() === trimmedCat; });
-    if(filtered.length > 0){
-      container.innerHTML = filtered.map((item, idx) => `<label><input type="checkbox" value="${item.name}" data-price="${item.price||''}"><span>${item.name} ${item.price ? ' - ' + item.price : ''}</span></label>`).join('');
-    } else {
-      container.innerHTML = '<span style="color:#999;">无相关项目</span>';
+      bar.classList.add('show');
+      document.getElementById('catTrigger').style.display = 'none';
     }
   };
-  async function submitReservationDirect(merchantId){
-    const date = document.getElementById(`res-date-${merchantId}`).value;
-    const timeRange = document.getElementById(`res-time-${merchantId}`).value;
-    const count = document.getElementById(`res-count-${merchantId}`).value;
-    const phone = document.getElementById(`res-phone-${merchantId}`).value.trim();
-    const category = document.getElementById(`res-cat-${merchantId}`).value;
-    if(!date || !timeRange || !category || !count || !phone){ alert('请填写所有必填项'); return; }
-    const [start, end] = timeRange.split('-');
-    const unit = document.getElementById(`res-unit-${merchantId}`).value.trim();
-    const name = document.getElementById(`res-name-${merchantId}`).value.trim();
-    const room = document.getElementById(`res-room-${merchantId}`).value.trim();
-    const remarkBase = document.getElementById(`res-remark-${merchantId}`).value.trim();
-    const checkboxes = document.querySelectorAll(`#res-content-${merchantId} input[type="checkbox"]:checked`);
-    let selectedItems = []; checkboxes.forEach(cb=>selectedItems.push(cb.value));
-    const contentStr = selectedItems.join('、');
-    let finalRemark = '';
-    if(category) finalRemark += `类别：${category}`;
-    if(contentStr) finalRemark += (finalRemark ? '|' : '') + `内容：${contentStr}`;
-    if(remarkBase) finalRemark += (finalRemark ? '|' : '') + remarkBase;
-    const { error } = await sb.from('reservations').insert({
-      merchant_id: merchantId,
-      reservation_date: date,
-      time_slot_start: start,
-      time_slot_end: end,
-      phone, unit, name, room,
-      visitor_count: parseInt(count) || 0,
-      remark: finalRemark,
-      status:'pending',
-      user_id: getUserId()
-    });
-    if(error) alert('提交失败：'+error.message);
-    else { alert('预约已提交'); document.getElementById(`reserve-form-${merchantId}`).classList.add('hidden'); }
-  }
 
-  // ==================== 交通预设 ====================
-  async function loadTransportPresets(){
-    const { data } = await sb.from('ztj_transport_presets').select('*');
-    transportPresets = {};
-    if(data) data.forEach(p => { transportPresets[`${p.from_poi_id}_${p.to_poi_id}`] = p.time_min; });
-  }
-  function getTransportTime(fromId, toId, mode){
-    if(fromId === 'mylocation' || toId === 'mylocation'){ return 0; }
-    const fId = fromId === 'county' ? 0 : fromId;
-    const tId = toId === 'county' ? 0 : toId;
-    let t = transportPresets[`${fId}_${tId}`];
-    if(t !== undefined) return t;
-    t = transportPresets[`${tId}_${fId}`];
-    return t !== undefined ? t : null;
-  }
+  // -------------------- 路线面板切换 --------------------
+  window.switchRouteTab = (tab) => {
+    document.querySelectorAll('#routeTabSwitch button').forEach(btn => btn.classList.remove('active'));
+    if (tab === 'recommend') {
+      document.querySelector('#routeTabSwitch button:first-child').classList.add('active');
+      document.getElementById('recommendTab').classList.remove('hidden');
+      document.getElementById('customTab').classList.add('hidden');
+      loadRecommendRoutes();
+    } else {
+      document.querySelector('#routeTabSwitch button:last-child').classList.add('active');
+      document.getElementById('recommendTab').classList.add('hidden');
+      document.getElementById('customTab').classList.remove('hidden');
+      initCustomTab();
+    }
+  };
+  window.openRouteTab = (tab) => {
+    openPanel('routesPanel');
+    switchRouteTab(tab);
+  };
 
-  // ==================== 行程规划引擎（PlanGenerator） ====================
-  class PlanGenerator {
-    constructor(spots, startDate, startTime, mode, getTravelTimeFn, countySpots, allowFill, fillOnlyMeals){
-      this.spots = spots; this.startDate = new Date(startDate); this.startTime = startTime; this.mode = mode;
-      this.getTravelTime = getTravelTimeFn || ((a,b)=>0);
-      this.countySpots = countySpots || [];
-      this.allowFill = allowFill !== undefined ? allowFill : true;
-      this.fillOnlyMeals = fillOnlyMeals === true;
-      this.currentDate = new Date(this.startDate);
-      this.currentMin = this.startTime;
-      this.lastPoi = { id: 'county', name: '红军广场', lat: 0, lng: 0 };
-      this.allNodes = [];
-      this.usedIds = new Set();
-      this.longSpots = [];
-      this.halfSpots = [];
-      this.shortSpots = [];
-      this.classifySpots();
-      this.halfSpots.sort((a,b)=>b.visitDuration - a.visitDuration);
-      this.lunchInserted = false; this.dinnerInserted = false;
-    }
-    classifySpots(){
-      for(let s of this.spots){
-        if(!s || !s.id) continue;
-        if(LONG_SPOT_NAMES.some(name=>s.name.includes(name))) this.longSpots.push(s);
-        else if(s.visitDuration >= 100) this.halfSpots.push(s);
-        else this.shortSpots.push(s);
-      }
-    }
-    endDay(){ if(this.allNodes.length>0 && this.allNodes[this.allNodes.length-1].type!=='dayEnd') this.allNodes.push({ type:'dayEnd' }); }
-    insertMeal(currentTime){
-      let time = currentTime;
-      if(!this.lunchInserted && time>=LUNCH_START && time<LUNCH_END+30){ let start=Math.max(time,LUNCH_START), end=start+MEAL_DURATION; this.allNodes.push({type:'meal',name:'午餐',startTime:start,endTime:end,duration:MEAL_DURATION}); this.lunchInserted=true; return end; }
-      if(!this.dinnerInserted && time>=DINNER_START && time<DINNER_END+30){ let start=Math.max(time,DINNER_START), end=start+MEAL_DURATION; this.allNodes.push({type:'meal',name:'晚餐',startTime:start,endTime:end,duration:MEAL_DURATION}); this.dinnerInserted=true; return end; }
-      return time;
-    }
-    arrangeSpot(spot, travelTime, startTime){
-      let nodes=[], time=startTime, poi=this.lastPoi;
-      if(travelTime>0){
-        if(time+travelTime>1440) return { error:'交通跨天' };
-        nodes.push({type:'transport',name:spot.name,startTime:time,endTime:time+travelTime,duration:travelTime,fromPoi:poi.id,toPoi:spot.id,isReturn:false});
-        time += travelTime; poi = { id:spot.id, name:spot.name, lat:spot.lat, lng:spot.lng };
-      }
-      time = this.insertMeal(time);
-      let remaining = spot.visitDuration || 0;
-      if(time>=DAY_END) return { nodes, newTime:time, newPoi:poi, remaining, error:null };
-      if(time>=NEW_ARRIVAL_CUTOFF) return { nodes, newTime:time, newPoi:poi, remaining, error:null };
-      while(remaining>0){
-        if(time>=DAY_END) return { nodes, newTime:time, newPoi:poi, remaining, error:null };
-        let mealInserted=false;
-        if(remaining>60){ let newTime=this.insertMeal(time); if(newTime>time){ time=newTime; mealInserted=true; } }
-        if(!mealInserted){
-          let nextMeal=DAY_END;
-          if(!this.lunchInserted && time<LUNCH_START) nextMeal = Math.min(nextMeal, LUNCH_START);
-          else if(!this.dinnerInserted && time<DINNER_START) nextMeal = Math.min(nextMeal, DINNER_START);
-          let maxSeg = nextMeal - time;
-          if(maxSeg<=0) maxSeg=1;
-          let seg = Math.min(remaining, maxSeg, DAY_END - time);
-          if(seg<=0) break;
-          nodes.push({type:'visit',name:spot.name,startTime:time,endTime:time+seg,duration:seg,spotId:spot.id});
-          time += seg; remaining -= seg;
-        }
-      }
-      return { nodes, newTime:time, newPoi:poi, remaining, error:null };
-    }
-    addReturnToCounty(currentTime){
-      let travelBack = this.getTravelTime(this.lastPoi.id, 'county', this.mode);
-      if(travelBack == null) travelBack = 0;
-      if(currentTime+travelBack>1440) return { error:'返回县城交通跨天' };
-      let newTime = currentTime + travelBack;
-      if(newTime>MAX_RETURN_TIME) return { error: `返回县城交通结束时间 ${formatTime(newTime)} 超过21:00` };
-      this.allNodes.push({type:'transport',name:'返回县城',startTime:currentTime,endTime:newTime,duration:travelBack,fromPoi:this.lastPoi.id,toPoi:'county',isReturn:true});
-      newTime = this.insertMeal(newTime);
-      this.lastPoi = { id:'county', name:'红军广场', lat:0, lng:0 };
-      return { newTime };
-    }
-    fillGap(maxEndTime){
-      if(!this.allowFill || this.fillOnlyMeals) return;
-      while(this.currentMin < maxEndTime){
-        let newTime = this.insertMeal(this.currentMin);
-        if(newTime > this.currentMin){ this.currentMin = newTime; continue; }
-        let found=false;
-        for(let s of this.shortSpots){
-          if(this.usedIds.has(s.id)) continue;
-          let t = this.getTravelTime(this.lastPoi.id, s.id, this.mode);
-          if(t==null) t=0;
-          if(this.currentMin+t >= NEW_ARRIVAL_CUTOFF) continue;
-          if(this.currentMin+t+s.visitDuration > maxEndTime) continue;
-          let result = this.arrangeSpot(s,t,this.currentMin);
-          if(result.error) continue;
-          this.allNodes.push(...result.nodes);
-          this.currentMin = result.newTime;
-          this.lastPoi = result.newPoi;
-          this.usedIds.add(s.id);
-          found=true; break;
-        }
-        if(found) continue;
-        for(let c of this.countySpots){
-          if(this.usedIds.has(c.id)) continue;
-          let t = this.getTravelTime(this.lastPoi.id, c.id, this.mode);
-          if(t==null) t=0;
-          if(this.currentMin+t >= NEW_ARRIVAL_CUTOFF) continue;
-          if(this.currentMin+t+c.visitDuration > maxEndTime) continue;
-          let result = this.arrangeSpot(c,t,this.currentMin);
-          if(result.error) continue;
-          this.allNodes.push(...result.nodes);
-          this.currentMin = result.newTime;
-          this.lastPoi = result.newPoi;
-          this.usedIds.add(c.id);
-          found=true; break;
-        }
-        if(!found) break;
-      }
-    }
-    processLongSpots(){
-      for(let spot of this.longSpots){
-        if(this.usedIds.has(spot.id)) continue;
-        if(this.currentMin !== DAY_START){
-          this.endDay();
-          this.currentDate.setDate(this.currentDate.getDate()+1);
-          this.currentMin = DAY_START;
-          this.lastPoi = { id:'county', name:'红军广场', lat:0, lng:0 };
-          this.lunchInserted = false; this.dinnerInserted = false;
-        }
-        let travel = this.getTravelTime(this.lastPoi.id, spot.id, this.mode);
-        if(travel==null) travel=0;
-        if(this.currentMin+travel+spot.visitDuration > DAY_END) throw new Error(`长耗时景区 "${spot.name}" 所需时间超过18:00`);
-        if(this.currentMin+travel >= NEW_ARRIVAL_CUTOFF) throw new Error(`长耗时景区 "${spot.name}" 游览开始超过17:00`);
-        let result = this.arrangeSpot(spot, travel, this.currentMin);
-        if(result.error) throw new Error(`安排 "${spot.name}" 失败: ${result.error}`);
-        this.allNodes.push(...result.nodes);
-        this.currentMin = result.newTime;
-        this.lastPoi = result.newPoi;
-        if(result.remaining > 0) throw new Error(`长耗时 "${spot.name}" 剩余 ${result.remaining} 分钟无法完成`);
-        if(this.allowFill && !this.fillOnlyMeals) this.fillGap(DAY_END);
-        let ret = this.addReturnToCounty(this.currentMin);
-        if(ret.error) throw new Error(`返回县城失败: ${ret.error}`);
-        this.currentMin = ret.newTime;
-        this.endDay();
-        this.currentDate.setDate(this.currentDate.getDate()+1);
-        this.currentMin = DAY_START;
-        this.lastPoi = { id:'county', name:'红军广场', lat:0, lng:0 };
-        this.lunchInserted = false; this.dinnerInserted = false;
-        this.usedIds.add(spot.id);
-      }
-    }
-    processHalfSpots(){
-      let queue = [...this.halfSpots];
-      let attempts=0;
-      while(queue.length>0 && attempts<200){
-        attempts++;
-        let spot = queue.shift();
-        if(this.usedIds.has(spot.id)) continue;
-        let travel = this.getTravelTime(this.lastPoi.id, spot.id, this.mode);
-        if(travel==null) travel=0;
-        let slot='morning';
-        if(this.currentMin>=LUNCH_END && this.currentMin<DINNER_START) slot='afternoon';
-        else if(this.currentMin>=DINNER_START) slot='night';
-        if(slot==='night'){
-          this.endDay();
-          this.currentDate.setDate(this.currentDate.getDate()+1);
-          this.currentMin = DAY_START;
-          this.lastPoi = { id:'county', name:'红军广场', lat:0, lng:0 };
-          this.lunchInserted=false; this.dinnerInserted=false;
-          slot='morning';
-          travel = this.getTravelTime(this.lastPoi.id, spot.id, this.mode);
-        }
-        if(this.currentMin>=LUNCH_START && this.currentMin<LUNCH_END){ this.currentMin=LUNCH_END; slot='afternoon'; }
-        if(slot==='morning'){
-          let blockStart = Math.max(this.currentMin, DAY_START);
-          let blockEnd = LUNCH_START;
-          let available = blockEnd - blockStart;
-          if(travel+spot.visitDuration <= available && blockStart+travel < NEW_ARRIVAL_CUTOFF){
-            let result = this.arrangeSpot(spot, travel, blockStart);
-            if(result.error){ queue.push(spot); continue; }
-            this.allNodes.push(...result.nodes);
-            this.currentMin = result.newTime;
-            this.lastPoi = result.newPoi;
-            if(this.allowFill && !this.fillOnlyMeals) this.fillGap(blockEnd);
-            this.currentMin = this.insertMeal(this.currentMin);
-            if(this.allowFill && !this.fillOnlyMeals) this.fillGap(DINNER_START);
-            let ret = this.addReturnToCounty(this.currentMin);
-            if(ret.error) throw new Error(`返回县城失败: ${ret.error}`);
-            this.currentMin = ret.newTime;
-            this.endDay();
-            this.currentDate.setDate(this.currentDate.getDate()+1);
-            this.currentMin = DAY_START;
-            this.lastPoi = { id:'county', name:'红军广场', lat:0, lng:0 };
-            this.lunchInserted=false; this.dinnerInserted=false;
-            this.usedIds.add(spot.id);
-            continue;
-          } else {
-            if(this.allowFill && !this.fillOnlyMeals) this.fillGap(LUNCH_START);
-            this.currentMin = LUNCH_END;
-            slot='afternoon';
-            travel = this.getTravelTime(this.lastPoi.id, spot.id, this.mode);
-          }
-        }
-        if(slot==='afternoon'){
-          let blockStart = Math.max(this.currentMin, LUNCH_END);
-          let blockEnd = DINNER_START;
-          if(blockStart >= NEW_ARRIVAL_CUTOFF){
-            this.endDay();
-            this.currentDate.setDate(this.currentDate.getDate()+1);
-            this.currentMin = DAY_START;
-            this.lastPoi = { id:'county', name:'红军广场', lat:0, lng:0 };
-            this.lunchInserted=false; this.dinnerInserted=false;
-            queue.push(spot);
-            continue;
-          }
-          let available = blockEnd - blockStart;
-          if(travel+spot.visitDuration <= available && blockStart+travel < NEW_ARRIVAL_CUTOFF){
-            let result = this.arrangeSpot(spot, travel, blockStart);
-            if(result.error){ queue.push(spot); continue; }
-            this.allNodes.push(...result.nodes);
-            this.currentMin = result.newTime;
-            this.lastPoi = result.newPoi;
-            if(this.allowFill && !this.fillOnlyMeals){ this.fillGap(blockEnd); this.fillGap(DAY_END); }
-            let ret = this.addReturnToCounty(this.currentMin);
-            if(ret.error) throw new Error(`返回县城失败: ${ret.error}`);
-            this.currentMin = ret.newTime;
-            this.endDay();
-            this.currentDate.setDate(this.currentDate.getDate()+1);
-            this.currentMin = DAY_START;
-            this.lastPoi = { id:'county', name:'红军广场', lat:0, lng:0 };
-            this.lunchInserted=false; this.dinnerInserted=false;
-            this.usedIds.add(spot.id);
-            continue;
-          } else {
-            if(this.allowFill && !this.fillOnlyMeals) this.fillGap(DINNER_START);
-            this.endDay();
-            this.currentDate.setDate(this.currentDate.getDate()+1);
-            this.currentMin = DAY_START;
-            this.lastPoi = { id:'county', name:'红军广场', lat:0, lng:0 };
-            this.lunchInserted=false; this.dinnerInserted=false;
-            queue.push(spot);
-            continue;
-          }
-        }
-      }
-    }
-    processShortSpots(){
-      if(!this.allowFill || this.fillOnlyMeals) return;
-      let anyInserted=true;
-      while(anyInserted){
-        anyInserted=false;
-        if(this.currentMin >= NEW_ARRIVAL_CUTOFF) break;
-        for(let s of this.shortSpots){
-          if(this.usedIds.has(s.id)) continue;
-          let t = this.getTravelTime(this.lastPoi.id, s.id, this.mode);
-          if(t==null) t=0;
-          if(this.currentMin+t >= NEW_ARRIVAL_CUTOFF) continue;
-          if(this.currentMin+t+s.visitDuration > DAY_END) continue;
-          let result = this.arrangeSpot(s,t,this.currentMin);
-          if(result.error) continue;
-          this.allNodes.push(...result.nodes);
-          this.currentMin = result.newTime;
-          this.lastPoi = result.newPoi;
-          this.usedIds.add(s.id);
-          anyInserted=true; break;
-        }
-        if(anyInserted) continue;
-        for(let c of this.countySpots){
-          if(this.usedIds.has(c.id)) continue;
-          let t = this.getTravelTime(this.lastPoi.id, c.id, this.mode);
-          if(t==null) t=0;
-          if(this.currentMin+t >= NEW_ARRIVAL_CUTOFF) continue;
-          if(this.currentMin+t+c.visitDuration > DAY_END) continue;
-          let result = this.arrangeSpot(c,t,this.currentMin);
-          if(result.error) continue;
-          this.allNodes.push(...result.nodes);
-          this.currentMin = result.newTime;
-          this.lastPoi = result.newPoi;
-          this.usedIds.add(c.id);
-          anyInserted=true; break;
-        }
-      }
-    }
-    generate(){
-      try {
-        if(this.currentMin < DAY_START) this.currentMin = DAY_START;
-        if(this.currentMin >= DAY_END){ this.currentDate.setDate(this.currentDate.getDate()+1); this.currentMin = DAY_START; }
-        this.processLongSpots();
-        this.processHalfSpots();
-        this.processShortSpots();
-        if(!this.lunchInserted && this.currentMin>=LUNCH_START && this.currentMin<LUNCH_END+30){
-          this.allNodes.push({type:'meal',name:'午餐',startTime:this.currentMin,endTime:this.currentMin+MEAL_DURATION,duration:MEAL_DURATION});
-          this.currentMin += MEAL_DURATION; this.lunchInserted=true;
-        }
-        if(!this.dinnerInserted && this.currentMin>=DINNER_START && this.currentMin<DINNER_END+30){
-          this.allNodes.push({type:'meal',name:'晚餐',startTime:this.currentMin,endTime:this.currentMin+MEAL_DURATION,duration:MEAL_DURATION});
-          this.currentMin += MEAL_DURATION; this.dinnerInserted=true;
-        }
-        if(this.allNodes.length>0 && this.allNodes[this.allNodes.length-1].type!=='dayEnd') this.allNodes.push({type:'dayEnd'});
-        return { nodes:this.allNodes, error:false };
-      } catch(e){ return { nodes:[], error:true, errorMsg:e.message }; }
-    }
-  }
-
-  function generateTripPlan(spots, startDate, startTime, mode, allowFill=true, fillOnlyMeals=false){
-    if(!spots||!Array.isArray(spots)||spots.length===0) return { nodes:[], error:true, errorMsg:'没有有效的景点数据' };
-    const validSpots = spots.filter(s=>s&&s.id&&s.name&&typeof s.visitDuration==='number'&&s.visitDuration>=0);
-    if(validSpots.length===0) return { nodes:[], error:true, errorMsg:'没有有效的景点数据' };
-    const getTravelTimeFn = (fromId,toId,mode)=>{ const t=getTransportTime(fromId,toId,mode); return (t!=null&&!isNaN(t))?t:0; };
-    const countySpots = (function(){
-      if(!allPois||allPois.length===0) return [];
-      return allPois.filter(p=>p&&p.name&&COUNTY_SPOT_KEYWORDS.some(kw=>p.name.includes(kw))).map(p=>({id:p.id,name:p.name,lat:p.lat,lng:p.lng,visitDuration:p.visit_duration||90,isCounty:true}));
-    })();
-    const generator = new PlanGenerator(validSpots, startDate, startTime, mode, getTravelTimeFn, countySpots, allowFill, fillOnlyMeals);
-    return generator.generate();
-  }
-
-  function generateTimeline(nodes){
-    if(!nodes||nodes.length===0) return { days:[], mealCount:0 };
-    let merged=[];
-    for(let node of nodes){
-      if(!node) continue;
-      if(node.type==='visit' && merged.length>0 && merged[merged.length-1].type==='visit' && merged[merged.length-1].spotId===node.spotId){
-        let last=merged[merged.length-1];
-        last.endTime=node.endTime; last.duration+=node.duration;
-      } else merged.push({...node});
-    }
-    let lines=[], mealCount=0;
-    for(let node of merged){
-      if(!node) continue;
-      let text='';
-      if(node.type==='transport'){
-        let start=formatTime(node.startTime), end=formatTime(node.endTime);
-        let name=node.name;
-        if(node.isReturn) name='返回县城';
-        else if(!name.startsWith('前往 ')) name='前往 '+name;
-        text=`🚗 ${start}-${end} ${name} (交通${node.duration}分钟)`;
-      } else if(node.type==='visit'){
-        let start=formatTime(node.startTime), end=formatTime(node.endTime);
-        text=`⏱️ ${start}-${end} 游览 ${node.name} (游览${node.duration}分钟)`;
-      } else if(node.type==='meal'){
-        let start=formatTime(node.startTime), end=formatTime(node.endTime);
-        text=`🍽️ ${node.name} (${start}-${end})`;
-        mealCount++;
-      } else if(node.type==='dayEnd'){
-        text='🌙 当天行程结束，住宿休息';
-      }
-      if(text) lines.push(text);
-    }
-    let daysArray=[], currentDayLines=[];
-    for(let text of lines){
-      if(text.includes('当天行程结束')){
-        if(currentDayLines.length>0){ currentDayLines.push(text); daysArray.push(currentDayLines); currentDayLines=[]; }
-      } else currentDayLines.push(text);
-    }
-    if(currentDayLines.length>0) daysArray.push(currentDayLines);
-    daysArray = daysArray.filter(day=>day.some(line=>!line.includes('当天行程结束')));
-    let days=[];
-    for(let i=0;i<daysArray.length;i++){
-      let date=new Date(); date.setDate(date.getDate()+i);
-      let dateStr=date.toLocaleDateString('zh-CN');
-      days.push({ date:dateStr, lines:daysArray[i] });
-    }
-    return { days, mealCount };
-  }
-
-  // ==================== 推荐路线 ====================
-  async function loadRecommendRoutes(){
-    const { data } = await sb.from('ztj_routes').select('*');
+  // -------------------- 推荐路线 --------------------
+  async function loadRecommendRoutes() {
+    const { default: api } = await import('./api.js');
+    const { data } = await api.getRoutes();
     const container = document.getElementById('recommendRouteList');
-    if(!data || data.length===0){ container.innerHTML='<p>暂无推荐路线</p>'; return; }
-    let html='';
-    for(let route of data){
-      const { data: nodes } = await sb.from('ztj_route_nodes').select('*, poi:poi_id(name)').eq('route_id', route.id).order('order_num');
-      const nodeNames = nodes ? nodes.map(n=>n.poi?.name||'未知').join(' → ') : '';
+    if (!data || data.length === 0) {
+      container.innerHTML = '<p>暂无推荐路线</p>';
+      return;
+    }
+    let html = '';
+    for (let route of data) {
+      const nodes = await api.getRouteNodes(route.id);
+      const nodeNames = nodes ? nodes.map(n => {
+        const poi = getAllPois().find(p => p.id == n.poi_id);
+        return poi ? poi.name : '未知';
+      }).join(' → ') : '';
       html += `
         <div class="route-card">
           <h4>${route.name}</h4>
@@ -926,95 +286,132 @@
     container.innerHTML = html;
   }
 
-  async function generateRecommendRoute(routeId){
+  window.generateRecommendRoute = async function(routeId) {
     const resultDiv = document.getElementById(`recommend-result-${routeId}`);
     resultDiv.innerHTML = '⏳ 生成中...';
     try {
+      const { default: api } = await import('./api.js');
       const dateInput = document.querySelector(`.recommend-date[data-route="${routeId}"]`);
       const timeInput = document.querySelector(`.recommend-time[data-route="${routeId}"]`);
       const dateStr = dateInput ? dateInput.value : '';
       const timeStr = timeInput ? timeInput.value : '08:00';
-      if(!dateStr){ resultDiv.innerHTML='❌ 请选择出发日期'; return; }
+      if (!dateStr) { resultDiv.innerHTML = '❌ 请选择出发日期'; return; }
 
-      const { data: nodes } = await sb.from('ztj_route_nodes').select('poi_id, duration_min, items').eq('route_id', routeId).order('order_num');
-      if(!nodes || nodes.length===0){ resultDiv.innerHTML='❌ 该路线无景点节点'; return; }
+      const nodes = await api.getRouteNodes(routeId);
+      if (!nodes || nodes.length === 0) { resultDiv.innerHTML = '❌ 该路线无景点节点'; return; }
       const allSpots = [];
-      for(let n of nodes){
-        if(!n || n.poi_id==null) continue;
-        const poi = allPois.find(p=>p.id==n.poi_id);
-        if(poi){ allSpots.push({ id:poi.id, name:poi.name, lat:poi.lat, lng:poi.lng, visitDuration:poi.visit_duration||60 }); }
+      const pois = getAllPois();
+      for (let n of nodes) {
+        if (!n || n.poi_id == null) continue;
+        const poi = pois.find(p => p.id == n.poi_id);
+        if (poi) {
+          allSpots.push({
+            id: poi.id,
+            name: poi.name,
+            lat: poi.lat,
+            lng: poi.lng,
+            visitDuration: poi.visit_duration || 60
+          });
+        }
       }
-      if(allSpots.length===0){ resultDiv.innerHTML='❌ 路线节点数据无效'; return; }
+      if (allSpots.length === 0) { resultDiv.innerHTML = '❌ 路线节点数据无效'; return; }
 
       const startMinutes = parseInt(timeStr.slice(0,2))*60 + parseInt(timeStr.slice(3));
       const mode = 'auto';
       let result = generateTripPlan(allSpots, dateStr, startMinutes, mode, false, true);
-      let droppedCount=0;
-      if(result.error && result.errorMsg && result.errorMsg.includes('超过')){
-        for(let i=allSpots.length-1; i>=0; i--){
-          let testSpots=allSpots.slice(0,i);
-          if(testSpots.length===0) break;
+      let droppedCount = 0;
+      if (result.error && result.errorMsg && result.errorMsg.includes('超过')) {
+        for (let i = allSpots.length - 1; i >= 0; i--) {
+          let testSpots = allSpots.slice(0, i);
+          if (testSpots.length === 0) break;
           let testResult = generateTripPlan(testSpots, dateStr, startMinutes, mode, false, true);
-          if(!testResult.error){ result=testResult; droppedCount=allSpots.length-i; break; }
+          if (!testResult.error) {
+            result = testResult;
+            droppedCount = allSpots.length - i;
+            break;
+          }
         }
-        if(result.error){ resultDiv.innerHTML='❌ 时间不足，无法安排任何景点'; return; }
+        if (result.error) { resultDiv.innerHTML = '❌ 时间不足，无法安排任何景点'; return; }
       }
-      if(result.error){ resultDiv.innerHTML='❌ 生成失败：'+(result.errorMsg||'未知错误'); return; }
+      if (result.error) { resultDiv.innerHTML = '❌ 生成失败：' + (result.errorMsg || '未知错误'); return; }
 
       const { days, mealCount } = generateTimeline(result.nodes);
       const weatherForecast = await fetchWeatherForecast();
-      const daysWithWeather = days.map((d,i) => {
-        let weatherTip='⚠️ 天气信息暂不可用。';
-        if(weatherForecast && i<weatherForecast.length) weatherTip = getDayWeatherTip(weatherForecast[i]);
+      const daysWithWeather = days.map((d, i) => {
+        let weatherTip = '⚠️ 天气信息暂不可用。';
+        if (weatherForecast && i < weatherForecast.length) weatherTip = getDayWeatherTip(weatherForecast[i]);
         return { ...d, weatherTip };
       });
 
-      let html='';
-      daysWithWeather.forEach((d,i)=>{
+      let html = '';
+      daysWithWeather.forEach((d, i) => {
         html += `<div class="day-header">📅 第${i+1}天 (${d.date})</div>`;
-        d.lines.forEach(l=>html+=`<div class="trip-line">${l}</div>`);
+        d.lines.forEach(l => html += `<div class="trip-line">${l}</div>`);
         html += `<div class="trip-line" style="color:#0d47a1;">${d.weatherTip}</div>`;
       });
-      let totalTransport=0,totalVisit=0;
-      for(let node of result.nodes){ if(node && node.type==='transport') totalTransport+=node.duration||0; else if(node && node.type==='visit') totalVisit+=node.duration||0; }
-      let totalActivity=totalTransport+totalVisit;
-      let tips=[];
+      let totalTransport = 0, totalVisit = 0;
+      for (let node of result.nodes) {
+        if (node && node.type === 'transport') totalTransport += node.duration || 0;
+        else if (node && node.type === 'visit') totalVisit += node.duration || 0;
+      }
+      let totalActivity = totalTransport + totalVisit;
+      let tips = [];
       tips.push(`📊 活动总时长：${totalActivity}分钟（约${(totalActivity/60).toFixed(1)}小时），其中交通${totalTransport}分钟，游览${totalVisit}分钟。`);
-      if(mealCount>0) tips.push(`🍴 包含 ${mealCount} 次用餐。`);
-      if(days.length>1) tips.push(`🏨 行程跨${days.length}天，请合理安排住宿。`);
+      if (mealCount > 0) tips.push(`🍴 包含 ${mealCount} 次用餐。`);
+      if (days.length > 1) tips.push(`🏨 行程跨${days.length}天，请合理安排住宿。`);
 
-      const routeNameResult = await sb.from('ztj_routes').select('name').eq('id', routeId).single();
-      const routeName = routeNameResult.data?.name || '推荐路线';
+      const routeNameResult = await api.getRoute(routeId);
+      const routeName = routeNameResult ? routeNameResult.name : '推荐路线';
       const today = new Date().toISOString().slice(0,10);
-      const tripData = { name:`${routeName}-${today}`, date:dateStr, time:timeStr, mode, people:1, nodes:result.nodes, days:daysWithWeather, tips };
-      const trips = JSON.parse(localStorage.getItem('trips')||'[]');
-      trips.push(tripData);
-      localStorage.setItem('trips', JSON.stringify(trips));
+      const tripData = {
+        name: `${routeName}-${today}`,
+        date: dateStr,
+        time: timeStr,
+        mode: mode,
+        people: 1,
+        nodes: result.nodes,
+        days: daysWithWeather,
+        tips: tips
+      };
+      saveTrip(tripData);
 
-      resultDiv.innerHTML = `✅ 已生成并自动保存到“我的行程”<br>${html}<div class="warn-list">${tips.map(t=>`<div>${t}</div>`).join('')}</div>`;
-      if(droppedCount>0) resultDiv.innerHTML += `<div style="color:#c62828; margin-top:6px;">⚠️ 注意：有 ${droppedCount} 个景点因时间不足被丢弃。</div>`;
-    } catch(e){ console.error(e); resultDiv.innerHTML='❌ 生成失败：'+e.message; }
-  }
+      resultDiv.innerHTML = `✅ 已生成并自动保存到“我的行程”<br>${html}<div class="warn-list">${tips.map(t => `<div>${t}</div>`).join('')}</div>`;
+      if (droppedCount > 0) {
+        resultDiv.innerHTML += `<div style="color:#c62828; margin-top:6px;">⚠️ 注意：有 ${droppedCount} 个景点因时间不足被丢弃。</div>`;
+      }
+    } catch (e) {
+      console.error(e);
+      resultDiv.innerHTML = '❌ 生成失败：' + e.message;
+    }
+  };
 
-  // ==================== 自设行程 ====================
-  function initCustomTab(){
-    const allMain = allPois.filter(p=>!p.parent_id);
+  // -------------------- 自设行程 --------------------
+  function initCustomTab() {
+    const allPois = getAllPois();
+    const allMain = allPois.filter(p => !p.parent_id);
+    const ALLOWED_CATEGORIES = ['自然景区', '红色景区', '文博场馆'];
     allowedPoiOptions = allMain.filter(p => {
-      if(!p.category) return false;
-      const cats = p.category.split(',').map(c=>c.trim().toLowerCase());
-      return cats.some(c=>ALLOWED_CATEGORIES.map(ac=>ac.toLowerCase()).includes(c));
+      if (!p.category) return false;
+      const cats = p.category.split(',').map(c => c.trim().toLowerCase());
+      return cats.some(c => ALLOWED_CATEGORIES.map(ac => ac.toLowerCase()).includes(c));
     });
-    allowedPoiOptions = allowedPoiOptions.filter(p=>p.id!=='county');
-    if(!allowedPoiOptions.some(p=>p.id==='county')) allowedPoiOptions.unshift(COUNTY);
+    allowedPoiOptions = allowedPoiOptions.filter(p => p.id !== 'county');
+    // 确保没有重复
+    const seen = new Set();
+    allowedPoiOptions = allowedPoiOptions.filter(p => {
+      if (seen.has(p.id)) return false;
+      seen.add(p.id);
+      return true;
+    });
     renderCustomDynamicRoute();
   }
 
-  function renderCustomDynamicRoute(){
-    const poiList = allowedPoiOptions.filter(p=>p.id!=='county' && p.id!=='mylocation');
-    let html='';
-    poiList.forEach((p, index)=>{
+  function renderCustomDynamicRoute() {
+    const poiList = allowedPoiOptions.filter(p => p.id !== 'county' && p.id !== 'mylocation');
+    let html = '';
+    poiList.forEach((p, index) => {
       const dur = p.visit_duration || 0;
-      const checked = customRouteLegs.some(l=>l.id===p.id) ? 'checked' : '';
+      const checked = customRouteLegs.some(l => l.id === p.id) ? 'checked' : '';
       html += `<div class="checkbox-item">
         <input type="checkbox" value="${p.id}" ${checked} onchange="toggleCustomSpot('${p.id}')" id="custom-chk-${p.id}">
         <label for="custom-chk-${p.id}">${p.name}（${dur}分钟）</label>
@@ -1025,216 +422,303 @@
     document.getElementById('custom-dynamic-route').innerHTML = html || '<p>暂无可用景点</p>';
   }
 
-  function moveCustomRouteItem(index, direction){
+  window.moveCustomRouteItem = (index, direction) => {
     const newIndex = index + direction;
-    if(newIndex < 0 || newIndex >= allowedPoiOptions.length) return;
+    if (newIndex < 0 || newIndex >= allowedPoiOptions.length) return;
     [allowedPoiOptions[index], allowedPoiOptions[newIndex]] = [allowedPoiOptions[newIndex], allowedPoiOptions[index]];
     renderCustomDynamicRoute();
-  }
+  };
 
-  function toggleCustomSpot(id){
-    const idx = customRouteLegs.findIndex(l=>l.id===id);
-    if(idx >= 0) customRouteLegs.splice(idx, 1);
+  window.toggleCustomSpot = (id) => {
+    const idx = customRouteLegs.findIndex(l => l.id === id);
+    if (idx >= 0) customRouteLegs.splice(idx, 1);
     else {
-      const poi = allPois.find(p=>p.id==id);
-      if(poi) customRouteLegs.push({ id:poi.id, name:poi.name, lat:poi.lat, lng:poi.lng });
+      const poi = getAllPois().find(p => p.id == id);
+      if (poi) customRouteLegs.push({ id: poi.id, name: poi.name, lat: poi.lat, lng: poi.lng });
     }
-  }
+  };
 
-  async function generateCustomTrip(){
+  window.generateCustomTrip = async function() {
     try {
       const checkboxes = document.querySelectorAll('#custom-dynamic-route input[type="checkbox"]:checked');
-      const selectedIds=[];
-      checkboxes.forEach(cb=>{ const id=cb.value; if(id && id!=='county' && id!=='mylocation') selectedIds.push(id); });
-      if(selectedIds.length===0){ alert('请至少选择一个景区'); return; }
+      const selectedIds = [];
+      checkboxes.forEach(cb => {
+        const id = cb.value;
+        if (id && id !== 'county' && id !== 'mylocation') selectedIds.push(id);
+      });
+      if (selectedIds.length === 0) { alert('请至少选择一个景区'); return; }
+
       const dateStr = document.getElementById('custom-trip-date').value;
       const startTime = document.getElementById('custom-trip-time').value;
-      if(!dateStr || !startTime){ alert('请选择完整的日期和时间'); return; }
-      const selectedDateTime = new Date(dateStr+'T'+startTime);
-      if(selectedDateTime < new Date()){ if(!confirm('出发时间早于当前时间，是否继续？')) return; }
+      if (!dateStr || !startTime) { alert('请选择完整的日期和时间'); return; }
+
+      const selectedDateTime = new Date(dateStr + 'T' + startTime);
+      if (selectedDateTime < new Date()) {
+        if (!confirm('出发时间早于当前时间，是否继续？')) return;
+      }
+
       const mode = document.getElementById('custom-trip-mode').value;
       const people = document.getElementById('custom-trip-people').value;
       const allowFill = document.getElementById('custom-fill-switch').checked;
 
-      const userSpots=[];
-      for(let id of selectedIds){
-        const poi = allPois.find(p=>p.id==id);
-        if(poi) userSpots.push({ id:poi.id, name:poi.name, lat:poi.lat, lng:poi.lng, visitDuration:poi.visit_duration||60 });
+      const userSpots = [];
+      for (let id of selectedIds) {
+        const poi = getAllPois().find(p => p.id == id);
+        if (poi) {
+          userSpots.push({
+            id: poi.id,
+            name: poi.name,
+            lat: poi.lat,
+            lng: poi.lng,
+            visitDuration: poi.visit_duration || 60
+          });
+        }
       }
-      if(userSpots.length===0){ alert('未找到有效的景区数据'); return; }
-      const startMinutes = parseInt(startTime.slice(0,2))*60 + parseInt(startTime.slice(3));
+      if (userSpots.length === 0) { alert('未找到有效的景区数据'); return; }
+
+      const startMinutes = parseInt(startTime.slice(0,2)) * 60 + parseInt(startTime.slice(3));
       let result = generateTripPlan(userSpots, dateStr, startMinutes, mode, allowFill, false);
-      if(result.error){
-        if(result.errorMsg && result.errorMsg.includes('空窗')){
+      if (result.error) {
+        if (result.errorMsg && result.errorMsg.includes('空窗')) {
           const userConfirm = confirm('检测到长耗时景区造成时间空窗，是否自动填充县城景点？');
-          if(userConfirm){
+          if (userConfirm) {
             const resultFill = generateTripPlan(userSpots, dateStr, startMinutes, mode, true, false);
-            if(resultFill.error){ alert('填充后仍生成失败：'+resultFill.errorMsg); return; }
+            if (resultFill.error) { alert('填充后仍生成失败：' + resultFill.errorMsg); return; }
             result = resultFill;
-          } else { alert('取消生成，请调整景点或开启填充。'); return; }
-        } else { alert('生成失败：'+result.errorMsg); return; }
+          } else {
+            alert('取消生成，请调整景点或开启填充。');
+            return;
+          }
+        } else {
+          alert('生成失败：' + result.errorMsg);
+          return;
+        }
       }
+
       const { days, mealCount } = generateTimeline(result.nodes);
       const weatherForecast = await fetchWeatherForecast();
-      const daysWithWeather = days.map((d,i) => {
-        let weatherTip='⚠️ 天气信息暂不可用。';
-        if(weatherForecast && i<weatherForecast.length) weatherTip = getDayWeatherTip(weatherForecast[i]);
+      const daysWithWeather = days.map((d, i) => {
+        let weatherTip = '⚠️ 天气信息暂不可用。';
+        if (weatherForecast && i < weatherForecast.length) weatherTip = getDayWeatherTip(weatherForecast[i]);
         return { ...d, weatherTip };
       });
-      let html='';
-      daysWithWeather.forEach((d,i)=>{
+
+      let html = '';
+      daysWithWeather.forEach((d, i) => {
         html += `<div class="day-header">📅 第${i+1}天 (${d.date})</div>`;
-        if(d.lines.length===0) html += `<div class="trip-line">🚫 当天无行程安排</div>`;
-        else d.lines.forEach(l=>html+=`<div class="trip-line">${l}</div>`);
+        if (d.lines.length === 0) html += `<div class="trip-line">🚫 当天无行程安排</div>`;
+        else d.lines.forEach(l => html += `<div class="trip-line">${l}</div>`);
         html += `<div class="trip-line" style="color:#0d47a1;">${d.weatherTip}</div>`;
       });
-      let totalTransport=0,totalVisit=0;
-      for(let node of result.nodes){ if(node && node.type==='transport') totalTransport+=node.duration||0; else if(node && node.type==='visit') totalVisit+=node.duration||0; }
-      let totalActivity=totalTransport+totalVisit;
-      let tips=[];
-      tips.push(`📊 活动总时长：${totalActivity}分钟（约${(totalActivity/60).toFixed(1)}小时），其中交通${totalTransport}分钟，游览${totalVisit}分钟。`);
-      if(mealCount>0) tips.push(`🍴 包含 ${mealCount} 次用餐。`);
-      if(days.length>1) tips.push(`🏨 行程跨${days.length}天，请合理安排住宿。`);
-      generatedTripData = {
-        name:'自设行程', date:dateStr, time:startTime, mode, people,
-        nodes:result.nodes, days:daysWithWeather, tips
-      };
-      document.getElementById('custom-generated-trip').innerHTML = `<div class="card">${html}</div>`;
-      document.getElementById('custom-trip-warnings').innerHTML = tips.length ? `<div class="warn-list"><strong>💡 温馨提示：</strong>${tips.map(t=>`<div>${t}</div>`).join('')}</div>` : '';
-      document.getElementById('custom-save-generated-btn').classList.remove('hidden');
-    } catch(e){ console.error(e); alert('生成行程时发生错误：'+e.message); }
-  }
 
-  function saveCustomTrip(){
-    if(!generatedTripData) return;
+      let totalTransport = 0, totalVisit = 0;
+      for (let node of result.nodes) {
+        if (node && node.type === 'transport') totalTransport += node.duration || 0;
+        else if (node && node.type === 'visit') totalVisit += node.duration || 0;
+      }
+      let totalActivity = totalTransport + totalVisit;
+      let tips = [];
+      tips.push(`📊 活动总时长：${totalActivity}分钟（约${(totalActivity/60).toFixed(1)}小时），其中交通${totalTransport}分钟，游览${totalVisit}分钟。`);
+      if (mealCount > 0) tips.push(`🍴 包含 ${mealCount} 次用餐。`);
+      if (days.length > 1) tips.push(`🏨 行程跨${days.length}天，请合理安排住宿。`);
+
+      generatedTripData = {
+        name: '自设行程',
+        date: dateStr,
+        time: startTime,
+        mode: mode,
+        people: people,
+        nodes: result.nodes,
+        days: daysWithWeather,
+        tips: tips
+      };
+
+      document.getElementById('custom-generated-trip').innerHTML = `<div class="card">${html}</div>`;
+      document.getElementById('custom-trip-warnings').innerHTML = tips.length ? `<div class="warn-list"><strong>💡 温馨提示：</strong>${tips.map(t => `<div>${t}</div>`).join('')}</div>` : '';
+      document.getElementById('custom-save-generated-btn').classList.remove('hidden');
+    } catch (e) {
+      console.error(e);
+      alert('生成行程时发生错误：' + e.message);
+    }
+  };
+
+  window.saveCustomTrip = function() {
+    if (!generatedTripData) return;
     const name = prompt('行程名称', generatedTripData.name);
-    if(!name) return;
+    if (!name) return;
     generatedTripData.name = name;
-    const trips = JSON.parse(localStorage.getItem('trips')||'[]');
-    trips.push(generatedTripData);
-    localStorage.setItem('trips', JSON.stringify(trips));
+    saveTrip(generatedTripData);
     alert('行程已保存');
     document.getElementById('custom-save-generated-btn').classList.add('hidden');
     document.getElementById('custom-generated-trip').innerHTML = '';
     generatedTripData = null;
     customRouteLegs = [];
     renderCustomDynamicRoute();
-  }
+  };
 
-  // ==================== 我的 - 行程 ====================
-  function renderMyTrip(){
-    const trips = JSON.parse(localStorage.getItem('trips')||'[]');
-    let html='';
-    trips.forEach((trip,i)=>{
+  // -------------------- 我的面板 --------------------
+  window.switchMyTab = (tab) => {
+    document.querySelectorAll('.my-tab').forEach(btn => btn.classList.remove('active'));
+    document.getElementById('my-tab-' + tab).classList.add('active');
+    document.getElementById('myTripContent').classList.toggle('hidden', tab !== 'trip');
+    document.getElementById('myReservationContent').classList.toggle('hidden', tab !== 'reservation');
+    document.getElementById('myFeedbackContent').classList.toggle('hidden', tab !== 'feedback');
+    if (tab === 'trip') renderMyTrip();
+    if (tab === 'reservation') loadMyReservationsUI();
+    if (tab === 'feedback') loadFeedbackHistory();
+  };
+
+  function renderMyTrip() {
+    const trips = getMyTrips();
+    let html = '';
+    trips.forEach((trip, i) => {
       html += `<div class="card"><div onclick="toggleTripDetail(${i})" style="cursor:pointer;">📅 ${trip.name} | ${trip.date} ${trip.time}</div><div id="trip-detail-${i}" class="hidden">`;
-      if(trip.days) trip.days.forEach(day=>{
+      if (trip.days) trip.days.forEach(day => {
         html += `<div class="day-header">📅 ${day.date}</div>`;
-        day.lines.forEach(l=>html+=`<div class="trip-line">${l}</div>`);
-        if(day.weatherTip) html += `<div class="trip-line" style="color:#0d47a1;">${day.weatherTip}</div>`;
+        day.lines.forEach(l => html += `<div class="trip-line">${l}</div>`);
+        if (day.weatherTip) html += `<div class="trip-line" style="color:#0d47a1;">${day.weatherTip}</div>`;
       });
-      if(trip.tips) html += `<div class="warn-list">${trip.tips.map(t=>`<div>${t}</div>`).join('')}</div>`;
-      html += `<button class="btn btn-danger btn-sm" onclick="event.stopPropagation(); deleteTrip(${i})">删除</button></div></div>`;
+      if (trip.tips) html += `<div class="warn-list">${trip.tips.map(t => `<div>${t}</div>`).join('')}</div>`;
+      html += `<button class="btn btn-danger btn-sm" onclick="event.stopPropagation(); deleteTripHandler(${i})">删除</button></div></div>`;
     });
     document.getElementById('myTripContent').innerHTML = html || '<p>暂无保存的行程</p>';
   }
 
-  function toggleTripDetail(idx){ document.getElementById('trip-detail-'+idx).classList.toggle('hidden'); }
-  function deleteTrip(idx){
-    if(!confirm('确认删除？')) return;
-    const trips = JSON.parse(localStorage.getItem('trips')||'[]');
-    trips.splice(idx,1);
-    localStorage.setItem('trips', JSON.stringify(trips));
+  window.toggleTripDetail = (idx) => {
+    document.getElementById('trip-detail-' + idx).classList.toggle('hidden');
+  };
+  window.deleteTripHandler = (idx) => {
+    if (!confirm('确认删除？')) return;
+    deleteTrip(idx);
     renderMyTrip();
-  }
+  };
 
-  // ==================== 我的 - 预约 ====================
-  async function loadMyReservations(){
-    const { data } = await sb.from('reservations').select('*').eq('user_id', getUserId()).order('created_at', { ascending: false });
-    let html='';
-    if(data && data.length){ data.forEach(r=>{ html+=`<div class="card"><p><b>${r.reservation_date}</b> ${r.time_slot_start}-${r.time_slot_end||''}</p><p>${r.name||''} | ${r.phone||''}</p><p>${r.remark||''}</p><p>状态：${r.status}</p></div>`; }); }
-    else html='<p>暂无预约</p>';
+  async function loadMyReservationsUI() {
+    const user = await getCurrentUser();
+    const data = await loadMyReservations(user?.id);
+    let html = '';
+    if (data && data.length) {
+      data.forEach(r => {
+        html += `<div class="card"><p><b>${r.reservation_date}</b> ${r.time_slot_start}-${r.time_slot_end||''}</p><p>${r.name||''} | ${r.phone||''}</p><p>${r.remark||''}</p><p>状态：${r.status}</p></div>`;
+      });
+    } else {
+      html = '<p>暂无预约</p>';
+    }
     document.getElementById('myReservationContent').innerHTML = html;
   }
 
-  // ==================== 我的 - 留言 ====================
-  async function loadFeedbackHistory(){
-    const { data } = await sb.from('ztj_feedbacks').select('*').eq('user_id', getUserId()).order('created_at', { ascending: false });
-    let html='';
-    if(data && data.length){ data.forEach(f=>{ html+=`<div class="card"><p>${f.message}</p><small>${new Date(f.created_at).toLocaleString()}</small>${f.reply?`<div class="feedback-reply">回复：${f.reply}</div>`:''}</div>`; }); }
-    else html='<p>暂无留言</p>';
+  async function loadFeedbackHistory() {
+    const user = await getCurrentUser();
+    const data = await getMyFeedbacks(user?.id);
+    let html = '';
+    if (data && data.length) {
+      data.forEach(f => {
+        html += `<div class="card"><p>${f.message}</p><small>${new Date(f.created_at).toLocaleString()}</small>${f.reply ? `<div class="feedback-reply">回复：${f.reply}</div>` : ''}</div>`;
+      });
+    } else {
+      html = '<p>暂无留言</p>';
+    }
     document.getElementById('feedbackHistory').innerHTML = html;
   }
 
-  async function submitFeedback(){
+  window.submitFeedback = async function() {
     const msg = document.getElementById('feedbackMsg').value.trim();
-    if(!msg) return alert('请输入内容');
-    const { error } = await sb.from('ztj_feedbacks').insert({ user_id: getUserId(), message: msg, merchant_id: null });
-    if(error) alert('提交失败：'+error.message);
-    else { alert('提交成功'); document.getElementById('feedbackMsg').value=''; loadFeedbackHistory(); }
-  }
-
-  // ==================== 面板控制 ====================
-  function openPanel(id){ document.getElementById(id).classList.add('active'); }
-  function closePanel(id){ document.getElementById(id).classList.remove('active'); }
-
-  function openRouteTab(tab){
-    openPanel('routesPanel');
-    switchRouteTab(tab);
-    if(tab==='recommend') loadRecommendRoutes();
-    else { initCustomTab(); }
-  }
-
-  function switchRouteTab(tab){
-    document.querySelectorAll('#routeTabSwitch button').forEach(btn=>btn.classList.remove('active'));
-    if(tab==='recommend'){
-      document.querySelector('#routeTabSwitch button:first-child').classList.add('active');
-      document.getElementById('recommendTab').classList.remove('hidden');
-      document.getElementById('customTab').classList.add('hidden');
-    } else {
-      document.querySelector('#routeTabSwitch button:last-child').classList.add('active');
-      document.getElementById('recommendTab').classList.add('hidden');
-      document.getElementById('customTab').classList.remove('hidden');
-      initCustomTab();
+    if (!msg) return alert('请输入内容');
+    const user = await getCurrentUser();
+    try {
+      await submitFeedback(msg, user?.id);
+      alert('提交成功');
+      document.getElementById('feedbackMsg').value = '';
+      loadFeedbackHistory();
+    } catch (e) {
+      alert('提交失败：' + e.message);
     }
-  }
+  };
 
-  function switchMyTab(tab){
-    document.querySelectorAll('.my-tab').forEach(btn=>btn.classList.remove('active'));
-    document.getElementById('my-tab-'+tab).classList.add('active');
-    document.getElementById('myTripContent').classList.toggle('hidden', tab!=='trip');
-    document.getElementById('myReservationContent').classList.toggle('hidden', tab!=='reservation');
-    document.getElementById('myFeedbackContent').classList.toggle('hidden', tab!=='feedback');
-    if(tab==='trip') renderMyTrip();
-    if(tab==='reservation') loadMyReservations();
-    if(tab==='feedback') loadFeedbackHistory();
-  }
+  // -------------------- 商户详情（简化，仅展示） --------------------
+  window.showPoiDetail = async function(poi) {
+    const { default: api } = await import('./api.js');
+    const { data: m } = await api.getMerchantsByPoi(poi.id);
+    const merchant = m && m.length > 0 ? m[0] : null;
+    document.getElementById('merchantDetailTitle').textContent = poi.name;
+    let html = '';
+    if (merchant) {
+      const sd = merchant.service_data || {};
+      const categories = sd.businessCategories || [];
+      const items = sd.businessItems || [];
+      if (categories.length > 0 && items.length > 0) {
+        categories.forEach(cat => {
+          const catItems = items.filter(item => item.category === cat);
+          if (catItems.length === 0) return;
+          html += `<div><div onclick="this.nextElementSibling.classList.toggle('hidden')" style="cursor:pointer;background:#f9f9f9;padding:8px;border:1px solid #ddd;border-radius:4px;margin:4px 0;">📁 ${cat} (${catItems.length})</div><div class="hidden">`;
+          catItems.forEach((item, idx) => {
+            if (!item.name) return;
+            let priceStr = item.price ? ` ${item.price}` : '';
+            let durStr = item.duration ? ` ${item.duration}` : '';
+            let descStr = item.description ? `<p>${item.description}</p>` : '';
+            let imgHtml = item.image ? `<div class="biz-image-box"><img src="${item.image}" alt="${item.name}"></div>` : '';
+            html += `<div class="card"><div><b>${idx+1}. ${item.name}</b>${priceStr}${durStr}${descStr}</div>${imgHtml}</div>`;
+          });
+          html += `</div></div>`;
+        });
+      } else {
+        const flatItems = sd.items || [];
+        flatItems.filter(item => item.name).forEach((item, idx) => {
+          let priceStr = item.price ? ` ${item.price}` : '';
+          let durStr = item.duration ? ` ${item.duration}` : '';
+          let descStr = item.description ? `<p>${item.description}</p>` : '';
+          let imgHtml = item.image ? `<div class="biz-image-box"><img src="${item.image}" alt="${item.name}"></div>` : '';
+          html += `<div class="card"><div><b>${idx+1}. ${item.name}</b>${priceStr}${durStr}${descStr}</div>${imgHtml}</div>`;
+        });
+      }
+      let phone = merchant.phone || '未提供';
+      let status = merchant.status === 'open' ? '营业中' : (merchant.status === 'closed' ? '休息' : '繁忙');
+      let parking = merchant.parking_spots ?? 0;
+      html += `<hr><p>📞 ${phone} | 状态：${status} | 停车位：${parking}</p><p>${poi.description||''}</p>`;
+    } else {
+      html += '<p style="color:#999;">该商户信息暂未录入，请稍后再来。</p><hr><p>📞 未提供 | 状态：未知 | 停车位：0</p><p>' + (poi.description || '') + '</p>';
+    }
+    document.getElementById('merchantDetailContent').innerHTML = html;
+    openPanel('merchantDetailPanel');
+  };
 
-  // ==================== 初始化 ====================
-  async function initCustomTimeSelectors(){
+  // 点击地图标记调用（由 map.js 触发，需暴露）
+  // 在 map.js 中已经绑定了 marker 的 click 事件，但需要调用 window.showPoiDetail
+  // 此处我们暂时不覆盖，但保留功能。
+
+  // -------------------- 初始化时间选择器 --------------------
+  function initCustomTimeSelectors() {
     const sel = document.getElementById('custom-trip-time');
     sel.innerHTML = '';
-    for(let h=0; h<24; h++){
-      for(let m=0; m<60; m+=10){
-        const val = String(h).padStart(2,'0') + ':' + String(m).padStart(2,'0');
+    for (let h = 0; h < 24; h++) {
+      for (let m = 0; m < 60; m += 10) {
+        const val = String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0');
         sel.innerHTML += `<option value="${val}">${val}</option>`;
       }
     }
     const now = new Date();
-    let h = now.getHours(), m = Math.floor(now.getMinutes()/10)*10;
-    if(m===60){ m=0; h=(h+1)%24; }
-    sel.value = String(h).padStart(2,'0') + ':' + String(m).padStart(2,'0');
-    document.getElementById('custom-trip-date').value = now.toISOString().slice(0,10);
+    let h = now.getHours(),
+      m = Math.floor(now.getMinutes() / 10) * 10;
+    if (m === 60) { m = 0;
+      h = (h + 1) % 24; }
+    sel.value = String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0');
+    document.getElementById('custom-trip-date').value = now.toISOString().slice(0, 10);
   }
 
+  // -------------------- 初始化应用 --------------------
   async function init() {
     try {
       // 匿名登录
-      const { data } = await sb.auth.signInAnonymously();
-      if(data.session) anonymousUserId = data.session.user.id;
+      await signInAnonymously();
       // 初始化地图
-      initMap();
+      initMap('map');
       // 加载POI
-      await loadAllPOIs();
+      const pois = await getPois();
+      loadPoisToMap(pois);
+      // 关键：设置全局 countySpots 供 trip.js 使用
+      window.__countySpots = getCountySpots(pois);
+      // 加载交通预设
+      await loadTransportPresets();
       // 初始化时间选择器
       initCustomTimeSelectors();
       // 自动定位
@@ -1243,40 +727,20 @@
       renderMyTrip();
       // 加载留言历史
       loadFeedbackHistory();
+      // 手动初始化 Bootstrap 选项卡（确保切换）
+      document.querySelectorAll('#routeTabs a, #myTabs a').forEach(el => {
+        if (typeof bootstrap !== 'undefined') {
+          new bootstrap.Tab(el);
+        }
+      });
       console.log('[系统] 初始化完成');
-    } catch(e) {
+    } catch (e) {
       console.error('[系统] 初始化失败:', e);
       alert('初始化失败，请刷新重试或检查控制台错误。');
     }
   }
 
-  // 暴露全局函数给 HTML 内联 onclick
-  window.openPanel = openPanel;
-  window.closePanel = closePanel;
-  window.locateUser = locateUser;
-  window.toggleAutoVoice = toggleAutoVoice;
-  window.openRouteTab = openRouteTab;
-  window.switchRouteTab = switchRouteTab;
-  window.switchMyTab = switchMyTab;
-  window.toggleCategoryBar = toggleCategoryBar;
-  window.filterPOI = filterPOI;
-  window.closeCategoryBar = closeCategoryBar;
-  window.showPoiDetail = showPoiDetail;
-  window.toggleReserveForm = toggleReserveForm;
-  window.submitReservationDirect = submitReservationDirect;
-  window.loadRecommendRoutes = loadRecommendRoutes;
-  window.generateRecommendRoute = generateRecommendRoute;
-  window.initCustomTab = initCustomTab;
-  window.toggleCustomSpot = toggleCustomSpot;
-  window.moveCustomRouteItem = moveCustomRouteItem;
-  window.generateCustomTrip = generateCustomTrip;
-  window.saveCustomTrip = saveCustomTrip;
-  window.toggleTripDetail = toggleTripDetail;
-  window.deleteTrip = deleteTrip;
-  window.submitFeedback = submitFeedback;
-  window.updateReserveContent = window.updateReserveContent; // already
-
-  // 启动
+  // 页面加载完成后启动
   init();
 </script>
 </body>

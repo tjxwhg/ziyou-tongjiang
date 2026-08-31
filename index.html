@@ -9,7 +9,7 @@
   <!-- Leaflet CSS -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <style>
-    /* === 样式与之前完全相同，此处省略以节省篇幅，实际部署请保留完整样式 === */
+    /* === 样式与之前完全相同，此处完整保留 === */
     * { margin:0; padding:0; box-sizing:border-box; }
     body { font-family: system-ui, sans-serif; height:100vh; overflow:hidden; background:#f5f5f5; }
     #map { height:100vh; width:100vw; z-index:1; }
@@ -108,10 +108,12 @@
       <button class="active" onclick="window.switchRouteTab('recommend')">📌 推荐路线</button>
       <button onclick="window.switchRouteTab('custom')">✏️ 自设行程</button>
     </div>
+    <!-- 推荐路线内容 -->
     <div id="recommendTab" class="tab-content">
       <h3>📌 推荐路线</h3>
       <div id="recommendRouteList"></div>
     </div>
+    <!-- 自设行程内容 -->
     <div id="customTab" class="tab-content hidden">
       <h3>✏️ 自设行程</h3>
       <div class="form-group"><label>出发日期</label><input type="date" id="custom-trip-date"></div>
@@ -170,10 +172,10 @@
 
 <script type="module">
   // ============================================================
-  // 导入所有需要的模块
+  // 导入所有需要的模块（包括 API 函数）
   // ============================================================
-  import { getPois } from './api.js';
-  import { getCurrentUser, signInAnonymously, onAuthStateChange } from './auth.js';
+  import { getPois, getRoutes, getRouteNodes, getRoute } from './api.js';
+  import { getCurrentUser, signInAnonymously } from './auth.js';
   import { getCountySpots, fetchWeatherForecast, getDayWeatherTip } from './utils.js';
   import { initMap, loadPoisToMap, locateUser, setVoiceEnabled, getAllPois, applyFilter } from './map.js';
   import { generateTripPlan, generateTimeline, loadTransportPresets } from './trip.js';
@@ -253,7 +255,7 @@
       document.querySelector('#routeTabSwitch button:first-child').classList.add('active');
       document.getElementById('recommendTab').classList.remove('hidden');
       document.getElementById('customTab').classList.add('hidden');
-      loadRecommendRoutes();
+      loadRecommendRoutes(); // 每次切换重新加载（也可缓存）
     } else {
       document.querySelector('#routeTabSwitch button:last-child').classList.add('active');
       document.getElementById('recommendTab').classList.add('hidden');
@@ -267,52 +269,55 @@
   };
 
   // ============================================================
-  // 推荐路线
+  // 推荐路线（使用导入的 API 函数）
   // ============================================================
   async function loadRecommendRoutes() {
-    const { default: api } = await import('./api.js');
-    const { data } = await api.getRoutes();
-    const container = document.getElementById('recommendRouteList');
-    if (!data || data.length === 0) {
-      container.innerHTML = '<p>暂无推荐路线</p>';
-      return;
-    }
-    let html = '';
-    for (let route of data) {
-      const nodes = await api.getRouteNodes(route.id);
-      const nodeNames = nodes ? nodes.map(n => {
-        const poi = getAllPois().find(p => p.id == n.poi_id);
-        return poi ? poi.name : '未知';
-      }).join(' → ') : '';
-      html += `
-        <div class="route-card">
-          <h4>${route.name}</h4>
-          <div class="route-meta">交通方式：${route.transport||'自驾'} | 出发时间：${route.start_time||'08:30'}</div>
-          <div class="route-nodes">📌 节点：${nodeNames}</div>
-          <div class="route-actions">
-            <label>出发日期：<input type="date" class="recommend-date" data-route="${route.id}" value="${new Date().toISOString().slice(0,10)}"></label>
-            <label>出发时间：<input type="time" class="recommend-time" data-route="${route.id}" value="${route.start_time||'08:30'}" readonly></label>
-            <button class="btn btn-primary" onclick="window.generateRecommendRoute(${route.id})">🚀 生成并保存</button>
+    try {
+      const data = await getRoutes();
+      const container = document.getElementById('recommendRouteList');
+      if (!data || data.length === 0) {
+        container.innerHTML = '<p>暂无推荐路线</p>';
+        return;
+      }
+      let html = '';
+      for (let route of data) {
+        const nodes = await getRouteNodes(route.id);
+        const nodeNames = nodes ? nodes.map(n => {
+          const poi = getAllPois().find(p => p.id == n.poi_id);
+          return poi ? poi.name : '未知';
+        }).join(' → ') : '';
+        html += `
+          <div class="route-card">
+            <h4>${route.name}</h4>
+            <div class="route-meta">交通方式：${route.transport||'自驾'} | 出发时间：${route.start_time||'08:30'}</div>
+            <div class="route-nodes">📌 节点：${nodeNames}</div>
+            <div class="route-actions">
+              <label>出发日期：<input type="date" class="recommend-date" data-route="${route.id}" value="${new Date().toISOString().slice(0,10)}"></label>
+              <label>出发时间：<input type="time" class="recommend-time" data-route="${route.id}" value="${route.start_time||'08:30'}" readonly></label>
+              <button class="btn btn-primary" onclick="window.generateRecommendRoute(${route.id})">🚀 生成并保存</button>
+            </div>
+            <div id="recommend-result-${route.id}" style="margin-top:6px;"></div>
           </div>
-          <div id="recommend-result-${route.id}" style="margin-top:6px;"></div>
-        </div>
-      `;
+        `;
+      }
+      container.innerHTML = html;
+    } catch (e) {
+      console.error('加载推荐路线失败:', e);
+      document.getElementById('recommendRouteList').innerHTML = '<p>加载推荐路线失败：' + e.message + '</p>';
     }
-    container.innerHTML = html;
   }
 
   window.generateRecommendRoute = async function(routeId) {
     const resultDiv = document.getElementById(`recommend-result-${routeId}`);
     resultDiv.innerHTML = '⏳ 生成中...';
     try {
-      const { default: api } = await import('./api.js');
       const dateInput = document.querySelector(`.recommend-date[data-route="${routeId}"]`);
       const timeInput = document.querySelector(`.recommend-time[data-route="${routeId}"]`);
       const dateStr = dateInput ? dateInput.value : '';
       const timeStr = timeInput ? timeInput.value : '08:00';
       if (!dateStr) { resultDiv.innerHTML = '❌ 请选择出发日期'; return; }
 
-      const nodes = await api.getRouteNodes(routeId);
+      const nodes = await getRouteNodes(routeId);
       if (!nodes || nodes.length === 0) { resultDiv.innerHTML = '❌ 该路线无景点节点'; return; }
       const allSpots = [];
       const pois = getAllPois();
@@ -375,7 +380,7 @@
       if (mealCount > 0) tips.push(`🍴 包含 ${mealCount} 次用餐。`);
       if (days.length > 1) tips.push(`🏨 行程跨${days.length}天，请合理安排住宿。`);
 
-      const routeNameResult = await api.getRoute(routeId);
+      const routeNameResult = await getRoute(routeId);
       const routeName = routeNameResult ? routeNameResult.name : '推荐路线';
       const today = new Date().toISOString().slice(0,10);
       const tripData = {
@@ -729,7 +734,7 @@
   }
 
   // ============================================================
-  // 初始化应用（修复：匿名登录失败不阻塞页面加载）
+  // 初始化应用（匿名登录失败不阻塞）
   // ============================================================
   async function init() {
     try {
@@ -757,7 +762,7 @@
       locateUser();
       // 渲染我的行程
       renderMyTrip();
-      // 加载留言历史（如果有用户则加载，无用户则提示）
+      // 加载留言历史
       await loadFeedbackHistory();
       console.log('[系统] 初始化完成');
     } catch (e) {

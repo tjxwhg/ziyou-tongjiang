@@ -39,7 +39,7 @@ export function loadPoisToMap(pois) {
     });
     const marker = L.marker([p.lat, p.lng], { icon }).addTo(map);
     marker.poiData = p;
-    // 绑定点击事件
+    // 绑定点击事件，调用全局函数
     marker.on('click', function() {
       if (window.showPoiDetail) {
         window.showPoiDetail(this.poiData);

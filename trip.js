@@ -1,4 +1,4 @@
-// trip.js - 行程规划引擎（重构版，动态餐食插入，严格时间截断）
+// trip.js - 行程规划引擎（重构版，动态餐食插入，严格时间截断，短耗时无返回）
 import { getTransportPresets } from './api.js';
 import {
   DAY_START, DAY_END, LUNCH_START, LUNCH_END, DINNER_START, DINNER_END,
@@ -42,7 +42,7 @@ class PlanGenerator {
 
     this.currentDate = new Date(this.startDate);
     this.currentMin = this.startTime;
-    this.lastPoi = { id: 'county', name: '红军广场', lat: 0, lng: 0 };
+    this.lastPoi = { id: 'county', name: '红军广场', lat: 0, lng: 0, type: 'county' };
     this.allNodes = [];
     this.usedIds = new Set();
     this.warnings = [];
@@ -52,7 +52,6 @@ class PlanGenerator {
     this.shortSpots = [];
     this.classifySpots();
     this.halfSpots.sort((a,b) => b.visitDuration - a.visitDuration);
-    // 每日餐食标记（动态插入时使用）
     this.lunchInserted = false;
     this.dinnerInserted = false;
   }
@@ -60,11 +59,15 @@ class PlanGenerator {
   classifySpots() {
     for (let s of this.spots) {
       if (!s || !s.id) continue;
+      // 判断是否为长耗时
       if (LONG_SPOT_NAMES.some(name => s.name.includes(name))) {
+        s.type = 'long';
         this.longSpots.push(s);
       } else if (s.visitDuration >= 100) {
+        s.type = 'half';
         this.halfSpots.push(s);
       } else {
+        s.type = 'short';
         this.shortSpots.push(s);
       }
     }
@@ -74,19 +77,19 @@ class PlanGenerator {
     if (this.allNodes.length > 0 && this.allNodes[this.allNodes.length-1].type !== 'dayEnd') {
       this.allNodes.push({ type: 'dayEnd' });
     }
-    // 重置餐食标记
     this.lunchInserted = false;
     this.dinnerInserted = false;
   }
 
-  // 动态插入餐食：仅在当前时间处于午餐/晚餐窗口内且未插入过时插入
-  insertMeal(currentTime) {
+  // 动态插入餐食（支持强制插入）
+  insertMeal(currentTime, force = false) {
     let time = currentTime;
-    // 午餐：11:30-12:30 窗口
-    if (!this.lunchInserted && time >= LUNCH_START && time < LUNCH_END) {
+    // 午餐
+    if (!this.lunchInserted && (force || (time >= LUNCH_START && time < LUNCH_END))) {
       let start = Math.max(time, LUNCH_START);
+      // 如果强制插入且时间 > LUNCH_START，则从当前时间开始
+      if (force && time > LUNCH_START) start = time;
       let end = start + MEAL_DURATION;
-      // 确保不超出 DAY_END
       if (end <= DAY_END) {
         this.allNodes.push({
           type: 'meal',
@@ -98,13 +101,25 @@ class PlanGenerator {
         this.lunchInserted = true;
         return end;
       } else {
-        // 如果超出18:00，不插入午餐
+        // 如果超过18:00，仍然插入，但截断到18:00（但一般不会）
+        if (start < DAY_END) {
+          this.allNodes.push({
+            type: 'meal',
+            name: '午餐时间',
+            startTime: start,
+            endTime: DAY_END,
+            duration: DAY_END - start
+          });
+          this.lunchInserted = true;
+          return DAY_END;
+        }
         return time;
       }
     }
-    // 晚餐：17:30-18:30 窗口
-    if (!this.dinnerInserted && time >= DINNER_START && time < DINNER_END) {
+    // 晚餐
+    if (!this.dinnerInserted && (force || (time >= DINNER_START && time < DINNER_END))) {
       let start = Math.max(time, DINNER_START);
+      if (force && time > DINNER_START) start = time;
       let end = start + MEAL_DURATION;
       if (end <= DAY_END) {
         this.allNodes.push({
@@ -117,10 +132,34 @@ class PlanGenerator {
         this.dinnerInserted = true;
         return end;
       } else {
+        if (start < DAY_END) {
+          this.allNodes.push({
+            type: 'meal',
+            name: '晚餐时间',
+            startTime: start,
+            endTime: DAY_END,
+            duration: DAY_END - start
+          });
+          this.dinnerInserted = true;
+          return DAY_END;
+        }
         return time;
       }
     }
     return time;
+  }
+
+  // 检查交通是否跨越了餐食窗口，若是则强制插入
+  checkMealCrossing(startTime, endTime) {
+    // 检查是否跨越午餐窗口
+    if (!this.lunchInserted && startTime < LUNCH_END && endTime > LUNCH_START) {
+      // 交通结束后强制插入午餐
+      return 'lunch';
+    }
+    if (!this.dinnerInserted && startTime < DINNER_END && endTime > DINNER_START) {
+      return 'dinner';
+    }
+    return null;
   }
 
   // 安排一个景点（游览+交通），动态插入餐食
@@ -143,15 +182,22 @@ class PlanGenerator {
         isReturn: false
       });
       time += travelTime;
-      poi = { id: spot.id, name: spot.name, lat: spot.lat, lng: spot.lng };
+      poi = { id: spot.id, name: spot.name, lat: spot.lat, lng: spot.lng, type: spot.type };
     }
 
-    // 交通结束后尝试插入餐食
-    time = this.insertMeal(time);
+    // 交通结束后检查是否跨越餐食窗口，若是则强制插入
+    let mealCross = this.checkMealCrossing(startTime, time);
+    if (mealCross === 'lunch') {
+      time = this.insertMeal(time, true);
+    } else if (mealCross === 'dinner') {
+      time = this.insertMeal(time, true);
+    } else {
+      // 正常尝试插入
+      time = this.insertMeal(time);
+    }
 
     let remaining = spot.visitDuration || 0;
     if (time >= DAY_END) {
-      // 如果当前时间已到18:00，无法游览
       return { nodes, newTime: time, newPoi: poi, remaining: remaining, error: null };
     }
     if (time >= NEW_ARRIVAL_CUTOFF) {
@@ -162,14 +208,12 @@ class PlanGenerator {
     // 游览分段
     while (remaining > 0) {
       if (time >= DAY_END) {
-        // 超出18:00，剩余时间丢弃
         if (remaining > 0) {
           this.warnings.push(`因时间不足，景区 "${spot.name}" 剩余 ${remaining} 分钟游览被省略。`);
         }
         break;
       }
 
-      // 检查餐食窗口（仅当剩余时间 > 60 分钟时尝试插入餐食）
       let mealInserted = false;
       if (remaining > 60) {
         let newTime = this.insertMeal(time);
@@ -179,7 +223,6 @@ class PlanGenerator {
         }
       }
       if (!mealInserted) {
-        // 计算可以游览的时长：到下一个餐食窗口或DAY_END
         let nextMeal = DAY_END;
         if (!this.lunchInserted && time < LUNCH_START) nextMeal = Math.min(nextMeal, LUNCH_START);
         else if (!this.dinnerInserted && time < DINNER_START) nextMeal = Math.min(nextMeal, DINNER_START);
@@ -200,7 +243,6 @@ class PlanGenerator {
       }
     }
 
-    // 如果剩余时间 > 0 但 time 已达 DAY_END，记录警告
     if (remaining > 0) {
       this.warnings.push(`因时间不足，景区 "${spot.name}" 剩余 ${remaining} 分钟游览被省略。`);
     }
@@ -208,7 +250,7 @@ class PlanGenerator {
     return { nodes, newTime: time, newPoi: poi, remaining: remaining, error: null };
   }
 
-  // 返回县城，并在返回后尝试插入餐食
+  // 返回县城（仅对长耗时和半天景点使用）
   addReturnToCounty(currentTime) {
     let travelBack = this.getTravelTime(this.lastPoi.id, 'county', this.mode);
     if (travelBack == null) travelBack = 0;
@@ -227,18 +269,25 @@ class PlanGenerator {
       toPoi: 'county',
       isReturn: true
     });
-    this.lastPoi = { id: 'county', name: '红军广场', lat: 0, lng: 0 };
     // 返回后尝试插入餐食
     newTime = this.insertMeal(newTime);
+    // 检查是否跨越了餐食窗口（交通返回过程中可能跨越）
+    let mealCross = this.checkMealCrossing(currentTime, newTime);
+    if (mealCross === 'lunch') {
+      newTime = this.insertMeal(newTime, true);
+    } else if (mealCross === 'dinner') {
+      newTime = this.insertMeal(newTime, true);
+    }
+    this.lastPoi = { id: 'county', name: '红军广场', lat: 0, lng: 0, type: 'county' };
     return { newTime };
   }
 
-  // 填充短耗时（碎片化），但不会在返回县城后调用
+  // 填充短耗时（碎片化），但短耗时之间不返回县城
   fillShortSpots(maxEndTime) {
     if (!this.allowFill) return;
-    // 如果当前已经是返回县城后的状态（lastPoi.id === 'county' 且当前时间 > 18:00），则不再填充
     while (this.currentMin < maxEndTime && this.currentMin < DAY_END) {
       let found = false;
+      // 优先填充用户选择的短耗时
       for (let s of this.shortSpots) {
         if (this.usedIds.has(s.id)) continue;
         let t = this.getTravelTime(this.lastPoi.id, s.id, this.mode);
@@ -255,6 +304,7 @@ class PlanGenerator {
         break;
       }
       if (found) continue;
+      // 若没有用户选择的短耗时，尝试县城景点（自动填充）
       for (let c of this.countySpots) {
         if (this.usedIds.has(c.id)) continue;
         let t = this.getTravelTime(this.lastPoi.id, c.id, this.mode);
@@ -279,24 +329,24 @@ class PlanGenerator {
     for (let spot of this.longSpots) {
       if (this.usedIds.has(spot.id)) continue;
 
-      // 如果当前时间 > DAY_START，则先填充当天短耗时并结束当天，移到第二天
       if (this.currentMin > DAY_START) {
-        // 填充当天剩余时间（短耗时）
+        // 填充当天剩余时间（短耗时，但不返回县城）
         this.fillShortSpots(DAY_END);
-        // 确保返回县城（如果还未返回）
-        if (this.lastPoi.id !== 'county') {
+        // 如果最后游览的是长耗时或半天（即lastPoi不是县城），才返回县城
+        if (this.lastPoi.type !== 'county' && this.lastPoi.type !== 'short') {
           let ret = this.addReturnToCounty(this.currentMin);
           if (ret.error) throw new Error(`返回县城失败: ${ret.error}`);
           this.currentMin = ret.newTime;
+        } else {
+          // 如果是短耗时，不返回，直接结束当天
+          this.endDay();
         }
         this.endDay();
-        // 记录警告
         let dateStr = this.currentDate.toLocaleDateString('zh-CN');
         this.warnings.push(`因长耗时景区 "${spot.name}" 需调整，${dateStr} 当天为空闲日，建议在县城附近游览。`);
-        // 下一天
         this.currentDate.setDate(this.currentDate.getDate() + 1);
         this.currentMin = DAY_START;
-        this.lastPoi = { id: 'county', name: '红军广场', lat: 0, lng: 0 };
+        this.lastPoi = { id: 'county', name: '红军广场', lat: 0, lng: 0, type: 'county' };
         this.lunchInserted = false;
         this.dinnerInserted = false;
       }
@@ -304,16 +354,9 @@ class PlanGenerator {
       // 确保当前时间是 DAY_START
       this.currentMin = DAY_START;
 
-      // 安排长耗时
       let travel = this.getTravelTime(this.lastPoi.id, spot.id, this.mode);
       if (travel == null) travel = 0;
-      if (this.currentMin + travel + spot.visitDuration > DAY_END) {
-        // 如果总时间超过18:00，仍然安排，但会在 arrangeSpot 中截断
-        // 不报错，只是记录警告
-      }
       if (this.currentMin + travel >= NEW_ARRIVAL_CUTOFF) {
-        // 如果开始游览时间超过17:00，仍安排，但可能被截断
-        // 同样记录警告，但不阻止
         this.warnings.push(`景区 "${spot.name}" 游览开始时间 ${formatTime(this.currentMin + travel)} 超过17:00，可能无法完整游览。`);
       }
 
@@ -323,16 +366,15 @@ class PlanGenerator {
       this.currentMin = result.newTime;
       this.lastPoi = result.newPoi;
 
-      // 长耗时结束，必须返回县城（不再填充短耗时）
+      // 长耗时结束，必须返回县城（无论是否剩余时间）
       let ret = this.addReturnToCounty(this.currentMin);
       if (ret.error) throw new Error(`返回县城失败: ${ret.error}`);
       this.currentMin = ret.newTime;
       this.endDay();
 
-      // 下一天
       this.currentDate.setDate(this.currentDate.getDate() + 1);
       this.currentMin = DAY_START;
-      this.lastPoi = { id: 'county', name: '红军广场', lat: 0, lng: 0 };
+      this.lastPoi = { id: 'county', name: '红军广场', lat: 0, lng: 0, type: 'county' };
       this.lunchInserted = false;
       this.dinnerInserted = false;
       this.usedIds.add(spot.id);
@@ -359,7 +401,7 @@ class PlanGenerator {
         this.endDay();
         this.currentDate.setDate(this.currentDate.getDate() + 1);
         this.currentMin = DAY_START;
-        this.lastPoi = { id: 'county', name: '红军广场', lat: 0, lng: 0 };
+        this.lastPoi = { id: 'county', name: '红军广场', lat: 0, lng: 0, type: 'county' };
         this.lunchInserted = false;
         this.dinnerInserted = false;
         slot = 'morning';
@@ -367,12 +409,10 @@ class PlanGenerator {
       }
 
       if (this.currentMin >= LUNCH_START && this.currentMin < LUNCH_END) {
-        // 如果当前在午餐窗口内，先插入午餐并移到午餐结束
         let newTime = this.insertMeal(this.currentMin);
         if (newTime > this.currentMin) {
           this.currentMin = newTime;
         } else {
-          // 如果无法插入（可能窗口已过），则直接跳到 LUNCH_END
           this.currentMin = LUNCH_END;
         }
         slot = 'afternoon';
@@ -388,27 +428,23 @@ class PlanGenerator {
           this.allNodes.push(...result.nodes);
           this.currentMin = result.newTime;
           this.lastPoi = result.newPoi;
-          // 填充短耗时（至午餐前）
           this.fillShortSpots(blockEnd);
-          // 尝试插入午餐
           let newTime = this.insertMeal(this.currentMin);
           if (newTime > this.currentMin) this.currentMin = newTime;
-          // 下午填充短耗时（至晚餐前）
           this.fillShortSpots(DINNER_START);
-          // 返回县城
+          // 半天景点结束后返回县城
           let ret = this.addReturnToCounty(this.currentMin);
           if (ret.error) throw new Error(`返回县城失败: ${ret.error}`);
           this.currentMin = ret.newTime;
           this.endDay();
           this.currentDate.setDate(this.currentDate.getDate() + 1);
           this.currentMin = DAY_START;
-          this.lastPoi = { id: 'county', name: '红军广场', lat: 0, lng: 0 };
+          this.lastPoi = { id: 'county', name: '红军广场', lat: 0, lng: 0, type: 'county' };
           this.lunchInserted = false;
           this.dinnerInserted = false;
           this.usedIds.add(spot.id);
           continue;
         } else {
-          // 上午不够，填充短耗时到午餐，然后移到下午
           this.fillShortSpots(LUNCH_START);
           this.currentMin = LUNCH_END;
           slot = 'afternoon';
@@ -420,11 +456,10 @@ class PlanGenerator {
         let blockStart = Math.max(this.currentMin, LUNCH_END);
         let blockEnd = DINNER_START;
         if (blockStart >= NEW_ARRIVAL_CUTOFF) {
-          // 下午太晚，结束当天
           this.endDay();
           this.currentDate.setDate(this.currentDate.getDate() + 1);
           this.currentMin = DAY_START;
-          this.lastPoi = { id: 'county', name: '红军广场', lat: 0, lng: 0 };
+          this.lastPoi = { id: 'county', name: '红军广场', lat: 0, lng: 0, type: 'county' };
           this.lunchInserted = false;
           this.dinnerInserted = false;
           queue.push(spot);
@@ -437,32 +472,28 @@ class PlanGenerator {
           this.allNodes.push(...result.nodes);
           this.currentMin = result.newTime;
           this.lastPoi = result.newPoi;
-          // 填充短耗时（至晚餐前）
           this.fillShortSpots(blockEnd);
-          // 尝试插入晚餐
           let newTime = this.insertMeal(this.currentMin);
           if (newTime > this.currentMin) this.currentMin = newTime;
-          // 填充剩余时间到 DAY_END
           this.fillShortSpots(DAY_END);
-          // 返回县城
+          // 半天景点结束后返回县城
           let ret = this.addReturnToCounty(this.currentMin);
           if (ret.error) throw new Error(`返回县城失败: ${ret.error}`);
           this.currentMin = ret.newTime;
           this.endDay();
           this.currentDate.setDate(this.currentDate.getDate() + 1);
           this.currentMin = DAY_START;
-          this.lastPoi = { id: 'county', name: '红军广场', lat: 0, lng: 0 };
+          this.lastPoi = { id: 'county', name: '红军广场', lat: 0, lng: 0, type: 'county' };
           this.lunchInserted = false;
           this.dinnerInserted = false;
           this.usedIds.add(spot.id);
           continue;
         } else {
-          // 下午不足，填充短耗时到晚餐，然后结束当天
           this.fillShortSpots(DINNER_START);
           this.endDay();
           this.currentDate.setDate(this.currentDate.getDate() + 1);
           this.currentMin = DAY_START;
-          this.lastPoi = { id: 'county', name: '红军广场', lat: 0, lng: 0 };
+          this.lastPoi = { id: 'county', name: '红军广场', lat: 0, lng: 0, type: 'county' };
           this.lunchInserted = false;
           this.dinnerInserted = false;
           queue.push(spot);
@@ -474,27 +505,27 @@ class PlanGenerator {
 
   generate() {
     try {
-      // 如果当前时间 > DAY_END，移到第二天
       if (this.currentMin > DAY_END) {
         this.currentDate.setDate(this.currentDate.getDate() + 1);
         this.currentMin = DAY_START;
       }
 
-      // 1. 处理长耗时（独占，自动处理当天空白填充及移动）
+      // 1. 处理长耗时
       this.processLongSpots();
 
       // 2. 处理半天景点
       this.processHalfSpots();
 
       // 3. 处理剩余的短耗时（如果还有时间且当天未结束）
-      if (this.allowFill && this.lastPoi.id === 'county' && this.currentMin < DAY_END) {
+      if (this.allowFill && this.currentMin < DAY_END) {
         this.fillShortSpots(DAY_END);
-        // 如果还有时间且未返回，则返回县城
-        if (this.lastPoi.id !== 'county') {
+        // 如果最后游览的是长耗时或半天（即lastPoi不是县城且不是短耗时），才返回县城
+        if (this.lastPoi.type !== 'county' && this.lastPoi.type !== 'short') {
           let ret = this.addReturnToCounty(this.currentMin);
           if (ret.error) throw new Error(`返回县城失败: ${ret.error}`);
           this.currentMin = ret.newTime;
         }
+        // 短耗时景点结束不返回县城，直接结束当天
         this.endDay();
       }
 

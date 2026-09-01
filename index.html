@@ -303,7 +303,6 @@
     }
   }
 
-  // 预览路线
   window.previewRecommendRoute = async function(routeId) {
     try {
       const nodes = await getRouteNodes(routeId);
@@ -318,7 +317,6 @@
     }
   };
 
-  // 生成推荐路线
   window.generateRecommendRoute = async function(routeId) {
     const resultDiv = document.getElementById(`recommend-result-${routeId}`);
     resultDiv.innerHTML = '⏳ 生成中...';
@@ -329,7 +327,6 @@
       const timeStr = timeInput ? timeInput.value : '08:00';
       if (!dateStr) { resultDiv.innerHTML = '❌ 请选择出发日期'; return; }
 
-      // 检查时间是否早于当前
       const now = new Date();
       const selectedDateTime = new Date(dateStr + 'T' + timeStr);
       if (selectedDateTime < now) {
@@ -358,12 +355,9 @@
 
       const startMinutes = parseInt(timeStr.slice(0,2))*60 + parseInt(timeStr.slice(3));
       const mode = 'auto';
-      // 推荐路线强制从当天8点开始，但若用户指定时间晚于8点，则使用用户时间（但可能不足）
-      // 我们强制使用用户指定时间，但在生成中会处理时间不足
       let result = generateTripPlan(allSpots, dateStr, startMinutes, mode, false, true);
       let droppedCount = 0;
       if (result.error && result.errorMsg && result.errorMsg.includes('超过')) {
-        // 尝试丢弃一些景点
         for (let i = allSpots.length - 1; i >= 0; i--) {
           let testSpots = allSpots.slice(0, i);
           if (testSpots.length === 0) break;
@@ -523,20 +517,8 @@
       const startMinutes = parseInt(startTime.slice(0,2)) * 60 + parseInt(startTime.slice(3));
       let result = generateTripPlan(userSpots, dateStr, startMinutes, mode, allowFill, false);
       if (result.error) {
-        if (result.errorMsg && result.errorMsg.includes('空窗')) {
-          const userConfirm = confirm('检测到长耗时景区造成时间空窗，是否自动填充县城景点？');
-          if (userConfirm) {
-            const resultFill = generateTripPlan(userSpots, dateStr, startMinutes, mode, true, false);
-            if (resultFill.error) { alert('填充后仍生成失败：' + resultFill.errorMsg); return; }
-            result = resultFill;
-          } else {
-            alert('取消生成，请调整景点或开启填充。');
-            return;
-          }
-        } else {
-          alert('生成失败：' + result.errorMsg);
-          return;
-        }
+        alert('生成失败：' + result.errorMsg);
+        return;
       }
 
       const { days, mealCount } = generateTimeline(result.nodes);
@@ -616,16 +598,20 @@
 
   function renderMyTrip() {
     const trips = getMyTrips();
+    // 倒序显示（最新在前）
+    const sorted = trips.slice().reverse();
     let html = '';
-    trips.forEach((trip, i) => {
-      html += `<div class="card"><div onclick="window.toggleTripDetail(${i})" style="cursor:pointer;">📅 ${trip.name} | ${trip.date} ${trip.time}</div><div id="trip-detail-${i}" class="hidden">`;
+    sorted.forEach((trip, idx) => {
+      html += `<div class="card"><div onclick="window.toggleTripDetail(${idx})" style="cursor:pointer;">📅 ${trip.name} | ${trip.date} ${trip.time}</div><div id="trip-detail-${idx}" class="hidden">`;
       if (trip.days) trip.days.forEach(day => {
         html += `<div class="day-header">📅 ${day.date}</div>`;
         day.lines.forEach(l => html += `<div class="trip-line">${l}</div>`);
         if (day.weatherTip) html += `<div class="trip-line" style="color:#0d47a1;">${day.weatherTip}</div>`;
       });
       if (trip.tips) html += `<div class="warn-list">${trip.tips.map(t => `<div>${t}</div>`).join('')}</div>`;
-      html += `<button class="btn btn-danger btn-sm" onclick="event.stopPropagation(); window.deleteTripHandler(${i})">删除</button></div></div>`;
+      // 原始索引用于删除
+      const origIdx = trips.length - 1 - idx;
+      html += `<button class="btn btn-danger btn-sm" onclick="event.stopPropagation(); window.deleteTripHandler(${origIdx})">删除</button></div></div>`;
     });
     document.getElementById('myTripContent').innerHTML = html || '<p>暂无保存的行程</p>';
   }
@@ -639,24 +625,34 @@
     renderMyTrip();
   };
 
-  // 预约折叠展示
+  // 预约展示（倒序，显示日期、单位、项目名称）
   let reservationData = [];
 
   async function loadMyReservationsUI() {
     const user = await getCurrentUser();
     const data = await loadMyReservations(user?.id);
-    reservationData = data || [];
+    // 按预约日期倒序
+    reservationData = (data || []).sort((a,b) => new Date(b.reservation_date) - new Date(a.reservation_date));
     let html = '';
     if (reservationData.length > 0) {
       reservationData.forEach((r, idx) => {
+        // 提取项目名称（从 remark 中提取 "内容：" 部分）
+        let projectName = '';
+        if (r.remark) {
+          const match = r.remark.match(/内容：([^|]+)/);
+          if (match) projectName = match[1];
+        }
         html += `<div class="card">
           <div onclick="window.toggleReservationDetail(${idx})" style="cursor:pointer;">
-            📅 ${r.reservation_date} | ${r.time_slot_start} | ${r.name || '未命名'}
+            📅 ${r.reservation_date} | ${r.unit || '无单位'} | ${projectName || '无项目'}
           </div>
           <div id="res-detail-${idx}" class="hidden">
             <p><b>单位：</b>${r.unit||''}</p>
+            <p><b>联系人：</b>${r.name||''}</p>
             <p><b>电话：</b>${r.phone||''}</p>
             <p><b>人数：</b>${r.visitor_count}</p>
+            <p><b>时段：</b>${r.time_slot_start} - ${r.time_slot_end||''}</p>
+            <p><b>地点：</b>${r.room||''}</p>
             <p><b>备注：</b>${r.remark||''}</p>
             <p><b>状态：</b>${r.status}</p>
             <button class="btn btn-danger btn-sm" onclick="window.deleteReservationHandler(${r.id})">删除</button>
@@ -683,7 +679,7 @@
     }
   };
 
-  // 留言
+  // 留言（同前）
   async function loadFeedbackHistory() {
     const user = await getCurrentUser();
     const data = await getMyFeedbacks(user?.id);

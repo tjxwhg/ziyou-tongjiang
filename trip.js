@@ -53,8 +53,6 @@ class PlanGenerator {
     this.halfSpots.sort((a,b) => b.visitDuration - a.visitDuration);
     this.lunchInserted = false;
     this.dinnerInserted = false;
-    // 新增：记录每天是否已插入餐食（用于后处理）
-    this.dayMeals = {}; // key: date string
   }
 
   classifySpots() {
@@ -74,45 +72,204 @@ class PlanGenerator {
     if (this.allNodes.length > 0 && this.allNodes[this.allNodes.length-1].type !== 'dayEnd') {
       this.allNodes.push({ type: 'dayEnd' });
     }
-    // 重置当日餐食标记，第二天重新插入
-    // 在generate后处理中统一插入，因此这里不重置
+    // 重置餐食标记，每天独立
+    this.lunchInserted = false;
+    this.dinnerInserted = false;
   }
 
-  // 插入餐食，返回新时间
-  insertMeal(currentTime) {
-    let time = currentTime;
-    // 午餐
-    if (!this.lunchInserted && time >= LUNCH_START && time < LUNCH_END + 30) {
-      let start = Math.max(time, LUNCH_START);
-      let end = start + MEAL_DURATION;
-      this.allNodes.push({
-        type: 'meal',
-        name: '午餐时间',
-        startTime: start,
-        endTime: end,
-        duration: MEAL_DURATION
-      });
-      this.lunchInserted = true;
-      return end;
+  // 插入餐食到指定位置（后处理用）
+  insertMealAt(nodeList, time, mealName) {
+    // 在 nodeList 中插入一个餐食节点，按时间排序
+    const mealNode = {
+      type: 'meal',
+      name: mealName,
+      startTime: time,
+      endTime: time + MEAL_DURATION,
+      duration: MEAL_DURATION
+    };
+    // 找到合适位置插入（按 startTime 升序）
+    let insertIdx = 0;
+    while (insertIdx < nodeList.length && nodeList[insertIdx].startTime < time) {
+      insertIdx++;
     }
-    // 晚餐
-    if (!this.dinnerInserted && time >= DINNER_START && time < DINNER_END + 30) {
-      let start = Math.max(time, DINNER_START);
-      let end = start + MEAL_DURATION;
-      this.allNodes.push({
-        type: 'meal',
-        name: '晚餐时间',
-        startTime: start,
-        endTime: end,
-        duration: MEAL_DURATION
-      });
-      this.dinnerInserted = true;
-      return end;
+    nodeList.splice(insertIdx, 0, mealNode);
+    // 调整后续节点时间偏移
+    let shift = MEAL_DURATION;
+    for (let i = insertIdx + 1; i < nodeList.length; i++) {
+      nodeList[i].startTime += shift;
+      nodeList[i].endTime += shift;
     }
-    return time;
+    return nodeList;
   }
 
-  // 安排一个景点（游览+交通）
+  // 后处理：为每天插入午餐和晚餐（严格按照规则）
+  postProcessMeals() {
+    // 先按天分组节点
+    let days = {};
+    let currentDay = 0;
+    let dayNodes = [];
+    for (let node of this.allNodes) {
+      if (node.type === 'dayEnd') {
+        if (dayNodes.length > 0) {
+          days[currentDay] = dayNodes;
+          dayNodes = [];
+          currentDay++;
+        }
+        continue;
+      }
+      dayNodes.push(node);
+    }
+    if (dayNodes.length > 0) {
+      days[currentDay] = dayNodes;
+    }
+
+    // 对每天处理
+    for (let dayKey in days) {
+      let nodes = days[dayKey];
+      if (nodes.length === 0) continue;
+      // 按时间排序
+      nodes.sort((a,b) => a.startTime - b.startTime);
+
+      // --- 插入午餐 ---
+      let lunchInserted = false;
+      // 寻找午餐插入点
+      for (let i = 0; i < nodes.length; i++) {
+        let node = nodes[i];
+        // 如果当前节点覆盖了午餐时段
+        if (node.startTime <= LUNCH_START && node.endTime > LUNCH_START) {
+          // 如果当前节点是游览且剩余时间 > 60，分割
+          if (node.type === 'visit' && node.duration > 60) {
+            // 分割游览
+            let splitTime = LUNCH_START;
+            let firstPart = { ...node, endTime: splitTime, duration: splitTime - node.startTime };
+            let secondPart = { ...node, startTime: splitTime + MEAL_DURATION, endTime: node.endTime + MEAL_DURATION, duration: node.duration - (splitTime - node.startTime) };
+            // 替换原节点为两部分 + 餐食
+            nodes.splice(i, 1, firstPart, { type: 'meal', name: '午餐时间', startTime: splitTime, endTime: splitTime + MEAL_DURATION, duration: MEAL_DURATION }, secondPart);
+            lunchInserted = true;
+            // 调整后续节点时间
+            for (let j = i+2; j < nodes.length; j++) {
+              nodes[j].startTime += MEAL_DURATION;
+              nodes[j].endTime += MEAL_DURATION;
+            }
+            break;
+          } else {
+            // 当前节点剩余时间 <= 60，等当前节点结束后插入
+            let insertTime = node.endTime;
+            // 插入餐食
+            let mealNode = { type: 'meal', name: '午餐时间', startTime: insertTime, endTime: insertTime + MEAL_DURATION, duration: MEAL_DURATION };
+            nodes.splice(i+1, 0, mealNode);
+            lunchInserted = true;
+            // 调整后续节点时间
+            for (let j = i+2; j < nodes.length; j++) {
+              nodes[j].startTime += MEAL_DURATION;
+              nodes[j].endTime += MEAL_DURATION;
+            }
+            break;
+          }
+        } else if (node.startTime > LUNCH_START && !lunchInserted) {
+          // 当前节点在午餐时段之后，在它之前插入
+          let insertTime = LUNCH_START;
+          // 检查是否与前一节点重叠
+          let prevEnd = i > 0 ? nodes[i-1].endTime : DAY_START;
+          if (prevEnd > insertTime) insertTime = prevEnd;
+          if (insertTime + MEAL_DURATION <= node.startTime) {
+            let mealNode = { type: 'meal', name: '午餐时间', startTime: insertTime, endTime: insertTime + MEAL_DURATION, duration: MEAL_DURATION };
+            nodes.splice(i, 0, mealNode);
+            lunchInserted = true;
+            // 调整后续节点时间
+            for (let j = i+1; j < nodes.length; j++) {
+              nodes[j].startTime += MEAL_DURATION;
+              nodes[j].endTime += MEAL_DURATION;
+            }
+            break;
+          }
+        }
+      }
+      // 如果没插入午餐，且在午餐时段有空白，则在最后插入
+      if (!lunchInserted) {
+        let lastEnd = nodes[nodes.length-1].endTime;
+        if (lastEnd < LUNCH_START) {
+          let insertTime = Math.max(lastEnd, LUNCH_START);
+          if (insertTime + MEAL_DURATION <= DAY_END) {
+            nodes.push({ type: 'meal', name: '午餐时间', startTime: insertTime, endTime: insertTime + MEAL_DURATION, duration: MEAL_DURATION });
+          }
+        }
+      }
+
+      // 重新排序
+      nodes.sort((a,b) => a.startTime - b.startTime);
+
+      // --- 插入晚餐（类似逻辑）---
+      let dinnerInserted = false;
+      for (let i = 0; i < nodes.length; i++) {
+        let node = nodes[i];
+        if (node.startTime <= DINNER_START && node.endTime > DINNER_START) {
+          if (node.type === 'visit' && node.duration > 60) {
+            let splitTime = DINNER_START;
+            let firstPart = { ...node, endTime: splitTime, duration: splitTime - node.startTime };
+            let secondPart = { ...node, startTime: splitTime + MEAL_DURATION, endTime: node.endTime + MEAL_DURATION, duration: node.duration - (splitTime - node.startTime) };
+            nodes.splice(i, 1, firstPart, { type: 'meal', name: '晚餐时间', startTime: splitTime, endTime: splitTime + MEAL_DURATION, duration: MEAL_DURATION }, secondPart);
+            dinnerInserted = true;
+            for (let j = i+2; j < nodes.length; j++) {
+              nodes[j].startTime += MEAL_DURATION;
+              nodes[j].endTime += MEAL_DURATION;
+            }
+            break;
+          } else {
+            let insertTime = node.endTime;
+            let mealNode = { type: 'meal', name: '晚餐时间', startTime: insertTime, endTime: insertTime + MEAL_DURATION, duration: MEAL_DURATION };
+            nodes.splice(i+1, 0, mealNode);
+            dinnerInserted = true;
+            for (let j = i+2; j < nodes.length; j++) {
+              nodes[j].startTime += MEAL_DURATION;
+              nodes[j].endTime += MEAL_DURATION;
+            }
+            break;
+          }
+        } else if (node.startTime > DINNER_START && !dinnerInserted) {
+          let insertTime = DINNER_START;
+          let prevEnd = i > 0 ? nodes[i-1].endTime : DAY_START;
+          if (prevEnd > insertTime) insertTime = prevEnd;
+          if (insertTime + MEAL_DURATION <= node.startTime) {
+            let mealNode = { type: 'meal', name: '晚餐时间', startTime: insertTime, endTime: insertTime + MEAL_DURATION, duration: MEAL_DURATION };
+            nodes.splice(i, 0, mealNode);
+            dinnerInserted = true;
+            for (let j = i+1; j < nodes.length; j++) {
+              nodes[j].startTime += MEAL_DURATION;
+              nodes[j].endTime += MEAL_DURATION;
+            }
+            break;
+          }
+        }
+      }
+      if (!dinnerInserted) {
+        let lastEnd = nodes[nodes.length-1].endTime;
+        if (lastEnd < DINNER_START) {
+          let insertTime = Math.max(lastEnd, DINNER_START);
+          if (insertTime + MEAL_DURATION <= DAY_END) {
+            nodes.push({ type: 'meal', name: '晚餐时间', startTime: insertTime, endTime: insertTime + MEAL_DURATION, duration: MEAL_DURATION });
+          }
+        }
+      }
+
+      // 重新排序并更新 days
+      nodes.sort((a,b) => a.startTime - b.startTime);
+      days[dayKey] = nodes;
+    }
+
+    // 重新构建 allNodes
+    this.allNodes = [];
+    for (let dayKey in days) {
+      this.allNodes.push(...days[dayKey]);
+      this.allNodes.push({ type: 'dayEnd' });
+    }
+    // 移除最后一个 dayEnd
+    if (this.allNodes.length > 0 && this.allNodes[this.allNodes.length-1].type === 'dayEnd') {
+      this.allNodes.pop();
+    }
+  }
+
+  // 安排一个景点（不含餐食插入，仅生成游览和交通节点）
   arrangeSpot(spot, travelTime, startTime) {
     let nodes = [];
     let time = startTime;
@@ -134,9 +291,6 @@ class PlanGenerator {
       poi = { id: spot.id, name: spot.name, lat: spot.lat, lng: spot.lng };
     }
 
-    // 到达后尝试插入餐食（如果时间合适）
-    time = this.insertMeal(time);
-
     let remaining = spot.visitDuration || 0;
     if (time >= DAY_END) {
       return { nodes, newTime: time, newPoi: poi, remaining: remaining, error: null };
@@ -145,35 +299,25 @@ class PlanGenerator {
       return { nodes, newTime: time, newPoi: poi, remaining: remaining, error: null };
     }
 
-    while (remaining > 0) {
-      if (time >= DAY_END) return { nodes, newTime: time, newPoi: poi, remaining, error: null };
-
-      let mealInserted = false;
-      if (remaining > 60) {
-        let newTime = this.insertMeal(time);
-        if (newTime > time) {
-          time = newTime;
-          mealInserted = true;
-        }
-      }
-      if (!mealInserted) {
-        let nextMeal = DAY_END;
-        if (!this.lunchInserted && time < LUNCH_START) nextMeal = Math.min(nextMeal, LUNCH_START);
-        else if (!this.dinnerInserted && time < DINNER_START) nextMeal = Math.min(nextMeal, DINNER_START);
-        let maxSeg = nextMeal - time;
-        if (maxSeg <= 0) maxSeg = 1;
-        let seg = Math.min(remaining, maxSeg, DAY_END - time);
-        if (seg <= 0) break;
-        nodes.push({ type: 'visit', name: spot.name, startTime: time, endTime: time + seg, duration: seg, spotId: spot.id });
-        time += seg;
-        remaining -= seg;
-      }
+    // 游览节点
+    let visitEnd = Math.min(time + remaining, DAY_END);
+    nodes.push({
+      type: 'visit',
+      name: spot.name,
+      startTime: time,
+      endTime: visitEnd,
+      duration: visitEnd - time,
+      spotId: spot.id
+    });
+    time = visitEnd;
+    remaining -= (visitEnd - time);
+    if (remaining > 0) {
+      return { nodes, newTime: time, newPoi: poi, remaining: remaining, error: null };
     }
 
-    return { nodes, newTime: time, newPoi: poi, remaining: remaining, error: null };
+    return { nodes, newTime: time, newPoi: poi, remaining: 0, error: null };
   }
 
-  // 返回县城
   addReturnToCounty(currentTime) {
     let travelBack = this.getTravelTime(this.lastPoi.id, 'county', this.mode);
     if (travelBack == null) travelBack = 0;
@@ -192,21 +336,14 @@ class PlanGenerator {
       toPoi: 'county',
       isReturn: true
     });
-    // 返回后尝试插入餐食（如果时间合适）
-    newTime = this.insertMeal(newTime);
     this.lastPoi = { id: 'county', name: '红军广场', lat: 0, lng: 0 };
     return { newTime };
   }
 
-  // 填充空窗（仅当 allowFill 且不是仅餐）
-  fillGap(maxEndTime) {
-    if (!this.allowFill || this.fillOnlyMeals) return;
+  // 填充短耗时（碎片化）
+  fillShortSpots(maxEndTime) {
+    if (!this.allowFill) return;
     while (this.currentMin < maxEndTime) {
-      let newTime = this.insertMeal(this.currentMin);
-      if (newTime > this.currentMin) {
-        this.currentMin = newTime;
-        continue;
-      }
       let found = false;
       for (let s of this.shortSpots) {
         if (this.usedIds.has(s.id)) continue;
@@ -224,6 +361,7 @@ class PlanGenerator {
         break;
       }
       if (found) continue;
+      // 尝试县城景点
       for (let c of this.countySpots) {
         if (this.usedIds.has(c.id)) continue;
         let t = this.getTravelTime(this.lastPoi.id, c.id, this.mode);
@@ -243,22 +381,34 @@ class PlanGenerator {
     }
   }
 
-  // 处理长耗时景点（独占一天）
+  // 处理长耗时（独占一天）
   processLongSpots() {
     for (let spot of this.longSpots) {
       if (this.usedIds.has(spot.id)) continue;
-      // 长耗时必须在当天开始，如果当前时间 > DAY_START，则结束当天，第二天8点开始
+
+      // 如果当前时间 > DAY_START，先填充短耗时结束当天，然后移下一天
       if (this.currentMin > DAY_START) {
+        // 填充当前天剩余时间（短耗时）
+        this.fillShortSpots(DAY_END);
+        // 返回县城（如果还没返回）
+        if (this.lastPoi.id !== 'county') {
+          let ret = this.addReturnToCounty(this.currentMin);
+          if (ret.error) throw new Error(`返回县城失败: ${ret.error}`);
+          this.currentMin = ret.newTime;
+        }
         this.endDay();
+        // 下一天
         this.currentDate.setDate(this.currentDate.getDate() + 1);
         this.currentMin = DAY_START;
         this.lastPoi = { id: 'county', name: '红军广场', lat: 0, lng: 0 };
         this.lunchInserted = false;
         this.dinnerInserted = false;
       }
-      // 确保当前时间恰好是 DAY_START
+
+      // 确保当前时间是 DAY_START
       this.currentMin = DAY_START;
 
+      // 安排长耗时
       let travel = this.getTravelTime(this.lastPoi.id, spot.id, this.mode);
       if (travel == null) travel = 0;
       if (this.currentMin + travel + spot.visitDuration > DAY_END) {
@@ -273,11 +423,8 @@ class PlanGenerator {
       this.allNodes.push(...result.nodes);
       this.currentMin = result.newTime;
       this.lastPoi = result.newPoi;
-      if (result.remaining > 0) {
-        throw new Error(`长耗时 "${spot.name}" 剩余 ${result.remaining} 分钟无法完成`);
-      }
 
-      // 长耗时独占一天，不填充其他景点，直接返回县城
+      // 长耗时结束，必须返回县城
       let ret = this.addReturnToCounty(this.currentMin);
       if (ret.error) throw new Error(`返回县城失败: ${ret.error}`);
       this.currentMin = ret.newTime;
@@ -293,7 +440,7 @@ class PlanGenerator {
     }
   }
 
-  // 处理半天景点（半日游）
+  // 处理半天景点
   processHalfSpots() {
     let queue = [...this.halfSpots];
     let attempts = 0;
@@ -335,13 +482,10 @@ class PlanGenerator {
           this.allNodes.push(...result.nodes);
           this.currentMin = result.newTime;
           this.lastPoi = result.newPoi;
-          if (this.allowFill && !this.fillOnlyMeals) {
-            this.fillGap(blockEnd);
-          }
-          this.currentMin = this.insertMeal(this.currentMin);
-          if (this.allowFill && !this.fillOnlyMeals) {
-            this.fillGap(DINNER_START);
-          }
+          // 填充短耗时
+          this.fillShortSpots(blockEnd);
+          this.currentMin = Math.max(this.currentMin, LUNCH_END);
+          this.fillShortSpots(DINNER_START);
           let ret = this.addReturnToCounty(this.currentMin);
           if (ret.error) throw new Error(`返回县城失败: ${ret.error}`);
           this.currentMin = ret.newTime;
@@ -354,7 +498,7 @@ class PlanGenerator {
           this.usedIds.add(spot.id);
           continue;
         } else {
-          if (this.allowFill && !this.fillOnlyMeals) this.fillGap(LUNCH_START);
+          this.fillShortSpots(LUNCH_START);
           this.currentMin = LUNCH_END;
           slot = 'afternoon';
           travel = this.getTravelTime(this.lastPoi.id, spot.id, this.mode);
@@ -381,10 +525,8 @@ class PlanGenerator {
           this.allNodes.push(...result.nodes);
           this.currentMin = result.newTime;
           this.lastPoi = result.newPoi;
-          if (this.allowFill && !this.fillOnlyMeals) {
-            this.fillGap(blockEnd);
-            this.fillGap(DAY_END);
-          }
+          this.fillShortSpots(blockEnd);
+          this.fillShortSpots(DAY_END);
           let ret = this.addReturnToCounty(this.currentMin);
           if (ret.error) throw new Error(`返回县城失败: ${ret.error}`);
           this.currentMin = ret.newTime;
@@ -397,7 +539,7 @@ class PlanGenerator {
           this.usedIds.add(spot.id);
           continue;
         } else {
-          if (this.allowFill && !this.fillOnlyMeals) this.fillGap(DINNER_START);
+          this.fillShortSpots(DINNER_START);
           this.endDay();
           this.currentDate.setDate(this.currentDate.getDate() + 1);
           this.currentMin = DAY_START;
@@ -411,182 +553,46 @@ class PlanGenerator {
     }
   }
 
-  // 处理短耗时（碎片化填充）
+  // 处理短耗时（保留但已被 fillShortSpots 替代）
   processShortSpots() {
-    if (!this.allowFill || this.fillOnlyMeals) return;
-    let anyInserted = true;
-    while (anyInserted) {
-      anyInserted = false;
-      if (this.currentMin >= NEW_ARRIVAL_CUTOFF) break;
-      for (let s of this.shortSpots) {
-        if (this.usedIds.has(s.id)) continue;
-        let t = this.getTravelTime(this.lastPoi.id, s.id, this.mode);
-        if (t == null) t = 0;
-        if (this.currentMin + t >= NEW_ARRIVAL_CUTOFF) continue;
-        if (this.currentMin + t + s.visitDuration > DAY_END) continue;
-        let result = this.arrangeSpot(s, t, this.currentMin);
-        if (result.error) continue;
-        this.allNodes.push(...result.nodes);
-        this.currentMin = result.newTime;
-        this.lastPoi = result.newPoi;
-        this.usedIds.add(s.id);
-        anyInserted = true;
-        break;
-      }
-      if (anyInserted) continue;
-      for (let c of this.countySpots) {
-        if (this.usedIds.has(c.id)) continue;
-        let t = this.getTravelTime(this.lastPoi.id, c.id, this.mode);
-        if (t == null) t = 0;
-        if (this.currentMin + t >= NEW_ARRIVAL_CUTOFF) continue;
-        if (this.currentMin + t + c.visitDuration > DAY_END) continue;
-        let result = this.arrangeSpot(c, t, this.currentMin);
-        if (result.error) continue;
-        this.allNodes.push(...result.nodes);
-        this.currentMin = result.newTime;
-        this.lastPoi = result.newPoi;
-        this.usedIds.add(c.id);
-        anyInserted = true;
-        break;
-      }
-    }
-  }
-
-  // 后处理：为每天强制插入午餐和晚餐（如果缺失）
-  ensureMealsPerDay() {
-    // 按天分组节点
-    let days = {};
-    let currentDay = 0;
-    let dayNodes = [];
-    for (let node of this.allNodes) {
-      if (node.type === 'dayEnd') {
-        if (dayNodes.length > 0) {
-          days[currentDay] = dayNodes;
-          dayNodes = [];
-          currentDay++;
-        }
-        continue;
-      }
-      dayNodes.push(node);
-    }
-    if (dayNodes.length > 0) {
-      days[currentDay] = dayNodes;
-    }
-
-    // 对每一天，检查是否有午餐和晚餐节点
-    for (let dayKey in days) {
-      let nodes = days[dayKey];
-      let hasLunch = nodes.some(n => n.type === 'meal' && n.name.includes('午餐'));
-      let hasDinner = nodes.some(n => n.type === 'meal' && n.name.includes('晚餐'));
-      // 如果当天有行程，且无午餐，则在合适时间插入
-      if (!hasLunch && nodes.some(n => n.type === 'visit' || n.type === 'transport')) {
-        // 寻找合适插入点：在11:30左右且不与其他节点重叠
-        let insertTime = LUNCH_START;
-        // 尝试在11:30插入，如果被占用则顺延
-        let inserted = false;
-        for (let i = 0; i < nodes.length; i++) {
-          let n = nodes[i];
-          if (n.startTime <= insertTime && n.endTime > insertTime) {
-            // 被占用，尝试顺延到该节点结束后
-            insertTime = n.endTime;
-            if (insertTime > LUNCH_END) break;
-          } else if (n.startTime > insertTime) {
-            // 可以插入
-            let mealNode = {
-              type: 'meal',
-              name: '午餐时间',
-              startTime: insertTime,
-              endTime: insertTime + MEAL_DURATION,
-              duration: MEAL_DURATION
-            };
-            // 插入到该节点前
-            nodes.splice(i, 0, mealNode);
-            inserted = true;
-            break;
-          }
-        }
-        if (!inserted && nodes.length > 0) {
-          // 追加到最后
-          let last = nodes[nodes.length-1];
-          if (last.endTime + MEAL_DURATION <= DAY_END) {
-            nodes.push({
-              type: 'meal',
-              name: '午餐时间',
-              startTime: last.endTime,
-              endTime: last.endTime + MEAL_DURATION,
-              duration: MEAL_DURATION
-            });
-          }
-        }
-      }
-      // 晚餐类似
-      if (!hasDinner && nodes.some(n => n.type === 'visit' || n.type === 'transport')) {
-        let insertTime = DINNER_START;
-        let inserted = false;
-        for (let i = 0; i < nodes.length; i++) {
-          let n = nodes[i];
-          if (n.startTime <= insertTime && n.endTime > insertTime) {
-            insertTime = n.endTime;
-            if (insertTime > DINNER_END) break;
-          } else if (n.startTime > insertTime) {
-            let mealNode = {
-              type: 'meal',
-              name: '晚餐时间',
-              startTime: insertTime,
-              endTime: insertTime + MEAL_DURATION,
-              duration: MEAL_DURATION
-            };
-            nodes.splice(i, 0, mealNode);
-            inserted = true;
-            break;
-          }
-        }
-        if (!inserted && nodes.length > 0) {
-          let last = nodes[nodes.length-1];
-          if (last.endTime + MEAL_DURATION <= DAY_END) {
-            nodes.push({
-              type: 'meal',
-              name: '晚餐时间',
-              startTime: last.endTime,
-              endTime: last.endTime + MEAL_DURATION,
-              duration: MEAL_DURATION
-            });
-          }
-        }
-      }
-    }
-
-    // 重建 allNodes
-    this.allNodes = [];
-    for (let dayKey in days) {
-      this.allNodes.push(...days[dayKey]);
-      // 添加 dayEnd（除了最后一天可能不需要，但为了统一，末尾添加）
-      this.allNodes.push({ type: 'dayEnd' });
-    }
-    // 移除最后一个多余的 dayEnd
-    if (this.allNodes.length > 0 && this.allNodes[this.allNodes.length-1].type === 'dayEnd') {
-      this.allNodes.pop();
-    }
+    // 已弃用，用 fillShortSpots 代替
   }
 
   generate() {
     try {
-      // 如果当前时间 > DAY_START，重置到 DAY_START（当天从8点开始）
-      if (this.currentMin > DAY_START) {
+      // 从用户指定时间开始，但若用户时间 > DAY_START，则先填充当天，再移到第二天8:00（由 processLongSpots 内部处理）
+      // 确保当前时间不晚于18:00
+      if (this.currentMin > DAY_END) {
+        this.currentDate.setDate(this.currentDate.getDate() + 1);
         this.currentMin = DAY_START;
       }
-      // 处理长耗时
+
+      // 1. 处理长耗时（独占，自动处理当天空白填充）
       this.processLongSpots();
-      // 处理半天
+
+      // 2. 处理半天景点
       this.processHalfSpots();
-      // 处理短耗时（仅当允许填充且非仅餐）
-      this.processShortSpots();
-      // 后处理：确保每天有午餐晚餐
-      this.ensureMealsPerDay();
+
+      // 3. 处理剩余的短耗时（如果有）
+      if (this.allowFill) {
+        this.fillShortSpots(DAY_END);
+        // 如果还有剩余时间，返回县城
+        if (this.lastPoi.id !== 'county') {
+          let ret = this.addReturnToCounty(this.currentMin);
+          if (ret.error) throw new Error(`返回县城失败: ${ret.error}`);
+          this.currentMin = ret.newTime;
+        }
+        this.endDay();
+      }
+
+      // 4. 后处理：插入午餐和晚餐
+      this.postProcessMeals();
+
       // 确保结尾有 dayEnd
       if (this.allNodes.length > 0 && this.allNodes[this.allNodes.length-1].type !== 'dayEnd') {
         this.allNodes.push({ type: 'dayEnd' });
       }
+
       return { nodes: this.allNodes, error: false };
     } catch (e) {
       return { nodes: [], error: true, errorMsg: e.message };
@@ -618,7 +624,6 @@ export function generateTripPlan(spots, startDate, startTime, mode, allowFill = 
 }
 
 export function generateTimeline(nodes) {
-  // 不变
   if (!nodes || nodes.length === 0) return { days: [], mealCount: 0 };
   let merged = [];
   for (let node of nodes) {

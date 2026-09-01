@@ -135,6 +135,11 @@ export async function updateReservation(id, updates) {
   const { error } = await supabase.from('reservations').update(updates).eq('id',id);
   if (error) throw error;
 }
+// 新增硬删除
+export async function deleteReservation(id) {
+  const { error } = await supabase.from('reservations').delete().eq('id', id);
+  if (error) throw error;
+}
 
 // ---------- 留言 ----------
 export async function getFeedbacks(merchantId) {

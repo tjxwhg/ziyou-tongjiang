@@ -9,7 +9,7 @@
   <!-- Leaflet CSS -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <style>
-    /* === 样式与之前完全相同，此处完整保留 === */
+    /* 样式与之前完全相同（此处略，实际部署时请保留完整样式） */
     * { margin:0; padding:0; box-sizing:border-box; }
     body { font-family: system-ui, sans-serif; height:100vh; overflow:hidden; background:#f5f5f5; }
     #map { height:100vh; width:100vw; z-index:1; }
@@ -54,11 +54,6 @@
     .category-bar .cat-btn { padding:4px 12px; border-radius:16px; border:1px solid #ccc; background:white; font-size:13px; cursor:pointer; white-space:nowrap; }
     .category-bar .cat-btn.active { background:#2e7d32; color:white; border-color:#2e7d32; }
     .cat-trigger { position:fixed; top:0; left:50%; transform:translateX(-50%); z-index:1599; background:rgba(255,255,255,0.8); padding:2px 16px; border-radius:0 0 12px 12px; font-size:12px; cursor:pointer; border:1px solid #ccc; border-top:none; box-shadow:0 2px 6px rgba(0,0,0,0.1); }
-    .tab-switch { display:flex; gap:8px; margin-bottom:12px; }
-    .tab-switch button { padding:6px 16px; border:1px solid #ccc; background:white; border-radius:4px; cursor:pointer; }
-    .tab-switch button.active { background:#2e7d32; color:white; border-color:#2e7d32; }
-    .tab-content { display:block; }
-    .tab-content.hidden { display:none; }
     .toggle-switch { display:flex; align-items:center; gap:8px; margin:6px 0; }
     .toggle-switch input[type="checkbox"] { width:auto; }
     .toggle-switch label { margin:0; font-weight:normal; }
@@ -100,21 +95,20 @@
   <div class="panel-body" id="merchantDetailContent"></div>
 </div>
 
-<!-- 路线面板 -->
+<!-- 路线面板（无切换标签） -->
 <div class="panel" id="routesPanel">
-  <div class="panel-header"><h2>路线</h2><button onclick="window.closePanel('routesPanel')">✕</button></div>
+  <div class="panel-header">
+    <h2 id="routesPanelTitle">路线</h2>
+    <button onclick="window.closePanel('routesPanel')">✕</button>
+  </div>
   <div class="panel-body">
-    <div class="tab-switch" id="routeTabSwitch">
-      <button class="active" onclick="window.switchRouteTab('recommend')">📌 推荐路线</button>
-      <button onclick="window.switchRouteTab('custom')">✏️ 自设行程</button>
-    </div>
     <!-- 推荐路线内容 -->
-    <div id="recommendTab" class="tab-content">
+    <div id="recommendTab">
       <h3>📌 推荐路线</h3>
       <div id="recommendRouteList"></div>
     </div>
     <!-- 自设行程内容 -->
-    <div id="customTab" class="tab-content hidden">
+    <div id="customTab" class="hidden">
       <h3>✏️ 自设行程</h3>
       <div class="form-group"><label>出发日期</label><input type="date" id="custom-trip-date"></div>
       <div class="form-group"><label>出发时间（10分钟间隔）</label><select id="custom-trip-time"></select></div>
@@ -130,7 +124,7 @@
   </div>
 </div>
 
-<!-- 我的面板 -->
+<!-- 我的面板（不变） -->
 <div class="panel" id="myPanel">
   <div class="panel-header"><h2>我的</h2><button onclick="window.closePanel('myPanel')">✕</button></div>
   <div class="panel-body">
@@ -155,7 +149,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 
-<!-- 模块加载（使用 importmap） -->
+<!-- 模块加载 -->
 <script type="importmap">
 {
   "imports": {
@@ -172,7 +166,7 @@
 
 <script type="module">
   // ============================================================
-  // 导入所有需要的模块（包括 API 函数）
+  // 导入所有需要的模块
   // ============================================================
   import { getPois, getRoutes, getRouteNodes, getRoute } from './api.js';
   import { getCurrentUser, signInAnonymously } from './auth.js';
@@ -247,29 +241,40 @@
   };
 
   // ============================================================
-  // 路线面板切换
+  // 路线面板打开（无切换标签，直接显示内容）
   // ============================================================
-  window.switchRouteTab = (tab) => {
-    document.querySelectorAll('#routeTabSwitch button').forEach(btn => btn.classList.remove('active'));
-    if (tab === 'recommend') {
-      document.querySelector('#routeTabSwitch button:first-child').classList.add('active');
-      document.getElementById('recommendTab').classList.remove('hidden');
-      document.getElementById('customTab').classList.add('hidden');
-      loadRecommendRoutes(); // 每次切换重新加载（也可缓存）
-    } else {
-      document.querySelector('#routeTabSwitch button:last-child').classList.add('active');
-      document.getElementById('recommendTab').classList.add('hidden');
-      document.getElementById('customTab').classList.remove('hidden');
-      initCustomTab();
-    }
-  };
   window.openRouteTab = (tab) => {
-    window.openPanel('routesPanel');
-    window.switchRouteTab(tab);
+    const panel = document.getElementById('routesPanel');
+    const title = document.getElementById('routesPanelTitle');
+    const recommendTab = document.getElementById('recommendTab');
+    const customTab = document.getElementById('customTab');
+
+    // 根据 tab 显示对应的内容区域
+    if (tab === 'recommend') {
+      title.textContent = '📌 推荐路线';
+      recommendTab.classList.remove('hidden');
+      customTab.classList.add('hidden');
+      // 加载推荐路线（如果尚未加载）
+      if (!recommendTab.dataset.loaded) {
+        loadRecommendRoutes();
+        recommendTab.dataset.loaded = 'true';
+      }
+    } else if (tab === 'custom') {
+      title.textContent = '✏️ 自设行程';
+      recommendTab.classList.add('hidden');
+      customTab.classList.remove('hidden');
+      // 初始化自设行程（如果尚未初始化）
+      if (!customTab.dataset.loaded) {
+        initCustomTab();
+        customTab.dataset.loaded = 'true';
+      }
+    }
+    // 打开面板
+    panel.classList.add('active');
   };
 
   // ============================================================
-  // 推荐路线（使用导入的 API 函数）
+  // 推荐路线加载
   // ============================================================
   async function loadRecommendRoutes() {
     try {
@@ -664,7 +669,7 @@
   };
 
   // ============================================================
-  // 商户详情（点击地图标记调用）
+  // 商户详情
   // ============================================================
   window.showPoiDetail = async function(poi) {
     const { default: api } = await import('./api.js');
@@ -734,44 +739,35 @@
   }
 
   // ============================================================
-  // 初始化应用（匿名登录失败不阻塞）
+  // 初始化
   // ============================================================
   async function init() {
     try {
-      // 尝试匿名登录（非必需，失败则继续）
+      // 匿名登录
       try {
         await signInAnonymously();
         console.log('[系统] 匿名登录成功');
       } catch (anonError) {
         console.warn('[系统] 匿名登录失败（不影响地图浏览）:', anonError.message);
-        // 不阻塞，继续执行
       }
 
-      // 初始化地图
+      // 地图
       initMap('map');
-      // 加载POI
       const pois = await getPois();
       loadPoisToMap(pois);
-      // 设置 countySpots
       window.__countySpots = getCountySpots(pois);
-      // 加载交通预设
       await loadTransportPresets();
-      // 初始化时间选择器
       initCustomTimeSelectors();
-      // 自动定位
       locateUser();
-      // 渲染我的行程
       renderMyTrip();
-      // 加载留言历史
       await loadFeedbackHistory();
       console.log('[系统] 初始化完成');
     } catch (e) {
       console.error('[系统] 初始化失败:', e);
-      alert('初始化失败：' + e.message + '\n请检查网络或刷新重试。');
+      alert('初始化失败：' + e.message);
     }
   }
 
-  // 启动
   init();
 </script>
 </body>

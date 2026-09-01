@@ -4,12 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>智游通江</title>
-  <!-- Bootstrap 5 CSS -->
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-  <!-- Leaflet CSS -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <style>
-    /* 样式与之前完全相同（此处略，实际部署时请保留完整样式） */
     * { margin:0; padding:0; box-sizing:border-box; }
     body { font-family: system-ui, sans-serif; height:100vh; overflow:hidden; background:#f5f5f5; }
     #map { height:100vh; width:100vw; z-index:1; }
@@ -95,19 +92,17 @@
   <div class="panel-body" id="merchantDetailContent"></div>
 </div>
 
-<!-- 路线面板（无切换标签） -->
+<!-- 路线面板 -->
 <div class="panel" id="routesPanel">
   <div class="panel-header">
     <h2 id="routesPanelTitle">路线</h2>
     <button onclick="window.closePanel('routesPanel')">✕</button>
   </div>
   <div class="panel-body">
-    <!-- 推荐路线内容 -->
     <div id="recommendTab">
       <h3>📌 推荐路线</h3>
       <div id="recommendRouteList"></div>
     </div>
-    <!-- 自设行程内容 -->
     <div id="customTab" class="hidden">
       <h3>✏️ 自设行程</h3>
       <div class="form-group"><label>出发日期</label><input type="date" id="custom-trip-date"></div>
@@ -124,7 +119,7 @@
   </div>
 </div>
 
-<!-- 我的面板（不变） -->
+<!-- 我的面板 -->
 <div class="panel" id="myPanel">
   <div class="panel-header"><h2>我的</h2><button onclick="window.closePanel('myPanel')">✕</button></div>
   <div class="panel-body">
@@ -149,7 +144,6 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 
-<!-- 模块加载 -->
 <script type="importmap">
 {
   "imports": {
@@ -168,7 +162,7 @@
   // ============================================================
   // 导入所有需要的模块
   // ============================================================
-  import { getPois, getRoutes, getRouteNodes, getRoute } from './api.js';
+  import { getPois, getRoutes, getRouteNodes, getRoute, updateReservation } from './api.js';
   import { getCurrentUser, signInAnonymously } from './auth.js';
   import { getCountySpots, fetchWeatherForecast, getDayWeatherTip } from './utils.js';
   import { initMap, loadPoisToMap, locateUser, setVoiceEnabled, getAllPois, applyFilter } from './map.js';
@@ -249,12 +243,10 @@
     const recommendTab = document.getElementById('recommendTab');
     const customTab = document.getElementById('customTab');
 
-    // 根据 tab 显示对应的内容区域
     if (tab === 'recommend') {
       title.textContent = '📌 推荐路线';
       recommendTab.classList.remove('hidden');
       customTab.classList.add('hidden');
-      // 加载推荐路线（如果尚未加载）
       if (!recommendTab.dataset.loaded) {
         loadRecommendRoutes();
         recommendTab.dataset.loaded = 'true';
@@ -263,13 +255,11 @@
       title.textContent = '✏️ 自设行程';
       recommendTab.classList.add('hidden');
       customTab.classList.remove('hidden');
-      // 初始化自设行程（如果尚未初始化）
       if (!customTab.dataset.loaded) {
         initCustomTab();
         customTab.dataset.loaded = 'true';
       }
     }
-    // 打开面板
     panel.classList.add('active');
   };
 
@@ -298,8 +288,9 @@
             <div class="route-nodes">📌 节点：${nodeNames}</div>
             <div class="route-actions">
               <label>出发日期：<input type="date" class="recommend-date" data-route="${route.id}" value="${new Date().toISOString().slice(0,10)}"></label>
-              <label>出发时间：<input type="time" class="recommend-time" data-route="${route.id}" value="${route.start_time||'08:30'}" readonly></label>
+              <label>出发时间：<input type="time" class="recommend-time" data-route="${route.id}" value="${route.start_time||'08:30'}"></label>
               <button class="btn btn-primary" onclick="window.generateRecommendRoute(${route.id})">🚀 生成并保存</button>
+              <button class="btn btn-info" onclick="window.previewRecommendRoute(${route.id})">👁️ 预览</button>
             </div>
             <div id="recommend-result-${route.id}" style="margin-top:6px;"></div>
           </div>
@@ -312,6 +303,22 @@
     }
   }
 
+  // 预览路线
+  window.previewRecommendRoute = async function(routeId) {
+    try {
+      const nodes = await getRouteNodes(routeId);
+      const pois = getAllPois();
+      let names = nodes.map(n => {
+        const poi = pois.find(p => p.id == n.poi_id);
+        return poi ? poi.name : '未知';
+      }).join(' → ');
+      alert('📌 路线节点预览：\n' + names);
+    } catch(e) {
+      alert('预览失败：' + e.message);
+    }
+  };
+
+  // 生成推荐路线
   window.generateRecommendRoute = async function(routeId) {
     const resultDiv = document.getElementById(`recommend-result-${routeId}`);
     resultDiv.innerHTML = '⏳ 生成中...';
@@ -321,6 +328,14 @@
       const dateStr = dateInput ? dateInput.value : '';
       const timeStr = timeInput ? timeInput.value : '08:00';
       if (!dateStr) { resultDiv.innerHTML = '❌ 请选择出发日期'; return; }
+
+      // 检查时间是否早于当前
+      const now = new Date();
+      const selectedDateTime = new Date(dateStr + 'T' + timeStr);
+      if (selectedDateTime < now) {
+        resultDiv.innerHTML = '❌ 出发时间早于当前时间，请修改';
+        return;
+      }
 
       const nodes = await getRouteNodes(routeId);
       if (!nodes || nodes.length === 0) { resultDiv.innerHTML = '❌ 该路线无景点节点'; return; }
@@ -343,9 +358,12 @@
 
       const startMinutes = parseInt(timeStr.slice(0,2))*60 + parseInt(timeStr.slice(3));
       const mode = 'auto';
+      // 推荐路线强制从当天8点开始，但若用户指定时间晚于8点，则使用用户时间（但可能不足）
+      // 我们强制使用用户指定时间，但在生成中会处理时间不足
       let result = generateTripPlan(allSpots, dateStr, startMinutes, mode, false, true);
       let droppedCount = 0;
       if (result.error && result.errorMsg && result.errorMsg.includes('超过')) {
+        // 尝试丢弃一些景点
         for (let i = allSpots.length - 1; i >= 0; i--) {
           let testSpots = allSpots.slice(0, i);
           if (testSpots.length === 0) break;
@@ -423,7 +441,6 @@
       return cats.some(c => ALLOWED_CATEGORIES.map(ac => ac.toLowerCase()).includes(c));
     });
     allowedPoiOptions = allowedPoiOptions.filter(p => p.id !== 'county');
-    // 去重
     const seen = new Set();
     allowedPoiOptions = allowedPoiOptions.filter(p => {
       if (seen.has(p.id)) return false;
@@ -622,13 +639,29 @@
     renderMyTrip();
   };
 
+  // 预约折叠展示
+  let reservationData = [];
+
   async function loadMyReservationsUI() {
     const user = await getCurrentUser();
     const data = await loadMyReservations(user?.id);
+    reservationData = data || [];
     let html = '';
-    if (data && data.length) {
-      data.forEach(r => {
-        html += `<div class="card"><p><b>${r.reservation_date}</b> ${r.time_slot_start}-${r.time_slot_end||''}</p><p>${r.name||''} | ${r.phone||''}</p><p>${r.remark||''}</p><p>状态：${r.status}</p></div>`;
+    if (reservationData.length > 0) {
+      reservationData.forEach((r, idx) => {
+        html += `<div class="card">
+          <div onclick="window.toggleReservationDetail(${idx})" style="cursor:pointer;">
+            📅 ${r.reservation_date} | ${r.time_slot_start} | ${r.name || '未命名'}
+          </div>
+          <div id="res-detail-${idx}" class="hidden">
+            <p><b>单位：</b>${r.unit||''}</p>
+            <p><b>电话：</b>${r.phone||''}</p>
+            <p><b>人数：</b>${r.visitor_count}</p>
+            <p><b>备注：</b>${r.remark||''}</p>
+            <p><b>状态：</b>${r.status}</p>
+            <button class="btn btn-danger btn-sm" onclick="window.deleteReservationHandler(${r.id})">删除</button>
+          </div>
+        </div>`;
       });
     } else {
       html = '<p>暂无预约</p>';
@@ -636,6 +669,21 @@
     document.getElementById('myReservationContent').innerHTML = html;
   }
 
+  window.toggleReservationDetail = (idx) => {
+    document.getElementById('res-detail-' + idx).classList.toggle('hidden');
+  };
+  window.deleteReservationHandler = async (id) => {
+    if (!confirm('确认删除此预约？')) return;
+    try {
+      await updateReservation(id, { status: 'cancelled' });
+      alert('已取消');
+      loadMyReservationsUI();
+    } catch(e) {
+      alert('删除失败：' + e.message);
+    }
+  };
+
+  // 留言
   async function loadFeedbackHistory() {
     const user = await getCurrentUser();
     const data = await getMyFeedbacks(user?.id);
@@ -743,7 +791,6 @@
   // ============================================================
   async function init() {
     try {
-      // 匿名登录
       try {
         await signInAnonymously();
         console.log('[系统] 匿名登录成功');
@@ -751,7 +798,6 @@
         console.warn('[系统] 匿名登录失败（不影响地图浏览）:', anonError.message);
       }
 
-      // 地图
       initMap('map');
       const pois = await getPois();
       loadPoisToMap(pois);

@@ -159,26 +159,21 @@
 </script>
 
 <script type="module">
-  // ============================================================
-  // 导入所有需要的模块
-  // ============================================================
-  import { getPois, getRoutes, getRouteNodes, getRoute, updateReservation } from './api.js';
+  // 导入模块
+  import { getPois, getRoutes, getRouteNodes, getRoute, getMerchant } from './api.js';
   import { getCurrentUser, signInAnonymously } from './auth.js';
   import { getCountySpots, fetchWeatherForecast, getDayWeatherTip } from './utils.js';
   import { initMap, loadPoisToMap, locateUser, setVoiceEnabled, getAllPois, applyFilter } from './map.js';
   import { generateTripPlan, generateTimeline, loadTransportPresets } from './trip.js';
-  import { getMyTrips, saveTrip, deleteTrip, submitFeedback, getMyFeedbacks, loadMyReservations } from './user.js';
+  import { getMyTrips, saveTrip, deleteTrip, submitFeedback, getMyFeedbacks, loadMyReservations, deleteReservation } from './user.js';
 
-  // ============================================================
   // 全局变量
-  // ============================================================
   let generatedTripData = null;
   let customRouteLegs = [];
   let allowedPoiOptions = [];
+  let reservationData = [];
 
-  // ============================================================
-  // 面板控制
-  // ============================================================
+  // ========== 面板控制 ==========
   window.openPanel = (id) => {
     document.getElementById(id).classList.add('active');
   };
@@ -186,24 +181,16 @@
     document.getElementById(id).classList.remove('active');
   };
 
-  // ============================================================
-  // 语音控制
-  // ============================================================
+  // ========== 语音控制 ==========
   window._voiceEnabled = true;
   window.toggleAutoVoice = () => {
     window._voiceEnabled = !window._voiceEnabled;
     setVoiceEnabled(window._voiceEnabled);
     document.getElementById('voiceToggleBtn').textContent = window._voiceEnabled ? '🔊' : '🔇';
   };
-
-  // ============================================================
-  // 地图定位
-  // ============================================================
   window.locateUser = locateUser;
 
-  // ============================================================
-  // 分类筛选
-  // ============================================================
+  // ========== 分类筛选 ==========
   window.filterPOI = (category) => {
     applyFilter(category);
     const bar = document.getElementById('categoryBar');
@@ -234,9 +221,7 @@
     }
   };
 
-  // ============================================================
-  // 路线面板打开（无切换标签，直接显示内容）
-  // ============================================================
+  // ========== 路线面板 ==========
   window.openRouteTab = (tab) => {
     const panel = document.getElementById('routesPanel');
     const title = document.getElementById('routesPanelTitle');
@@ -263,9 +248,7 @@
     panel.classList.add('active');
   };
 
-  // ============================================================
-  // 推荐路线加载
-  // ============================================================
+  // ========== 推荐路线 ==========
   async function loadRecommendRoutes() {
     try {
       const data = await getRoutes();
@@ -372,6 +355,12 @@
       }
       if (result.error) { resultDiv.innerHTML = '❌ 生成失败：' + (result.errorMsg || '未知错误'); return; }
 
+      // 警告信息
+      let warningHtml = '';
+      if (result.warnings && result.warnings.length) {
+        warningHtml = `<div class="warn-list"><strong>⚠️ 提示：</strong>${result.warnings.map(w => `<div>${w}</div>`).join('')}</div>`;
+      }
+
       const { days, mealCount } = generateTimeline(result.nodes);
       const weatherForecast = await fetchWeatherForecast();
       const daysWithWeather = days.map((d, i) => {
@@ -412,7 +401,7 @@
       };
       saveTrip(tripData);
 
-      resultDiv.innerHTML = `✅ 已生成并自动保存到“我的行程”<br>${html}<div class="warn-list">${tips.map(t => `<div>${t}</div>`).join('')}</div>`;
+      resultDiv.innerHTML = `✅ 已生成并自动保存到“我的行程”<br>${warningHtml}${html}<div class="warn-list">${tips.map(t => `<div>${t}</div>`).join('')}</div>`;
       if (droppedCount > 0) {
         resultDiv.innerHTML += `<div style="color:#c62828; margin-top:6px;">⚠️ 注意：有 ${droppedCount} 个景点因时间不足被丢弃。</div>`;
       }
@@ -422,9 +411,7 @@
     }
   };
 
-  // ============================================================
-  // 自设行程
-  // ============================================================
+  // ========== 自设行程 ==========
   function initCustomTab() {
     const allPois = getAllPois();
     const allMain = allPois.filter(p => !p.parent_id);
@@ -521,6 +508,12 @@
         return;
       }
 
+      // 警告信息
+      let warningHtml = '';
+      if (result.warnings && result.warnings.length) {
+        warningHtml = `<div class="warn-list"><strong>⚠️ 提示：</strong>${result.warnings.map(w => `<div>${w}</div>`).join('')}</div>`;
+      }
+
       const { days, mealCount } = generateTimeline(result.nodes);
       const weatherForecast = await fetchWeatherForecast();
       const daysWithWeather = days.map((d, i) => {
@@ -559,7 +552,7 @@
         tips: tips
       };
 
-      document.getElementById('custom-generated-trip').innerHTML = `<div class="card">${html}</div>`;
+      document.getElementById('custom-generated-trip').innerHTML = `<div class="card">${warningHtml}${html}</div>`;
       document.getElementById('custom-trip-warnings').innerHTML = tips.length ? `<div class="warn-list"><strong>💡 温馨提示：</strong>${tips.map(t => `<div>${t}</div>`).join('')}</div>` : '';
       document.getElementById('custom-save-generated-btn').classList.remove('hidden');
     } catch (e) {
@@ -582,9 +575,7 @@
     renderCustomDynamicRoute();
   };
 
-  // ============================================================
-  // 我的面板
-  // ============================================================
+  // ========== 我的面板 ==========
   window.switchMyTab = (tab) => {
     document.querySelectorAll('.my-tab').forEach(btn => btn.classList.remove('active'));
     document.getElementById('my-tab-' + tab).classList.add('active');
@@ -596,9 +587,9 @@
     if (tab === 'feedback') loadFeedbackHistory();
   };
 
+  // 行程
   function renderMyTrip() {
     const trips = getMyTrips();
-    // 倒序显示（最新在前）
     const sorted = trips.slice().reverse();
     let html = '';
     sorted.forEach((trip, idx) => {
@@ -609,7 +600,6 @@
         if (day.weatherTip) html += `<div class="trip-line" style="color:#0d47a1;">${day.weatherTip}</div>`;
       });
       if (trip.tips) html += `<div class="warn-list">${trip.tips.map(t => `<div>${t}</div>`).join('')}</div>`;
-      // 原始索引用于删除
       const origIdx = trips.length - 1 - idx;
       html += `<button class="btn btn-danger btn-sm" onclick="event.stopPropagation(); window.deleteTripHandler(${origIdx})">删除</button></div></div>`;
     });
@@ -625,9 +615,7 @@
     renderMyTrip();
   };
 
-  // 预约展示（倒序，显示日期、单位、项目名称）
-  let reservationData = [];
-
+  // 预约
   async function loadMyReservationsUI() {
     const user = await getCurrentUser();
     const data = await loadMyReservations(user?.id);
@@ -635,16 +623,24 @@
     reservationData = (data || []).sort((a,b) => new Date(b.reservation_date) - new Date(a.reservation_date));
     let html = '';
     if (reservationData.length > 0) {
-      reservationData.forEach((r, idx) => {
-        // 提取项目名称（从 remark 中提取 "内容：" 部分）
-        let projectName = '';
-        if (r.remark) {
-          const match = r.remark.match(/内容：([^|]+)/);
-          if (match) projectName = match[1];
+      // 批量获取商户信息
+      const merchantIds = reservationData.map(r => r.merchant_id).filter(id => id);
+      const merchantMap = {};
+      for (let id of merchantIds) {
+        try {
+          const m = await getMerchant(id);
+          merchantMap[id] = m;
+        } catch(e) {
+          console.warn('获取商户信息失败:', e);
         }
+      }
+      reservationData.forEach((r, idx) => {
+        const merchant = merchantMap[r.merchant_id];
+        const merchantName = merchant ? merchant.display_name || '未知商户' : '未知商户';
+        const category = merchant ? merchant.business_type || '未分类' : '未分类';
         html += `<div class="card">
           <div onclick="window.toggleReservationDetail(${idx})" style="cursor:pointer;">
-            📅 ${r.reservation_date} | ${r.unit || '无单位'} | ${projectName || '无项目'}
+            📅 ${r.reservation_date} | ${merchantName} | ${category}
           </div>
           <div id="res-detail-${idx}" class="hidden">
             <p><b>单位：</b>${r.unit||''}</p>
@@ -671,15 +667,15 @@
   window.deleteReservationHandler = async (id) => {
     if (!confirm('确认删除此预约？')) return;
     try {
-      await updateReservation(id, { status: 'cancelled' });
-      alert('已取消');
+      await deleteReservation(id);
+      alert('已删除');
       loadMyReservationsUI();
     } catch(e) {
       alert('删除失败：' + e.message);
     }
   };
 
-  // 留言（同前）
+  // 留言
   async function loadFeedbackHistory() {
     const user = await getCurrentUser();
     const data = await getMyFeedbacks(user?.id);
@@ -712,9 +708,7 @@
     }
   };
 
-  // ============================================================
-  // 商户详情
-  // ============================================================
+  // ========== 商户详情 ==========
   window.showPoiDetail = async function(poi) {
     const { default: api } = await import('./api.js');
     const { data: m } = await api.getMerchantsByPoi(poi.id);
@@ -761,9 +755,7 @@
     window.openPanel('merchantDetailPanel');
   };
 
-  // ============================================================
-  // 初始化时间选择器
-  // ============================================================
+  // ========== 初始化时间选择器 ==========
   function initCustomTimeSelectors() {
     const sel = document.getElementById('custom-trip-time');
     sel.innerHTML = '';
@@ -782,9 +774,7 @@
     document.getElementById('custom-trip-date').value = now.toISOString().slice(0, 10);
   }
 
-  // ============================================================
-  // 初始化
-  // ============================================================
+  // ========== 初始化 ==========
   async function init() {
     try {
       try {

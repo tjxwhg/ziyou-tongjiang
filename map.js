@@ -1,5 +1,4 @@
 // map.js - 地图与定位
-// 注意：Leaflet 通过 CDN script 标签加载，全局变量 L 可用，无需在此 import
 import { getPois } from './api.js';
 import { wgs84ToGcj02, getDistance, speak, cancelSpeech } from './utils.js';
 import { poiColors } from './config.js';
@@ -16,10 +15,8 @@ let currentAudio = null;
 let allPois = [];
 let currentFilterCategory = null;
 
-// 初始化地图
 export function initMap(containerId) {
   if (map) return map;
-  // 使用全局 L
   map = L.map(containerId, { zoomControl: false }).setView([31.911705, 107.245033], 12);
   L.tileLayer('https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}', {
     subdomains: ['1','2','3','4'],
@@ -29,7 +26,6 @@ export function initMap(containerId) {
   return map;
 }
 
-// 加载POI到地图
 export function loadPoisToMap(pois) {
   allPois = pois;
   poiMarkers.forEach(m => map.removeLayer(m));
@@ -43,12 +39,19 @@ export function loadPoisToMap(pois) {
     });
     const marker = L.marker([p.lat, p.lng], { icon }).addTo(map);
     marker.poiData = p;
+    // 绑定点击事件
+    marker.on('click', function() {
+      if (window.showPoiDetail) {
+        window.showPoiDetail(this.poiData);
+      } else {
+        console.warn('showPoiDetail not defined');
+      }
+    });
     poiMarkers.push(marker);
   });
   if (currentFilterCategory) applyFilter(currentFilterCategory);
 }
 
-// 应用分类筛选
 export function applyFilter(category) {
   currentFilterCategory = category;
   poiMarkers.forEach(marker => {
@@ -85,13 +88,11 @@ export function clearFilter() {
   });
 }
 
-// 定位
 export function locateUser() {
   if (!navigator.geolocation) {
     alert('您的浏览器不支持定位');
     return;
   }
-  // 激活语音
   if ('speechSynthesis' in window) {
     speechSynthesis.getVoices();
     const silent = new SpeechSynthesisUtterance(' ');
@@ -100,7 +101,6 @@ export function locateUser() {
     speechSynthesis.speak(silent);
     setTimeout(() => speechSynthesis.cancel(), 100);
   }
-
   navigator.geolocation.getCurrentPosition(
     (position) => {
       const raw = { lat: position.coords.latitude, lng: position.coords.longitude };
@@ -117,9 +117,7 @@ export function locateUser() {
       startWatching();
       checkVoiceTrigger(gcj.lat, gcj.lng);
     },
-    (error) => {
-      console.warn('定位失败:', error.message);
-    },
+    (error) => { console.warn('定位失败:', error.message); },
     { enableHighAccuracy: true, timeout: 10000 }
   );
 }
@@ -141,14 +139,11 @@ function startWatching() {
       }).addTo(map);
       checkVoiceTrigger(gcj.lat, gcj.lng);
     },
-    (err) => {
-      console.warn('定位监听错误', err);
-    },
+    (err) => { console.warn('定位监听错误', err); },
     { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 }
   );
 }
 
-// 模拟定位（用于测试）
 export function setSimulatedPosition(lat, lng) {
   currentGcjPos = { lat, lng };
   if (simMarker) map.removeLayer(simMarker);
@@ -162,7 +157,6 @@ export function setSimulatedPosition(lat, lng) {
   map.setView([lat, lng], 15);
 }
 
-// 语音触发
 function triggerVoice(poi) {
   if (!voiceEnabled) return;
   cancelSpeech();
@@ -196,7 +190,6 @@ function checkVoiceTrigger(userLat, userLng) {
   });
 }
 
-// 开启/关闭语音
 export function setVoiceEnabled(enabled) {
   voiceEnabled = enabled;
   if (!enabled) {
@@ -205,17 +198,14 @@ export function setVoiceEnabled(enabled) {
   }
 }
 
-// 获取当前位置
 export function getCurrentPosition() {
   return currentGcjPos;
 }
 
-// 获取POI数据
 export function getPoiById(id) {
   return allPois.find(p => p.id == id);
 }
 
-// 获取所有POI（供其他模块使用）
 export function getAllPois() {
   return allPois;
 }

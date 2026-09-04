@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>商户管理 - 通江文旅</title>
+    <!-- Bootstrap 5 CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body { background: #f5f5f5; font-family: system-ui, sans-serif; }
+        .header { background: #1b5e20; color: white; padding: 12px 24px; display: flex; justify-content: space-between; align-items: center; }
+        .header h3 { margin: 0; display: flex; align-items: center; gap: 10px; }
+        .container-custom { max-width: 1000px; margin: 20px auto; padding: 0 16px; }
+        .tab-content { background: white; padding: 20px; border-radius: 0 0 8px 8px; border: 1px solid #dee2e6; border-top: none; }
+        .nav-tabs .nav-link.active { background: #2e7d32; color: white; border-color: #2e7d32; }
+
+        .item-header { background: #f0f0f0; padding: 8px; border-radius: 4px; cursor: pointer; display: flex; justify-content: space-between; }
+        .item-detail { padding: 10px; border: 1px solid #ddd; border-radius: 4px; margin-top: 4px; background: white; }
+        .upload-preview { max-width: 200px; max-height: 150px; border-radius: 4px; border: 1px solid #ddd; }
+        .category-header { cursor: pointer; background: #f9f9f9; padding: 8px; border: 1px solid #ddd; border-radius: 4px; display: flex; justify-content: space-between; margin: 4px 0; }
+
+        /* POI导览图上传 */
+        .guide-upload-area {
+            border: 2px dashed #ccc;
+            border-radius: 8px;
+            padding: 30px;
+            text-align: center;
+            transition: 0.3s;
+            cursor: pointer;
+        }
+        .guide-upload-area:hover { border-color: #2e7d32; background: #f1f8e9; }
+        .guide-upload-area.dragover { border-color: #2e7d32; background: #e8f5e9; }
+
+        @media (max-width: 768px) {
+            .header { flex-direction: column; gap: 8px; text-align: center; }
+        }
+    </style>
+</head>
+<body>
+
+<!-- ===== 登录页面 ===== -->
+<div id="login-page" class="container-custom" style="max-width:400px; margin-top:80px;">
+    <div class="card p-4">
+        <h2 class="text-center text-success"><i class="fas fa-store"></i> 商户登录</h2>
+        <div class="mb-3"><input id="account" class="form-control" placeholder="邮箱"></div>
+        <div class="mb-3"><input id="password" type="password" class="form-control" placeholder="密码"></div>
+        <button class="btn btn-success w-100" id="loginBtn">登录</button>
+        <p id="login-msg" class="text-danger mt-2"></p>
+    </div>
+</div>
+
+<!-- ===== 主界面 ===== -->
+<div id="main" class="hidden">
+    <div class="header">
+        <h3><i class="fas fa-store"></i> <span id="merchant-name">商户</span></h3>
+        <button class="btn btn-light" id="logoutBtn"><i class="fas fa-sign-out-alt"></i> 退出</button>
+    </div>
+
+    <div class="container-custom">
+        <ul class="nav nav-tabs" id="merchantTabs">
+            <li class="nav-item"><a class="nav-link active" data-bs-toggle="tab" href="#tab-business">📦 业务管理</a></li>
+            <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-reservations">📅 预约列表</a></li>
+            <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-feedbacks">💬 留言</a></li>
+            <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-info">🏪 基本信息</a></li>
+            <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-guide">📤 POI导览图</a></li>
+        </ul>
+        <div class="tab-content">
+            <!-- ===== 业务管理 ===== -->
+            <div class="tab-pane active" id="tab-business">
+                <div class="d-flex justify-content-between align-items-center">
+                    <h5>业务分类与项目</h5>
+                    <button class="btn btn-secondary btn-sm" onclick="window.toggleCategoryPanel()">管理分类</button>
+                </div>
+                <div id="category-panel" class="card p-3 mb-3 hidden">
+                    <div class="d-flex gap-2"><input id="new-category-input" class="form-control" placeholder="新分类名称">
+                        <button class="btn btn-success" onclick="window.addCategory()">添加</button></div>
+                    <div id="category-list" class="mt-2"></div>
+                </div>
+                <div id="business-container"></div>
+                <button class="btn btn-success mt-3" onclick="window.showAddItemForm()"><i class="fas fa-plus"></i> 添加项目</button>
+            </div>
+
+            <!-- ===== 预约列表 ===== -->
+            <div class="tab-pane" id="tab-reservations">
+                <div class="d-flex justify-content-between mb-3">
+                    <button class="btn btn-success" onclick="window.toggleReservationForm()"><i class="fas fa-plus"></i> 新增预约</button>
+                    <button class="btn btn-warning" onclick="window.exportReservations()"><i class="fas fa-file-export"></i> 导出</button>
+                </div>
+                <div id="add-reservation-form" class="card p-3 mb-3 hidden">
+                    <h6>新增预约</h6>
+                    <div class="row g-2">
+                        <div class="col-md-4"><label class="form-label">预约日期</label><input type="date" id="new-res-date" class="form-control"></div>
+                        <div class="col-md-4"><label class="form-label">时段</label>
+                            <select id="new-res-time" class="form-select">
+                                <option>08:00-09:00</option><option>09:00-10:00</option>
+                                <option>10:00-11:00</option><option>11:00-12:00</option>
+                                <option>13:00-14:00</option><option>14:00-15:00</option>
+                                <option>15:00-16:00</option><option>16:00-17:00</option>
+                            </select>
+                        </div>
+                        <div class="col-md-4"><label class="form-label">单位</label><input id="new-res-unit" class="form-control"></div>
+                        <div class="col-md-4"><label class="form-label">联系人</label><input id="new-res-name" class="form-control"></div>
+                        <div class="col-md-4"><label class="form-label">电话</label><input id="new-res-phone" class="form-control"></div>
+                        <div class="col-md-4"><label class="form-label">人数</label><input type="number" id="new-res-count" class="form-control"></div>
+                        <div class="col-md-4"><label class="form-label">活动类别</label><select id="new-res-activity" class="form-select"></select></div>
+                        <div class="col-md-4"><label class="form-label">地点</label><input id="new-res-room" class="form-control"></div>
+                        <div class="col-12"><label class="form-label">备注</label><textarea id="new-res-remark" class="form-control" rows="2"></textarea></div>
+                    </div>
+                    <button class="btn btn-success mt-2" onclick="window.saveReservation()">保存</button>
+                    <button class="btn btn-secondary mt-2" onclick="window.toggleReservationForm()">取消</button>
+                </div>
+                <div id="reservation-list"></div>
+            </div>
+
+            <!-- ===== 留言 ===== -->
+            <div class="tab-pane" id="tab-feedbacks">
+                <div id="feedback-list"></div>
+            </div>
+
+            <!-- ===== 基本信息 ===== -->
+            <div class="tab-pane" id="tab-info">
+                <div class="row g-2">
+                    <div class="col-md-6"><label class="form-label">业务类型</label>
+                        <select id="business_type" class="form-select">
+                            <option value="scenic">景区</option><option value="museum">文博场馆</option>
+                            <option value="hotel">住宿</option><option value="restaurant">餐饮</option>
+                            <option value="shop">购物</option><option value="entertainment">娱乐</option>
+                            <option value="transport">交通</option><option value="other">其他</option>
+                        </select>
+                    </div>
+                    <div class="col-md-6"><label class="form-label">营业状态</label>
+                        <select id="status" class="form-select"><option value="open">营业中</option><option value="closed">休息</option></select>
+                    </div>
+                    <div class="col-md-6"><label class="form-label">电话</label><input id="phone" class="form-control"></div>
+                    <div class="col-md-6"><label class="form-label">地址</label><input id="address" class="form-control"></div>
+                    <div class="col-md-6"><label class="form-label">停车位</label><input type="number" id="parking" class="form-control"></div>
+                    <div class="col-12"><label class="form-label">简介</label><textarea id="intro" class="form-control" rows="2"></textarea></div>
+                </div>
+                <button class="btn btn-success mt-3" onclick="window.saveInfo()"><i class="fas fa-save"></i> 保存</button>
+            </div>
+
+            <!-- ===== POI导览图上传 ===== -->
+            <div class="tab-pane" id="tab-guide">
+                <h6><i class="fas fa-map text-success"></i> 上传POI导览图</h6>
+                <p class="text-secondary">上传您POI的内部导览图（含节点标注），管理员审核后将用于生成内部游览路线。</p>
+
+                <div class="card p-3 mb-3">
+                    <div class="form-group">
+                        <label class="form-label fw-bold">关联POI</label>
+                        <select id="guide-poi-select" class="form-select">
+                            <option value="">-- 选择POI --</option>
+                        </select>
+                    </div>
+                    <div class="form-group mt-2">
+                        <label class="form-label fw-bold">上传导览图 (JPG/PNG)</label>
+                        <div class="guide-upload-area" id="guideUploadArea">
+                            <i class="fas fa-cloud-upload-alt fa-3x text-secondary"></i>
+                            <p class="mt-2">点击或拖拽上传导览图</p>
+                            <input type="file" id="guideFileInput" accept="image/*" class="hidden">
+                        </div>
+                        <div id="guidePreview" class="mt-2 hidden">
+                            <img id="guidePreviewImg" class="img-fluid rounded" style="max-height:300px;">
+                            <button class="btn btn-danger btn-sm mt-2" onclick="window.removeGuideImage()"><i class="fas fa-trash"></i> 移除</button>
+                        </div>
+                    </div>
+                    <div class="form-group mt-2">
+                        <label class="form-label fw-bold">节点标注 (JSON格式，可选)</label>
+                        <textarea id="guideNodesData" class="form-control" rows="4" placeholder='[{"name":"入口","type":"entrance","lat":31.91,"lng":107.24},{"name":"核心景点","type":"core_view","lat":31.912,"lng":107.241}]'></textarea>
+                    </div>
+                    <button class="btn btn-success mt-2" onclick="window.submitGuide()"><i class="fas fa-upload"></i> 提交审核</button>
+                </div>
+
+                <div id="guideHistory" class="mt-3">
+                    <h6>已提交的导览图</h6>
+                    <div id="guideHistoryList"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- 依赖库 -->
+<!-- ============================================================ -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+<script type="importmap">
+{
+    "imports": {
+        "./config.js": "./js/config.js",
+        "./api.js": "./js/api.js",
+        "./auth.js": "./js/auth.js",
+        "./merchant.js": "./js/merchant.js"
+    }
+}
+</script>
+
+<script type="module">
+// =============================================================
+// 商户端入口
+// =============================================================
+import { signIn, signOut, getCurrentUser, onAuthStateChange } from './js/auth.js';
+import {
+    initMerchant,
+    getMerchantData,
+    loadBusinessData,
+    saveBusinessData,
+    fetchReservations,
+    addReservation,
+    updateReservationStatus,
+    fetchFeedbacks,
+    replyFeedback,
+    updateInfo,
+    loadPoiList,
+    submitGuideImage,
+    getGuideHistory
+} from './js/merchant.js';
+
+// =============================================================
+// DOM引用
+// =============================================================
+const loginPage = document.getElementById('login-page');
+const main = document.getElementById('main');
+const loginBtn = document.getElementById('loginBtn');
+const logoutBtn = document.getElementById('logoutBtn');
+const loginMsg = document.getElementById('login-msg');
+const merchantNameSpan = document.getElementById('merchant-name');
+
+// =============================================================
+// 登录/登出
+// =============================================================
+loginBtn.addEventListener('click', async () => {
+    const email = document.getElementById('account').value;
+    const pwd = document.getElementById('password').value;
+    try {
+        await signIn(email, pwd);
+    } catch (e) {
+        loginMsg.textContent = '登录失败：' + e.message;
+    }
+});
+
+logoutBtn.addEventListener('click', async () => {
+    await signOut();
+});
+
+onAuthStateChange((event, session) => {
+    if (event === 'SIGNED_IN') {
+        loginPage.classList.add('hidden');
+        main.classList.remove('hidden');
+        initMerchantUI();
+    } else {
+        loginPage.classList.remove('hidden');
+        main.classList.add('hidden');
+    }
+});
+
+(async () => {
+    const user = await getCurrentUser();
+    if (user) {
+        loginPage.classList.add('hidden');
+        main.classList.remove('hidden');
+        initMerchantUI();
+    }
+})();
+
+// =============================================================
+// 初始化商户UI
+// =============================================================
+async function initMerchantUI() {
+    try {
+        const merchant = await initMerchant();
+        merchantNameSpan.textContent = merchant.display_name || '商户';
+
+        // 加载数据
+        const { businessCategories, businessItems } = loadBusinessData();
+        renderBusiness(businessCategories, businessItems);
+        await renderReservations();
+        await renderFeedbacks();
+        await renderInfo();
+        await renderPoiSelect();
+        await renderGuideHistory();
+
+        console.log('[商户端] 初始化完成');
+    } catch (e) {
+        console.error('[商户端] 初始化失败:', e);
+        alert('加载失败：' + e.message);
+    }
+}
+
+// ===== 渲染业务（简化） =====
+function renderBusiness(categories, items) {
+    const container = document.getElementById('business-container');
+    if (!container) return;
+    let html = '';
+    categories.forEach(cat => {
+        const catItems = items.filter(i => i.category === cat);
+        html += `
+            <div class="card mb-2">
+                <div class="category-header" onclick="this.nextElementSibling.classList.toggle('hidden')">
+                    <span>📁 ${cat} (${catItems.length})</span>
+                    <span>▼</span>
+                </div>
+                <div class="hidden p-2">
+                    ${catItems.map((item, idx) => `
+                        <div class="border-bottom py-1">
+                            <div class="d-flex justify-content-between">
+                                <span>${item.name} ${item.price || ''}</span>
+                                <div>
+                                    <button class="btn btn-sm btn-secondary" onclick="window.editItem(${idx})">编辑</button>
+                                    <button class="btn btn-sm btn-danger" onclick="window.deleteItem(${idx})">删除</button>
+                                </div>
+                            </div>
+                            ${item.image ? `<img src="${item.image}" class="upload-preview mt-1">` : ''}
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
+        `;
+    });
+    container.innerHTML = html || '<p>暂无业务项目</p>';
+}
+
+// ===== 渲染预约（简化） =====
+async function renderReservations() {
+    const container = document.getElementById('reservation-list');
+    if (!container) return;
+    const data = await fetchReservations();
+    const html = (data || []).map(r => `
+        <div class="card mb-2">
+            <div class="d-flex justify-content-between">
+                <span><b>${r.reservation_date}</b> ${r.name}</span>
+                <span class="badge ${r.status === 'pending' ? 'bg-warning' : r.status === 'confirmed' ? 'bg-success' : 'bg-secondary'}">${r.status}</span>
+            </div>
+            <div class="text-secondary">${r.remark || ''}</div>
+            ${r.status === 'pending' ? `
+                <button class="btn btn-sm btn-success mt-1" onclick="window.confirmReservation(${r.id})">确认</button>
+                <button class="btn btn-sm btn-danger mt-1" onclick="window.rejectReservation(${r.id})">拒绝</button>
+            ` : ''}
+        </div>
+    `).join('') || '<p>暂无预约</p>';
+    container.innerHTML = html;
+}
+
+// ===== 渲染留言（简化） =====
+async function renderFeedbacks() {
+    const container = document.getElementById('feedback-list');
+    if (!container) return;
+    const data = await fetchFeedbacks();
+    const html = (data || []).map(f => `
+        <div class="card mb-2">
+            <p>${f.message}</p>
+            <small>${new Date(f.created_at).toLocaleString()}</small>
+            ${f.reply ? `<div class="text-success">回复：${f.reply}</div>` : ''}
+            <textarea id="reply-${f.id}" class="form-control mt-1" rows="2">${f.reply || ''}</textarea>
+            <button class="btn btn-sm btn-primary mt-1" onclick="window.replyFeedback(${f.id})">回复</button>
+        </div>
+    `).join('') || '<p>暂无留言</p>';
+    container.innerHTML = html;
+}
+
+// ===== 渲染基本信息 =====
+function renderInfo() {
+    const data = getMerchantData();
+    if (!data) return;
+    document.getElementById('business_type').value = data.business_type || 'other';
+    document.getElementById('status').value = data.status || 'open';
+    document.getElementById('phone').value = data.phone || '';
+    document.getElementById('address').value = data.address || '';
+    document.getElementById('parking').value = data.parking_spots || 0;
+    document.getElementById('intro').value = data.intro || '';
+}
+
+// ===== POI选择列表 =====
+async function renderPoiSelect() {
+    const sel = document.getElementById('guide-poi-select');
+    if (!sel) return;
+    const pois = await loadPoiList();
+    sel.innerHTML = '<option value="">-- 选择POI --</option>';
+    pois.forEach(p => {
+        sel.innerHTML += `<option value="${p.id}">${p.name}</option>`;
+    });
+}
+
+// ===== 导览图历史 =====
+async function renderGuideHistory() {
+    const container = document.getElementById('guideHistoryList');
+    if (!container) return;
+    const history = await getGuideHistory();
+    const html = (history || []).map(h => `
+        <div class="card mb-2">
+            <div class="d-flex justify-content-between">
+                <span><b>${h.poi_name || '未知POI'}</b></span>
+                <span class="badge ${h.status === 'approved' ? 'bg-success' : h.status === 'pending' ? 'bg-warning' : 'bg-danger'}">${h.status || '待审核'}</span>
+            </div>
+            ${h.image_url ? `<img src="${h.image_url}" class="img-fluid rounded mt-1" style="max-height:150px;">` : ''}
+            <small>${new Date(h.created_at).toLocaleString()}</small>
+        </div>
+    `).join('') || '<p>暂无提交记录</p>';
+    container.innerHTML = html;
+}
+
+// =============================================================
+// 暴露全局函数
+// =============================================================
+window.toggleCategoryPanel = () => document.getElementById('category-panel').classList.toggle('hidden');
+window.toggleReservationForm = () => document.getElementById('add-reservation-form').classList.toggle('hidden');
+window.addCategory = () => { /* 在merchant.js中实现 */ };
+window.showAddItemForm = () => { /* 在merchant.js中实现 */ };
+window.editItem = (idx) => { /* 在merchant.js中实现 */ };
+window.deleteItem = (idx) => { /* 在merchant.js中实现 */ };
+window.saveReservation = () => { /* 在merchant.js中实现 */ };
+window.confirmReservation = (id) => { /* 在merchant.js中实现 */ };
+window.rejectReservation = (id) => { /* 在merchant.js中实现 */ };
+window.replyFeedback = (id) => { /* 在merchant.js中实现 */ };
+window.saveInfo = () => { /* 在merchant.js中实现 */ };
+window.exportReservations = () => { /* 在merchant.js中实现 */ };
+window.submitGuide = () => { /* 在merchant.js中实现 */ };
+window.removeGuideImage = () => { /* 在merchant.js中实现 */ };
+
+// 导览图上传拖拽
+const uploadArea = document.getElementById('guideUploadArea');
+const fileInput = document.getElementById('guideFileInput');
+if (uploadArea && fileInput) {
+    uploadArea.addEventListener('click', () => fileInput.click());
+    uploadArea.addEventListener('dragover', (e) => { e.preventDefault();
+        uploadArea.classList.add('dragover'); });
+    uploadArea.addEventListener('dragleave', () => uploadArea.classList.remove('dragover'));
+    uploadArea.addEventListener('drop', (e) => {
+        e.preventDefault();
+        uploadArea.classList.remove('dragover');
+        if (e.dataTransfer.files.length) {
+            fileInput.files = e.dataTransfer.files;
+            previewGuideImage(e.dataTransfer.files[0]);
+        }
+    });
+    fileInput.addEventListener('change', (e) => {
+        if (e.target.files.length) {
+            previewGuideImage(e.target.files[0]);
+        }
+    });
+}
+
+function previewGuideImage(file) {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+        document.getElementById('guidePreview').classList.remove('hidden');
+        document.getElementById('guidePreviewImg').src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+}
+
+window.removeGuideImage = () => {
+    document.getElementById('guidePreview').classList.add('hidden');
+    document.getElementById('guideFileInput').value = '';
+};
+
+</script>
+</body>
+</html>

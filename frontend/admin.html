@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>管理后台 - 通江文旅</title>
+    <!-- Bootstrap 5 CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <!-- Leaflet Draw CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css" />
+    <style>
+        body { background: #f0f2f5; font-family: system-ui, sans-serif; }
+        .header { background: #1b5e20; color: white; padding: 12px 24px; display: flex; justify-content: space-between; align-items: center; }
+        .header h2 { margin: 0; font-size: 20px; display: flex; align-items: center; gap: 10px; }
+        .header .btn-light { color: #1b5e20; font-weight: 600; }
+        .container-custom { max-width: 1400px; margin: 20px auto; padding: 0 16px; }
+        .tab-content { background: white; padding: 20px; border-radius: 0 0 8px 8px; border: 1px solid #dee2e6; border-top: none; }
+        .nav-tabs .nav-link.active { background: #2e7d32; color: white; border-color: #2e7d32; }
+
+        /* POI编辑器样式 */
+        #poi-editor-map { height: 500px; width: 100%; border-radius: 8px; border: 1px solid #ddd; }
+        .editor-toolbar { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+        .editor-toolbar .btn { font-size: 13px; padding: 4px 12px; }
+        .node-list { max-height: 300px; overflow-y: auto; }
+        .node-item { display: flex; justify-content: space-between; align-items: center; padding: 4px 8px; border-bottom: 1px solid #f0f0f0; }
+        .node-item .badge { font-size: 11px; }
+        .edge-item { display: flex; justify-content: space-between; align-items: center; padding: 4px 8px; border-bottom: 1px solid #f0f0f0; font-size: 13px; }
+
+        .inline-edit { background: #f8f9fa; border: 1px solid #2e7d32; border-radius: 8px; padding: 15px; margin-top: 10px; }
+        .sub-poi-card { margin-left: 20px; border-left: 3px solid #2e7d32; padding-left: 12px; }
+        .category-group { margin-bottom: 15px; }
+        .category-title { background: #e9f5ea; padding: 10px; border-radius: 4px; cursor: pointer; font-weight: bold; }
+        .transport-group { border: 1px solid #ccc; border-radius: 6px; margin-bottom: 10px; }
+        .transport-header { background: #f8f9fa; padding: 10px; cursor: pointer; display: flex; justify-content: space-between; }
+        .transport-list { padding: 10px; background: white; }
+        .transport-item { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid #eee; }
+        .save-status { font-size: 12px; color: #2e7d32; margin-left: 8px; }
+
+        .data-quality-badge { display: inline-block; padding: 2px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; }
+        .quality-l1 { background: #c8e6c9; color: #1b5e20; }
+        .quality-l2 { background: #fff9c4; color: #f57f17; }
+        .quality-l3 { background: #ffcdd2; color: #c62828; }
+
+        @media (max-width: 768px) {
+            .header { flex-direction: column; gap: 8px; text-align: center; }
+            #poi-editor-map { height: 300px; }
+        }
+    </style>
+</head>
+<body>
+
+<!-- ===== 登录页面 ===== -->
+<div id="login-page" class="container-custom" style="max-width:400px; margin-top:80px;">
+    <div class="card p-4">
+        <h2 class="text-center text-success"><i class="fas fa-leaf"></i> 管理登录</h2>
+        <div class="mb-3"><input id="email" class="form-control" placeholder="邮箱"></div>
+        <div class="mb-3"><input id="password" type="password" class="form-control" placeholder="密码"></div>
+        <button class="btn btn-success w-100" id="loginBtn">登录</button>
+        <p id="login-msg" class="text-danger mt-2"></p>
+    </div>
+</div>
+
+<!-- ===== 主界面 ===== -->
+<div id="main" class="hidden">
+    <div class="header">
+        <h2><i class="fas fa-leaf"></i> 通江文旅超管后台</h2>
+        <div>
+            <button class="btn btn-light me-2" onclick="window.refreshData()"><i class="fas fa-sync"></i> 刷新</button>
+            <button class="btn btn-light" id="logoutBtn"><i class="fas fa-sign-out-alt"></i> 退出</button>
+        </div>
+    </div>
+
+    <div class="container-custom">
+        <ul class="nav nav-tabs" id="adminTabs">
+            <li class="nav-item"><a class="nav-link active" data-bs-toggle="tab" href="#tab-poi">📍 景点POI</a></li>
+            <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-routes">🗺️ 路线</a></li>
+            <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-transport">🚗 交通耗时</a></li>
+            <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-merchants">🏪 商户账号</a></li>
+            <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-feedbacks">💬 留言反馈</a></li>
+            <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-editor">✏️ POI内部路线</a></li>
+        </ul>
+        <div class="tab-content">
+            <!-- ===== POI管理 ===== -->
+            <div class="tab-pane active" id="tab-poi">
+                <button class="btn btn-success mb-3" onclick="window.toggleAddPoiForm()"><i class="fas fa-plus"></i> 新增主景区POI</button>
+                <div id="add-poi-form" class="inline-edit hidden">
+                    <h5><i class="fas fa-plus-circle text-success"></i> 新增POI</h5>
+                    <div class="row g-2">
+                        <div class="col-md-4"><label class="form-label">名称</label><input id="new-poi-name" class="form-control"></div>
+                        <div class="col-md-4"><label class="form-label">类别</label>
+                            <div id="new-poi-categories" class="d-flex flex-wrap gap-1"></div>
+                        </div>
+                        <div class="col-md-4"><label class="form-label">归属主景区</label>
+                            <select id="new-poi-parent" class="form-select"><option value="">无（作为主景区）</option></select>
+                        </div>
+                        <div class="col-md-3"><label class="form-label">游览时长(分钟)</label>
+                            <input type="number" id="new-poi-visit" class="form-control" value="60"></div>
+                        <div class="col-md-3"><label class="form-label">开放时间</label>
+                            <input type="time" id="new-poi-open" class="form-control" value="08:00"></div>
+                        <div class="col-md-3"><label class="form-label">闭馆时间</label>
+                            <input type="time" id="new-poi-close" class="form-control" value="18:00"></div>
+                        <div class="col-md-3"><label class="form-label">数据等级</label>
+                            <select id="new-poi-level" class="form-select">
+                                <option value="L3">L3 - 基础信息</option>
+                                <option value="L2">L2 - 有内部路线</option>
+                                <option value="L1">L1 - 完整数据</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6"><label class="form-label">纬度</label>
+                            <input type="number" step="any" id="new-poi-lat" class="form-control"></div>
+                        <div class="col-md-6"><label class="form-label">经度</label>
+                            <input type="number" step="any" id="new-poi-lng" class="form-control"></div>
+                        <div class="col-12"><label class="form-label">简介</label>
+                            <textarea id="new-poi-desc" rows="2" class="form-control"></textarea></div>
+                        <div class="col-12"><label class="form-label">语音文本</label>
+                            <textarea id="new-poi-voice-text" rows="2" class="form-control"></textarea></div>
+                        <div class="col-12"><label class="form-label">MP3语音文件</label>
+                            <input type="file" accept="audio/*" id="new-poi-voice" class="form-control"></div>
+                    </div>
+                    <button class="btn btn-success mt-2" onclick="window.saveNewPoi()">保存</button>
+                    <button class="btn btn-secondary mt-2" onclick="window.toggleAddPoiForm()">取消</button>
+                </div>
+                <div id="poi-list"></div>
+            </div>
+
+            <!-- ===== 路线管理 ===== -->
+            <div class="tab-pane" id="tab-routes">
+                <button class="btn btn-success mb-3" onclick="window.toggleRouteForm()"><i class="fas fa-plus"></i> 新增路线</button>
+                <div id="route-form" class="inline-edit hidden">
+                    <h5><i class="fas fa-route text-success"></i> 编辑路线</h5>
+                    <input type="hidden" id="edit-route-id">
+                    <div class="row g-2">
+                        <div class="col-md-4"><label class="form-label">路线名称</label><input id="route-name" class="form-control"></div>
+                        <div class="col-md-4"><label class="form-label">出发时间</label>
+                            <input type="time" id="route-start-time" class="form-control" value="08:30"></div>
+                        <div class="col-md-4"><label class="form-label">交通方式</label>
+                            <input id="route-transport" class="form-control" placeholder="如 自驾/大巴"></div>
+                    </div>
+                    <h6 class="mt-3">路线节点 <button class="btn btn-secondary btn-sm" onclick="window.addRouteNode()"><i class="fas fa-plus"></i></button></h6>
+                    <div id="route-node-selects"></div>
+                    <button class="btn btn-success mt-2" onclick="window.saveRoute()">保存路线</button>
+                    <button class="btn btn-secondary mt-2" onclick="window.toggleRouteForm()">取消</button>
+                </div>
+                <div id="route-list" class="mt-3"></div>
+            </div>
+
+            <!-- ===== 交通耗时 ===== -->
+            <div class="tab-pane" id="tab-transport">
+                <h5><i class="fas fa-clock text-success"></i> 景点间交通耗时（分钟）</h5>
+                <p class="text-secondary">点击景点展开，修改耗时后自动保存。可移除不需要的点位。</p>
+                <button class="btn btn-success" onclick="window.addTransportPoi()"><i class="fas fa-plus"></i> 添加景点</button>
+                <div id="transport-editor" class="mt-3"></div>
+            </div>
+
+            <!-- ===== 商户账号 ===== -->
+            <div class="tab-pane" id="tab-merchants">
+                <button class="btn btn-success" onclick="window.createMerchant()"><i class="fas fa-user-plus"></i> 创建商户账号</button>
+                <p class="text-secondary mt-2">创建后商户即可登录，业务信息由商户自行维护。</p>
+                <div id="merchant-list" class="mt-3"></div>
+            </div>
+
+            <!-- ===== 留言反馈 ===== -->
+            <div class="tab-pane" id="tab-feedbacks">
+                <div id="feedback-list"></div>
+            </div>
+
+            <!-- ===== POI内部路线编辑器 ===== -->
+            <div class="tab-pane" id="tab-editor">
+                <h5><i class="fas fa-edit text-success"></i> POI内部路线编辑器</h5>
+                <p class="text-secondary">选择POI后，在地图上绘制内部节点和路径。</p>
+
+                <div class="row g-3">
+                    <div class="col-md-3">
+                        <div class="card p-3">
+                            <label class="form-label fw-bold">选择POI</label>
+                            <select id="editor-poi-select" class="form-select" onchange="window.loadPoiForEditor()">
+                                <option value="">-- 选择POI --</option>
+                            </select>
+                            <hr>
+                            <div class="d-flex gap-2 flex-wrap">
+                                <span class="data-quality-badge quality-l3" id="editor-quality-badge">L3</span>
+                                <span id="editor-node-count" class="text-secondary">节点: 0</span>
+                                <span id="editor-edge-count" class="text-secondary">路径: 0</span>
+                            </div>
+                            <button class="btn btn-success btn-sm mt-2" onclick="window.savePoiInternal()"><i class="fas fa-save"></i> 保存内部数据</button>
+                            <button class="btn btn-danger btn-sm mt-1" onclick="window.clearPoiInternal()"><i class="fas fa-trash"></i> 清空</button>
+                        </div>
+                        <div class="card p-3 mt-2">
+                            <label class="form-label fw-bold">节点列表</label>
+                            <div id="editor-node-list" class="node-list"></div>
+                        </div>
+                    </div>
+                    <div class="col-md-9">
+                        <div id="poi-editor-map"></div>
+                        <div class="editor-toolbar mt-2">
+                            <button class="btn btn-outline-success btn-sm" onclick="window.enableDrawMode('marker')"><i class="fas fa-map-pin"></i> 添加节点</button>
+                            <button class="btn btn-outline-primary btn-sm" onclick="window.enableDrawMode('line')"><i class="fas fa-route"></i> 绘制路径</button>
+                            <button class="btn btn-outline-danger btn-sm" onclick="window.enableDrawMode('delete')"><i class="fas fa-trash"></i> 删除</button>
+                            <button class="btn btn-outline-secondary btn-sm" onclick="window.disableDrawMode()"><i class="fas fa-hand"></i> 浏览</button>
+                            <span class="ms-2 text-secondary" id="editor-status">就绪</span>
+                        </div>
+                        <div class="row g-1 mt-2" id="editor-node-form" style="display:none;">
+                            <div class="col-4"><input id="editor-node-name" class="form-control form-control-sm" placeholder="节点名称"></div>
+                            <div class="col-3">
+                                <select id="editor-node-type" class="form-select form-select-sm">
+                                    <option value="entrance">入口</option>
+                                    <option value="core_view">核心观景点</option>
+                                    <option value="rest_area">休息区</option>
+                                    <option value="wc">洗手间</option>
+                                    <option value="food">餐饮</option>
+                                    <option value="exit">出口</option>
+                                    <option value="other">其他</option>
+                                </select>
+                            </div>
+                            <div class="col-2"><input id="editor-node-dur-min" class="form-control form-control-sm" placeholder="最短(分钟)"></div>
+                            <div class="col-2"><input id="editor-node-dur-max" class="form-control form-control-sm" placeholder="最长(分钟)"></div>
+                            <div class="col-1"><button class="btn btn-success btn-sm" onclick="window.saveEditorNode()"><i class="fas fa-check"></i></button></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- 依赖库 -->
+<!-- ============================================================ -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+<!-- ============================================================ -->
+<!-- 管理后台主脚本 -->
+<!-- ============================================================ -->
+<script type="importmap">
+{
+    "imports": {
+        "./config.js": "./js/config.js",
+        "./api.js": "./js/api.js",
+        "./auth.js": "./js/auth.js",
+        "./admin.js": "./js/admin.js"
+    }
+}
+</script>
+
+<script type="module">
+// =============================================================
+// 管理后台入口
+// =============================================================
+import { signIn, signOut, getCurrentUser, onAuthStateChange } from './js/auth.js';
+import {
+    loadAllPois,
+    addPoi,
+    editPoi,
+    deletePoi,
+    loadAllRoutes,
+    addRoute,
+    editRoute,
+    deleteRoute,
+    loadTransportPresets,
+    saveTransportTime,
+    fetchAllFeedbacks,
+    replyToFeedback,
+    deleteFeedback,
+    loadPoiInternal,
+    savePoiInternal,
+    deletePoiInternal,
+    getMerchants,
+    createMerchantAccount,
+    loadPoisForEditor,
+    savePoiInternalNodes
+} from './js/admin.js';
+
+// =============================================================
+// DOM引用
+// =============================================================
+const loginPage = document.getElementById('login-page');
+const main = document.getElementById('main');
+const loginBtn = document.getElementById('loginBtn');
+const logoutBtn = document.getElementById('logoutBtn');
+const loginMsg = document.getElementById('login-msg');
+
+// =============================================================
+// 登录/登出
+// =============================================================
+loginBtn.addEventListener('click', async () => {
+    const email = document.getElementById('email').value;
+    const pwd = document.getElementById('password').value;
+    try {
+        await signIn(email, pwd);
+    } catch (e) {
+        loginMsg.textContent = '登录失败：' + e.message;
+    }
+});
+
+logoutBtn.addEventListener('click', async () => {
+    await signOut();
+});
+
+onAuthStateChange((event, session) => {
+    if (event === 'SIGNED_IN') {
+        loginPage.classList.add('hidden');
+        main.classList.remove('hidden');
+        initAdmin();
+    } else {
+        loginPage.classList.remove('hidden');
+        main.classList.add('hidden');
+    }
+});
+
+// 检查已有会话
+(async () => {
+    const user = await getCurrentUser();
+    if (user) {
+        loginPage.classList.add('hidden');
+        main.classList.remove('hidden');
+        initAdmin();
+    }
+})();
+
+// =============================================================
+// 暴露全局函数
+// =============================================================
+window.toggleAddPoiForm = () => document.getElementById('add-poi-form').classList.toggle('hidden');
+window.toggleRouteForm = () => document.getElementById('route-form').classList.toggle('hidden');
+window.addRouteNode = () => { /* 在admin.js中实现 */ };
+window.saveRoute = () => { /* 在admin.js中实现 */ };
+window.addTransportPoi = () => { /* 在admin.js中实现 */ };
+window.createMerchant = () => { /* 在admin.js中实现 */ };
+window.saveNewPoi = () => { /* 在admin.js中实现 */ };
+window.refreshData = () => { initAdmin(); };
+
+// =============================================================
+// 初始化
+// =============================================================
+async function initAdmin() {
+    try {
+        await loadAllPois().then(renderPoiList);
+        await loadAllRoutes().then(renderRouteList);
+        await loadTransportPresets().then(renderTransportEditor);
+        await fetchAllFeedbacks().then(renderFeedbackList);
+        await loadPoisForEditor().then(populateEditorSelect);
+        console.log('[管理后台] 初始化完成');
+    } catch (e) {
+        console.error('[管理后台] 初始化失败:', e);
+    }
+}
+
+// ===== 渲染函数（简化，实际由admin.js实现） =====
+function renderPoiList(pois) {
+    const container = document.getElementById('poi-list');
+    if (!container) return;
+    const html = pois.map(p => `
+        <div class="card mb-2" id="poi-card-${p.id}">
+            <div class="d-flex justify-content-between align-items-center p-2">
+                <span><b>${p.name}</b> [${p.category || '未分类'}]</span>
+                <div>
+                    <span class="data-quality-badge quality-${p.data_level || 'L3'}">${p.data_level || 'L3'}</span>
+                    <button class="btn btn-sm btn-secondary" onclick="window.editPoi(${p.id})">编辑</button>
+                    <button class="btn btn-sm btn-danger" onclick="window.deletePoi(${p.id})">删除</button>
+                </div>
+            </div>
+            <div id="edit-poi-${p.id}" class="inline-edit hidden"></div>
+        </div>
+    `).join('') || '<p>暂无POI</p>';
+    container.innerHTML = html;
+}
+
+function renderRouteList(routes) {
+    const container = document.getElementById('route-list');
+    if (!container) return;
+    const html = routes.map(r => `
+        <div class="card mb-2">
+            <div class="d-flex justify-content-between align-items-center p-2">
+                <span><b>${r.name}</b> (${r.start_time || '未设'})</span>
+                <div>
+                    <button class="btn btn-sm btn-secondary" onclick="window.editRoute(${r.id})">编辑</button>
+                    <button class="btn btn-sm btn-danger" onclick="window.deleteRoute(${r.id})">删除</button>
+                </div>
+            </div>
+        </div>
+    `).join('') || '<p>暂无路线</p>';
+    container.innerHTML = html;
+}
+
+function renderTransportEditor(presets) {
+    const container = document.getElementById('transport-editor');
+    if (!container) return;
+    container.innerHTML = '<p>交通耗时编辑器已加载</p>';
+    // 实际由admin.js实现
+}
+
+function renderFeedbackList(feedbacks) {
+    const container = document.getElementById('feedback-list');
+    if (!container) return;
+    const html = feedbacks.map(f => `
+        <div class="card mb-2">
+            <p>${f.message}</p>
+            <small>${new Date(f.created_at).toLocaleString()}</small>
+            ${f.reply ? `<div class="text-success">回复：${f.reply}</div>` : ''}
+            <textarea id="reply-${f.id}" class="form-control mt-1" rows="2">${f.reply || ''}</textarea>
+            <button class="btn btn-sm btn-primary mt-1" onclick="window.replyFeedback(${f.id})">回复</button>
+            <button class="btn btn-sm btn-danger mt-1" onclick="window.deleteFeedback(${f.id})">删除</button>
+        </div>
+    `).join('') || '<p>暂无留言</p>';
+    container.innerHTML = html;
+}
+
+function populateEditorSelect(pois) {
+    const sel = document.getElementById('editor-poi-select');
+    if (!sel) return;
+    sel.innerHTML = '<option value="">-- 选择POI --</option>';
+    pois.forEach(p => {
+        sel.innerHTML += `<option value="${p.id}">${p.name}</option>`;
+    });
+}
+
+// =============================================================
+// POI编辑器相关（由admin.js实现）
+// =============================================================
+window.loadPoiForEditor = () => { /* 在admin.js中实现 */ };
+window.savePoiInternal = () => { /* 在admin.js中实现 */ };
+window.clearPoiInternal = () => { /* 在admin.js中实现 */ };
+window.enableDrawMode = (mode) => { /* 在admin.js中实现 */ };
+window.disableDrawMode = () => { /* 在admin.js中实现 */ };
+window.saveEditorNode = () => { /* 在admin.js中实现 */ };
+window.editPoi = (id) => { /* 在admin.js中实现 */ };
+window.deletePoi = (id) => { /* 在admin.js中实现 */ };
+window.editRoute = (id) => { /* 在admin.js中实现 */ };
+window.deleteRoute = (id) => { /* 在admin.js中实现 */ };
+window.replyFeedback = (id) => { /* 在admin.js中实现 */ };
+window.deleteFeedback = (id) => { /* 在admin.js中实现 */ };
+
+</script>
+</body>
+</html>

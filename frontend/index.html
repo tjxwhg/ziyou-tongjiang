@@ -1,0 +1,740 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>智游通江 - 智能行程规划</title>
+    <!-- Bootstrap 5 CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        /* ===== 全局重置 ===== */
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; height: 100vh; overflow: hidden; background: #f0f2f5; }
+        .hidden { display: none !important; }
+
+        /* ===== 地图容器 ===== */
+        #map { height: 100vh; width: 100vw; z-index: 1; }
+
+        /* ===== 顶部栏 ===== */
+        .top-bar {
+            position: fixed;
+            top: 16px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 1500;
+            display: flex;
+            gap: 8px;
+            background: rgba(255,255,255,0.95);
+            padding: 8px 16px;
+            border-radius: 24px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+            backdrop-filter: blur(8px);
+            align-items: center;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+        .top-bar .brand {
+            font-weight: 700;
+            color: #1b5e20;
+            font-size: 18px;
+            margin-right: 12px;
+        }
+        .top-bar .brand i { margin-right: 6px; }
+        .top-btn {
+            background: transparent;
+            border: none;
+            padding: 6px 14px;
+            border-radius: 20px;
+            font-size: 14px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            transition: all 0.2s;
+            color: #333;
+        }
+        .top-btn:hover { background: #e8f5e9; color: #1b5e20; }
+        .top-btn.active { background: #1b5e20; color: white; }
+
+        /* ===== 底部浮动按钮 ===== */
+        .bottom-actions {
+            position: fixed;
+            bottom: 24px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 1500;
+            display: flex;
+            gap: 12px;
+            background: rgba(255,255,255,0.95);
+            padding: 10px 20px;
+            border-radius: 30px;
+            box-shadow: 0 4px 24px rgba(0,0,0,0.18);
+            backdrop-filter: blur(8px);
+            flex-wrap: wrap;
+            justify-content: center;
+            max-width: 95%;
+        }
+        .bottom-actions .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .btn-primary-custom { background: #1b5e20; color: white; }
+        .btn-primary-custom:hover { background: #2e7d32; transform: translateY(-2px); }
+        .btn-secondary-custom { background: #e8f5e9; color: #1b5e20; }
+        .btn-secondary-custom:hover { background: #c8e6c9; transform: translateY(-2px); }
+        .btn-outline-custom { background: transparent; color: #1b5e20; border: 2px solid #1b5e20; }
+        .btn-outline-custom:hover { background: #1b5e20; color: white; }
+
+        .float-btn {
+            position: fixed;
+            z-index: 1500;
+            background: white;
+            border-radius: 50%;
+            width: 48px;
+            height: 48px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.25);
+            cursor: pointer;
+            font-size: 20px;
+            border: none;
+            transition: all 0.2s;
+        }
+        .float-btn:hover { transform: scale(1.08); }
+        .locate-btn { bottom: 130px; right: 20px; }
+        .voice-btn { bottom: 190px; right: 20px; }
+
+        /* ===== 面板通用 ===== */
+        .panel {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: white;
+            z-index: 2000;
+            transform: translateY(100%);
+            transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+        }
+        .panel.active { transform: translateY(0); }
+        .panel-header {
+            padding: 16px 20px;
+            border-bottom: 1px solid #eee;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: white;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+            min-height: 64px;
+        }
+        .panel-header h2 {
+            font-size: 18px;
+            font-weight: 700;
+            margin: 0;
+            color: #1b5e20;
+        }
+        .panel-header .close-btn {
+            background: none;
+            border: none;
+            font-size: 24px;
+            cursor: pointer;
+            color: #666;
+            padding: 4px 8px;
+            border-radius: 8px;
+            transition: 0.2s;
+        }
+        .panel-header .close-btn:hover { background: #f5f5f5; }
+        .panel-body {
+            flex: 1;
+            padding: 16px 20px;
+            overflow-y: auto;
+            padding-bottom: 30px;
+        }
+
+        /* ===== 卡片组件 ===== */
+        .card-modern {
+            background: white;
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+            border: 1px solid #f0f0f0;
+            transition: 0.2s;
+        }
+        .card-modern:hover { box-shadow: 0 4px 16px rgba(0,0,0,0.1); }
+        .card-modern .card-title {
+            font-weight: 600;
+            font-size: 16px;
+            margin-bottom: 6px;
+            color: #1b5e20;
+        }
+        .card-modern .card-sub {
+            font-size: 13px;
+            color: #888;
+        }
+
+        /* ===== 方案对比卡片 ===== */
+        .solution-compare {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 16px;
+            margin: 16px 0;
+        }
+        .solution-card {
+            background: white;
+            border-radius: 16px;
+            padding: 20px;
+            border: 2px solid #e8f5e9;
+            transition: all 0.3s;
+            cursor: pointer;
+        }
+        .solution-card:hover { border-color: #1b5e20; transform: translateY(-4px); }
+        .solution-card.selected { border-color: #1b5e20; background: #f1f8e9; }
+        .solution-card .badge-style {
+            display: inline-block;
+            padding: 4px 14px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+        .badge-compact { background: #fff3e0; color: #e65100; }
+        .badge-relaxed { background: #e3f2fd; color: #0d47a1; }
+        .badge-indepth { background: #fce4ec; color: #880e4f; }
+        .solution-card .stat-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 4px 0;
+            font-size: 13px;
+            border-bottom: 1px solid #f5f5f5;
+        }
+        .solution-card .stat-row:last-child { border-bottom: none; }
+
+        /* ===== 实时行程看板 ===== */
+        .progress-bar-custom {
+            height: 6px;
+            background: #e0e0e0;
+            border-radius: 3px;
+            overflow: hidden;
+            margin: 12px 0;
+        }
+        .progress-bar-custom .fill {
+            height: 100%;
+            background: linear-gradient(90deg, #2e7d32, #66bb6a);
+            border-radius: 3px;
+            transition: width 0.5s ease;
+        }
+
+        /* ===== 偏好设置 ===== */
+        .pref-tag {
+            display: inline-block;
+            padding: 4px 14px;
+            border-radius: 20px;
+            background: #e8f5e9;
+            color: #1b5e20;
+            font-size: 13px;
+            margin: 4px;
+            cursor: pointer;
+            transition: 0.2s;
+            border: 2px solid transparent;
+        }
+        .pref-tag:hover { background: #c8e6c9; }
+        .pref-tag.active { border-color: #1b5e20; background: #1b5e20; color: white; }
+
+        /* ===== 行程详情 ===== */
+        .day-block {
+            background: #f8f9fa;
+            border-radius: 12px;
+            padding: 12px 16px;
+            margin-bottom: 12px;
+            border-left: 4px solid #1b5e20;
+        }
+        .day-block .day-title {
+            font-weight: 700;
+            color: #1b5e20;
+            margin-bottom: 8px;
+        }
+        .node-item {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            padding: 6px 0;
+            border-bottom: 1px dashed #eee;
+            font-size: 14px;
+        }
+        .node-item:last-child { border-bottom: none; }
+        .node-item .node-time {
+            color: #888;
+            font-size: 13px;
+            min-width: 80px;
+            flex-shrink: 0;
+        }
+        .node-item .node-icon {
+            width: 28px;
+            text-align: center;
+            flex-shrink: 0;
+            color: #1b5e20;
+        }
+
+        /* ===== 商户详情 ===== */
+        .biz-image-box {
+            width: 100%;
+            aspect-ratio: 16/9;
+            border-radius: 8px;
+            overflow: hidden;
+            background: #f0f0f0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-top: 8px;
+        }
+        .biz-image-box img { width: 100%; height: 100%; object-fit: cover; }
+
+        /* ===== 响应式 ===== */
+        @media (max-width: 640px) {
+            .top-bar { top: 8px; padding: 6px 12px; }
+            .top-bar .brand { font-size: 14px; margin-right: 6px; }
+            .top-btn { font-size: 12px; padding: 4px 10px; }
+            .bottom-actions { padding: 8px 14px; gap: 8px; }
+            .bottom-actions .btn { font-size: 12px; padding: 8px 14px; }
+            .float-btn { width: 40px; height: 40px; font-size: 16px; }
+            .locate-btn { bottom: 110px; right: 12px; }
+            .voice-btn { bottom: 165px; right: 12px; }
+            .solution-compare { grid-template-columns: 1fr; }
+            .panel-body { padding: 12px 14px; }
+        }
+
+        /* ===== 工具类 ===== */
+        .text-green { color: #1b5e20; }
+        .bg-green-light { background: #e8f5e9; }
+        .gap-2 { gap: 8px; }
+        .gap-3 { gap: 16px; }
+        .flex-wrap { flex-wrap: wrap; }
+        .flex-center { display: flex; align-items: center; justify-content: center; }
+    </style>
+</head>
+<body>
+
+<!-- ===== 地图容器 ===== -->
+<div id="map"></div>
+
+<!-- ===== 顶部导航 ===== -->
+<div class="top-bar" id="topBar">
+    <span class="brand"><i class="fas fa-leaf"></i>智游通江</span>
+    <button class="top-btn" onclick="window.openPanel('planPanel')" id="planBtn">
+        <i class="fas fa-route"></i> 智能规划
+    </button>
+    <button class="top-btn" onclick="window.openPanel('myPanel')">
+        <i class="fas fa-user"></i> 我的
+    </button>
+    <button class="top-btn" onclick="window.toggleCategoryBar()">
+        <i class="fas fa-filter"></i> 分类
+    </button>
+</div>
+
+<!-- ===== 分类栏 ===== -->
+<div class="category-bar" id="categoryBar">
+    <button class="cat-btn" onclick="window.filterPOI('自然景区')">🏔️ 自然景区</button>
+    <button class="cat-btn" onclick="window.filterPOI('红色景区')">🔴 红色景区</button>
+    <button class="cat-btn" onclick="window.filterPOI('文博场馆')">🏛️ 文博场馆</button>
+    <button class="cat-btn" onclick="window.filterPOI('餐饮住宿')">🍽️ 餐饮住宿</button>
+    <button class="cat-btn" onclick="window.filterPOI('交通枢纽')">🚌 交通枢纽</button>
+    <button class="cat-btn" onclick="window.filterPOI('游玩娱乐')">🎢 游玩娱乐</button>
+    <button class="cat-btn" onclick="window.filterPOI('特产购物')">🛍️ 特产购物</button>
+    <button class="cat-btn" onclick="window.closeCategoryBar()">✕ 关闭</button>
+</div>
+
+<!-- ===== 底部操作栏 ===== -->
+<div class="bottom-actions">
+    <button class="btn btn-primary-custom" onclick="window.openPanel('planPanel')">
+        <i class="fas fa-wand-magic-sparkles"></i> 智能规划
+    </button>
+    <button class="btn btn-secondary-custom" onclick="window.openPanel('myPanel')">
+        <i class="fas fa-calendar-check"></i> 我的行程
+    </button>
+    <button class="btn btn-outline-custom" onclick="window.locateUser()">
+        <i class="fas fa-location-dot"></i> 定位
+    </button>
+</div>
+
+<!-- ===== 浮动按钮 ===== -->
+<button class="float-btn locate-btn" onclick="window.locateUser()" title="定位">
+    <i class="fas fa-crosshairs"></i>
+</button>
+<button class="float-btn voice-btn" id="voiceToggleBtn" onclick="window.toggleVoice()" title="语音导览">
+    <i class="fas fa-volume-high"></i>
+</button>
+
+<!-- ============================================================ -->
+<!-- 面板：智能规划 -->
+<!-- ============================================================ -->
+<div class="panel" id="planPanel">
+    <div class="panel-header">
+        <h2><i class="fas fa-route text-green"></i> 智能行程规划</h2>
+        <button class="close-btn" onclick="window.closePanel('planPanel')">&times;</button>
+    </div>
+    <div class="panel-body">
+        <!-- 步骤1：选择偏好 -->
+        <div id="stepPreferences">
+            <h5><i class="fas fa-sliders-h text-green"></i> 旅行偏好</h5>
+            <div class="row g-2 mt-2">
+                <div class="col-6">
+                    <label class="form-label fw-semibold">出发日期</label>
+                    <input type="date" id="planStartDate" class="form-control" />
+                </div>
+                <div class="col-6">
+                    <label class="form-label fw-semibold">出发时间</label>
+                    <select id="planStartTime" class="form-select"></select>
+                </div>
+                <div class="col-6">
+                    <label class="form-label fw-semibold">天数</label>
+                    <select id="planDays" class="form-select">
+                        <option value="1">1 天</option>
+                        <option value="2" selected>2 天</option>
+                        <option value="3">3 天</option>
+                        <option value="4">4 天</option>
+                        <option value="5">5 天</option>
+                    </select>
+                </div>
+                <div class="col-6">
+                    <label class="form-label fw-semibold">行程风格</label>
+                    <select id="planStyle" class="form-select">
+                        <option value="compact">🚀 紧凑型 (景点多)</option>
+                        <option value="relaxed" selected>🌿 悠闲型 (舒适)</option>
+                        <option value="indepth">🔍 深度游 (细品)</option>
+                    </select>
+                </div>
+                <div class="col-12">
+                    <label class="form-label fw-semibold">景点类型偏好</label>
+                    <div id="prefCategories" class="d-flex flex-wrap gap-1"></div>
+                </div>
+                <div class="col-12">
+                    <label class="form-label fw-semibold">用餐偏好</label>
+                    <div id="prefCuisine" class="d-flex flex-wrap gap-1">
+                        <span class="pref-tag" data-value="川菜">🌶️ 川菜</span>
+                        <span class="pref-tag" data-value="粤菜">🥢 粤菜</span>
+                        <span class="pref-tag" data-value="火锅">🫕 火锅</span>
+                        <span class="pref-tag" data-value="小吃">🍢 小吃</span>
+                        <span class="pref-tag" data-value="简餐">🥪 简餐</span>
+                    </div>
+                </div>
+            </div>
+            <button class="btn btn-primary-custom w-100 mt-3" onclick="window.generatePlans()">
+                <i class="fas fa-wand-magic-sparkles"></i> 生成行程方案
+            </button>
+            <div id="planLoading" class="text-center mt-3 hidden">
+                <div class="spinner-border text-success" role="status"></div>
+                <p class="mt-2 text-secondary">正在为您规划最优行程...</p>
+            </div>
+        </div>
+
+        <!-- 步骤2：方案对比 -->
+        <div id="stepCompare" class="hidden">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h5><i class="fas fa-chart-simple text-green"></i> 方案对比</h5>
+                <button class="btn btn-secondary btn-sm" onclick="window.backToPreferences()">
+                    <i class="fas fa-arrow-left"></i> 重新设置
+                </button>
+            </div>
+            <div id="solutionCompareContainer" class="solution-compare"></div>
+            <div class="mt-3">
+                <button class="btn btn-primary-custom w-100" onclick="window.selectSolution()" id="selectSolutionBtn" disabled>
+                    <i class="fas fa-check"></i> 选择此方案
+                </button>
+            </div>
+        </div>
+
+        <!-- 步骤3：行程详情 -->
+        <div id="stepDetail" class="hidden">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h5><i class="fas fa-map text-green"></i> 我的行程</h5>
+                <button class="btn btn-secondary btn-sm" onclick="window.backToCompare()">
+                    <i class="fas fa-arrow-left"></i> 返回对比
+                </button>
+            </div>
+            <div id="tripDetailContainer"></div>
+            <div class="mt-3 d-flex gap-2">
+                <button class="btn btn-primary-custom flex-grow-1" onclick="window.saveTripSolution()">
+                    <i class="fas fa-save"></i> 保存行程
+                </button>
+                <button class="btn btn-outline-custom" onclick="window.startNavigation()">
+                    <i class="fas fa-location-dot"></i> 开始导航
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- 面板：我的 -->
+<!-- ============================================================ -->
+<div class="panel" id="myPanel">
+    <div class="panel-header">
+        <h2><i class="fas fa-user text-green"></i> 我的</h2>
+        <button class="close-btn" onclick="window.closePanel('myPanel')">&times;</button>
+    </div>
+    <div class="panel-body">
+        <ul class="nav nav-tabs" id="myTabs">
+            <li class="nav-item">
+                <a class="nav-link active" data-bs-toggle="tab" href="#myTrips">📅 行程</a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" data-bs-toggle="tab" href="#myReservations">📋 预约</a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" data-bs-toggle="tab" href="#myFeedback">💬 留言</a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" data-bs-toggle="tab" href="#mySettings">⚙️ 偏好</a>
+            </li>
+        </ul>
+        <div class="tab-content mt-3">
+            <!-- 我的行程 -->
+            <div class="tab-pane active" id="myTrips">
+                <div id="myTripsContent"></div>
+            </div>
+            <!-- 我的预约 -->
+            <div class="tab-pane" id="myReservations">
+                <div id="myReservationsContent"></div>
+            </div>
+            <!-- 留言 -->
+            <div class="tab-pane" id="myFeedback">
+                <textarea id="feedbackMsg" class="form-control" rows="3" placeholder="建议或问题..."></textarea>
+                <button class="btn btn-primary-custom mt-2" onclick="window.submitFeedback()">提交</button>
+                <div id="feedbackHistory" class="mt-3"></div>
+            </div>
+            <!-- 偏好设置 -->
+            <div class="tab-pane" id="mySettings">
+                <h6><i class="fas fa-sliders-h text-green"></i> 旅行偏好设置</h6>
+                <div class="mb-2">
+                    <label class="form-label fw-semibold">景点类型</label>
+                    <div id="settingsCategories" class="d-flex flex-wrap gap-1"></div>
+                </div>
+                <div class="mb-2">
+                    <label class="form-label fw-semibold">用餐偏好</label>
+                    <div id="settingsCuisine" class="d-flex flex-wrap gap-1">
+                        <span class="pref-tag" data-value="川菜">🌶️ 川菜</span>
+                        <span class="pref-tag" data-value="粤菜">🥢 粤菜</span>
+                        <span class="pref-tag" data-value="火锅">🫕 火锅</span>
+                        <span class="pref-tag" data-value="小吃">🍢 小吃</span>
+                        <span class="pref-tag" data-value="简餐">🥪 简餐</span>
+                    </div>
+                </div>
+                <div class="mb-2">
+                    <label class="form-label fw-semibold">行程风格</label>
+                    <select id="settingsPace" class="form-select">
+                        <option value="compact">🚀 紧凑型</option>
+                        <option value="relaxed" selected>🌿 悠闲型</option>
+                        <option value="indepth">🔍 深度游</option>
+                    </select>
+                </div>
+                <button class="btn btn-primary-custom" onclick="window.savePreferences()">
+                    <i class="fas fa-save"></i> 保存偏好
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- 面板：商户详情 -->
+<!-- ============================================================ -->
+<div class="panel" id="merchantDetailPanel">
+    <div class="panel-header">
+        <h2 id="merchantDetailTitle">商户详情</h2>
+        <button class="close-btn" onclick="window.closePanel('merchantDetailPanel')">&times;</button>
+    </div>
+    <div class="panel-body" id="merchantDetailContent"></div>
+</div>
+
+<!-- ============================================================ -->
+<!-- 面板：实时导航 -->
+<!-- ============================================================ -->
+<div class="panel" id="navPanel">
+    <div class="panel-header">
+        <h2><i class="fas fa-compass text-green"></i> 实时导航</h2>
+        <button class="close-btn" onclick="window.closePanel('navPanel')">&times;</button>
+    </div>
+    <div class="panel-body">
+        <div id="navContent">
+            <div class="d-flex justify-content-between align-items-center">
+                <span class="fw-bold">今日进度</span>
+                <span id="navProgressText">0%</span>
+            </div>
+            <div class="progress-bar-custom"><div class="fill" id="navProgressBar" style="width:0%"></div></div>
+            <div id="navCurrentNode" class="card-modern">
+                <div class="card-title" id="navPoiName">准备出发</div>
+                <div class="card-sub" id="navPoiStatus">等待开始导航...</div>
+            </div>
+            <div id="navTimeline" class="mt-3"></div>
+            <button class="btn btn-danger w-100 mt-3" onclick="window.endNavigation()">
+                <i class="fas fa-stop"></i> 结束导航
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- 依赖库 -->
+<!-- ============================================================ -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+<!-- ============================================================ -->
+<!-- 前端模块入口 -->
+<!-- ============================================================ -->
+<script type="importmap">
+{
+    "imports": {
+        "./config.js": "./js/config.js",
+        "./api.js": "./js/api.js",
+        "./auth.js": "./js/auth.js",
+        "./utils.js": "./js/utils.js",
+        "./map.js": "./js/map.js",
+        "./trip-planner.js": "./js/trip-planner.js",
+        "./trip-executor.js": "./js/trip-executor.js",
+        "./user.js": "./js/user.js"
+    }
+}
+</script>
+
+<script type="module">
+// =============================================================
+// 主入口 - 初始化和全局事件绑定
+// =============================================================
+import { getPois } from './js/api.js';
+import { getCurrentUser, signInAnonymously } from './js/auth.js';
+import { getCountySpots } from './js/utils.js';
+import { initMap, loadPoisToMap, locateUser, setVoiceEnabled, getAllPois } from './js/map.js';
+import { loadTransportPresets } from './js/trip-planner.js';
+import {
+    renderMyTrips,
+    renderMyReservations,
+    renderFeedbackHistory,
+    submitFeedback as submitUserFeedback,
+    loadUserPreferences,
+    saveUserPreferences
+} from './js/user.js';
+import {
+    initPlanPanel,
+    generatePlans,
+    selectSolution,
+    backToPreferences,
+    backToCompare,
+    saveTripSolution,
+    startNavigation,
+    endNavigation,
+    showTripDetail
+} from './js/trip-planner.js';
+
+// ===== 暴露全局函数给 HTML =====
+window.locateUser = locateUser;
+window.toggleCategoryBar = () => {
+    document.getElementById('categoryBar').classList.toggle('show');
+};
+window.closeCategoryBar = () => {
+    document.getElementById('categoryBar').classList.remove('show');
+};
+window.filterPOI = (category) => {
+    import('./js/map.js').then(m => m.applyFilter(category));
+    document.getElementById('categoryBar').classList.remove('show');
+};
+
+// 面板控制
+window.openPanel = (id) => {
+    document.getElementById(id).classList.add('active');
+};
+window.closePanel = (id) => {
+    document.getElementById(id).classList.remove('active');
+};
+
+// 语音控制
+window._voiceEnabled = true;
+window.toggleVoice = () => {
+    window._voiceEnabled = !window._voiceEnabled;
+    setVoiceEnabled(window._voiceEnabled);
+    document.getElementById('voiceToggleBtn').innerHTML = window._voiceEnabled ?
+        '<i class="fas fa-volume-high"></i>' :
+        '<i class="fas fa-volume-xmark"></i>';
+};
+
+// 规划相关
+window.generatePlans = generatePlans;
+window.selectSolution = selectSolution;
+window.backToPreferences = backToPreferences;
+window.backToCompare = backToCompare;
+window.saveTripSolution = saveTripSolution;
+window.startNavigation = startNavigation;
+window.endNavigation = endNavigation;
+window.showTripDetail = showTripDetail;
+
+// 用户相关
+window.submitFeedback = submitUserFeedback;
+
+// ===== 初始化 =====
+async function init() {
+    try {
+        // 匿名登录
+        try {
+            await signInAnonymously();
+            console.log('[系统] 匿名登录成功');
+        } catch (e) {
+            console.warn('[系统] 匿名登录失败（不影响地图浏览）:', e.message);
+        }
+
+        // 地图
+        initMap('map');
+        const pois = await getPois();
+        loadPoisToMap(pois);
+        window.__countySpots = getCountySpots(pois);
+
+        // 加载交通预设
+        await loadTransportPresets();
+
+        // 加载用户偏好
+        const user = await getCurrentUser();
+        if (user) {
+            await loadUserPreferences(user.id);
+        }
+
+        // 渲染我的内容
+        renderMyTrips();
+        renderMyReservations();
+        renderFeedbackHistory();
+
+        // 初始化规划面板
+        initPlanPanel();
+
+        // 自动定位
+        locateUser();
+
+        console.log('[系统] 初始化完成');
+    } catch (e) {
+        console.error('[系统] 初始化失败:', e);
+        alert('初始化失败：' + e.message);
+    }
+}
+
+init();
+</script>
+</body>
+</html>

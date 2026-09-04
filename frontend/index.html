@@ -11,40 +11,182 @@
     <!-- Leaflet CSS -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
-        /* 样式与之前完全相同，为节省篇幅此处省略，实际部署请保留完整样式 */
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; height: 100vh; overflow: hidden; background: #f0f2f5; }
         .hidden { display: none !important; }
         #map { height: 100vh; width: 100vw; z-index: 1; }
-        .top-bar { position: fixed; top: 16px; left: 50%; transform: translateX(-50%); z-index: 1500; display: flex; gap: 8px; background: rgba(255,255,255,0.95); padding: 8px 16px; border-radius: 24px; box-shadow: 0 4px 20px rgba(0,0,0,0.15); backdrop-filter: blur(8px); align-items: center; flex-wrap: wrap; justify-content: center; }
-        .top-bar .brand { font-weight: 700; color: #1b5e20; font-size: 18px; margin-right: 12px; }
-        .top-bar .brand i { margin-right: 6px; }
-        .top-btn { background: transparent; border: none; padding: 6px 14px; border-radius: 20px; font-size: 14px; cursor: pointer; display: flex; align-items: center; gap: 6px; transition: all 0.2s; color: #333; }
-        .top-btn:hover { background: #e8f5e9; color: #1b5e20; }
-        .top-btn.active { background: #1b5e20; color: white; }
-        .bottom-actions { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); z-index: 1500; display: flex; gap: 12px; background: rgba(255,255,255,0.95); padding: 10px 20px; border-radius: 30px; box-shadow: 0 4px 24px rgba(0,0,0,0.18); backdrop-filter: blur(8px); flex-wrap: wrap; justify-content: center; max-width: 95%; }
-        .bottom-actions .btn { padding: 10px 20px; border: none; border-radius: 20px; font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.2s; display: flex; align-items: center; gap: 8px; }
-        .btn-primary-custom { background: #1b5e20; color: white; }
-        .btn-primary-custom:hover { background: #2e7d32; transform: translateY(-2px); }
-        .btn-secondary-custom { background: #e8f5e9; color: #1b5e20; }
-        .btn-secondary-custom:hover { background: #c8e6c9; transform: translateY(-2px); }
-        .btn-outline-custom { background: transparent; color: #1b5e20; border: 2px solid #1b5e20; }
-        .btn-outline-custom:hover { background: #1b5e20; color: white; }
-        .float-btn { position: fixed; z-index: 1500; background: white; border-radius: 50%; width: 48px; height: 48px; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 16px rgba(0,0,0,0.25); cursor: pointer; font-size: 20px; border: none; transition: all 0.2s; }
+        
+        /* ===== 顶部栏 ===== */
+        .top-bar {
+            position: fixed;
+            top: 12px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 1500;
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            background: rgba(255,255,255,0.92);
+            padding: 6px 20px;
+            border-radius: 30px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.12);
+            backdrop-filter: blur(8px);
+            transition: top 0.3s ease;
+        }
+        .top-bar .brand {
+            font-weight: 700;
+            color: #1b5e20;
+            font-size: 20px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            cursor: pointer;
+        }
+        .top-bar .brand i { font-size: 22px; }
+
+        /* ===== 分类栏（悬浮触发器） ===== */
+        .category-trigger-area {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 70px;
+            z-index: 1599;
+            pointer-events: none;
+        }
+        .category-trigger-area:hover .category-bar,
+        .category-bar:hover {
+            top: 0 !important;
+        }
+        .category-bar {
+            position: fixed;
+            top: -70px;
+            left: 0;
+            right: 0;
+            z-index: 1600;
+            background: rgba(255,255,255,0.97);
+            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+            transition: top 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            display: flex;
+            flex-wrap: wrap;
+            padding: 10px 20px;
+            gap: 8px;
+            border-bottom: 1px solid #e8f5e9;
+            backdrop-filter: blur(8px);
+            pointer-events: auto;
+        }
+        .category-bar .cat-btn {
+            padding: 6px 16px;
+            border-radius: 20px;
+            border: 1px solid #e0e0e0;
+            background: white;
+            font-size: 13px;
+            cursor: pointer;
+            transition: all 0.2s;
+            white-space: nowrap;
+            color: #333;
+        }
+        .category-bar .cat-btn:hover { background: #e8f5e9; border-color: #2e7d32; }
+        .category-bar .cat-btn.active { background: #2e7d32; color: white; border-color: #2e7d32; }
+
+        /* ===== 底部导航（合并所有功能） ===== */
+        .bottom-nav {
+            position: fixed;
+            bottom: 24px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 1500;
+            display: flex;
+            gap: 6px;
+            background: rgba(255,255,255,0.95);
+            padding: 8px 16px;
+            border-radius: 40px;
+            box-shadow: 0 4px 24px rgba(0,0,0,0.18);
+            backdrop-filter: blur(8px);
+            flex-wrap: nowrap;
+            align-items: center;
+            max-width: 95%;
+        }
+        .bottom-nav .nav-btn {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 24px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            background: transparent;
+            color: #555;
+            white-space: nowrap;
+        }
+        .bottom-nav .nav-btn:hover { background: #e8f5e9; color: #1b5e20; }
+        .bottom-nav .nav-btn.active { background: #1b5e20; color: white; }
+        .bottom-nav .nav-btn.primary { background: #1b5e20; color: white; }
+        .bottom-nav .nav-btn.primary:hover { background: #2e7d32; }
+        .bottom-nav .nav-btn i { font-size: 16px; }
+
+        /* ===== 浮动定位按钮 ===== */
+        .float-btn {
+            position: fixed;
+            z-index: 1500;
+            background: white;
+            border-radius: 50%;
+            width: 48px;
+            height: 48px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.25);
+            cursor: pointer;
+            font-size: 20px;
+            border: none;
+            transition: all 0.2s;
+        }
         .float-btn:hover { transform: scale(1.08); }
-        .locate-btn { bottom: 130px; right: 20px; }
-        .voice-btn { bottom: 190px; right: 20px; }
-        .panel { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: white; z-index: 2000; transform: translateY(100%); transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1); overflow-y: auto; display: flex; flex-direction: column; }
+        .locate-btn { bottom: 110px; right: 20px; }
+        .voice-btn { bottom: 170px; right: 20px; }
+
+        /* ===== 面板 ===== */
+        .panel {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: white;
+            z-index: 2000;
+            transform: translateY(100%);
+            transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+        }
         .panel.active { transform: translateY(0); }
-        .panel-header { padding: 16px 20px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; background: white; position: sticky; top: 0; z-index: 10; min-height: 64px; }
+        .panel-header {
+            padding: 16px 20px;
+            border-bottom: 1px solid #eee;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: white;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+            min-height: 64px;
+        }
         .panel-header h2 { font-size: 18px; font-weight: 700; margin: 0; color: #1b5e20; }
         .panel-header .close-btn { background: none; border: none; font-size: 24px; cursor: pointer; color: #666; padding: 4px 8px; border-radius: 8px; transition: 0.2s; }
         .panel-header .close-btn:hover { background: #f5f5f5; }
         .panel-body { flex: 1; padding: 16px 20px; overflow-y: auto; padding-bottom: 30px; }
+
         .card-modern { background: white; border-radius: 12px; padding: 16px; margin-bottom: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); border: 1px solid #f0f0f0; transition: 0.2s; }
         .card-modern:hover { box-shadow: 0 4px 16px rgba(0,0,0,0.1); }
         .card-modern .card-title { font-weight: 600; font-size: 16px; margin-bottom: 6px; color: #1b5e20; }
         .card-modern .card-sub { font-size: 13px; color: #888; }
+
         .solution-compare { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin: 16px 0; }
         .solution-card { background: white; border-radius: 16px; padding: 20px; border: 2px solid #e8f5e9; transition: all 0.3s; cursor: pointer; }
         .solution-card:hover { border-color: #1b5e20; transform: translateY(-4px); }
@@ -55,41 +197,39 @@
         .badge-indepth { background: #fce4ec; color: #880e4f; }
         .solution-card .stat-row { display: flex; justify-content: space-between; padding: 4px 0; font-size: 13px; border-bottom: 1px solid #f5f5f5; }
         .solution-card .stat-row:last-child { border-bottom: none; }
+
         .progress-bar-custom { height: 6px; background: #e0e0e0; border-radius: 3px; overflow: hidden; margin: 12px 0; }
         .progress-bar-custom .fill { height: 100%; background: linear-gradient(90deg, #2e7d32, #66bb6a); border-radius: 3px; transition: width 0.5s ease; }
+
         .pref-tag { display: inline-block; padding: 4px 14px; border-radius: 20px; background: #e8f5e9; color: #1b5e20; font-size: 13px; margin: 4px; cursor: pointer; transition: 0.2s; border: 2px solid transparent; }
         .pref-tag:hover { background: #c8e6c9; }
         .pref-tag.active { border-color: #1b5e20; background: #1b5e20; color: white; }
+
         .day-block { background: #f8f9fa; border-radius: 12px; padding: 12px 16px; margin-bottom: 12px; border-left: 4px solid #1b5e20; }
         .day-block .day-title { font-weight: 700; color: #1b5e20; margin-bottom: 8px; }
         .node-item { display: flex; align-items: flex-start; gap: 12px; padding: 6px 0; border-bottom: 1px dashed #eee; font-size: 14px; }
         .node-item:last-child { border-bottom: none; }
         .node-item .node-time { color: #888; font-size: 13px; min-width: 80px; flex-shrink: 0; }
         .node-item .node-icon { width: 28px; text-align: center; flex-shrink: 0; color: #1b5e20; }
-        .biz-image-box { width: 100%; aspect-ratio: 16/9; border-radius: 8px; overflow: hidden; background: #f0f0f0; display: flex; align-items: center; justify-content: center; margin-top: 8px; }
-        .biz-image-box img { width: 100%; height: 100%; object-fit: cover; }
-        .category-bar { position: fixed; top: -50px; left: 0; right: 0; z-index: 1600; background: rgba(255,255,255,0.95); box-shadow: 0 2px 8px rgba(0,0,0,0.15); transition: top 0.3s ease; display: flex; flex-wrap: wrap; padding: 8px 12px; gap: 6px; border-bottom: 1px solid #ddd; }
-        .category-bar.show { top: 0; }
-        .category-bar .cat-btn { padding: 4px 12px; border-radius: 16px; border: 1px solid #ccc; background: white; font-size: 13px; cursor: pointer; white-space: nowrap; }
-        .category-bar .cat-btn.active { background: #2e7d32; color: white; border-color: #2e7d32; }
+
+        .poi-select-list { max-height: 300px; overflow-y: auto; border: 1px solid #e0e0e0; border-radius: 8px; padding: 8px; }
+        .poi-select-item { display: flex; align-items: center; gap: 10px; padding: 6px 8px; border-bottom: 1px solid #f0f0f0; cursor: pointer; }
+        .poi-select-item:hover { background: #e8f5e9; }
+        .poi-select-item input[type="checkbox"] { width: 18px; height: 18px; }
+
         @media (max-width: 640px) {
-            .top-bar { top: 8px; padding: 6px 12px; }
-            .top-bar .brand { font-size: 14px; margin-right: 6px; }
-            .top-btn { font-size: 12px; padding: 4px 10px; }
-            .bottom-actions { padding: 8px 14px; gap: 8px; }
-            .bottom-actions .btn { font-size: 12px; padding: 8px 14px; }
+            .top-bar { top: 8px; padding: 4px 14px; gap: 10px; }
+            .top-bar .brand { font-size: 16px; }
+            .bottom-nav { padding: 6px 12px; gap: 4px; flex-wrap: wrap; justify-content: center; }
+            .bottom-nav .nav-btn { font-size: 12px; padding: 6px 12px; }
             .float-btn { width: 40px; height: 40px; font-size: 16px; }
-            .locate-btn { bottom: 110px; right: 12px; }
-            .voice-btn { bottom: 165px; right: 12px; }
+            .locate-btn { bottom: 100px; right: 12px; }
+            .voice-btn { bottom: 155px; right: 12px; }
             .solution-compare { grid-template-columns: 1fr; }
             .panel-body { padding: 12px 14px; }
         }
         .text-green { color: #1b5e20; }
         .bg-green-light { background: #e8f5e9; }
-        .gap-2 { gap: 8px; }
-        .gap-3 { gap: 16px; }
-        .flex-wrap { flex-wrap: wrap; }
-        .flex-center { display: flex; align-items: center; justify-content: center; }
     </style>
 </head>
 <body>
@@ -97,46 +237,44 @@
 <!-- ===== 地图容器 ===== -->
 <div id="map"></div>
 
-<!-- ===== 顶部导航 ===== -->
+<!-- ===== 顶部栏：仅Logo ===== -->
 <div class="top-bar" id="topBar">
-    <span class="brand"><i class="fas fa-leaf"></i>智游通江</span>
-    <button class="top-btn" onclick="window.openPanel('planPanel')" id="planBtn">
-        <i class="fas fa-route"></i> 智能规划
-    </button>
-    <button class="top-btn" onclick="window.openPanel('myPanel')">
-        <i class="fas fa-user"></i> 我的
-    </button>
-    <button class="top-btn" onclick="window.toggleCategoryBar()">
-        <i class="fas fa-filter"></i> 分类
-    </button>
+    <span class="brand" onclick="window.scrollToTop()"><i class="fas fa-leaf"></i> 智游通江</span>
 </div>
 
-<!-- ===== 分类栏 ===== -->
-<div class="category-bar" id="categoryBar">
-    <button class="cat-btn" onclick="window.filterPOI('自然景区')">🏔️ 自然景区</button>
-    <button class="cat-btn" onclick="window.filterPOI('红色景区')">🔴 红色景区</button>
-    <button class="cat-btn" onclick="window.filterPOI('文博场馆')">🏛️ 文博场馆</button>
-    <button class="cat-btn" onclick="window.filterPOI('餐饮住宿')">🍽️ 餐饮住宿</button>
-    <button class="cat-btn" onclick="window.filterPOI('交通枢纽')">🚌 交通枢纽</button>
-    <button class="cat-btn" onclick="window.filterPOI('游玩娱乐')">🎢 游玩娱乐</button>
-    <button class="cat-btn" onclick="window.filterPOI('特产购物')">🛍️ 特产购物</button>
-    <button class="cat-btn" onclick="window.closeCategoryBar()">✕ 关闭</button>
+<!-- ===== 分类栏（鼠标悬停触发） ===== -->
+<div class="category-trigger-area">
+    <div class="category-bar" id="categoryBar">
+        <button class="cat-btn" onclick="window.filterPOI('自然景区')">🏔️ 自然景区</button>
+        <button class="cat-btn" onclick="window.filterPOI('人文历史')">📜 人文历史</button>
+        <button class="cat-btn" onclick="window.filterPOI('民俗风情')">🎎 民俗风情</button>
+        <button class="cat-btn" onclick="window.filterPOI('景观地标')">🗼 景观地标</button>
+        <button class="cat-btn" onclick="window.filterPOI('游玩娱乐')">🎢 游玩娱乐</button>
+        <button class="cat-btn" onclick="window.filterPOI('购物消费')">🛍️ 购物消费</button>
+        <button class="cat-btn" onclick="window.filterPOI('餐饮住宿')">🍽️ 餐饮住宿</button>
+        <button class="cat-btn" onclick="window.filterPOI('交通枢纽')">🚌 交通枢纽</button>
+        <button class="cat-btn" onclick="window.filterPOI('公共服务')">🏛️ 公共服务</button>
+        <button class="cat-btn" onclick="window.clearFilter()">✕ 清除筛选</button>
+    </div>
 </div>
 
-<!-- ===== 底部操作栏 ===== -->
-<div class="bottom-actions">
-    <button class="btn btn-primary-custom" onclick="window.openPanel('planPanel')">
+<!-- ===== 底部导航（合并所有按钮） ===== -->
+<div class="bottom-nav" id="bottomNav">
+    <button class="nav-btn primary" onclick="window.openPanel('planPanel')">
         <i class="fas fa-wand-magic-sparkles"></i> 智能规划
     </button>
-    <button class="btn btn-secondary-custom" onclick="window.openPanel('myPanel')">
-        <i class="fas fa-calendar-check"></i> 我的行程
+    <button class="nav-btn" onclick="window.openPanel('myPanel')">
+        <i class="fas fa-user"></i> 我的
     </button>
-    <button class="btn btn-outline-custom" onclick="window.locateUser()">
+    <button class="nav-btn" onclick="window.locateUser()">
         <i class="fas fa-location-dot"></i> 定位
+    </button>
+    <button class="nav-btn" onclick="window.toggleVoice()" id="voiceBtn">
+        <i class="fas fa-volume-high"></i> 语音
     </button>
 </div>
 
-<!-- ===== 浮动按钮 ===== -->
+<!-- ===== 浮动定位按钮（保留） ===== -->
 <button class="float-btn locate-btn" onclick="window.locateUser()" title="定位">
     <i class="fas fa-crosshairs"></i>
 </button>
@@ -178,26 +316,51 @@
                 <div class="col-6">
                     <label class="form-label fw-semibold">行程风格</label>
                     <select id="planStyle" class="form-select">
-                        <option value="compact">🚀 紧凑型 (景点多)</option>
-                        <option value="relaxed" selected>🌿 悠闲型 (舒适)</option>
-                        <option value="indepth">🔍 深度游 (细品)</option>
+                        <option value="compact">🚀 紧凑型 (核心景点)</option>
+                        <option value="relaxed" selected>🌿 舒适型 (经典+特色)</option>
+                        <option value="indepth">🔍 深度游 (全体验)</option>
                     </select>
                 </div>
-                <div class="col-12">
-                    <label class="form-label fw-semibold">景点类型偏好</label>
-                    <div id="prefCategories" class="d-flex flex-wrap gap-1"></div>
-                </div>
-                <div class="col-12">
-                    <label class="form-label fw-semibold">用餐偏好</label>
-                    <div id="prefCuisine" class="d-flex flex-wrap gap-1">
-                        <span class="pref-tag" data-value="川菜">🌶️ 川菜</span>
-                        <span class="pref-tag" data-value="粤菜">🥢 粤菜</span>
-                        <span class="pref-tag" data-value="火锅">🫕 火锅</span>
-                        <span class="pref-tag" data-value="小吃">🍢 小吃</span>
-                        <span class="pref-tag" data-value="简餐">🥪 简餐</span>
-                    </div>
+            </div>
+
+            <!-- 景点类型偏好（改为自然、人文等） -->
+            <div class="mt-2">
+                <label class="form-label fw-semibold">景点类型偏好</label>
+                <div id="prefCategories" class="d-flex flex-wrap gap-1">
+                    <span class="pref-tag" data-value="自然景区">🌿 自然</span>
+                    <span class="pref-tag" data-value="人文历史">📜 人文</span>
+                    <span class="pref-tag" data-value="民俗风情">🎎 民俗</span>
+                    <span class="pref-tag" data-value="景观地标">🗼 景观</span>
+                    <span class="pref-tag" data-value="游玩娱乐">🎢 游玩</span>
+                    <span class="pref-tag" data-value="购物消费">🛍️ 购物</span>
                 </div>
             </div>
+
+            <!-- 用餐偏好（修改） -->
+            <div class="mt-2">
+                <label class="form-label fw-semibold">用餐偏好</label>
+                <div id="prefCuisine" class="d-flex flex-wrap gap-1">
+                    <span class="pref-tag" data-value="川菜">🌶️ 川菜</span>
+                    <span class="pref-tag" data-value="火锅">🫕 火锅</span>
+                    <span class="pref-tag" data-value="小吃">🍢 小吃</span>
+                    <span class="pref-tag" data-value="家常">🍳 家常</span>
+                    <span class="pref-tag" data-value="简餐">🥪 简餐</span>
+                </div>
+            </div>
+
+            <!-- 景点POI选择 -->
+            <div class="mt-2">
+                <label class="form-label fw-semibold">选择景点 <span class="text-secondary" style="font-weight:400;font-size:13px;">（点击地图标记或手动勾选）</span></label>
+                <div id="poiSelectContainer" class="poi-select-list">
+                    <div class="text-secondary text-center py-2">加载景点中...</div>
+                </div>
+                <div class="mt-1">
+                    <button class="btn btn-sm btn-outline-secondary" onclick="window.selectAllPois(true)">全选</button>
+                    <button class="btn btn-sm btn-outline-secondary" onclick="window.selectAllPois(false)">取消全选</button>
+                    <span class="ms-2 text-secondary" id="selectedPoiCount">已选 0 个</span>
+                </div>
+            </div>
+
             <button class="btn btn-primary-custom w-100 mt-3" onclick="window.generatePlans()">
                 <i class="fas fa-wand-magic-sparkles"></i> 生成行程方案
             </button>
@@ -254,48 +417,39 @@
     </div>
     <div class="panel-body">
         <ul class="nav nav-tabs" id="myTabs">
-            <li class="nav-item">
-                <a class="nav-link active" data-bs-toggle="tab" href="#myTrips">📅 行程</a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link" data-bs-toggle="tab" href="#myReservations">📋 预约</a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link" data-bs-toggle="tab" href="#myFeedback">💬 留言</a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link" data-bs-toggle="tab" href="#mySettings">⚙️ 偏好</a>
-            </li>
+            <li class="nav-item"><a class="nav-link active" data-bs-toggle="tab" href="#myTrips">📅 行程</a></li>
+            <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#myReservations">📋 预约</a></li>
+            <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#myFeedback">💬 留言</a></li>
+            <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#mySettings">⚙️ 偏好</a></li>
         </ul>
         <div class="tab-content mt-3">
-            <!-- 我的行程 -->
-            <div class="tab-pane active" id="myTrips">
-                <div id="myTripsContent"></div>
-            </div>
-            <!-- 我的预约 -->
-            <div class="tab-pane" id="myReservations">
-                <div id="myReservationsContent"></div>
-            </div>
-            <!-- 留言 -->
+            <div class="tab-pane active" id="myTrips"><div id="myTripsContent"></div></div>
+            <div class="tab-pane" id="myReservations"><div id="myReservationsContent"></div></div>
             <div class="tab-pane" id="myFeedback">
                 <textarea id="feedbackMsg" class="form-control" rows="3" placeholder="建议或问题..."></textarea>
                 <button class="btn btn-primary-custom mt-2" onclick="window.submitFeedback()">提交</button>
                 <div id="feedbackHistory" class="mt-3"></div>
             </div>
-            <!-- 偏好设置 -->
             <div class="tab-pane" id="mySettings">
                 <h6><i class="fas fa-sliders-h text-green"></i> 旅行偏好设置</h6>
                 <div class="mb-2">
                     <label class="form-label fw-semibold">景点类型</label>
-                    <div id="settingsCategories" class="d-flex flex-wrap gap-1"></div>
+                    <div id="settingsCategories" class="d-flex flex-wrap gap-1">
+                        <span class="pref-tag" data-value="自然景区">🌿 自然</span>
+                        <span class="pref-tag" data-value="人文历史">📜 人文</span>
+                        <span class="pref-tag" data-value="民俗风情">🎎 民俗</span>
+                        <span class="pref-tag" data-value="景观地标">🗼 景观</span>
+                        <span class="pref-tag" data-value="游玩娱乐">🎢 游玩</span>
+                        <span class="pref-tag" data-value="购物消费">🛍️ 购物</span>
+                    </div>
                 </div>
                 <div class="mb-2">
                     <label class="form-label fw-semibold">用餐偏好</label>
                     <div id="settingsCuisine" class="d-flex flex-wrap gap-1">
                         <span class="pref-tag" data-value="川菜">🌶️ 川菜</span>
-                        <span class="pref-tag" data-value="粤菜">🥢 粤菜</span>
                         <span class="pref-tag" data-value="火锅">🫕 火锅</span>
                         <span class="pref-tag" data-value="小吃">🍢 小吃</span>
+                        <span class="pref-tag" data-value="家常">🍳 家常</span>
                         <span class="pref-tag" data-value="简餐">🥪 简餐</span>
                     </div>
                 </div>
@@ -303,32 +457,23 @@
                     <label class="form-label fw-semibold">行程风格</label>
                     <select id="settingsPace" class="form-select">
                         <option value="compact">🚀 紧凑型</option>
-                        <option value="relaxed" selected>🌿 悠闲型</option>
+                        <option value="relaxed" selected>🌿 舒适型</option>
                         <option value="indepth">🔍 深度游</option>
                     </select>
                 </div>
-                <button class="btn btn-primary-custom" onclick="window.savePreferences()">
-                    <i class="fas fa-save"></i> 保存偏好
-                </button>
+                <button class="btn btn-primary-custom" onclick="window.savePreferences()"><i class="fas fa-save"></i> 保存偏好</button>
             </div>
         </div>
     </div>
 </div>
 
-<!-- ============================================================ -->
-<!-- 面板：商户详情 -->
-<!-- ============================================================ -->
+<!-- ===== 商户详情面板 ===== -->
 <div class="panel" id="merchantDetailPanel">
-    <div class="panel-header">
-        <h2 id="merchantDetailTitle">商户详情</h2>
-        <button class="close-btn" onclick="window.closePanel('merchantDetailPanel')">&times;</button>
-    </div>
+    <div class="panel-header"><h2 id="merchantDetailTitle">商户详情</h2><button class="close-btn" onclick="window.closePanel('merchantDetailPanel')">&times;</button></div>
     <div class="panel-body" id="merchantDetailContent"></div>
 </div>
 
-<!-- ============================================================ -->
-<!-- 面板：实时导航 -->
-<!-- ============================================================ -->
+<!-- ===== 实时导航面板 ===== -->
 <div class="panel" id="navPanel">
     <div class="panel-header">
         <h2><i class="fas fa-compass text-green"></i> 实时导航</h2>
@@ -346,9 +491,7 @@
                 <div class="card-sub" id="navPoiStatus">等待开始导航...</div>
             </div>
             <div id="navTimeline" class="mt-3"></div>
-            <button class="btn btn-danger w-100 mt-3" onclick="window.endNavigation()">
-                <i class="fas fa-stop"></i> 结束导航
-            </button>
+            <button class="btn btn-danger w-100 mt-3" onclick="window.endNavigation()"><i class="fas fa-stop"></i> 结束导航</button>
         </div>
     </div>
 </div>
@@ -379,21 +522,16 @@
 </script>
 
 <script type="module">
-// =============================================================
-// 主入口 - 初始化和全局事件绑定
-// =============================================================
 import { getPois } from './js/api.js';
 import { getCurrentUser, signInAnonymously } from './js/auth.js';
 import { getCountySpots } from './js/utils.js';
-import { initMap, loadPoisToMap, locateUser, setVoiceEnabled, getAllPois } from './js/map.js';
-// 移除 loadTransportPresets 导入（新架构由后端处理）
+import { initMap, loadPoisToMap, locateUser, setVoiceEnabled, getAllPois, clearFilter } from './js/map.js';
 import {
     renderMyTrips,
     renderMyReservations,
     renderFeedbackHistory,
     submitFeedback as submitUserFeedback,
-    loadUserPreferences,
-    saveUserPreferences as saveUserPrefsAPI
+    loadUserPreferences
 } from './js/user.js';
 import {
     initPlanPanel,
@@ -405,41 +543,29 @@ import {
     startNavigation,
     endNavigation,
     showTripDetail,
-    savePreferences
+    savePreferences,
+    loadPoiListForSelection,
+    selectAllPois
 } from './js/trip-planner.js';
 
-// ===== 暴露全局函数给 HTML =====
+// ===== 暴露全局函数 =====
 window.locateUser = locateUser;
-window.toggleCategoryBar = () => {
-    document.getElementById('categoryBar').classList.toggle('show');
-};
-window.closeCategoryBar = () => {
-    document.getElementById('categoryBar').classList.remove('show');
-};
+window.clearFilter = clearFilter;
 window.filterPOI = (category) => {
     import('./js/map.js').then(m => m.applyFilter(category));
-    document.getElementById('categoryBar').classList.remove('show');
 };
+window.openPanel = (id) => document.getElementById(id).classList.add('active');
+window.closePanel = (id) => document.getElementById(id).classList.remove('active');
 
-// 面板控制
-window.openPanel = (id) => {
-    document.getElementById(id).classList.add('active');
-};
-window.closePanel = (id) => {
-    document.getElementById(id).classList.remove('active');
-};
-
-// 语音控制
 window._voiceEnabled = true;
 window.toggleVoice = () => {
     window._voiceEnabled = !window._voiceEnabled;
     setVoiceEnabled(window._voiceEnabled);
-    document.getElementById('voiceToggleBtn').innerHTML = window._voiceEnabled ?
-        '<i class="fas fa-volume-high"></i>' :
-        '<i class="fas fa-volume-xmark"></i>';
+    const icon = window._voiceEnabled ? 'fa-volume-high' : 'fa-volume-xmark';
+    document.querySelector('#voiceBtn i').className = 'fas ' + icon;
+    document.querySelector('#voiceToggleBtn i').className = 'fas ' + icon;
 };
 
-// 规划相关
 window.generatePlans = generatePlans;
 window.selectSolution = selectSolution;
 window.backToPreferences = backToPreferences;
@@ -449,43 +575,47 @@ window.startNavigation = startNavigation;
 window.endNavigation = endNavigation;
 window.showTripDetail = showTripDetail;
 window.savePreferences = savePreferences;
-
-// 用户相关
 window.submitFeedback = submitUserFeedback;
+window.selectAllPois = selectAllPois;
 
 // ===== 初始化 =====
 async function init() {
     try {
-        // 匿名登录
-        try {
-            await signInAnonymously();
-            console.log('[系统] 匿名登录成功');
-        } catch (e) {
-            console.warn('[系统] 匿名登录失败（不影响地图浏览）:', e.message);
-        }
+        try { await signInAnonymously(); console.log('[系统] 匿名登录成功'); } 
+        catch (e) { console.warn('[系统] 匿名登录失败（不影响地图浏览）:', e.message); }
 
-        // 地图
         initMap('map');
         const pois = await getPois();
         loadPoisToMap(pois);
         window.__countySpots = getCountySpots(pois);
 
-        // 加载用户偏好
         const user = await getCurrentUser();
-        if (user) {
-            await loadUserPreferences(user.id);
-        }
+        if (user) await loadUserPreferences(user.id);
 
-        // 渲染我的内容
         renderMyTrips();
         renderMyReservations();
         renderFeedbackHistory();
 
-        // 初始化规划面板
         initPlanPanel();
+        loadPoiListForSelection(pois); // 加载景点选择列表
 
-        // 自动定位
         locateUser();
+
+        // 分类栏自动隐藏逻辑
+        const categoryBar = document.getElementById('categoryBar');
+        let hideTimer = null;
+        const triggerArea = document.querySelector('.category-trigger-area');
+        triggerArea.addEventListener('mouseenter', () => {
+            if (hideTimer) clearTimeout(hideTimer);
+            categoryBar.style.top = '0';
+        });
+        triggerArea.addEventListener('mouseleave', () => {
+            hideTimer = setTimeout(() => {
+                categoryBar.style.top = '-70px';
+            }, 3000);
+        });
+        // 初始隐藏
+        setTimeout(() => { categoryBar.style.top = '-70px'; }, 500);
 
         console.log('[系统] 初始化完成');
     } catch (e) {
@@ -493,7 +623,6 @@ async function init() {
         alert('初始化失败：' + e.message);
     }
 }
-
 init();
 </script>
 </body>

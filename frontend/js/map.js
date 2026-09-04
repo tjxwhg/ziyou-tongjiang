@@ -1,6 +1,6 @@
-// frontend/js/map.js - 地图核心
+// js/map.js - 地图核心
 import { getPois, getPoiInternal } from './api.js';
-import { wgs84ToGcj02, getDistance, speak, cancelSpeech } from './utils.js';
+import { wgs84ToGcj02, getDistance, speak, cancelSpeech, formatTime } from './utils.js';
 import { poiColors } from './config.js';
 
 let map = null;
@@ -14,8 +14,11 @@ let watchId = null;
 let currentAudio = null;
 let currentFilterCategory = null;
 let internalPathLayer = null;
+let selectedPoiId = null;
 
-// 初始化地图
+// ============================================================
+// 地图初始化
+// ============================================================
 export function initMap(containerId) {
     if (map) return map;
     map = L.map(containerId, { zoomControl: false }).setView([31.911705, 107.245033], 12);
@@ -27,7 +30,9 @@ export function initMap(containerId) {
     return map;
 }
 
-// 加载POI到地图
+// ============================================================
+// POI加载
+// ============================================================
 export function loadPoisToMap(pois) {
     allPois = pois;
     poiMarkers.forEach(m => map.removeLayer(m));
@@ -37,7 +42,8 @@ export function loadPoisToMap(pois) {
         const color = poiColors[cat] || '#999';
         const icon = L.divIcon({
             html: `<div style="background:${color}; width:24px; height:24px; border-radius:50%; border:3px solid white; box-shadow:0 2px 8px rgba(0,0,0,0.2); display:flex; align-items:center; justify-content:center; font-size:12px; color:white; font-weight:bold;">${p.name.charAt(0)}</div>`,
-            iconSize: [24, 24]
+            iconSize: [24, 24],
+            className: 'poi-marker'
         });
         const marker = L.marker([p.lat, p.lng], { icon }).addTo(map);
         marker.poiData = p;
@@ -52,7 +58,9 @@ export function loadPoisToMap(pois) {
     if (currentFilterCategory) applyFilter(currentFilterCategory);
 }
 
-// 显示内部路网
+// ============================================================
+// 内部路网展示
+// ============================================================
 export async function showPoiInternal(poiId) {
     if (internalPathLayer) {
         map.removeLayer(internalPathLayer);
@@ -67,10 +75,11 @@ export async function showPoiInternal(poiId) {
         const nodeLayer = L.layerGroup();
         data.nodes.forEach(node => {
             const color = node.node_type === 'entrance' ? '#2E7D32' :
-                node.node_type === 'exit' ? '#c62828' :
-                node.node_type === 'core_view' ? '#1565C0' :
-                node.node_type === 'rest_area' ? '#FF6F00' :
-                node.node_type === 'wc' ? '#00838F' : '#999';
+                          node.node_type === 'exit' ? '#c62828' :
+                          node.node_type === 'core_view' ? '#1565C0' :
+                          node.node_type === 'rest_area' ? '#FF6F00' :
+                          node.node_type === 'wc' ? '#00838F' :
+                          '#999';
             const icon = L.divIcon({
                 html: `<div style="background:${color}; width:16px; height:16px; border-radius:50%; border:2px solid white; box-shadow:0 2px 4px rgba(0,0,0,0.3);"></div>`,
                 iconSize: [16, 16]
@@ -89,7 +98,12 @@ export async function showPoiInternal(poiId) {
                 const toNode = data.nodes.find(n => n.id === edge.to_node_id);
                 if (fromNode && toNode) {
                     const latlngs = [[fromNode.lat, fromNode.lng], [toNode.lat, toNode.lng]];
-                    L.polyline(latlngs, { color: '#1565C0', weight: 2, opacity: 0.4, dashArray: '5,5' }).addTo(nodeLayer);
+                    L.polyline(latlngs, {
+                        color: '#1565C0',
+                        weight: 2,
+                        opacity: 0.5,
+                        dashArray: '5,5'
+                    }).addTo(nodeLayer);
                 }
             });
         }
@@ -102,7 +116,9 @@ export async function showPoiInternal(poiId) {
     }
 }
 
+// ============================================================
 // 分类筛选
+// ============================================================
 export function applyFilter(category) {
     currentFilterCategory = category;
     poiMarkers.forEach(marker => {
@@ -139,7 +155,9 @@ export function clearFilter() {
     });
 }
 
+// ============================================================
 // 定位
+// ============================================================
 export function locateUser() {
     if (!navigator.geolocation) {
         alert('您的浏览器不支持定位');
@@ -222,6 +240,9 @@ function triggerVoice(poi) {
     speak(poi.voice_cn || poi.description || poi.name);
 }
 
+// ============================================================
+// 工具函数
+// ============================================================
 export function setVoiceEnabled(enabled) {
     voiceEnabled = enabled;
     if (!enabled) {
@@ -230,6 +251,14 @@ export function setVoiceEnabled(enabled) {
     }
 }
 
-export function getAllPois() { return allPois; }
-export function getPoiById(id) { return allPois.find(p => p.id == id); }
-export function getCurrentPosition() { return currentGcjPos; }
+export function getAllPois() {
+    return allPois;
+}
+
+export function getPoiById(id) {
+    return allPois.find(p => p.id == id);
+}
+
+export function getCurrentPosition() {
+    return currentGcjPos;
+}

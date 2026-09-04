@@ -1,30 +1,24 @@
-// js/trip-executor.js - 实时导航与行程执行
+// js/trip-executor.js - 实时导航引擎
 import { reportDeviation } from './api.js';
 import { getCurrentUser } from './auth.js';
 import { formatTime, getDistance, speak } from './utils.js';
 import { getAllPois } from './map.js';
 
-// ============================================================
-// 状态
-// ============================================================
 let navData = null;
 let navInterval = null;
 let currentNodeIndex = 0;
 let isNavigating = false;
 let deviationCounter = 0;
-let lastReportedTime = null;
+let watchId = null;
+let currentPosition = null;
 const DEVIATION_THRESHOLD = 15;
 const REPORT_INTERVAL = 60000;
 
-// ============================================================
-// 初始化导航
-// ============================================================
 export function initNavigation(tripData) {
     navData = tripData;
     currentNodeIndex = 0;
     isNavigating = true;
     deviationCounter = 0;
-    lastReportedTime = Date.now();
     startGpsTracking();
     renderNavStatus();
     if (navInterval) clearInterval(navInterval);
@@ -44,12 +38,6 @@ export function stopNavigation() {
         </div>
     `;
 }
-
-// ============================================================
-// GPS跟踪
-// ============================================================
-let watchId = null;
-let currentPosition = null;
 
 function startGpsTracking() {
     if (!navigator.geolocation) return;
@@ -75,27 +63,21 @@ function checkProximity() {
     for (let day of days) {
         if (!day.nodes) continue;
         for (let node of day.nodes) {
-            if (node.arrival_time && node.poi_id) {
-                const poi = allPois.find(p => p.id === node.poi_id);
-                if (poi) {
-                    const dist = getDistance(currentPosition.lat, currentPosition.lng, poi.lat, poi.lng);
-                    if (dist < 50) {
-                        triggerArrivalAlert(poi, node);
-                        break;
-                    }
+            if (node.completed) continue;
+            const poi = allPois.find(p => p.id === node.poi_id);
+            if (poi) {
+                const dist = getDistance(currentPosition.lat, currentPosition.lng, poi.lat, poi.lng);
+                if (dist < 50) {
+                    speak(`已到达 ${poi.name}`);
+                    node.completed = true;
+                    renderNavStatus();
+                    break;
                 }
             }
         }
     }
 }
 
-function triggerArrivalAlert(poi, node) {
-    speak(`已到达 ${poi.name}，建议停留 ${node.duration || 30} 分钟`);
-}
-
-// ============================================================
-// 进度上报
-// ============================================================
 async function reportProgress() {
     if (!navData || !isNavigating) return;
     const user = await getCurrentUser();
@@ -129,14 +111,12 @@ function calculateProgress() {
     for (let day of days) {
         if (!day.nodes) continue;
         totalNodes += day.nodes.length;
-        for (let node of day.nodes) {
-            if (node.completed) completedNodes++;
-        }
+        for (let node of day.nodes) if (node.completed) completedNodes++;
     }
     return totalNodes > 0 ? (completedNodes / totalNodes) * 100 : 0;
 }
 
-function calculateDeviation() { return 0; } // 简化
+function calculateDeviation() { return 0; }
 
 function getCurrentPoiId() {
     const days = navData.days || [];
@@ -161,13 +141,11 @@ async function triggerReplan(deviation) {
         if (result.adjusted && result.solution) {
             navData = result.solution;
             alert('行程已自动调整，请查看最新安排');
+            renderNavStatus();
         }
     } catch (e) { console.warn('重规划失败:', e); }
 }
 
-// ============================================================
-// UI渲染
-// ============================================================
 function renderNavStatus() {
     const timeline = document.getElementById('navTimeline');
     if (!timeline) return;
@@ -177,7 +155,7 @@ function renderNavStatus() {
         html += `<div class="day-block"><div class="day-title">📅 第${day.day}天</div>`;
         if (day.nodes) {
             day.nodes.forEach((node, idx) => {
-                const isCurrent = idx === currentNodeIndex;
+                const isCurrent = !node.completed && idx === currentNodeIndex;
                 html += `
                     <div class="node-item ${isCurrent ? 'fw-bold text-green' : ''}" id="nav-node-${idx}">
                         <span class="node-time">${node.arrival_time || '--'}</span>
@@ -201,9 +179,10 @@ function updateNavUI(progress) {
     if (text) text.textContent = Math.round(progress) + '%';
 }
 
-// ============================================================
-// 导出
-// ============================================================
 export function getNavigationStatus() {
-    return { isNavigating, progress: calculateProgress(), currentPoiId: getCurrentPoiId() };
+    return {
+        isNavigating: isNavigating,
+        progress: calculateProgress(),
+        currentPoiId: getCurrentPoiId()
+    };
 }

@@ -1,10 +1,13 @@
-// frontend/js/utils.js - 通用工具函数
+// js/utils.js - 通用工具函数
 import { COUNTY_SPOT_KEYWORDS } from './config.js';
 
-// 坐标转换 WGS84 → GCJ02
+// ============================================================
+// 坐标转换
+// ============================================================
 export function wgs84ToGcj02(lat, lon) {
     const a = 6378245.0;
     const ee = 0.00669342162296594323;
+
     function transformLat(x, y) {
         let ret = -100.0 + 2.0 * x + 3.0 * y + 0.2 * y * y + 0.1 * x * y + 0.2 * Math.sqrt(Math.abs(x));
         ret += (20.0 * Math.sin(6.0 * x * Math.PI) + 20.0 * Math.sin(2.0 * x * Math.PI)) * 2.0 / 3.0;
@@ -12,6 +15,7 @@ export function wgs84ToGcj02(lat, lon) {
         ret += (160.0 * Math.sin(y / 12.0 * Math.PI) + 320 * Math.sin(y * Math.PI / 30.0)) * 2.0 / 3.0;
         return ret;
     }
+
     function transformLon(x, y) {
         let ret = 300.0 + x + 2.0 * y + 0.1 * x * x + 0.1 * x * y + 0.1 * Math.sqrt(Math.abs(x));
         ret += (20.0 * Math.sin(6.0 * x * Math.PI) + 20.0 * Math.sin(2.0 * x * Math.PI)) * 2.0 / 3.0;
@@ -19,6 +23,7 @@ export function wgs84ToGcj02(lat, lon) {
         ret += (150.0 * Math.sin(x / 12.0 * Math.PI) + 320 * Math.sin(x * Math.PI / 30.0)) * 2.0 / 3.0;
         return ret;
     }
+
     const dLat = transformLat(lon - 105.0, lat - 35.0);
     const dLon = transformLon(lon - 105.0, lat - 35.0);
     const radLat = lat / 180.0 * Math.PI;
@@ -30,7 +35,9 @@ export function wgs84ToGcj02(lat, lon) {
     return { lat: lat + dLatFinal, lng: lon + dLonFinal };
 }
 
+// ============================================================
 // 距离计算
+// ============================================================
 export function getDistance(lat1, lng1, lat2, lng2) {
     const R = 6371000;
     const dLat = (lat2 - lat1) * Math.PI / 180;
@@ -41,7 +48,9 @@ export function getDistance(lat1, lng1, lat2, lng2) {
     return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
+// ============================================================
 // 时间格式化
+// ============================================================
 export function formatTime(minutes) {
     const h = Math.floor(minutes / 60);
     const m = minutes % 60;
@@ -54,7 +63,9 @@ export function timeToMinutes(timeStr) {
     return parseInt(parts[0]) * 60 + parseInt(parts[1]);
 }
 
+// ============================================================
 // 天气
+// ============================================================
 let weatherCache = null;
 let weatherCacheTime = null;
 
@@ -120,7 +131,9 @@ export function getDayWeatherTip(weatherObj) {
     return tip;
 }
 
+// ============================================================
 // 语音合成
+// ============================================================
 export function speak(text, lang = 'zh-CN') {
     if (!('speechSynthesis' in window)) return;
     const utterance = new SpeechSynthesisUtterance(text);
@@ -133,7 +146,9 @@ export function cancelSpeech() {
     if ('speechSynthesis' in window) window.speechSynthesis.cancel();
 }
 
-// 获取县城景点
+// ============================================================
+// 县城景点获取
+// ============================================================
 export function getCountySpots(allPois) {
     if (!allPois || allPois.length === 0) return [];
     return allPois

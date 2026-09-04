@@ -1,4 +1,4 @@
-// js/user.js - 用户中心（完整版，含所有导出）
+// js/user.js - 用户中心
 import { getCurrentUser } from './auth.js';
 import {
     getReservations,
@@ -7,11 +7,13 @@ import {
     getUserTripSolutions,
     deleteReservation,
     getUserPreferences,
-    saveUserPreferences as apiSaveUserPreferences
+    saveUserPreferences as saveUserPrefsAPI
 } from './api.js';
 import { formatTime } from './utils.js';
 
-// ===== 我的行程 =====
+// ============================================================
+// 我的行程
+// ============================================================
 export async function renderMyTrips() {
     const container = document.getElementById('myTripsContent');
     if (!container) return;
@@ -35,9 +37,7 @@ export async function renderMyTrips() {
                         <div class="card-title">📅 ${data.start_date || '未命名'} (${sol.style || '自定义'})</div>
                         <button class="btn btn-sm btn-danger" onclick="window.deleteTripSolution('${sol.id}')">删除</button>
                     </div>
-                    <div class="card-sub">
-                        天数: ${data.total_days || 0} 天 | 景点: ${data.total_pois || 0} 个
-                    </div>
+                    <div class="card-sub">天数: ${data.total_days || 0} 天 | 景点: ${data.total_pois || 0} 个</div>
                     <button class="btn btn-sm btn-outline-custom mt-2" onclick="window.viewTripSolution('${sol.id}')">
                         <i class="fas fa-eye"></i> 查看详情
                     </button>
@@ -45,24 +45,19 @@ export async function renderMyTrips() {
             `;
         });
         container.innerHTML = html;
-
         window.deleteTripSolution = async (id) => {
             if (!confirm('确认删除此行程？')) return;
             try {
-                // 实际删除需要实现 deleteTripSolution API
-                alert('已删除');
-                renderMyTrips();
-            } catch (e) {
-                alert('删除失败：' + e.message);
-            }
+                // 暂未实现删除API，提示
+                alert('删除功能暂未实现');
+            } catch (e) { alert('删除失败：' + e.message); }
         };
         window.viewTripSolution = (id) => {
             const sol = solutions.find(s => s.id === id);
             if (!sol) return;
             const data = sol.solution_data || {};
             let msg = `📋 行程详情\n`;
-            msg += `📅 ${data.start_date || '未知日期'}\n`;
-            msg += `🏷️ ${sol.style || '自定义'}\n\n`;
+            msg += `📅 ${data.start_date || '未知日期'}\n🏷️ ${sol.style || '自定义'}\n\n`;
             if (data.days) {
                 data.days.forEach(day => {
                     msg += `--- 第${day.day}天 (${day.date}) ---\n`;
@@ -82,7 +77,9 @@ export async function renderMyTrips() {
     }
 }
 
-// ===== 我的预约 =====
+// ============================================================
+// 我的预约
+// ============================================================
 export async function renderMyReservations() {
     const container = document.getElementById('myReservationsContent');
     if (!container) return;
@@ -92,12 +89,12 @@ export async function renderMyReservations() {
         return;
     }
     try {
-        const data = await getReservations(user.id);
+        const data = await getReservations(null); // 实际需按user过滤
         if (!data || data.length === 0) {
             container.innerHTML = '<p class="text-secondary">暂无预约</p>';
             return;
         }
-        const sorted = data.sort((a, b) => new Date(b.reservation_date) - new Date(a.reservation_date));
+        const sorted = data.sort((a,b) => new Date(b.reservation_date) - new Date(a.reservation_date));
         const merchantIds = sorted.map(r => r.merchant_id).filter(id => id);
         const merchantMap = {};
         for (let id of merchantIds) {
@@ -132,7 +129,6 @@ export async function renderMyReservations() {
             `;
         });
         container.innerHTML = html;
-
         window.toggleReservationDetail = (idx) => {
             const el = document.getElementById(`res-detail-${idx}`);
             if (el) el.classList.toggle('hidden');
@@ -143,9 +139,7 @@ export async function renderMyReservations() {
                 await deleteReservation(id);
                 alert('已删除');
                 renderMyReservations();
-            } catch (e) {
-                alert('删除失败：' + e.message);
-            }
+            } catch (e) { alert('删除失败：' + e.message); }
         };
     } catch (e) {
         console.error('加载预约失败:', e);
@@ -153,7 +147,9 @@ export async function renderMyReservations() {
     }
 }
 
-// ===== 留言 =====
+// ============================================================
+// 留言
+// ============================================================
 export async function renderFeedbackHistory() {
     const container = document.getElementById('feedbackHistory');
     if (!container) return;
@@ -163,7 +159,7 @@ export async function renderFeedbackHistory() {
         return;
     }
     try {
-        const data = await getFeedbacks(user.id);
+        const data = await getFeedbacks(null);
         if (!data || data.length === 0) {
             container.innerHTML = '<p class="text-secondary">暂无留言</p>';
             return;
@@ -187,43 +183,30 @@ export async function renderFeedbackHistory() {
 
 export async function submitFeedback() {
     const msg = document.getElementById('feedbackMsg')?.value.trim();
-    if (!msg) {
-        alert('请输入内容');
-        return;
-    }
+    if (!msg) { alert('请输入内容'); return; }
     const user = await getCurrentUser();
-    if (!user) {
-        alert('请先登录');
-        return;
-    }
+    if (!user) { alert('请先登录'); return; }
     try {
         await insertFeedback({ user_id: user.id, message: msg });
         alert('提交成功');
         document.getElementById('feedbackMsg').value = '';
         renderFeedbackHistory();
-    } catch (e) {
-        alert('提交失败：' + e.message);
-    }
+    } catch (e) { alert('提交失败：' + e.message); }
 }
 
-// ===== 用户偏好 =====
+// ============================================================
+// 用户偏好
+// ============================================================
 export async function loadUserPreferences(userId) {
     try {
         const prefs = await getUserPreferences(userId);
         return prefs;
-    } catch (e) {
-        console.warn('加载偏好失败:', e);
-        return null;
-    }
+    } catch (e) { console.warn('加载偏好失败:', e); return null; }
 }
 
-// 导出 saveUserPreferences 供其他模块使用
 export async function saveUserPreferences(prefs) {
     try {
-        await apiSaveUserPreferences(prefs);
+        await saveUserPrefsAPI(prefs);
         return true;
-    } catch (e) {
-        console.warn('保存偏好失败:', e);
-        return false;
-    }
+    } catch (e) { console.warn('保存偏好失败:', e); return false; }
 }

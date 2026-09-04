@@ -1,17 +1,30 @@
-// frontend/js/trip-planner.js - 行程规划核心
+// js/trip-planner.js - 行程规划核心
 import { generatePlans as apiGeneratePlans, selectPlan as apiSelectPlan, saveTripSolution as apiSaveTripSolution, getUserTripSolutions } from './api.js';
 import { getCurrentUser } from './auth.js';
 import { formatTime, getDayWeatherTip } from './utils.js';
-import { POI_CATEGORIES } from './config.js';
+import { POI_CATEGORIES, DAY_START, DAY_END } from './config.js';
 
+// ============================================================
+// 状态
+// ============================================================
 let currentSolutions = [];
 let selectedSolutionIndex = -1;
 let currentTripData = null;
+let preferencesLoaded = false;
 
-// 初始化规划面板
+// 偏好标签状态
+let selectedCategories = [];
+let selectedCuisine = [];
+
+// ============================================================
+// 初始化
+// ============================================================
 export function initPlanPanel() {
+    // 初始化时间选择器
     initTimeSelectors();
+    // 初始化偏好标签
     initPreferenceTags();
+    // 加载已保存的方案
     loadSavedSolutions();
 }
 
@@ -26,10 +39,16 @@ function initTimeSelectors() {
         }
     }
     const now = new Date();
-    let h = now.getHours(), m = Math.floor(now.getMinutes() / 10) * 10;
-    if (m === 60) { m = 0; h = (h + 1) % 24; }
+    let h = now.getHours(),
+        m = Math.floor(now.getMinutes() / 10) * 10;
+    if (m === 60) { m = 0;
+        h = (h + 1) % 24; }
     sel.value = String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0');
-    document.getElementById('planStartDate').value = now.toISOString().slice(0, 10);
+
+    const dateInput = document.getElementById('planStartDate');
+    if (dateInput) {
+        dateInput.value = now.toISOString().slice(0, 10);
+    }
 }
 
 function initPreferenceTags() {
@@ -39,26 +58,65 @@ function initPreferenceTags() {
             `<span class="pref-tag" data-value="${c}">${c}</span>`
         ).join('');
         catContainer.querySelectorAll('.pref-tag').forEach(el => {
-            el.addEventListener('click', () => el.classList.toggle('active'));
+            el.addEventListener('click', () => {
+                el.classList.toggle('active');
+            });
         });
     }
+
+    const settingsCat = document.getElementById('settingsCategories');
+    if (settingsCat) {
+        settingsCat.innerHTML = POI_CATEGORIES.map(c =>
+            `<span class="pref-tag" data-value="${c}">${c}</span>`
+        ).join('');
+        settingsCat.querySelectorAll('.pref-tag').forEach(el => {
+            el.addEventListener('click', () => {
+                el.classList.toggle('active');
+            });
+        });
+    }
+
     document.querySelectorAll('#prefCuisine .pref-tag, #settingsCuisine .pref-tag').forEach(el => {
-        el.addEventListener('click', () => el.classList.toggle('active'));
+        el.addEventListener('click', () => {
+            el.classList.toggle('active');
+        });
     });
+
+    loadPreferencesToUI();
 }
 
-async function loadSavedSolutions() {
+async function loadPreferencesToUI() {
     const user = await getCurrentUser();
     if (!user) return;
     try {
-        const solutions = await getUserTripSolutions(user.id);
-        console.log('已保存行程:', solutions.length);
+        const { getUserPreferences } = await import('./api.js');
+        const prefs = await getUserPreferences(user.id);
+        if (prefs) {
+            const cats = prefs.preferred_categories || [];
+            document.querySelectorAll('#prefCategories .pref-tag, #settingsCategories .pref-tag').forEach(el => {
+                if (cats.includes(el.dataset.value)) {
+                    el.classList.add('active');
+                }
+            });
+            const cuisines = prefs.cuisine_prefs || [];
+            document.querySelectorAll('#prefCuisine .pref-tag, #settingsCuisine .pref-tag').forEach(el => {
+                if (cuisines.includes(el.dataset.value)) {
+                    el.classList.add('active');
+                }
+            });
+            const paceSelect = document.getElementById('settingsPace');
+            if (paceSelect && prefs.pace) {
+                paceSelect.value = prefs.pace;
+            }
+        }
     } catch (e) {
-        console.warn('加载已保存方案失败:', e);
+        console.warn('加载偏好失败:', e);
     }
 }
 
+// ============================================================
 // 生成方案
+// ============================================================
 export async function generatePlans() {
     const loadingEl = document.getElementById('planLoading');
     const stepPrefs = document.getElementById('stepPreferences');
@@ -69,14 +127,21 @@ export async function generatePlans() {
     const days = parseInt(document.getElementById('planDays').value);
     const style = document.getElementById('planStyle').value;
 
-    if (!startDate) { alert('请选择出发日期'); return; }
+    if (!startDate) {
+        alert('请选择出发日期');
+        return;
+    }
 
     const selectedCats = [];
     document.querySelectorAll('#prefCategories .pref-tag.active').forEach(el => {
         selectedCats.push(el.dataset.value);
     });
 
-    // 获取POI（简化：全部POI作为候选，实际应让用户在地图上选择）
+    const selectedCuisine = [];
+    document.querySelectorAll('#prefCuisine .pref-tag.active').forEach(el => {
+        selectedCuisine.push(el.dataset.value);
+    });
+
     const { getPois } = await import('./api.js');
     const allPois = await getPois();
     let filteredPois = allPois;
@@ -86,7 +151,10 @@ export async function generatePlans() {
             return cats.some(c => selectedCats.includes(c));
         });
     }
-    if (filteredPois.length === 0) filteredPois = allPois;
+    if (filteredPois.length === 0) {
+        filteredPois = allPois;
+    }
+
     const poiIds = filteredPois.map(p => p.id);
 
     stepPrefs.classList.add('hidden');
@@ -95,11 +163,17 @@ export async function generatePlans() {
     try {
         const user = await getCurrentUser();
         const result = await apiGeneratePlans({
-            poiIds, startDate, startTime, days, style, allowFill: true, userId: user?.id || null
+            poiIds: poiIds,
+            startDate: startDate,
+            startTime: startTime,
+            days: days,
+            style: style,
+            allowFill: true,
+            userId: user?.id || null
         });
 
         if (!result.success || !result.solutions || result.solutions.length === 0) {
-            alert('无法生成有效的行程方案');
+            alert('无法生成有效的行程方案，请调整选择');
             loadingEl.classList.add('hidden');
             stepPrefs.classList.remove('hidden');
             return;
@@ -108,8 +182,10 @@ export async function generatePlans() {
         currentSolutions = result.solutions;
         selectedSolutionIndex = -1;
         renderSolutions(result.solutions, result.weather);
+
         loadingEl.classList.add('hidden');
         stepCompare.classList.remove('hidden');
+
     } catch (error) {
         console.error('生成方案失败:', error);
         alert('生成方案失败：' + error.message);
@@ -121,31 +197,42 @@ export async function generatePlans() {
 function renderSolutions(solutions, weather) {
     const container = document.getElementById('solutionCompareContainer');
     if (!container) return;
+
     const styleLabels = {
         compact: { label: '紧凑型', badge: 'badge-compact', icon: '🚀' },
         relaxed: { label: '悠闲型', badge: 'badge-relaxed', icon: '🌿' },
         indepth: { label: '深度游', badge: 'badge-indepth', icon: '🔍' }
     };
+
     let html = '';
     solutions.forEach((sol, idx) => {
         const info = styleLabels[sol.style] || styleLabels.relaxed;
         const data = sol.data || {};
+        const totalPois = data.total_pois || 0;
+        const totalDays = data.total_days || 1;
+        const totalDuration = data.total_duration || 0;
+
         html += `
             <div class="solution-card" onclick="window.selectSolutionCard(${idx})" id="sol-card-${idx}">
                 <div class="badge-style ${info.badge}">${info.icon} ${info.label}</div>
-                <div class="stat-row"><span>📅 天数</span><span>${data.total_days || 0} 天</span></div>
-                <div class="stat-row"><span>📍 景点</span><span>${data.total_pois || 0} 个</span></div>
-                <div class="stat-row"><span>⏱️ 游览总时长</span><span>${Math.round((data.total_duration || 0)/60)} 小时</span></div>
+                <div class="stat-row"><span>📅 天数</span><span>${totalDays} 天</span></div>
+                <div class="stat-row"><span>📍 景点</span><span>${totalPois} 个</span></div>
+                <div class="stat-row"><span>⏱️ 游览总时长</span><span>${Math.round(totalDuration/60)} 小时</span></div>
                 <div class="stat-row"><span>📊 评分</span><span>${sol.score ? (sol.score*100).toFixed(0) : '--'}%</span></div>
-                <button class="btn btn-sm btn-outline-custom mt-2 w-100" onclick="event.stopPropagation(); window.previewSolution(${idx})">👁️ 预览</button>
+                <button class="btn btn-sm btn-outline-custom mt-2 w-100" onclick="event.stopPropagation(); window.previewSolution(${idx})">
+                    <i class="fas fa-eye"></i> 预览详情
+                </button>
             </div>
         `;
     });
+
     container.innerHTML = html;
     document.getElementById('selectSolutionBtn').disabled = true;
 }
 
-// 选择方案
+// ============================================================
+// 方案选择与操作
+// ============================================================
 export function selectSolutionCard(idx) {
     document.querySelectorAll('.solution-card').forEach(el => el.classList.remove('selected'));
     const card = document.getElementById(`sol-card-${idx}`);
@@ -214,27 +301,52 @@ export function showTripDetail(data) {
     let html = '';
     if (data.days) {
         data.days.forEach(day => {
-            html += `<div class="day-block"><div class="day-title">📅 第${day.day}天 (${day.date})</div>`;
+            html += `
+                <div class="day-block">
+                    <div class="day-title">📅 第${day.day}天 (${day.date})</div>
+            `;
             if (day.nodes) {
                 day.nodes.forEach(node => {
-                    html += `<div class="node-item"><span class="node-time">${node.arrival_time} - ${node.departure_time}</span><span class="node-icon"><i class="fas fa-map-pin"></i></span><span>${node.poi_name}</span></div>`;
+                    html += `
+                        <div class="node-item">
+                            <span class="node-time">${node.arrival_time} - ${node.departure_time}</span>
+                            <span class="node-icon"><i class="fas fa-map-pin"></i></span>
+                            <span>${node.poi_name}</span>
+                        </div>
+                    `;
                 });
             }
             html += `</div>`;
         });
     }
-    html += `<div class="card-modern mt-2"><div class="card-title">📊 行程摘要</div><div class="stat-row"><span>总天数</span><span>${data.total_days || 0} 天</span></div><div class="stat-row"><span>景点数</span><span>${data.total_pois || 0} 个</span></div><div class="stat-row"><span>游览总时长</span><span>${Math.round((data.total_duration || 0)/60)} 小时</span></div></div>`;
+    html += `
+        <div class="card-modern mt-2">
+            <div class="card-title">📊 行程摘要</div>
+            <div class="stat-row"><span>总天数</span><span>${data.total_days || 0} 天</span></div>
+            <div class="stat-row"><span>景点数</span><span>${data.total_pois || 0} 个</span></div>
+            <div class="stat-row"><span>游览总时长</span><span>${Math.round((data.total_duration || 0)/60)} 小时</span></div>
+        </div>
+    `;
     container.innerHTML = html;
 }
 
+// ============================================================
+// 保存与导航
+// ============================================================
 export async function saveTripSolution() {
-    if (!currentTripData) { alert('没有可保存的行程'); return; }
+    if (!currentTripData) {
+        alert('没有可保存的行程');
+        return;
+    }
     const user = await getCurrentUser();
-    if (!user) { alert('请先登录'); return; }
+    if (!user) {
+        alert('请先登录');
+        return;
+    }
     try {
         await apiSaveTripSolution(user.id, currentTripData, 'custom', 0);
-        alert('行程已保存');
-        // 刷新我的行程
+        alert('行程已保存到“我的行程”');
+        // 重新渲染我的行程
         const { renderMyTrips } = await import('./user.js');
         renderMyTrips();
     } catch (error) {
@@ -243,12 +355,71 @@ export async function saveTripSolution() {
 }
 
 export function startNavigation() {
-    if (!currentTripData) { alert('没有可导航的行程'); return; }
+    if (!currentTripData) {
+        alert('没有可导航的行程');
+        return;
+    }
     document.getElementById('navPanel').classList.add('active');
-    import('./trip-executor.js').then(m => m.initNavigation(currentTripData));
+    import('./trip-executor.js').then(module => {
+        module.initNavigation(currentTripData);
+    });
 }
 
 export function endNavigation() {
     document.getElementById('navPanel').classList.remove('active');
-    import('./trip-executor.js').then(m => m.stopNavigation());
+    import('./trip-executor.js').then(module => {
+        module.stopNavigation();
+    });
 }
+
+// ============================================================
+// 偏好保存
+// ============================================================
+export async function savePreferences() {
+    const user = await getCurrentUser();
+    if (!user) {
+        alert('请先登录');
+        return;
+    }
+    const selectedCats = [];
+    document.querySelectorAll('#settingsCategories .pref-tag.active').forEach(el => {
+        selectedCats.push(el.dataset.value);
+    });
+    const selectedCuisine = [];
+    document.querySelectorAll('#settingsCuisine .pref-tag.active').forEach(el => {
+        selectedCuisine.push(el.dataset.value);
+    });
+    const pace = document.getElementById('settingsPace').value;
+    try {
+        const { saveUserPreferences } = await import('./api.js');
+        await saveUserPreferences({
+            user_id: user.id,
+            preferred_categories: selectedCats,
+            cuisine_prefs: selectedCuisine,
+            pace: pace,
+            updated_at: new Date().toISOString()
+        });
+        alert('偏好已保存');
+    } catch (error) {
+        alert('保存失败：' + error.message);
+    }
+}
+
+// ============================================================
+// 加载已保存方案
+// ============================================================
+async function loadSavedSolutions() {
+    const user = await getCurrentUser();
+    if (!user) return;
+    try {
+        const solutions = await getUserTripSolutions(user.id);
+        console.log('已保存行程:', solutions.length);
+    } catch (e) {
+        console.warn('加载已保存方案失败:', e);
+    }
+}
+
+// ============================================================
+// 导出供其他模块使用
+// ============================================================
+export { renderMyTrips } from './user.js'; // 重新导出以便trip-planner调用

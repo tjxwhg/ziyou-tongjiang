@@ -27,10 +27,10 @@ export const MEAL_DURATION = 60;
 export const NEW_ARRIVAL_CUTOFF = 1020; // 17:00
 export const MAX_RETURN_TIME = 1260; // 21:00
 
-// 长耗时景点关键词
+// 长耗时景点关键词（已弃用，保留兼容性）
 export const LONG_SPOT_NAMES = ['空山天盆', '诺水河溶洞', '王坪烈士陵园', '红军烈士陵园'];
 
-// 县城景点关键词
+// 县城景点关键词（用于住宿推荐）
 export const COUNTY_SPOT_KEYWORDS = ['轿房沟美食街', '银耳博物馆', '红四方面军总指挥部旧址纪念馆', '省委党校旧址纪念馆', '通江花月夜'];
 
 // 地图POI颜色
@@ -44,4 +44,11 @@ export const poiColors = {
     '餐饮住宿': '#FF9800',
     '交通枢纽': '#00BCD4',
     '公共服务': '#607D8B'
+};
+
+// 数据等级定义
+export const DATA_LEVELS = {
+    L1: { label: '完整数据', color: '#c8e6c9' },
+    L2: { label: '有内部路线', color: '#fff9c4' },
+    L3: { label: '基础信息', color: '#ffcdd2' }
 };

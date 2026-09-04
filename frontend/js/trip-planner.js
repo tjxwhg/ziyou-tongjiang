@@ -1,8 +1,8 @@
-// js/trip-planner.js - 行程规划核心（完整版）
+// js/trip-planner.js - 行程规划核心（重构版）
 import { generatePlans as apiGeneratePlans, selectPlan as apiSelectPlan, saveTripSolution as apiSaveTripSolution, getUserTripSolutions, getPois } from './api.js';
 import { getCurrentUser } from './auth.js';
 import { formatTime, getDayWeatherTip } from './utils.js';
-import { PREF_CATEGORIES, PREF_CUISINE } from './config.js';
+import { PREF_CATEGORIES, PREF_CUISINE, DAY_START, DAY_END } from './config.js';
 
 // ============================================================
 // 状态
@@ -10,7 +10,7 @@ import { PREF_CATEGORIES, PREF_CUISINE } from './config.js';
 let currentSolutions = [];
 let selectedSolutionIndex = -1;
 let currentTripData = null;
-let allPoisCache = [];
+let allPois = [];
 
 // ============================================================
 // 初始化
@@ -19,6 +19,7 @@ export function initPlanPanel() {
     initTimeSelectors();
     initPreferenceTags();
     loadSavedSolutions();
+    loadPoiListForSelection(); // 加载景点选择列表
 }
 
 function initTimeSelectors() {
@@ -40,29 +41,24 @@ function initTimeSelectors() {
 }
 
 function initPreferenceTags() {
-    // 景点类型偏好
+    // 景点类型（自然、人文、民俗、景观、游玩、购物）
+    const cats = ['自然景区', '人文历史', '民俗风情', '景观地标', '游玩娱乐', '购物消费'];
     const containers = ['prefCategories', 'settingsCategories'];
     containers.forEach(id => {
         const container = document.getElementById(id);
         if (!container) return;
-        container.innerHTML = PREF_CATEGORIES.map(c => {
-            const icon = { '自然景区':'🌿', '人文历史':'📜', '民俗风情':'🎎', '景观地标':'🗼', '游玩娱乐':'🎢', '购物消费':'🛍️' }[c] || '';
-            return `<span class="pref-tag" data-value="${c}">${icon} ${c}</span>`;
-        }).join('');
+        container.innerHTML = cats.map(c => `<span class="pref-tag" data-value="${c}">${c}</span>`).join('');
         container.querySelectorAll('.pref-tag').forEach(el => {
             el.addEventListener('click', () => el.classList.toggle('active'));
         });
     });
 
-    // 用餐偏好
-    const cuisineContainers = ['prefCuisine', 'settingsCuisine'];
-    cuisineContainers.forEach(id => {
+    // 用餐偏好（川菜、火锅、小吃、家常、简餐）
+    const cuisine = ['川菜', '火锅', '小吃', '家常', '简餐'];
+    ['prefCuisine', 'settingsCuisine'].forEach(id => {
         const container = document.getElementById(id);
         if (!container) return;
-        container.innerHTML = PREF_CUISINE.map(c => {
-            const icon = { '川菜':'🌶️', '火锅':'🫕', '小吃':'🍢', '家常':'🍳', '简餐':'🥪' }[c] || '';
-            return `<span class="pref-tag" data-value="${c}">${icon} ${c}</span>`;
-        }).join('');
+        container.innerHTML = cuisine.map(c => `<span class="pref-tag" data-value="${c}">${c}</span>`).join('');
         container.querySelectorAll('.pref-tag').forEach(el => {
             el.addEventListener('click', () => el.classList.toggle('active'));
         });
@@ -77,60 +73,78 @@ async function loadPreferencesToUI() {
     try {
         const { getUserPreferences } = await import('./api.js');
         const prefs = await getUserPreferences(user.id);
-        if (prefs) {
-            const cats = prefs.preferred_categories || [];
-            document.querySelectorAll('#prefCategories .pref-tag, #settingsCategories .pref-tag').forEach(el => {
-                if (cats.includes(el.dataset.value)) el.classList.add('active');
-            });
-            const cuisines = prefs.cuisine_prefs || [];
-            document.querySelectorAll('#prefCuisine .pref-tag, #settingsCuisine .pref-tag').forEach(el => {
-                if (cuisines.includes(el.dataset.value)) el.classList.add('active');
-            });
-            const paceSelect = document.getElementById('settingsPace');
-            if (paceSelect && prefs.pace) paceSelect.value = prefs.pace;
-        }
+        if (!prefs) return;
+        const cats = prefs.preferred_categories || [];
+        document.querySelectorAll('#prefCategories .pref-tag, #settingsCategories .pref-tag').forEach(el => {
+            if (cats.includes(el.dataset.value)) el.classList.add('active');
+        });
+        const cuisines = prefs.cuisine_prefs || [];
+        document.querySelectorAll('#prefCuisine .pref-tag, #settingsCuisine .pref-tag').forEach(el => {
+            if (cuisines.includes(el.dataset.value)) el.classList.add('active');
+        });
+        if (prefs.pace) document.getElementById('settingsPace').value = prefs.pace;
     } catch (e) { console.warn('加载偏好失败:', e); }
 }
 
 // ============================================================
-// 景点选择列表
+// 加载景点选择列表
 // ============================================================
-export async function loadPoiListForSelection(pois) {
-    allPoisCache = pois || await getPois();
+export async function loadPoiListForSelection() {
     const container = document.getElementById('poiSelectContainer');
     if (!container) return;
-    if (!allPoisCache || allPoisCache.length === 0) {
-        container.innerHTML = '<div class="text-secondary text-center py-2">暂无景点数据</div>';
-        return;
+    try {
+        const pois = await getPois();
+        allPois = pois;
+        if (!pois || pois.length === 0) {
+            container.innerHTML = '<div class="text-secondary text-center py-2">暂无景点数据</div>';
+            return;
+        }
+        // 按景区分组显示
+        const scenicAreas = pois.filter(p => p.poi_type === 'scenic_area' || !p.parent_poi_id);
+        const attractions = pois.filter(p => p.parent_poi_id);
+        let html = '';
+        if (scenicAreas.length) {
+            html += `<div class="fw-bold text-green mb-1">🏞️ 景区</div>`;
+            scenicAreas.forEach(p => {
+                html += `
+                    <div class="poi-select-item">
+                        <input type="checkbox" value="${p.id}" id="poi-chk-${p.id}" data-type="scenic">
+                        <label for="poi-chk-${p.id}" style="flex:1;cursor:pointer;">
+                            <span class="badge bg-success" style="font-size:10px;">景区</span>
+                            ${p.name}
+                        </label>
+                    </div>
+                `;
+            });
+        }
+        if (attractions.length) {
+            html += `<div class="fw-bold text-green mt-2 mb-1">📍 独立景点/文博场馆</div>`;
+            attractions.forEach(p => {
+                const type = p.poi_type === 'museum' ? '文博' : '景点';
+                const badgeColor = p.poi_type === 'museum' ? 'bg-info' : 'bg-secondary';
+                html += `
+                    <div class="poi-select-item">
+                        <input type="checkbox" value="${p.id}" id="poi-chk-${p.id}" data-type="attraction">
+                        <label for="poi-chk-${p.id}" style="flex:1;cursor:pointer;">
+                            <span class="badge ${badgeColor}" style="font-size:10px;">${type}</span>
+                            ${p.name}
+                        </label>
+                    </div>
+                `;
+            });
+        }
+        container.innerHTML = html || '<div class="text-secondary text-center py-2">暂无景点</div>';
+        container.querySelectorAll('input[type="checkbox"]').forEach(cb => cb.addEventListener('change', updateSelectedCount));
+        updateSelectedCount();
+    } catch (e) {
+        console.error('加载景点列表失败:', e);
+        container.innerHTML = '<div class="text-danger text-center py-2">加载失败，请刷新</div>';
     }
-    const sorted = [...allPoisCache].sort((a,b) => a.name.localeCompare(b.name));
-    let html = '';
-    sorted.forEach(p => {
-        const category = p.category ? p.category.split(',')[0] : '未分类';
-        html += `
-            <div class="poi-select-item">
-                <input type="checkbox" value="${p.id}" id="poi-chk-${p.id}" data-category="${category}">
-                <label for="poi-chk-${p.id}" style="flex:1;cursor:pointer;">
-                    <span class="badge bg-secondary" style="font-size:10px;">${category}</span>
-                    ${p.name}
-                </label>
-            </div>
-        `;
-    });
-    container.innerHTML = html;
-    container.querySelectorAll('input[type="checkbox"]').forEach(cb => {
-        cb.addEventListener('change', updateSelectedCount);
-    });
-    updateSelectedCount();
-    // 默认全选（方便测试）
-    document.querySelectorAll('#poiSelectContainer input[type="checkbox"]').forEach(cb => cb.checked = true);
-    updateSelectedCount();
 }
 
 function updateSelectedCount() {
     const checked = document.querySelectorAll('#poiSelectContainer input:checked').length;
-    const el = document.getElementById('selectedPoiCount');
-    if (el) el.textContent = `已选 ${checked} 个`;
+    document.getElementById('selectedPoiCount').textContent = `已选 ${checked} 个`;
 }
 
 export function selectAllPois(select) {
@@ -159,11 +173,11 @@ export async function generatePlans() {
         selectedPoiIds.push(cb.value);
     });
     if (selectedPoiIds.length === 0) {
-        alert('请至少选择一个景点');
+        alert('请至少选择一个景区或景点');
         return;
     }
 
-    // 获取偏好（用于后端筛选，但已选景点优先）
+    // 获取偏好
     const selectedCats = [];
     document.querySelectorAll('#prefCategories .pref-tag.active').forEach(el => {
         selectedCats.push(el.dataset.value);
@@ -178,6 +192,7 @@ export async function generatePlans() {
 
     try {
         const user = await getCurrentUser();
+        // 调用后端API生成方案
         const result = await apiGeneratePlans({
             poiIds: selectedPoiIds,
             startDate: startDate,
@@ -186,7 +201,10 @@ export async function generatePlans() {
             style: style,
             allowFill: true,
             userId: user?.id || null,
-            preferences: { categories: selectedCats, cuisine: selectedCuisine }
+            preferences: {
+                categories: selectedCats,
+                cuisine: selectedCuisine
+            }
         });
 
         if (!result.success || !result.solutions || result.solutions.length === 0) {
@@ -214,13 +232,11 @@ export async function generatePlans() {
 function renderSolutions(solutions, weather) {
     const container = document.getElementById('solutionCompareContainer');
     if (!container) return;
-
     const styleLabels = {
         compact: { label: '紧凑型', badge: 'badge-compact', icon: '🚀' },
         relaxed: { label: '舒适型', badge: 'badge-relaxed', icon: '🌿' },
         indepth: { label: '深度游', badge: 'badge-indepth', icon: '🔍' }
     };
-
     let html = '';
     solutions.forEach((sol, idx) => {
         const info = styleLabels[sol.style] || styleLabels.relaxed;
@@ -228,12 +244,11 @@ function renderSolutions(solutions, weather) {
         const totalPois = data.total_pois || 0;
         const totalDays = data.total_days || 1;
         const totalDuration = data.total_duration || 0;
-
         html += `
             <div class="solution-card" onclick="window.selectSolutionCard(${idx})" id="sol-card-${idx}">
                 <div class="badge-style ${info.badge}">${info.icon} ${info.label}</div>
                 <div class="stat-row"><span>📅 天数</span><span>${totalDays} 天</span></div>
-                <div class="stat-row"><span>📍 景点</span><span>${totalPois} 个</span></div>
+                <div class="stat-row"><span>📍 景点/项目</span><span>${totalPois} 个</span></div>
                 <div class="stat-row"><span>⏱️ 游览总时长</span><span>${Math.round(totalDuration/60)} 小时</span></div>
                 <div class="stat-row"><span>📊 评分</span><span>${sol.score ? (sol.score*100).toFixed(0) : '--'}%</span></div>
                 <button class="btn btn-sm btn-outline-custom mt-2 w-100" onclick="event.stopPropagation(); window.previewSolution(${idx})">
@@ -242,11 +257,13 @@ function renderSolutions(solutions, weather) {
             </div>
         `;
     });
-
     container.innerHTML = html;
     document.getElementById('selectSolutionBtn').disabled = true;
 }
 
+// ============================================================
+// 方案选择与操作（保持不变）
+// ============================================================
 export function selectSolutionCard(idx) {
     document.querySelectorAll('.solution-card').forEach(el => el.classList.remove('selected'));
     const card = document.getElementById(`sol-card-${idx}`);
@@ -260,7 +277,7 @@ export function previewSolution(idx) {
     if (!sol) return;
     const data = sol.data || {};
     let msg = `📋 ${sol.style === 'compact' ? '紧凑型' : sol.style === 'relaxed' ? '舒适型' : '深度游'} 方案\n`;
-    msg += `📅 ${data.total_days || 0} 天 | 📍 ${data.total_pois || 0} 个景点\n\n`;
+    msg += `📅 ${data.total_days || 0} 天 | 📍 ${data.total_pois || 0} 个景点/项目\n\n`;
     if (data.days) {
         data.days.forEach(day => {
             msg += `--- 第${day.day}天 (${day.date}) ---\n`;
@@ -337,7 +354,7 @@ export function showTripDetail(data) {
         <div class="card-modern mt-2">
             <div class="card-title">📊 行程摘要</div>
             <div class="stat-row"><span>总天数</span><span>${data.total_days || 0} 天</span></div>
-            <div class="stat-row"><span>景点数</span><span>${data.total_pois || 0} 个</span></div>
+            <div class="stat-row"><span>景点/项目数</span><span>${data.total_pois || 0} 个</span></div>
             <div class="stat-row"><span>游览总时长</span><span>${Math.round((data.total_duration || 0)/60)} 小时</span></div>
         </div>
     `;
@@ -418,9 +435,6 @@ export async function savePreferences() {
     }
 }
 
-// ============================================================
-// 加载已保存方案
-// ============================================================
 async function loadSavedSolutions() {
     const user = await getCurrentUser();
     if (!user) return;

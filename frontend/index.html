@@ -11,304 +11,67 @@
     <!-- Leaflet CSS -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
-        /* ===== 全局重置 ===== */
+        /* 样式与之前完全相同，为节省篇幅此处省略，实际部署请保留完整样式 */
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; height: 100vh; overflow: hidden; background: #f0f2f5; }
         .hidden { display: none !important; }
-
-        /* ===== 地图容器 ===== */
         #map { height: 100vh; width: 100vw; z-index: 1; }
-
-        /* ===== 顶部栏 ===== */
-        .top-bar {
-            position: fixed;
-            top: 16px;
-            left: 50%;
-            transform: translateX(-50%);
-            z-index: 1500;
-            display: flex;
-            gap: 8px;
-            background: rgba(255,255,255,0.95);
-            padding: 8px 16px;
-            border-radius: 24px;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.15);
-            backdrop-filter: blur(8px);
-            align-items: center;
-            flex-wrap: wrap;
-            justify-content: center;
-        }
-        .top-bar .brand {
-            font-weight: 700;
-            color: #1b5e20;
-            font-size: 18px;
-            margin-right: 12px;
-        }
+        .top-bar { position: fixed; top: 16px; left: 50%; transform: translateX(-50%); z-index: 1500; display: flex; gap: 8px; background: rgba(255,255,255,0.95); padding: 8px 16px; border-radius: 24px; box-shadow: 0 4px 20px rgba(0,0,0,0.15); backdrop-filter: blur(8px); align-items: center; flex-wrap: wrap; justify-content: center; }
+        .top-bar .brand { font-weight: 700; color: #1b5e20; font-size: 18px; margin-right: 12px; }
         .top-bar .brand i { margin-right: 6px; }
-        .top-btn {
-            background: transparent;
-            border: none;
-            padding: 6px 14px;
-            border-radius: 20px;
-            font-size: 14px;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            transition: all 0.2s;
-            color: #333;
-        }
+        .top-btn { background: transparent; border: none; padding: 6px 14px; border-radius: 20px; font-size: 14px; cursor: pointer; display: flex; align-items: center; gap: 6px; transition: all 0.2s; color: #333; }
         .top-btn:hover { background: #e8f5e9; color: #1b5e20; }
         .top-btn.active { background: #1b5e20; color: white; }
-
-        /* ===== 底部浮动按钮 ===== */
-        .bottom-actions {
-            position: fixed;
-            bottom: 24px;
-            left: 50%;
-            transform: translateX(-50%);
-            z-index: 1500;
-            display: flex;
-            gap: 12px;
-            background: rgba(255,255,255,0.95);
-            padding: 10px 20px;
-            border-radius: 30px;
-            box-shadow: 0 4px 24px rgba(0,0,0,0.18);
-            backdrop-filter: blur(8px);
-            flex-wrap: wrap;
-            justify-content: center;
-            max-width: 95%;
-        }
-        .bottom-actions .btn {
-            padding: 10px 20px;
-            border: none;
-            border-radius: 20px;
-            font-size: 14px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.2s;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
+        .bottom-actions { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); z-index: 1500; display: flex; gap: 12px; background: rgba(255,255,255,0.95); padding: 10px 20px; border-radius: 30px; box-shadow: 0 4px 24px rgba(0,0,0,0.18); backdrop-filter: blur(8px); flex-wrap: wrap; justify-content: center; max-width: 95%; }
+        .bottom-actions .btn { padding: 10px 20px; border: none; border-radius: 20px; font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.2s; display: flex; align-items: center; gap: 8px; }
         .btn-primary-custom { background: #1b5e20; color: white; }
         .btn-primary-custom:hover { background: #2e7d32; transform: translateY(-2px); }
         .btn-secondary-custom { background: #e8f5e9; color: #1b5e20; }
         .btn-secondary-custom:hover { background: #c8e6c9; transform: translateY(-2px); }
         .btn-outline-custom { background: transparent; color: #1b5e20; border: 2px solid #1b5e20; }
         .btn-outline-custom:hover { background: #1b5e20; color: white; }
-
-        .float-btn {
-            position: fixed;
-            z-index: 1500;
-            background: white;
-            border-radius: 50%;
-            width: 48px;
-            height: 48px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            box-shadow: 0 4px 16px rgba(0,0,0,0.25);
-            cursor: pointer;
-            font-size: 20px;
-            border: none;
-            transition: all 0.2s;
-        }
+        .float-btn { position: fixed; z-index: 1500; background: white; border-radius: 50%; width: 48px; height: 48px; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 16px rgba(0,0,0,0.25); cursor: pointer; font-size: 20px; border: none; transition: all 0.2s; }
         .float-btn:hover { transform: scale(1.08); }
         .locate-btn { bottom: 130px; right: 20px; }
         .voice-btn { bottom: 190px; right: 20px; }
-
-        /* ===== 面板通用 ===== */
-        .panel {
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: white;
-            z-index: 2000;
-            transform: translateY(100%);
-            transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1);
-            overflow-y: auto;
-            display: flex;
-            flex-direction: column;
-        }
+        .panel { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: white; z-index: 2000; transform: translateY(100%); transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1); overflow-y: auto; display: flex; flex-direction: column; }
         .panel.active { transform: translateY(0); }
-        .panel-header {
-            padding: 16px 20px;
-            border-bottom: 1px solid #eee;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            background: white;
-            position: sticky;
-            top: 0;
-            z-index: 10;
-            min-height: 64px;
-        }
-        .panel-header h2 {
-            font-size: 18px;
-            font-weight: 700;
-            margin: 0;
-            color: #1b5e20;
-        }
-        .panel-header .close-btn {
-            background: none;
-            border: none;
-            font-size: 24px;
-            cursor: pointer;
-            color: #666;
-            padding: 4px 8px;
-            border-radius: 8px;
-            transition: 0.2s;
-        }
+        .panel-header { padding: 16px 20px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; background: white; position: sticky; top: 0; z-index: 10; min-height: 64px; }
+        .panel-header h2 { font-size: 18px; font-weight: 700; margin: 0; color: #1b5e20; }
+        .panel-header .close-btn { background: none; border: none; font-size: 24px; cursor: pointer; color: #666; padding: 4px 8px; border-radius: 8px; transition: 0.2s; }
         .panel-header .close-btn:hover { background: #f5f5f5; }
-        .panel-body {
-            flex: 1;
-            padding: 16px 20px;
-            overflow-y: auto;
-            padding-bottom: 30px;
-        }
-
-        /* ===== 卡片组件 ===== */
-        .card-modern {
-            background: white;
-            border-radius: 12px;
-            padding: 16px;
-            margin-bottom: 12px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.06);
-            border: 1px solid #f0f0f0;
-            transition: 0.2s;
-        }
+        .panel-body { flex: 1; padding: 16px 20px; overflow-y: auto; padding-bottom: 30px; }
+        .card-modern { background: white; border-radius: 12px; padding: 16px; margin-bottom: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); border: 1px solid #f0f0f0; transition: 0.2s; }
         .card-modern:hover { box-shadow: 0 4px 16px rgba(0,0,0,0.1); }
-        .card-modern .card-title {
-            font-weight: 600;
-            font-size: 16px;
-            margin-bottom: 6px;
-            color: #1b5e20;
-        }
-        .card-modern .card-sub {
-            font-size: 13px;
-            color: #888;
-        }
-
-        /* ===== 方案对比卡片 ===== */
-        .solution-compare {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-            gap: 16px;
-            margin: 16px 0;
-        }
-        .solution-card {
-            background: white;
-            border-radius: 16px;
-            padding: 20px;
-            border: 2px solid #e8f5e9;
-            transition: all 0.3s;
-            cursor: pointer;
-        }
+        .card-modern .card-title { font-weight: 600; font-size: 16px; margin-bottom: 6px; color: #1b5e20; }
+        .card-modern .card-sub { font-size: 13px; color: #888; }
+        .solution-compare { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin: 16px 0; }
+        .solution-card { background: white; border-radius: 16px; padding: 20px; border: 2px solid #e8f5e9; transition: all 0.3s; cursor: pointer; }
         .solution-card:hover { border-color: #1b5e20; transform: translateY(-4px); }
         .solution-card.selected { border-color: #1b5e20; background: #f1f8e9; }
-        .solution-card .badge-style {
-            display: inline-block;
-            padding: 4px 14px;
-            border-radius: 20px;
-            font-size: 12px;
-            font-weight: 600;
-            margin-bottom: 8px;
-        }
+        .solution-card .badge-style { display: inline-block; padding: 4px 14px; border-radius: 20px; font-size: 12px; font-weight: 600; margin-bottom: 8px; }
         .badge-compact { background: #fff3e0; color: #e65100; }
         .badge-relaxed { background: #e3f2fd; color: #0d47a1; }
         .badge-indepth { background: #fce4ec; color: #880e4f; }
-        .solution-card .stat-row {
-            display: flex;
-            justify-content: space-between;
-            padding: 4px 0;
-            font-size: 13px;
-            border-bottom: 1px solid #f5f5f5;
-        }
+        .solution-card .stat-row { display: flex; justify-content: space-between; padding: 4px 0; font-size: 13px; border-bottom: 1px solid #f5f5f5; }
         .solution-card .stat-row:last-child { border-bottom: none; }
-
-        /* ===== 实时行程看板 ===== */
-        .progress-bar-custom {
-            height: 6px;
-            background: #e0e0e0;
-            border-radius: 3px;
-            overflow: hidden;
-            margin: 12px 0;
-        }
-        .progress-bar-custom .fill {
-            height: 100%;
-            background: linear-gradient(90deg, #2e7d32, #66bb6a);
-            border-radius: 3px;
-            transition: width 0.5s ease;
-        }
-
-        /* ===== 偏好设置 ===== */
-        .pref-tag {
-            display: inline-block;
-            padding: 4px 14px;
-            border-radius: 20px;
-            background: #e8f5e9;
-            color: #1b5e20;
-            font-size: 13px;
-            margin: 4px;
-            cursor: pointer;
-            transition: 0.2s;
-            border: 2px solid transparent;
-        }
+        .progress-bar-custom { height: 6px; background: #e0e0e0; border-radius: 3px; overflow: hidden; margin: 12px 0; }
+        .progress-bar-custom .fill { height: 100%; background: linear-gradient(90deg, #2e7d32, #66bb6a); border-radius: 3px; transition: width 0.5s ease; }
+        .pref-tag { display: inline-block; padding: 4px 14px; border-radius: 20px; background: #e8f5e9; color: #1b5e20; font-size: 13px; margin: 4px; cursor: pointer; transition: 0.2s; border: 2px solid transparent; }
         .pref-tag:hover { background: #c8e6c9; }
         .pref-tag.active { border-color: #1b5e20; background: #1b5e20; color: white; }
-
-        /* ===== 行程详情 ===== */
-        .day-block {
-            background: #f8f9fa;
-            border-radius: 12px;
-            padding: 12px 16px;
-            margin-bottom: 12px;
-            border-left: 4px solid #1b5e20;
-        }
-        .day-block .day-title {
-            font-weight: 700;
-            color: #1b5e20;
-            margin-bottom: 8px;
-        }
-        .node-item {
-            display: flex;
-            align-items: flex-start;
-            gap: 12px;
-            padding: 6px 0;
-            border-bottom: 1px dashed #eee;
-            font-size: 14px;
-        }
+        .day-block { background: #f8f9fa; border-radius: 12px; padding: 12px 16px; margin-bottom: 12px; border-left: 4px solid #1b5e20; }
+        .day-block .day-title { font-weight: 700; color: #1b5e20; margin-bottom: 8px; }
+        .node-item { display: flex; align-items: flex-start; gap: 12px; padding: 6px 0; border-bottom: 1px dashed #eee; font-size: 14px; }
         .node-item:last-child { border-bottom: none; }
-        .node-item .node-time {
-            color: #888;
-            font-size: 13px;
-            min-width: 80px;
-            flex-shrink: 0;
-        }
-        .node-item .node-icon {
-            width: 28px;
-            text-align: center;
-            flex-shrink: 0;
-            color: #1b5e20;
-        }
-
-        /* ===== 商户详情 ===== */
-        .biz-image-box {
-            width: 100%;
-            aspect-ratio: 16/9;
-            border-radius: 8px;
-            overflow: hidden;
-            background: #f0f0f0;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            margin-top: 8px;
-        }
+        .node-item .node-time { color: #888; font-size: 13px; min-width: 80px; flex-shrink: 0; }
+        .node-item .node-icon { width: 28px; text-align: center; flex-shrink: 0; color: #1b5e20; }
+        .biz-image-box { width: 100%; aspect-ratio: 16/9; border-radius: 8px; overflow: hidden; background: #f0f0f0; display: flex; align-items: center; justify-content: center; margin-top: 8px; }
         .biz-image-box img { width: 100%; height: 100%; object-fit: cover; }
-
-        /* ===== 响应式 ===== */
+        .category-bar { position: fixed; top: -50px; left: 0; right: 0; z-index: 1600; background: rgba(255,255,255,0.95); box-shadow: 0 2px 8px rgba(0,0,0,0.15); transition: top 0.3s ease; display: flex; flex-wrap: wrap; padding: 8px 12px; gap: 6px; border-bottom: 1px solid #ddd; }
+        .category-bar.show { top: 0; }
+        .category-bar .cat-btn { padding: 4px 12px; border-radius: 16px; border: 1px solid #ccc; background: white; font-size: 13px; cursor: pointer; white-space: nowrap; }
+        .category-bar .cat-btn.active { background: #2e7d32; color: white; border-color: #2e7d32; }
         @media (max-width: 640px) {
             .top-bar { top: 8px; padding: 6px 12px; }
             .top-bar .brand { font-size: 14px; margin-right: 6px; }
@@ -321,8 +84,6 @@
             .solution-compare { grid-template-columns: 1fr; }
             .panel-body { padding: 12px 14px; }
         }
-
-        /* ===== 工具类 ===== */
         .text-green { color: #1b5e20; }
         .bg-green-light { background: #e8f5e9; }
         .gap-2 { gap: 8px; }
@@ -625,14 +386,14 @@ import { getPois } from './js/api.js';
 import { getCurrentUser, signInAnonymously } from './js/auth.js';
 import { getCountySpots } from './js/utils.js';
 import { initMap, loadPoisToMap, locateUser, setVoiceEnabled, getAllPois } from './js/map.js';
-import { loadTransportPresets } from './js/trip-planner.js';
+// 移除 loadTransportPresets 导入（新架构由后端处理）
 import {
     renderMyTrips,
     renderMyReservations,
     renderFeedbackHistory,
     submitFeedback as submitUserFeedback,
     loadUserPreferences,
-    saveUserPreferences
+    saveUserPreferences as saveUserPrefsAPI
 } from './js/user.js';
 import {
     initPlanPanel,
@@ -643,7 +404,8 @@ import {
     saveTripSolution,
     startNavigation,
     endNavigation,
-    showTripDetail
+    showTripDetail,
+    savePreferences
 } from './js/trip-planner.js';
 
 // ===== 暴露全局函数给 HTML =====
@@ -686,6 +448,7 @@ window.saveTripSolution = saveTripSolution;
 window.startNavigation = startNavigation;
 window.endNavigation = endNavigation;
 window.showTripDetail = showTripDetail;
+window.savePreferences = savePreferences;
 
 // 用户相关
 window.submitFeedback = submitUserFeedback;
@@ -706,9 +469,6 @@ async function init() {
         const pois = await getPois();
         loadPoisToMap(pois);
         window.__countySpots = getCountySpots(pois);
-
-        // 加载交通预设
-        await loadTransportPresets();
 
         // 加载用户偏好
         const user = await getCurrentUser();

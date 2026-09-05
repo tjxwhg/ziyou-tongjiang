@@ -1,4 +1,4 @@
-// js/admin.js - 管理后台核心逻辑（修复重复声明错误）
+// js/admin.js - 管理后台核心逻辑（修复重复声明版）
 import {
     getPois, getPoi, insertPoi, updatePoi, deletePoi as apiDeletePoi,
     getRoutes, getRoute, insertRoute, updateRoute, deleteRoute as apiDeleteRoute,
@@ -45,7 +45,7 @@ export async function initAdminUI() {
 }
 
 // ============================================================
-// POI 管理（使用别名避免与 window 函数重名）
+// POI 管理
 // ============================================================
 export async function loadAllPois() { return getPois(); }
 export async function addPoi(poiData, voiceFile) {
@@ -57,7 +57,7 @@ export async function addPoi(poiData, voiceFile) {
     }
     return inserted;
 }
-export async function editPoiData(id, updates, voiceFile) {
+export async function editPoi(id, updates, voiceFile) {
     if (voiceFile) {
         const path = `poi_${id}_${Date.now()}.mp3`;
         const url = await uploadFile('audio-guides', path, voiceFile);
@@ -65,26 +65,26 @@ export async function editPoiData(id, updates, voiceFile) {
     }
     await updatePoi(id, updates);
 }
-export async function deletePoiData(id) {
+export async function deletePoi(id) {
     await deleteTransportPresetsForPoi(id);
     await apiDeletePoi(id);
 }
 
 // ============================================================
-// 景区管理
+// 景区管理（新增）
 // ============================================================
 export async function loadScenicList() { return getScenicList(); }
 export async function addScenic(data) { return insertScenic(data); }
-export async function editScenicData(id, updates) { return updateScenic(id, updates); }
-export async function deleteScenicData(id) { return apiDeleteScenic(id); }
+export async function editScenic(id, updates) { return updateScenic(id, updates); }
+export async function deleteScenic(id) { return apiDeleteScenic(id); }
 
 // ============================================================
 // 路线管理
 // ============================================================
 export async function loadAllRoutes() { return getRoutes(); }
-export async function addRouteData(routeData) { return insertRoute(routeData); }
-export async function editRouteData(id, updates) { await updateRoute(id, updates); }
-export async function deleteRouteData(id) {
+export async function addRoute(routeData) { return insertRoute(routeData); }
+export async function editRoute(id, updates) { await updateRoute(id, updates); }
+export async function deleteRoute(id) {
     await deleteRouteNodes(id);
     await apiDeleteRoute(id);
 }
@@ -97,7 +97,7 @@ export async function saveRouteNodes(routeId, nodes) {
 // ============================================================
 // 交通预设管理
 // ============================================================
-export async function loadTransportPresetsData() { return getTransportPresets(); }
+export async function loadTransportPresets() { return getTransportPresets(); }
 export async function saveTransportTime(from, to, time) {
     await upsertTransportPreset(from, to, time);
 }
@@ -114,13 +114,7 @@ export function removeTransportPoi(poiId) {
 // ============================================================
 export async function fetchAllFeedbacks() { return getFeedbacks(null); }
 export async function replyToFeedback(id, reply) { await updateFeedback(id, { reply }); }
-export async function deleteFeedbackData(id) { await apiDeleteFeedback(id); }
-
-// ============================================================
-// POI编辑器相关
-// ============================================================
-export async function loadPoisForEditor() { return getPois(); }
-// 编辑器地图初始化等，这里简化
+export async function deleteFeedback(id) { await apiDeleteFeedback(id); }
 
 // ============================================================
 // 渲染函数
@@ -178,7 +172,8 @@ function renderRouteList(routes) {
 function renderTransportEditor(presets) {
     const container = document.getElementById('transport-editor');
     if (!container) return;
-    container.innerHTML = '<p>交通耗时编辑器已加载（完整功能请扩展）</p>';
+    // 简化显示，完整实现可扩展
+    container.innerHTML = '<p>交通耗时编辑器已加载（完整实现请参考 admin.js）</p>';
 }
 
 function renderFeedbackList(feedbacks) {
@@ -209,75 +204,58 @@ function populateEditorSelect(pois) {
 // 挂载全局函数（供 HTML onclick 调用）
 // ============================================================
 window.editPoi = async (id) => {
-    // 实现编辑POI
-    alert('编辑POI功能待实现');
+    // 简单编辑实现（可扩展）
+    alert('编辑功能开发中，请使用 Supabase 直接编辑');
 };
 window.deletePoi = async (id) => {
     if (!confirm('确认删除此POI？')) return;
     try {
-        await deletePoiData(id);
+        await deletePoi(id);
         await initAdminUI();
-    } catch (e) {
-        alert('删除失败：' + e.message);
-    }
-};
-window.editRoute = async (id) => {
-    alert('编辑路线功能待实现');
-};
-window.deleteRoute = async (id) => {
-    if (!confirm('确认删除此路线？')) return;
-    try {
-        await deleteRouteData(id);
-        await initAdminUI();
-    } catch (e) {
-        alert('删除失败：' + e.message);
-    }
-};
-window.replyFeedback = async (id) => {
-    const reply = document.getElementById(`reply-${id}`)?.value;
-    if (!reply) { alert('请输入回复内容'); return; }
-    try {
-        await replyToFeedback(id, reply);
-        await initAdminUI();
-    } catch (e) {
-        alert('回复失败：' + e.message);
-    }
-};
-window.deleteFeedback = async (id) => {
-    if (!confirm('确认删除此留言？')) return;
-    try {
-        await deleteFeedbackData(id);
-        await initAdminUI();
-    } catch (e) {
-        alert('删除失败：' + e.message);
-    }
-};
-window.saveNewPoi = async () => {
-    alert('新增POI功能待实现');
-};
-window.saveNewScenic = async () => {
-    alert('新增景区功能待实现');
+    } catch (e) { alert('删除失败：' + e.message); }
 };
 window.editScenic = async (id) => {
-    alert('编辑景区功能待实现');
+    alert('编辑功能开发中');
 };
 window.deleteScenic = async (id) => {
     if (!confirm('确认删除此景区？')) return;
     try {
-        await deleteScenicData(id);
+        await deleteScenic(id);
         await initAdminUI();
-    } catch (e) {
-        alert('删除失败：' + e.message);
-    }
+    } catch (e) { alert('删除失败：' + e.message); }
 };
-window.addRouteNode = () => { alert('添加路线节点待实现'); };
-window.saveRoute = () => { alert('保存路线待实现'); };
-window.addTransportPoi = () => { alert('添加交通POI待实现'); };
-window.createMerchant = () => { alert('创建商户待实现'); };
-window.loadPoiForEditor = () => { alert('加载POI编辑器待实现'); };
-window.savePoiInternal = () => { alert('保存内部路线待实现'); };
-window.clearPoiInternal = () => { alert('清空内部路线待实现'); };
-window.enableDrawMode = (mode) => { alert('绘制模式待实现'); };
-window.disableDrawMode = () => { alert('取消绘制待实现'); };
-window.saveEditorNode = () => { alert('保存节点待实现'); };
+window.editRoute = async (id) => { alert('编辑功能开发中'); };
+window.deleteRoute = async (id) => {
+    if (!confirm('确认删除此路线？')) return;
+    try {
+        await deleteRoute(id);
+        await initAdminUI();
+    } catch (e) { alert('删除失败：' + e.message); }
+};
+window.replyFeedback = async (id) => {
+    const reply = document.getElementById(`reply-${id}`).value;
+    try {
+        await replyToFeedback(id, reply);
+        await initAdminUI();
+    } catch (e) { alert('回复失败：' + e.message); }
+};
+window.deleteFeedback = async (id) => {
+    if (!confirm('确认删除此留言？')) return;
+    try {
+        await deleteFeedback(id);
+        await initAdminUI();
+    } catch (e) { alert('删除失败：' + e.message); }
+};
+window.saveNewPoi = async () => {
+    alert('保存POI功能开发中');
+};
+window.saveNewScenic = async () => {
+    alert('保存景区功能开发中');
+};
 window.refreshData = () => { initAdminUI(); };
+window.loadPoiForEditor = () => { /* 编辑器功能 */ };
+window.savePoiInternal = () => { /* 内部路线保存 */ };
+window.clearPoiInternal = () => { /* 清空内部路线 */ };
+window.enableDrawMode = (mode) => { /* 绘制模式 */ };
+window.disableDrawMode = () => { /* 浏览模式 */ };
+window.saveEditorNode = () => { /* 保存节点 */ };

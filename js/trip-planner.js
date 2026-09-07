@@ -1,4 +1,4 @@
-// js/trip-planner.js - 行程规划核心
+// js/trip-planner.js - 行程规划核心（完整版）
 import { getPois, saveTripSolution, getUserTripSolutions, getTransportPresets } from './api.js';
 import { getCurrentUser } from './auth.js';
 import { formatTime, fetchWeatherForecast, getDayWeatherTip } from './utils.js';
@@ -133,7 +133,7 @@ export function selectAllPois(select) {
 }
 
 // ============================================================
-// 生成行程方案（修复数据源：优先使用 window.__allPois）
+// 生成行程方案
 // ============================================================
 export async function generatePlans() {
     const loadingEl = document.getElementById('planLoading');
@@ -147,19 +147,16 @@ export async function generatePlans() {
 
     if (!startDate) { alert('请选择出发日期'); return; }
 
-    // 获取选中的POI ID
     const selectedIds = [];
     document.querySelectorAll('#poiSelectContainer input:checked').forEach(cb => {
         selectedIds.push(cb.value);
     });
     if (selectedIds.length === 0) { alert('请至少选择一个景点'); return; }
 
-    // 获取所有POI数据（优先从全局备用，其次从map.js）
     let allPois = window.__allPois || [];
     if (!allPois || allPois.length === 0) {
         allPois = getAllPois();
     }
-    // 如果仍然为空，尝试重新获取
     if (!allPois || allPois.length === 0) {
         try {
             allPois = await getPois();
@@ -176,7 +173,6 @@ export async function generatePlans() {
         return;
     }
 
-    // 获取偏好
     const selectedCats = [];
     document.querySelectorAll('#prefCategories .pref-tag.active').forEach(el => {
         selectedCats.push(el.dataset.value);
@@ -189,7 +185,6 @@ export async function generatePlans() {
         pace: style
     };
 
-    // 构建约束
     const presets = await getTransportPresets();
     const travelTimes = {};
     presets.forEach(p => {

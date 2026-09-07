@@ -8,19 +8,18 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
-        /* 全局 */
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; height: 100vh; overflow: hidden; background: #f0f2f5; }
         .hidden { display: none !important; }
         #map { height: 100vh; width: 100vw; z-index: 1; }
 
-        /* 顶部栏 - 适配刘海屏 */
+        /* 顶部栏 - 高 z-index 避免被分类栏遮挡 */
         .top-bar {
             position: fixed;
             top: max(12px, env(safe-area-inset-top, 12px));
             left: 50%;
             transform: translateX(-50%);
-            z-index: 1500;
+            z-index: 1700;
             display: flex;
             align-items: center;
             gap: 12px;
@@ -29,31 +28,13 @@
             border-radius: 30px;
             box-shadow: 0 4px 20px rgba(0,0,0,0.12);
             backdrop-filter: blur(8px);
+            height: 44px;
         }
-        .top-bar .brand {
-            font-weight: 700;
-            color: #1b5e20;
-            font-size: 18px;
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            cursor: pointer;
-        }
+        .top-bar .brand { font-weight: 700; color: #1b5e20; font-size: 18px; display: flex; align-items: center; gap: 6px; cursor: pointer; }
         .top-bar .brand i { font-size: 20px; }
-        .top-bar .cat-toggle {
-            background: #e8f5e9;
-            border: none;
-            border-radius: 20px;
-            padding: 4px 14px;
-            font-size: 13px;
-            color: #1b5e20;
-            cursor: pointer;
-            transition: 0.2s;
-            font-weight: 500;
-        }
-        .top-bar .cat-toggle:hover { background: #c8e6c9; }
+        .top-bar .cat-toggle { background: #e8f5e9; border: none; border-radius: 20px; padding: 4px 14px; font-size: 13px; color: #1b5e20; cursor: pointer; transition: 0.2s; font-weight: 500; }
 
-        /* 分类栏 */
+        /* 分类栏 - 展开时从顶部栏下方开始 */
         .category-bar {
             position: fixed;
             top: -120px;
@@ -72,20 +53,10 @@
             pointer-events: auto;
             max-height: 70vh;
             overflow-y: auto;
-            padding-top: calc(12px + env(safe-area-inset-top, 12px));
+            padding-top: calc(60px + env(safe-area-inset-top, 12px));
         }
         .category-bar.show { top: 0; }
-        .category-bar .cat-btn {
-            padding: 6px 14px;
-            border-radius: 20px;
-            border: 1px solid #e0e0e0;
-            background: white;
-            font-size: 13px;
-            cursor: pointer;
-            transition: all 0.2s;
-            white-space: nowrap;
-            color: #333;
-        }
+        .category-bar .cat-btn { padding: 6px 14px; border-radius: 20px; border: 1px solid #e0e0e0; background: white; font-size: 13px; cursor: pointer; transition: all 0.2s; white-space: nowrap; color: #333; }
         .category-bar .cat-btn:hover { background: #e8f5e9; border-color: #2e7d32; }
         .category-bar .cat-btn.active { background: #2e7d32; color: white; border-color: #2e7d32; }
 
@@ -106,84 +77,27 @@
             align-items: center;
             max-width: 95%;
         }
-        .bottom-nav .nav-btn {
-            padding: 8px 16px;
-            border: none;
-            border-radius: 24px;
-            font-size: 14px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.2s;
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            background: transparent;
-            color: #555;
-            white-space: nowrap;
-        }
+        .bottom-nav .nav-btn { padding: 8px 16px; border: none; border-radius: 24px; font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.2s; display: flex; align-items: center; gap: 6px; background: transparent; color: #555; white-space: nowrap; }
         .bottom-nav .nav-btn:hover { background: #e8f5e9; color: #1b5e20; }
         .bottom-nav .nav-btn.primary { background: #1b5e20; color: white; }
         .bottom-nav .nav-btn.primary:hover { background: #2e7d32; }
 
-        /* 浮动按钮 */
-        .float-btn {
-            position: fixed;
-            z-index: 1500;
-            background: white;
-            border-radius: 50%;
-            width: 48px;
-            height: 48px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            box-shadow: 0 4px 16px rgba(0,0,0,0.25);
-            cursor: pointer;
-            font-size: 20px;
-            border: none;
-            transition: all 0.2s;
-        }
+        .float-btn { position: fixed; z-index: 1500; background: white; border-radius: 50%; width: 48px; height: 48px; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 16px rgba(0,0,0,0.25); cursor: pointer; font-size: 20px; border: none; transition: all 0.2s; }
         .float-btn:hover { transform: scale(1.08); }
         .locate-btn { bottom: 110px; right: 20px; }
         .voice-btn { bottom: 170px; right: 20px; }
 
-        /* 面板 */
-        .panel {
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: white;
-            z-index: 2000;
-            transform: translateY(100%);
-            transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1);
-            overflow-y: auto;
-            display: flex;
-            flex-direction: column;
-        }
+        .panel { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: white; z-index: 2000; transform: translateY(100%); transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1); overflow-y: auto; display: flex; flex-direction: column; }
         .panel.active { transform: translateY(0); }
-        .panel-header {
-            padding: 16px 20px;
-            border-bottom: 1px solid #eee;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            background: white;
-            position: sticky;
-            top: 0;
-            z-index: 10;
-            min-height: 64px;
-            padding-top: calc(16px + env(safe-area-inset-top, 0px));
-        }
+        .panel-header { padding: 16px 20px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; background: white; position: sticky; top: 0; z-index: 10; min-height: 64px; padding-top: calc(16px + env(safe-area-inset-top, 0px)); }
         .panel-header h2 { font-size: 18px; font-weight: 700; margin: 0; color: #1b5e20; }
         .panel-header .close-btn { background: none; border: none; font-size: 24px; cursor: pointer; color: #666; padding: 4px 8px; border-radius: 8px; transition: 0.2s; }
-        .panel-header .close-btn:hover { background: #f5f5f5; }
         .panel-body { flex: 1; padding: 16px 20px; overflow-y: auto; padding-bottom: 30px; }
 
-        /* 卡片、列表等样式与之前相同，此处省略以节省篇幅，实际已包含 */
         .card-modern { background: white; border-radius: 12px; padding: 16px; margin-bottom: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); border: 1px solid #f0f0f0; }
         .card-modern .card-title { font-weight: 600; font-size: 16px; margin-bottom: 6px; color: #1b5e20; }
         .card-modern .card-sub { font-size: 13px; color: #888; }
+
         .solution-compare { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin: 16px 0; }
         .solution-card { background: white; border-radius: 16px; padding: 20px; border: 2px solid #e8f5e9; transition: all 0.3s; cursor: pointer; }
         .solution-card:hover { border-color: #1b5e20; transform: translateY(-4px); }
@@ -193,22 +107,22 @@
         .badge-relaxed { background: #e3f2fd; color: #0d47a1; }
         .badge-indepth { background: #fce4ec; color: #880e4f; }
         .solution-card .stat-row { display: flex; justify-content: space-between; padding: 4px 0; font-size: 13px; border-bottom: 1px solid #f5f5f5; }
-        .solution-card .stat-row:last-child { border-bottom: none; }
+
         .pref-tag { display: inline-block; padding: 4px 14px; border-radius: 20px; background: #e8f5e9; color: #1b5e20; font-size: 13px; margin: 4px; cursor: pointer; transition: 0.2s; border: 2px solid transparent; }
         .pref-tag:hover { background: #c8e6c9; }
         .pref-tag.active { border-color: #1b5e20; background: #1b5e20; color: white; }
+
         .day-block { background: #f8f9fa; border-radius: 12px; padding: 12px 16px; margin-bottom: 12px; border-left: 4px solid #1b5e20; }
         .day-block .day-title { font-weight: 700; color: #1b5e20; margin-bottom: 8px; }
         .node-item { display: flex; align-items: flex-start; gap: 12px; padding: 6px 0; border-bottom: 1px dashed #eee; font-size: 14px; }
-        .node-item:last-child { border-bottom: none; }
         .node-item .node-time { color: #888; font-size: 13px; min-width: 80px; flex-shrink: 0; }
         .node-item .node-icon { width: 28px; text-align: center; flex-shrink: 0; color: #1b5e20; }
+
         .poi-select-list { max-height: 300px; overflow-y: auto; border: 1px solid #e0e0e0; border-radius: 8px; padding: 8px; }
         .poi-select-item { display: flex; align-items: center; gap: 10px; padding: 6px 8px; border-bottom: 1px solid #f0f0f0; cursor: pointer; }
         .poi-select-item:hover { background: #e8f5e9; }
         .poi-select-item input[type="checkbox"] { width: 18px; height: 18px; }
 
-        /* 预约表单 */
         .reservation-form { background: #f8f9fa; border-radius: 8px; padding: 12px; margin-top: 10px; }
         .reservation-form .form-group { margin-bottom: 8px; }
         .reservation-form label { font-weight: 500; font-size: 14px; }
@@ -218,7 +132,7 @@
         .biz-image-box img { width: 100%; height: 100%; object-fit: cover; }
 
         @media (max-width: 640px) {
-            .top-bar { top: max(8px, env(safe-area-inset-top, 8px)); padding: 4px 12px; gap: 8px; }
+            .top-bar { top: max(8px, env(safe-area-inset-top, 8px)); padding: 4px 12px; gap: 8px; height: 40px; }
             .top-bar .brand { font-size: 15px; }
             .top-bar .cat-toggle { font-size: 12px; padding: 3px 10px; }
             .bottom-nav { padding: 6px 12px; gap: 4px; }
@@ -228,11 +142,10 @@
             .voice-btn { bottom: 155px; right: 12px; }
             .solution-compare { grid-template-columns: 1fr; }
             .panel-body { padding: 12px 14px; }
-            .category-bar { padding: 10px 12px; gap: 6px; }
+            .category-bar { padding-top: calc(54px + env(safe-area-inset-top, 8px)); }
             .category-bar .cat-btn { font-size: 12px; padding: 4px 10px; }
         }
         .text-green { color: #1b5e20; }
-        .bg-green-light { background: #e8f5e9; }
         .btn-primary-custom { background: #1b5e20; color: white; border: none; padding: 8px 16px; border-radius: 8px; font-weight: 600; transition: 0.2s; cursor: pointer; }
         .btn-primary-custom:hover { background: #2e7d32; }
         .btn-outline-custom { background: transparent; color: #1b5e20; border: 2px solid #1b5e20; padding: 8px 16px; border-radius: 8px; font-weight: 600; transition: 0.2s; cursor: pointer; }
@@ -281,12 +194,8 @@
 
 <!-- 面板：智能规划 -->
 <div class="panel" id="planPanel">
-    <div class="panel-header">
-        <h2><i class="fas fa-route text-green"></i> 智能行程规划</h2>
-        <button class="close-btn" onclick="window.closePanel('planPanel')">&times;</button>
-    </div>
+    <div class="panel-header"><h2><i class="fas fa-route text-green"></i> 智能行程规划</h2><button class="close-btn" onclick="window.closePanel('planPanel')">&times;</button></div>
     <div class="panel-body">
-        <!-- 步骤1 -->
         <div id="stepPreferences">
             <h5><i class="fas fa-sliders-h text-green"></i> 旅行偏好</h5>
             <div class="row g-2 mt-2">
@@ -305,13 +214,11 @@
             <button class="btn btn-primary-custom w-100 mt-3" onclick="window.generatePlans()"><i class="fas fa-wand-magic-sparkles"></i> 生成行程方案</button>
             <div id="planLoading" class="text-center mt-3 hidden"><div class="spinner-border text-success" role="status"></div><p class="mt-2 text-secondary">正在为您规划最优行程...</p></div>
         </div>
-        <!-- 步骤2 -->
         <div id="stepCompare" class="hidden">
             <div class="d-flex justify-content-between align-items-center mb-3"><h5><i class="fas fa-chart-simple text-green"></i> 方案对比</h5><button class="btn btn-secondary btn-sm" onclick="window.backToPreferences()"><i class="fas fa-arrow-left"></i> 重新设置</button></div>
             <div id="solutionCompareContainer" class="solution-compare"></div>
             <div class="mt-3"><button class="btn btn-primary-custom w-100" onclick="window.selectSolution()" id="selectSolutionBtn" disabled><i class="fas fa-check"></i> 选择此方案</button></div>
         </div>
-        <!-- 步骤3 -->
         <div id="stepDetail" class="hidden">
             <div class="d-flex justify-content-between align-items-center mb-3"><h5><i class="fas fa-map text-green"></i> 我的行程</h5><button class="btn btn-secondary btn-sm" onclick="window.backToCompare()"><i class="fas fa-arrow-left"></i> 返回对比</button></div>
             <div id="tripDetailContainer"></div>
@@ -427,7 +334,7 @@ window.savePreferences = savePreferences;
 window.submitFeedback = submitUserFeedback;
 window.selectAllPois = selectAllPois;
 
-// ===== 商户详情（含预约功能） =====
+// 商户详情（含预约）
 window.showPoiDetail = async function(poi) {
     try {
         const merchants = await getMerchantsByPoi(poi.id);
@@ -467,7 +374,6 @@ window.showPoiDetail = async function(poi) {
             let status = merchant.status === 'open' ? '营业中' : (merchant.status === 'closed' ? '休息' : '繁忙');
             let parking = merchant.parking_spots ?? 0;
             html += `<hr><p><i class="fas fa-phone"></i> ${phone} | <i class="fas fa-circle ${merchant.status === 'open' ? 'text-success' : 'text-danger'}"></i> ${status} | <i class="fas fa-parking"></i> ${parking} 个车位</p><p>${poi.description || ''}</p>`;
-
             // 预约表单
             html += `
                 <div class="mt-3">
@@ -509,13 +415,11 @@ window.showPoiDetail = async function(poi) {
     }
 };
 
-// 切换预约表单显示
 window.toggleReservationForm = function(merchantId) {
     const form = document.getElementById(`reservation-form-${merchantId}`);
     if (form) form.classList.toggle('hidden');
 };
 
-// 提交预约
 window.submitReservation = async function(merchantId) {
     const date = document.getElementById(`res-date-${merchantId}`).value;
     const timeRange = document.getElementById(`res-time-${merchantId}`).value;
@@ -557,14 +461,13 @@ window.submitReservation = async function(merchantId) {
         document.getElementById(`res-count-${merchantId}`).value = '1';
         document.getElementById(`res-remark-${merchantId}`).value = '';
         window.toggleReservationForm(merchantId);
-        // 刷新我的预约
         renderMyReservations();
     } catch (e) {
         alert('提交失败：' + e.message);
     }
 };
 
-// ===== 分类栏切换 =====
+// 分类栏切换
 document.getElementById('catToggleBtn').addEventListener('click', (e) => {
     e.stopPropagation();
     document.getElementById('categoryBar').classList.toggle('show');
@@ -577,15 +480,18 @@ document.addEventListener('click', function(e) {
     }
 });
 
-// ===== 初始化 =====
+// 初始化
 async function init() {
     try {
         try { await signInAnonymously(); console.log('[系统] 匿名登录成功'); } 
         catch (e) { console.warn('[系统] 匿名登录失败（不影响地图浏览）:', e.message); }
 
-        initMap('map');
+        const map = initMap('map');
         const pois = await getPois();
         loadPoisToMap(pois);
+
+        // 确保数据已加载
+        if (!window.__allPois) window.__allPois = pois;
 
         const user = await getCurrentUser();
         if (user) {
@@ -598,7 +504,6 @@ async function init() {
         renderFeedbackHistory();
 
         initPlanPanel();
-        // 关键：加载景点选择列表
         loadPoiListForSelection(pois);
 
         locateUser();

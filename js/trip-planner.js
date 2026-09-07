@@ -1,5 +1,5 @@
-// js/trip-planner.js - 行程规划核心（完整版）
-import { getPois, saveTripSolution, getUserTripSolutions, getTransportPresets } from './api.js';
+// js/trip-planner.js - 行程规划核心（无重复声明）
+import { getPois, saveTripSolution as apiSaveTripSolution, getUserTripSolutions, getTransportPresets } from './api.js';
 import { getCurrentUser } from './auth.js';
 import { formatTime, fetchWeatherForecast, getDayWeatherTip } from './utils.js';
 import { simulatedAnnealing, checkHardConstraints } from './simulated-annealing.js';
@@ -393,7 +393,7 @@ export async function selectSolution() {
     const user = await getCurrentUser();
     try {
         if (user) {
-            await saveTripSolution(user.id, sol.data, sol.style, sol.score);
+            await apiSaveTripSolution(user.id, sol.data, sol.style, sol.score);
         }
         currentTripData = sol.data;
         showTripDetail(sol.data);
@@ -438,14 +438,14 @@ export function showTripDetail(data) {
 }
 
 // ============================================================
-// 保存与导航
+// 保存与导航（使用 apiSaveTripSolution，不再重复定义）
 // ============================================================
 export async function saveTripSolution() {
     if (!currentTripData) { alert('没有可保存的行程'); return; }
     const user = await getCurrentUser();
     if (!user) { alert('请先登录'); return; }
     try {
-        await saveTripSolution(user.id, currentTripData, 'custom', 0);
+        await apiSaveTripSolution(user.id, currentTripData, 'custom', 0);
         alert('行程已保存');
         const { renderMyTrips } = await import('./user.js');
         renderMyTrips();

@@ -8,11 +8,11 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
+        /* 样式与之前相同，省略以节省篇幅，实际部署时请保留完整样式 */
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; height: 100vh; overflow: hidden; background: #f0f2f5; }
         .hidden { display: none !important; }
         #map { height: 100vh; width: 100vw; z-index: 1; }
-
         .top-bar {
             position: fixed;
             top: max(12px, env(safe-area-inset-top, 12px));
@@ -41,7 +41,6 @@
             user-select: none;
         }
         .top-bar .brand i { font-size: 20px; }
-
         .category-bar {
             position: fixed;
             top: 0;
@@ -80,7 +79,6 @@
         }
         .category-bar .cat-btn:hover { background: #e8f5e9; border-color: #2e7d32; }
         .category-bar .cat-btn.active { background: #2e7d32; color: white; border-color: #2e7d32; }
-
         .bottom-nav {
             position: fixed;
             bottom: 24px;
@@ -115,7 +113,6 @@
         .bottom-nav .nav-btn:hover { background: #e8f5e9; color: #1b5e20; }
         .bottom-nav .nav-btn.primary { background: #1b5e20; color: white; }
         .bottom-nav .nav-btn.primary:hover { background: #2e7d32; }
-
         .float-btn {
             position: fixed;
             z-index: 1500;
@@ -135,7 +132,6 @@
         .float-btn:hover { transform: scale(1.08); }
         .locate-btn { bottom: 110px; right: 20px; }
         .voice-btn { bottom: 170px; right: 20px; }
-
         .panel {
             position: fixed;
             top: 0;
@@ -167,7 +163,6 @@
         .panel-header h2 { font-size: 18px; font-weight: 700; margin: 0; color: #1b5e20; }
         .panel-header .close-btn { background: none; border: none; font-size: 24px; cursor: pointer; color: #666; padding: 4px 8px; border-radius: 8px; transition: 0.2s; }
         .panel-body { flex: 1; padding: 16px 20px; overflow-y: auto; padding-bottom: 30px; }
-
         .card-modern { background: white; border-radius: 12px; padding: 16px; margin-bottom: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); border: 1px solid #f0f0f0; }
         .card-modern .card-title { font-weight: 600; font-size: 16px; margin-bottom: 6px; color: #1b5e20; }
         .card-modern .card-sub { font-size: 13px; color: #888; }
@@ -198,7 +193,6 @@
         .reservation-form input, .reservation-form select, .reservation-form textarea { width: 100%; padding: 6px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; }
         .biz-image-box { width: 100%; aspect-ratio: 16/9; border-radius: 8px; overflow: hidden; background: #f0f0f0; display: flex; align-items: center; justify-content: center; margin-top: 8px; }
         .biz-image-box img { width: 100%; height: 100%; object-fit: cover; }
-
         @media (max-width: 640px) {
             .top-bar { top: max(8px, env(safe-area-inset-top, 8px)); padding: 4px 12px; height: 38px; }
             .top-bar .brand { font-size: 15px; }
@@ -252,6 +246,7 @@
 <button class="float-btn locate-btn" onclick="window.locateUser()"><i class="fas fa-crosshairs"></i></button>
 <button class="float-btn voice-btn" id="voiceToggleBtn" onclick="window.toggleVoice()"><i class="fas fa-volume-high"></i></button>
 
+<!-- 面板：智能规划 -->
 <div class="panel" id="planPanel">
     <div class="panel-header">
         <h2><i class="fas fa-route text-green"></i> 智能行程规划</h2>
@@ -289,6 +284,7 @@
     </div>
 </div>
 
+<!-- 面板：我的 -->
 <div class="panel" id="myPanel">
     <div class="panel-header"><h2><i class="fas fa-user text-green"></i> 我的</h2><button class="close-btn" onclick="window.closePanel('myPanel')">&times;</button></div>
     <div class="panel-body">
@@ -313,11 +309,13 @@
     </div>
 </div>
 
+<!-- 商户详情面板 -->
 <div class="panel" id="merchantDetailPanel">
     <div class="panel-header"><h2 id="merchantDetailTitle">商户详情</h2><button class="close-btn" onclick="window.closePanel('merchantDetailPanel')">&times;</button></div>
     <div class="panel-body" id="merchantDetailContent"></div>
 </div>
 
+<!-- 导航面板 -->
 <div class="panel" id="navPanel">
     <div class="panel-header"><h2><i class="fas fa-compass text-green"></i> 实时导航</h2><button class="close-btn" onclick="window.closePanel('navPanel')">&times;</button></div>
     <div class="panel-body"><div id="navContent"><div class="d-flex justify-content-between align-items-center"><span class="fw-bold">今日进度</span><span id="navProgressText">0%</span></div><div class="progress-bar-custom"><div class="fill" id="navProgressBar" style="width:0%"></div></div><div id="navCurrentNode" class="card-modern"><div class="card-title" id="navPoiName">准备出发</div><div class="card-sub" id="navPoiStatus">等待开始导航...</div></div><div id="navTimeline" class="mt-3"></div><button class="btn btn-danger w-100 mt-3" onclick="window.endNavigation()"><i class="fas fa-stop"></i> 结束导航</button></div></div>
@@ -343,7 +341,10 @@
 </script>
 
 <script type="module">
-import { getPois, getMerchantsByPoi, insertReservation } from './js/api.js';
+// =============================================================
+// 完全去除登录依赖，所有功能使用设备ID
+// =============================================================
+import { getPois, getMerchantsByPoi, insertReservation, insertFeedback, saveTripSolution as apiSaveTripSolution, getUserTripSolutions, getReservations, getFeedbacks } from './js/api.js';
 import { getCurrentUser, signInAnonymously } from './js/auth.js';
 import { initMap, loadPoisToMap, locateUser, setVoiceEnabled, getAllPois, clearFilter, applyFilter } from './js/map.js';
 import {
@@ -367,30 +368,252 @@ import {
     selectAllPois
 } from './js/trip-planner.js';
 
-window.locateUser = locateUser;
-window.clearFilter = clearFilter;
-window.filterPOI = (category) => { applyFilter(category); };
-window.openPanel = (id) => { document.getElementById(id).classList.add('active'); };
-window.closePanel = (id) => { document.getElementById(id).classList.remove('active'); };
-window._voiceEnabled = true;
-window.toggleVoice = () => {
-    window._voiceEnabled = !window._voiceEnabled;
-    setVoiceEnabled(window._voiceEnabled);
-    const icon = window._voiceEnabled ? 'fa-volume-high' : 'fa-volume-xmark';
-    document.querySelector('#voiceToggleBtn i').className = 'fas ' + icon;
-};
-window.generatePlans = generatePlans;
-window.selectSolution = selectSolution;
-window.backToPreferences = backToPreferences;
-window.backToCompare = backToCompare;
-window.saveTripSolution = saveTripSolution;
-window.startNavigation = startNavigation;
-window.endNavigation = endNavigation;
-window.showTripDetail = showTripDetail;
-window.savePreferences = savePreferences;
-window.submitFeedback = submitUserFeedback;
-window.selectAllPois = selectAllPois;
+// ===== 生成设备ID（本地唯一标识，无需登录） =====
+function getDeviceId() {
+    let id = localStorage.getItem('deviceId');
+    if (!id) {
+        id = 'dev_' + Date.now() + '_' + Math.random().toString(36).substr(2, 8);
+        localStorage.setItem('deviceId', id);
+    }
+    return id;
+}
+const DEVICE_ID = getDeviceId();
 
+// ===== 覆盖需要用户ID的函数，改为使用设备ID =====
+// 重新定义 submitFeedback 和 submitReservation，使其不检查用户
+window.submitFeedback = async function() {
+    const msg = document.getElementById('feedbackMsg')?.value.trim();
+    if (!msg) { alert('请输入内容'); return; }
+    try {
+        await insertFeedback({ user_id: DEVICE_ID, message: msg });
+        alert('提交成功');
+        document.getElementById('feedbackMsg').value = '';
+        renderFeedbackHistory();
+    } catch (e) { alert('提交失败：' + e.message); }
+};
+
+// 覆盖 window.submitReservation
+window.submitReservation = async function(merchantId) {
+    const date = document.getElementById(`res-date-${merchantId}`).value;
+    const timeRange = document.getElementById(`res-time-${merchantId}`).value;
+    const [start, end] = timeRange.split('-');
+    const name = document.getElementById(`res-name-${merchantId}`).value.trim();
+    const phone = document.getElementById(`res-phone-${merchantId}`).value.trim();
+    const count = parseInt(document.getElementById(`res-count-${merchantId}`).value) || 1;
+    const remark = document.getElementById(`res-remark-${merchantId}`).value.trim();
+
+    if (!date || !name || !phone) {
+        alert('请填写日期、联系人和电话');
+        return;
+    }
+
+    try {
+        await insertReservation({
+            merchant_id: merchantId,
+            reservation_date: date,
+            time_slot_start: start,
+            time_slot_end: end,
+            name: name,
+            phone: phone,
+            visitor_count: count,
+            remark: remark,
+            status: 'pending',
+            user_id: DEVICE_ID
+        });
+        alert('预约提交成功！');
+        document.getElementById(`res-date-${merchantId}`).value = '';
+        document.getElementById(`res-name-${merchantId}`).value = '';
+        document.getElementById(`res-phone-${merchantId}`).value = '';
+        document.getElementById(`res-count-${merchantId}`).value = '1';
+        document.getElementById(`res-remark-${merchantId}`).value = '';
+        window.toggleReservationForm(merchantId);
+        renderMyReservations();
+    } catch (e) {
+        alert('提交失败：' + e.message);
+    }
+};
+
+// 覆盖 saveTripSolution
+window.saveTripSolution = async function() {
+    if (!currentTripData) { alert('没有可保存的行程'); return; }
+    try {
+        await apiSaveTripSolution(DEVICE_ID, currentTripData, 'custom', 0);
+        alert('行程已保存');
+        renderMyTrips();
+    } catch (error) { alert('保存失败：' + error.message); }
+};
+
+// 覆盖 savePreferences
+window.savePreferences = async function() {
+    const selectedCats = [];
+    document.querySelectorAll('#settingsCategories .pref-tag.active').forEach(el => {
+        selectedCats.push(el.dataset.value);
+    });
+    const selectedCuisine = [];
+    document.querySelectorAll('#settingsCuisine .pref-tag.active').forEach(el => {
+        selectedCuisine.push(el.dataset.value);
+    });
+    const pace = document.getElementById('settingsPace').value;
+    try {
+        const { saveUserPreferences } = await import('./js/api.js');
+        await saveUserPreferences({ user_id: DEVICE_ID, preferred_categories: selectedCats, cuisine_prefs: selectedCuisine, pace: pace, updated_at: new Date().toISOString() });
+        alert('偏好已保存');
+    } catch (error) { alert('保存失败：' + error.message); }
+};
+
+// ===== 重新定义 renderMyTrips, renderMyReservations, renderFeedbackHistory 使用设备ID =====
+// 直接从 user.js 导入，但我们需要修改其内部逻辑。由于无法在外部修改，我们在 index.html 中重新定义这些函数。
+// 直接覆盖 window 上的函数
+window.renderMyTrips = async function() {
+    const container = document.getElementById('myTripsContent');
+    if (!container) return;
+    try {
+        const solutions = await getUserTripSolutions(DEVICE_ID);
+        if (!solutions || solutions.length === 0) {
+            container.innerHTML = '<p class="text-secondary">暂无保存的行程</p>';
+            return;
+        }
+        let html = '';
+        solutions.forEach((sol) => {
+            const data = sol.solution_data || {};
+            html += `
+                <div class="card-modern">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div class="card-title">📅 ${data.start_date || '未命名'} (${sol.style || '自定义'})</div>
+                        <button class="btn btn-sm btn-danger" onclick="window.deleteTripSolution('${sol.id}')">删除</button>
+                    </div>
+                    <div class="card-sub">天数: ${data.total_days || 0} 天 | 景点: ${data.total_pois || 0} 个</div>
+                    <button class="btn btn-sm btn-outline-custom mt-2" onclick="window.viewTripSolution('${sol.id}')">
+                        <i class="fas fa-eye"></i> 查看详情
+                    </button>
+                </div>
+            `;
+        });
+        container.innerHTML = html;
+    } catch (e) {
+        console.error('加载行程失败:', e);
+        container.innerHTML = '<p class="text-danger">加载失败，请刷新重试</p>';
+    }
+};
+
+window.renderMyReservations = async function() {
+    const container = document.getElementById('myReservationsContent');
+    if (!container) return;
+    try {
+        const data = await getReservations(null); // 全部预约，但我们用设备ID过滤（需后端支持）
+        // 若表中有 user_id 字段，我们应过滤，但这里暂时全部显示
+        // 实际最好按 deviceId 过滤，但为简化，全部显示（或我们修改查询）
+        // 由于我们没有修改后端，我们可以使用 getReservations 不带参数，但会返回所有，不符合需求。
+        // 改为用 getReservations 并传递 merchantId 为 null，然后前端过滤 user_id === DEVICE_ID
+        // 但后端不支持，我们需修改 api.js，但用户只要求 index.html，所以我们暂时显示全部。
+        // 更合理：我们将使用设备ID从本地存储中区分。
+        // 由于我们在插入时使用了 user_id: DEVICE_ID，但查询没有过滤，所以我们需要在 api.js 中添加过滤。
+        // 但为了快速解决，我们仍使用全部数据，但用户可能看到别人的。
+        // 因此建议修改 api.js，但用户未要求。我们可在 index.html 中重新实现。
+        // 但为了简便，我们直接调用 getReservations 并过滤。
+        // 从 api 导入 getReservations，但我们需要使用自己的过滤。
+        // 由于 getReservations 不支持过滤，我们调用后自己过滤。
+        const allReservations = await getReservations(null);
+        const myReservations = allReservations.filter(r => r.user_id === DEVICE_ID);
+        if (!myReservations || myReservations.length === 0) {
+            container.innerHTML = '<p class="text-secondary">暂无预约</p>';
+            return;
+        }
+        const sorted = myReservations.sort((a, b) => new Date(b.reservation_date) - new Date(a.reservation_date));
+        // 获取商户信息
+        const merchantIds = sorted.map(r => r.merchant_id).filter(id => id);
+        const merchantMap = {};
+        for (let id of merchantIds) {
+            try {
+                const { getMerchant } = await import('./js/api.js');
+                const m = await getMerchant(id);
+                merchantMap[id] = m;
+            } catch (e) { merchantMap[id] = null; }
+        }
+        let html = '';
+        sorted.forEach((r, idx) => {
+            const merchant = merchantMap[r.merchant_id];
+            const merchantName = merchant ? merchant.display_name || '未知商户' : '未知商户';
+            const category = merchant ? merchant.business_type || '未分类' : '未分类';
+            html += `
+                <div class="card-modern">
+                    <div onclick="window.toggleReservationDetail(${idx})" style="cursor:pointer;">
+                        <div class="card-title">📅 ${r.reservation_date} | ${merchantName}</div>
+                        <div class="card-sub">${category}</div>
+                    </div>
+                    <div id="res-detail-${idx}" class="hidden mt-2">
+                        <p><b>单位：</b>${r.unit || ''}</p>
+                        <p><b>联系人：</b>${r.name || ''}</p>
+                        <p><b>电话：</b>${r.phone || ''}</p>
+                        <p><b>人数：</b>${r.visitor_count}</p>
+                        <p><b>时段：</b>${r.time_slot_start} - ${r.time_slot_end || ''}</p>
+                        <p><b>备注：</b>${r.remark || ''}</p>
+                        <p><b>状态：</b>${r.status}</p>
+                        <button class="btn btn-sm btn-danger" onclick="window.deleteReservationHandler('${r.id}')">删除</button>
+                    </div>
+                </div>
+            `;
+        });
+        container.innerHTML = html;
+    } catch (e) {
+        console.error('加载预约失败:', e);
+        container.innerHTML = '<p class="text-danger">加载失败，请刷新重试</p>';
+    }
+};
+
+window.renderFeedbackHistory = async function() {
+    const container = document.getElementById('feedbackHistory');
+    if (!container) return;
+    try {
+        const allFeedbacks = await getFeedbacks(null);
+        const myFeedbacks = allFeedbacks.filter(f => f.user_id === DEVICE_ID);
+        if (!myFeedbacks || myFeedbacks.length === 0) {
+            container.innerHTML = '<p class="text-secondary">暂无留言</p>';
+            return;
+        }
+        let html = '';
+        myFeedbacks.forEach(f => {
+            html += `
+                <div class="card-modern">
+                    <p>${f.message}</p>
+                    <small class="text-secondary">${new Date(f.created_at).toLocaleString()}</small>
+                    ${f.reply ? `<div class="bg-green-light p-2 mt-2 rounded">📌 回复：${f.reply}</div>` : ''}
+                </div>
+            `;
+        });
+        container.innerHTML = html;
+    } catch (e) {
+        console.error('加载留言失败:', e);
+        container.innerHTML = '<p class="text-danger">加载失败</p>';
+    }
+};
+
+// 覆盖切换函数
+window.toggleReservationDetail = (idx) => {
+    const el = document.getElementById(`res-detail-${idx}`);
+    if (el) el.classList.toggle('hidden');
+};
+
+window.deleteReservationHandler = async (id) => {
+    if (!confirm('确认删除此预约？')) return;
+    try {
+        const { deleteReservation } = await import('./js/api.js');
+        await deleteReservation(id);
+        alert('已删除');
+        window.renderMyReservations();
+    } catch (e) { alert('删除失败：' + e.message); }
+};
+
+window.deleteTripSolution = async (id) => {
+    if (!confirm('确认删除此行程？')) return;
+    alert('删除功能暂未实现');
+};
+
+window.viewTripSolution = (id) => {
+    alert('查看详情功能开发中');
+};
+
+// 重新定义商户详情中的预约按钮
 window.showPoiDetail = async function(poi) {
     try {
         const merchants = await getMerchantsByPoi(poi.id);
@@ -475,59 +698,29 @@ window.toggleReservationForm = function(merchantId) {
     if (form) form.classList.toggle('hidden');
 };
 
-window.submitReservation = async function(merchantId) {
-    const date = document.getElementById(`res-date-${merchantId}`).value;
-    const timeRange = document.getElementById(`res-time-${merchantId}`).value;
-    const [start, end] = timeRange.split('-');
-    const name = document.getElementById(`res-name-${merchantId}`).value.trim();
-    const phone = document.getElementById(`res-phone-${merchantId}`).value.trim();
-    const count = parseInt(document.getElementById(`res-count-${merchantId}`).value) || 1;
-    const remark = document.getElementById(`res-remark-${merchantId}`).value.trim();
-
-    if (!date || !name || !phone) {
-        alert('请填写日期、联系人和电话');
-        return;
-    }
-
-    const user = await getCurrentUser();
-    if (!user) {
-        try {
-            await signInAnonymously();
-            const newUser = await getCurrentUser();
-            if (!newUser) throw new Error('匿名登录失败');
-        } catch (e) {
-            alert('请允许浏览器弹出登录或授权');
-            return;
-        }
-        return submitReservation(merchantId);
-    }
-
-    try {
-        await insertReservation({
-            merchant_id: merchantId,
-            reservation_date: date,
-            time_slot_start: start,
-            time_slot_end: end,
-            name: name,
-            phone: phone,
-            visitor_count: count,
-            remark: remark,
-            status: 'pending',
-            user_id: user.id
-        });
-        alert('预约提交成功！');
-        document.getElementById(`res-date-${merchantId}`).value = '';
-        document.getElementById(`res-name-${merchantId}`).value = '';
-        document.getElementById(`res-phone-${merchantId}`).value = '';
-        document.getElementById(`res-count-${merchantId}`).value = '1';
-        document.getElementById(`res-remark-${merchantId}`).value = '';
-        window.toggleReservationForm(merchantId);
-        renderMyReservations();
-    } catch (e) {
-        alert('提交失败：' + e.message);
-    }
+// ===== 保留原有的全局函数 =====
+window.locateUser = locateUser;
+window.clearFilter = clearFilter;
+window.filterPOI = (category) => { applyFilter(category); };
+window.openPanel = (id) => { document.getElementById(id).classList.add('active'); };
+window.closePanel = (id) => { document.getElementById(id).classList.remove('active'); };
+window._voiceEnabled = true;
+window.toggleVoice = () => {
+    window._voiceEnabled = !window._voiceEnabled;
+    setVoiceEnabled(window._voiceEnabled);
+    const icon = window._voiceEnabled ? 'fa-volume-high' : 'fa-volume-xmark';
+    document.querySelector('#voiceToggleBtn i').className = 'fas ' + icon;
 };
+window.generatePlans = generatePlans;
+window.selectSolution = selectSolution;
+window.backToPreferences = backToPreferences;
+window.backToCompare = backToCompare;
+window.startNavigation = startNavigation;
+window.endNavigation = endNavigation;
+window.showTripDetail = showTripDetail;
+window.selectAllPois = selectAllPois;
 
+// ===== 分类栏切换 =====
 const brandToggle = document.getElementById('brandToggle');
 const categoryBar = document.getElementById('categoryBar');
 let hideTimer = null;
@@ -554,20 +747,20 @@ document.addEventListener('click', function(e) {
     }
 });
 
+// ===== 初始化 =====
 async function init() {
     try {
-        try { await signInAnonymously(); console.log('[系统] 匿名登录成功'); } 
-        catch (e) { console.warn('[系统] 匿名登录失败（不影响地图浏览）:', e.message); }
-
+        // 不进行任何登录操作
         const pois = await getPois();
         window.__allPois = pois;
 
         initMap('map');
         loadPoisToMap(pois);
 
-        renderMyTrips();
-        renderMyReservations();
-        renderFeedbackHistory();
+        // 使用我们重写的函数渲染
+        await window.renderMyTrips();
+        await window.renderMyReservations();
+        await window.renderFeedbackHistory();
 
         initPlanPanel();
         loadPoiListForSelection(pois);

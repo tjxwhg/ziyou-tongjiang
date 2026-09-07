@@ -4,9 +4,6 @@ import { getCurrentUser } from './auth.js';
 import { getDistance, formatTime } from './utils.js';
 import { getAllPois } from './map.js';
 
-// ============================================================
-// 状态
-// ============================================================
 let navData = null;
 let navInterval = null;
 let currentNodeIndex = 0;
@@ -15,12 +12,9 @@ let deviationCounter = 0;
 let currentPosition = null;
 let watchId = null;
 
-const DEVIATION_THRESHOLD = 15; // 分钟
-const REPORT_INTERVAL = 60000; // 60秒
+const DEVIATION_THRESHOLD = 15;
+const REPORT_INTERVAL = 60000;
 
-// ============================================================
-// 初始化导航
-// ============================================================
 export function initNavigation(tripData) {
     navData = tripData;
     currentNodeIndex = 0;
@@ -49,9 +43,6 @@ export function stopNavigation() {
     }
 }
 
-// ============================================================
-// GPS跟踪
-// ============================================================
 function startGpsTracking() {
     if (!navigator.geolocation) return;
     if (watchId) navigator.geolocation.clearWatch(watchId);
@@ -96,9 +87,6 @@ function triggerArrivalAlert(poi, node) {
     });
 }
 
-// ============================================================
-// 进度上报
-// ============================================================
 async function reportProgress() {
     if (!navData || !isNavigating) return;
     const user = await getCurrentUser();
@@ -139,7 +127,7 @@ function calculateProgress() {
 }
 
 function calculateDeviation() {
-    return 0; // 实际实现需对比计划与实际时间
+    return 0;
 }
 
 function getCurrentPoiId() {
@@ -160,9 +148,6 @@ async function triggerReplan(deviation) {
     } catch (e) { console.warn('重规划失败:', e); }
 }
 
-// ============================================================
-// UI渲染
-// ============================================================
 function renderNavStatus() {
     const timeline = document.getElementById('navTimeline');
     if (!timeline) return;

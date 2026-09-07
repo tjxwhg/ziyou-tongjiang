@@ -1,7 +1,7 @@
 // js/config.js - 全局配置
-// Supabase 配置（请替换为您的实际值）
+// Supabase 配置（已使用您提供的完整密钥）
 export const SUPABASE_URL = 'https://aermnnksvhezfykxefla.supabase.co';
-export const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFlcm1ubmtzdmhlenl5a3hlZmxhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MjQ4Njc3ODksImV4cCI6MjA0MDQ0Mzc4OX0.0x4tB3tqQYZp_KUyR_W0wHONuB2bY3Eo0NlADbYdYlw';
+export const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFlcm1ubmtzdmhlemZ5a3hlZmxhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIwNzQ4ODEsImV4cCI6MjA5NzY1MDg4MX0.c2Wemu90PiezEaXn2Hv3tBL-D5YFXYTVxei14CI-Rvk';
 
 // 行程约束
 export const DAY_START = 480;        // 8:00

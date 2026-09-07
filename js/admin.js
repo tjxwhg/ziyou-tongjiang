@@ -1,18 +1,13 @@
 // js/admin.js - 管理后台核心逻辑
 import {
-    getPois, getPoi, insertPoi, updatePoi, deletePoi,
+    getPois, insertPoi, updatePoi, deletePoi,
     getScenicList, insertScenic, updateScenic, deleteScenic,
-    getRoutes, getRoute, insertRoute, updateRoute, deleteRoute,
+    getRoutes, insertRoute, updateRoute, deleteRoute,
     getRouteNodes, insertRouteNodes, deleteRouteNodes,
     getTransportPresets, upsertTransportPreset, deleteTransportPresetsForPoi,
-    getMerchantsByPoi, getMerchant, updateMerchant, createMerchantRecord,
-    getReservations, updateReservation,
     getFeedbacks, updateFeedback, deleteFeedback,
-    uploadFile, getPoiInternal, insertInternalNode, insertInternalEdge,
-    deleteInternalNodes, deleteInternalEdges
+    getPoiInternal, deleteInternalNodes, deleteInternalEdges
 } from './api.js';
-import { getCurrentUser } from './auth.js';
-import { POI_CATEGORIES } from './config.js';
 
 // ============================================================
 // 初始化管理后台
@@ -118,7 +113,7 @@ function populateEditorSelect(pois) {
 }
 
 // ============================================================
-// 全局函数挂载
+// 全局函数
 // ============================================================
 window.editPoi = async (id) => { alert('编辑功能开发中'); };
 window.deletePoi = async (id) => {
@@ -146,9 +141,3 @@ window.deleteFeedback = async (id) => {
 window.saveNewPoi = async () => { alert('保存POI功能开发中'); };
 window.saveNewScenic = async () => { alert('保存景区功能开发中'); };
 window.refreshData = () => { initAdminUI(); };
-window.loadPoiForEditor = () => { /* 编辑器功能 */ };
-window.savePoiInternal = () => { /* 内部路线保存 */ };
-window.clearPoiInternal = () => { /* 清空内部路线 */ };
-window.enableDrawMode = (mode) => { /* 绘制模式 */ };
-window.disableDrawMode = () => { /* 浏览模式 */ };
-window.saveEditorNode = () => { /* 保存节点 */ };

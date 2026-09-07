@@ -6,9 +6,6 @@ let merchant = null;
 let businessCategories = [];
 let businessItems = [];
 
-// ============================================================
-// 初始化
-// ============================================================
 export async function initMerchant() {
     const user = await getCurrentUser();
     if (!user) throw new Error('未登录');
@@ -23,9 +20,6 @@ export async function initMerchant() {
 
 export function getMerchantData() { return merchant; }
 
-// ============================================================
-// 业务数据
-// ============================================================
 export function loadBusinessData() {
     return { businessCategories: [...businessCategories], businessItems: JSON.parse(JSON.stringify(businessItems)) };
 }
@@ -41,9 +35,6 @@ export async function saveBusinessData(categories, items) {
     merchant.service_data = sd;
 }
 
-// ============================================================
-// 预约
-// ============================================================
 export async function fetchReservations() {
     if (!merchant) return [];
     return getReservations(merchant.id);
@@ -59,9 +50,6 @@ export async function updateReservationStatus(id, status) {
     await updateReservation(id, { status });
 }
 
-// ============================================================
-// 留言
-// ============================================================
 export async function fetchFeedbacks() {
     if (!merchant) return [];
     return getFeedbacks(merchant.id);
@@ -71,17 +59,11 @@ export async function replyFeedback(id, reply) {
     await updateFeedback(id, { reply });
 }
 
-// ============================================================
-// 基本信息
-// ============================================================
 export async function updateInfo(updates) {
     await updateMerchant(merchant.id, updates);
     Object.assign(merchant, updates);
 }
 
-// ============================================================
-// POI列表
-// ============================================================
 export async function loadPoiList() {
     return getPois();
 }

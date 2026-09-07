@@ -2,9 +2,6 @@
 import { getCurrentUser } from './auth.js';
 import { getReservations, getFeedbacks, insertFeedback, getUserTripSolutions, deleteReservation, getUserPreferences, saveUserPreferences } from './api.js';
 
-// ============================================================
-// 我的行程
-// ============================================================
 export async function renderMyTrips() {
     const container = document.getElementById('myTripsContent');
     if (!container) return;
@@ -39,9 +36,6 @@ export async function renderMyTrips() {
     }
 }
 
-// ============================================================
-// 我的预约
-// ============================================================
 export async function renderMyReservations() {
     const container = document.getElementById('myReservationsContent');
     if (!container) return;
@@ -94,9 +88,6 @@ export async function renderMyReservations() {
     }
 }
 
-// ============================================================
-// 留言
-// ============================================================
 export async function renderFeedbackHistory() {
     const container = document.getElementById('feedbackHistory');
     if (!container) return;
@@ -138,9 +129,7 @@ export async function submitFeedback() {
     } catch (e) { alert('提交失败：' + e.message); }
 }
 
-// ============================================================
-// 全局函数挂载
-// ============================================================
+// ========== 全局函数 ==========
 window.toggleReservationDetail = (idx) => {
     const el = document.getElementById(`res-detail-${idx}`);
     if (el) el.classList.toggle('hidden');
@@ -157,13 +146,9 @@ window.deleteReservationHandler = async (id) => {
 
 window.deleteTripSolution = async (id) => {
     if (!confirm('确认删除此行程？')) return;
-    try {
-        // 暂未实现删除API
-        alert('删除功能暂未实现');
-    } catch (e) { alert('删除失败：' + e.message); }
+    alert('删除功能暂未实现');
 };
 
 window.viewTripSolution = (id) => {
-    const solutions = getUserTripSolutions(); // 需从本地获取
     alert('查看详情功能开发中');
 };

@@ -15,6 +15,7 @@ let currentAudio = null;
 let currentFilterCategory = null;
 let internalPathLayer = null;
 
+// 初始化地图
 export function initMap(containerId) {
     if (map) return map;
     map = L.map(containerId, { zoomControl: false }).setView([31.911705, 107.245033], 12);
@@ -26,6 +27,7 @@ export function initMap(containerId) {
     return map;
 }
 
+// 加载POI到地图
 export function loadPoisToMap(pois) {
     allPois = pois;
     if (typeof window !== 'undefined') {
@@ -55,6 +57,7 @@ export function loadPoisToMap(pois) {
     if (currentFilterCategory) applyFilter(currentFilterCategory);
 }
 
+// 显示POI内部路网
 export async function showPoiInternal(poiId) {
     if (internalPathLayer) {
         map.removeLayer(internalPathLayer);
@@ -107,6 +110,7 @@ export async function showPoiInternal(poiId) {
     }
 }
 
+// 分类筛选
 export function applyFilter(category) {
     currentFilterCategory = category;
     poiMarkers.forEach(marker => {
@@ -143,6 +147,7 @@ export function clearFilter() {
     });
 }
 
+// 定位
 export function locateUser() {
     if (!navigator.geolocation) {
         alert('您的浏览器不支持定位');

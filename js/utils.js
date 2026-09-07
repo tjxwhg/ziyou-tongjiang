@@ -1,136 +1,166 @@
-// js/utils.js - 通用工具函数
-// 坐标转换 WGS84 → GCJ02
-export function wgs84ToGcj02(lat, lon) {
-    const a = 6378245.0;
-    const ee = 0.00669342162296594323;
+// js/user.js - 用户中心
+import { getCurrentUser } from './auth.js';
+import { getReservations, getFeedbacks, insertFeedback, getUserTripSolutions, deleteReservation, getUserPreferences, saveUserPreferences } from './api.js';
 
-    function transformLat(x, y) {
-        let ret = -100.0 + 2.0 * x + 3.0 * y + 0.2 * y * y + 0.1 * x * y + 0.2 * Math.sqrt(Math.abs(x));
-        ret += (20.0 * Math.sin(6.0 * x * Math.PI) + 20.0 * Math.sin(2.0 * x * Math.PI)) * 2.0 / 3.0;
-        ret += (20.0 * Math.sin(y * Math.PI) + 40.0 * Math.sin(y / 3.0 * Math.PI)) * 2.0 / 3.0;
-        ret += (160.0 * Math.sin(y / 12.0 * Math.PI) + 320 * Math.sin(y * Math.PI / 30.0)) * 2.0 / 3.0;
-        return ret;
-    }
-
-    function transformLon(x, y) {
-        let ret = 300.0 + x + 2.0 * y + 0.1 * x * x + 0.1 * x * y + 0.1 * Math.sqrt(Math.abs(x));
-        ret += (20.0 * Math.sin(6.0 * x * Math.PI) + 20.0 * Math.sin(2.0 * x * Math.PI)) * 2.0 / 3.0;
-        ret += (20.0 * Math.sin(x * Math.PI) + 40.0 * Math.sin(x / 3.0 * Math.PI)) * 2.0 / 3.0;
-        ret += (150.0 * Math.sin(x / 12.0 * Math.PI) + 320 * Math.sin(x * Math.PI / 30.0)) * 2.0 / 3.0;
-        return ret;
-    }
-
-    const dLat = transformLat(lon - 105.0, lat - 35.0);
-    const dLon = transformLon(lon - 105.0, lat - 35.0);
-    const radLat = lat / 180.0 * Math.PI;
-    let magic = Math.sin(radLat);
-    magic = 1 - ee * magic * magic;
-    const sqrtMagic = Math.sqrt(magic);
-    const dLatFinal = (dLat * 180.0) / ((a * (1 - ee)) / (magic * sqrtMagic) * Math.PI);
-    const dLonFinal = (dLon * 180.0) / (a / sqrtMagic * Math.cos(radLat) * Math.PI);
-    return { lat: lat + dLatFinal, lng: lon + dLonFinal };
-}
-
-// 计算两点距离（米）
-export function getDistance(lat1, lng1, lat2, lng2) {
-    const R = 6371000;
-    const dLat = (lat2 - lat1) * Math.PI / 180;
-    const dLng = (lng2 - lng1) * Math.PI / 180;
-    const a = Math.sin(dLat / 2) ** 2 +
-        Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-        Math.sin(dLng / 2) ** 2;
-    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-}
-
-// 分钟 → HH:MM
-export function formatTime(minutes) {
-    const h = Math.floor(minutes / 60);
-    const m = minutes % 60;
-    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
-}
-
-// HH:MM → 分钟
-export function timeToMinutes(timeStr) {
-    if (!timeStr) return 0;
-    const parts = timeStr.split(':');
-    return parseInt(parts[0]) * 60 + parseInt(parts[1]);
-}
-
-// 天气
-let weatherCache = null;
-let weatherCacheTime = null;
-
-export async function fetchWeatherForecast() {
-    const now = Date.now();
-    if (weatherCache && weatherCacheTime && (now - weatherCacheTime < 3600000)) {
-        return weatherCache;
+export async function renderMyTrips() {
+    const container = document.getElementById('myTripsContent');
+    if (!container) return;
+    const user = await getCurrentUser();
+    if (!user) {
+        container.innerHTML = '<p class="text-secondary">暂无行程数据</p>';
+        return;
     }
     try {
-        const url = `https://api.open-meteo.com/v1/forecast?latitude=31.911705&longitude=107.245033&daily=weathercode,temperature_2m_max,temperature_2m_min,windspeed_10m_max&timezone=Asia/Shanghai&forecast_days=16`;
-        const response = await fetch(url);
-        if (!response.ok) throw new Error('天气API请求失败');
-        const data = await response.json();
-        if (!data.daily || !data.daily.time) throw new Error('天气数据格式异常');
-        const codes = data.daily.weathercode || [];
-        const tempsMax = data.daily.temperature_2m_max || [];
-        const tempsMin = data.daily.temperature_2m_min || [];
-        const winds = data.daily.windspeed_10m_max || [];
-        const dates = data.daily.time || [];
-        const codeMap = {
-            0: '晴', 1: '晴', 2: '晴间多云', 3: '多云',
-            45: '雾', 48: '雾',
-            51: '小毛毛雨', 53: '毛毛雨', 55: '大毛毛雨',
-            61: '小雨', 63: '中雨', 65: '大雨',
-            71: '小雪', 73: '中雪', 75: '大雪',
-            80: '阵雨', 81: '中阵雨', 82: '强阵雨',
-            95: '雷暴', 96: '雷暴加冰雹', 99: '强雷暴加冰雹'
-        };
-        const forecast = dates.map((date, i) => ({
-            date: date,
-            weather: codeMap[codes[i]] || '未知天气',
-            tempMax: tempsMax[i] !== undefined ? Math.round(tempsMax[i]) : '--',
-            tempMin: tempsMin[i] !== undefined ? Math.round(tempsMin[i]) : '--',
-            wind: winds[i] !== undefined ? Math.round(winds[i]) : '--'
-        }));
-        weatherCache = forecast;
-        weatherCacheTime = now;
-        return forecast;
+        const solutions = await getUserTripSolutions(user.id);
+        if (!solutions || solutions.length === 0) {
+            container.innerHTML = '<p class="text-secondary">暂无保存的行程</p>';
+            return;
+        }
+        let html = '';
+        solutions.forEach((sol) => {
+            const data = sol.solution_data || {};
+            html += `
+                <div class="card-modern">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div class="card-title">📅 ${data.start_date || '未命名'} (${sol.style || '自定义'})</div>
+                        <button class="btn btn-sm btn-danger" onclick="window.deleteTripSolution('${sol.id}')">删除</button>
+                    </div>
+                    <div class="card-sub">天数: ${data.total_days || 0} 天 | 景点: ${data.total_pois || 0} 个</div>
+                    <button class="btn btn-sm btn-outline-custom mt-2" onclick="window.viewTripSolution('${sol.id}')">
+                        <i class="fas fa-eye"></i> 查看详情
+                    </button>
+                </div>
+            `;
+        });
+        container.innerHTML = html;
     } catch (e) {
-        console.warn('[天气] 获取失败:', e);
-        return null;
+        console.error('加载行程失败:', e);
+        container.innerHTML = '<p class="text-danger">加载失败，请刷新重试</p>';
     }
 }
 
-export function getDayWeatherTip(weatherObj) {
-    if (!weatherObj) return '⚠️ 天气信息获取失败';
-    let tip = `🌤️ 天气：${weatherObj.weather}`;
-    if (weatherObj.tempMin !== '--' && weatherObj.tempMax !== '--') {
-        tip += `，气温 ${weatherObj.tempMin}℃ ～ ${weatherObj.tempMax}℃`;
-    } else if (weatherObj.tempMax !== '--') {
-        tip += `，最高气温 ${weatherObj.tempMax}℃`;
+export async function renderMyReservations() {
+    const container = document.getElementById('myReservationsContent');
+    if (!container) return;
+    const user = await getCurrentUser();
+    if (!user) {
+        container.innerHTML = '<p class="text-secondary">暂无预约数据</p>';
+        return;
     }
-    if (weatherObj.wind !== '--') tip += `，风力 ${weatherObj.wind} km/h`;
-    if (weatherObj.weather.includes('雨') || weatherObj.weather.includes('雷') || weatherObj.weather.includes('雾')) {
-        tip += '，☔ 有降雨或大雾，注意出行安全。';
-    } else if (weatherObj.tempMax !== '--' && weatherObj.tempMax > 33) {
-        tip += '，☀️ 气温较高，注意防暑防晒。';
-    } else if (weatherObj.tempMax !== '--' && weatherObj.tempMax < 10) {
-        tip += '，🧥 气温较低，注意保暖。';
-    } else {
-        tip += '，🌿 天气适宜出行。';
+    try {
+        const data = await getReservations(null);
+        if (!data || data.length === 0) {
+            container.innerHTML = '<p class="text-secondary">暂无预约</p>';
+            return;
+        }
+        const sorted = data.sort((a, b) => new Date(b.reservation_date) - new Date(a.reservation_date));
+        const merchantIds = sorted.map(r => r.merchant_id).filter(id => id);
+        const merchantMap = {};
+        for (let id of merchantIds) {
+            try {
+                const { getMerchant } = await import('./api.js');
+                const m = await getMerchant(id);
+                merchantMap[id] = m;
+            } catch (e) { merchantMap[id] = null; }
+        }
+        let html = '';
+        sorted.forEach((r, idx) => {
+            const merchant = merchantMap[r.merchant_id];
+            const merchantName = merchant ? merchant.display_name || '未知商户' : '未知商户';
+            const category = merchant ? merchant.business_type || '未分类' : '未分类';
+            html += `
+                <div class="card-modern">
+                    <div onclick="window.toggleReservationDetail(${idx})" style="cursor:pointer;">
+                        <div class="card-title">📅 ${r.reservation_date} | ${merchantName}</div>
+                        <div class="card-sub">${category}</div>
+                    </div>
+                    <div id="res-detail-${idx}" class="hidden mt-2">
+                        <p><b>单位：</b>${r.unit || ''}</p>
+                        <p><b>联系人：</b>${r.name || ''}</p>
+                        <p><b>电话：</b>${r.phone || ''}</p>
+                        <p><b>人数：</b>${r.visitor_count}</p>
+                        <p><b>时段：</b>${r.time_slot_start} - ${r.time_slot_end || ''}</p>
+                        <p><b>备注：</b>${r.remark || ''}</p>
+                        <p><b>状态：</b>${r.status}</p>
+                        <button class="btn btn-sm btn-danger" onclick="window.deleteReservationHandler('${r.id}')">删除</button>
+                    </div>
+                </div>
+            `;
+        });
+        container.innerHTML = html;
+    } catch (e) {
+        console.error('加载预约失败:', e);
+        container.innerHTML = '<p class="text-danger">加载失败，请刷新重试</p>';
     }
-    return tip;
 }
 
-// 语音合成
-export function speak(text, lang = 'zh-CN') {
-    if (!('speechSynthesis' in window)) return;
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = lang;
-    utterance.rate = 0.9;
-    window.speechSynthesis.speak(utterance);
+export async function renderFeedbackHistory() {
+    const container = document.getElementById('feedbackHistory');
+    if (!container) return;
+    const user = await getCurrentUser();
+    if (!user) {
+        container.innerHTML = '<p class="text-secondary">暂无留言数据</p>';
+        return;
+    }
+    try {
+        const data = await getFeedbacks(null);
+        if (!data || data.length === 0) {
+            container.innerHTML = '<p class="text-secondary">暂无留言</p>';
+            return;
+        }
+        let html = '';
+        data.forEach(f => {
+            html += `
+                <div class="card-modern">
+                    <p>${f.message}</p>
+                    <small class="text-secondary">${new Date(f.created_at).toLocaleString()}</small>
+                    ${f.reply ? `<div class="bg-green-light p-2 mt-2 rounded">📌 回复：${f.reply}</div>` : ''}
+                </div>
+            `;
+        });
+        container.innerHTML = html;
+    } catch (e) {
+        console.error('加载留言失败:', e);
+        container.innerHTML = '<p class="text-danger">加载失败</p>';
+    }
 }
 
-export function cancelSpeech() {
-    if ('speechSynthesis' in window) window.speechSynthesis.cancel();
+export async function submitFeedback() {
+    const msg = document.getElementById('feedbackMsg')?.value.trim();
+    if (!msg) { alert('请输入内容'); return; }
+    const user = await getCurrentUser();
+    if (!user) {
+        alert('请先登录');
+        return;
+    }
+    try {
+        await insertFeedback({ user_id: user.id, message: msg });
+        alert('提交成功');
+        document.getElementById('feedbackMsg').value = '';
+        renderFeedbackHistory();
+    } catch (e) { alert('提交失败：' + e.message); }
 }
+
+// ========== 全局函数 ==========
+window.toggleReservationDetail = (idx) => {
+    const el = document.getElementById(`res-detail-${idx}`);
+    if (el) el.classList.toggle('hidden');
+};
+
+window.deleteReservationHandler = async (id) => {
+    if (!confirm('确认删除此预约？')) return;
+    try {
+        await deleteReservation(id);
+        alert('已删除');
+        renderMyReservations();
+    } catch (e) { alert('删除失败：' + e.message); }
+};
+
+window.deleteTripSolution = async (id) => {
+    if (!confirm('确认删除此行程？')) return;
+    alert('删除功能暂未实现');
+};
+
+window.viewTripSolution = (id) => {
+    alert('查看详情功能开发中');
+};

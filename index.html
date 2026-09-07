@@ -217,20 +217,16 @@
         .btn-primary-custom:hover { background: #2e7d32; }
         .btn-outline-custom { background: transparent; color: #1b5e20; border: 2px solid #1b5e20; padding: 8px 16px; border-radius: 8px; font-weight: 600; transition: 0.2s; cursor: pointer; }
         .btn-outline-custom:hover { background: #1b5e20; color: white; }
-        .btn-danger-custom { background: #dc3545; color: white; border: none; padding: 6px 14px; border-radius: 6px; font-weight: 600; cursor: pointer; }
     </style>
 </head>
 <body>
 
-<!-- 地图 -->
 <div id="map"></div>
 
-<!-- 顶部栏 -->
 <div class="top-bar" id="topBar">
     <span class="brand" id="brandToggle"><i class="fas fa-leaf"></i> 智游通江</span>
 </div>
 
-<!-- 分类栏 -->
 <div class="category-bar" id="categoryBar">
     <button class="cat-btn" onclick="window.filterPOI('自然景区')">🏔️ 自然景区</button>
     <button class="cat-btn" onclick="window.filterPOI('人文历史')">📜 人文历史</button>
@@ -244,7 +240,6 @@
     <button class="cat-btn" onclick="window.clearFilter()">✕ 清除筛选</button>
 </div>
 
-<!-- 底部导航 -->
 <div class="bottom-nav" id="bottomNav">
     <button class="nav-btn primary" onclick="window.openPanel('planPanel')">
         <i class="fas fa-wand-magic-sparkles"></i> 智能规划
@@ -254,11 +249,9 @@
     </button>
 </div>
 
-<!-- 浮动按钮 -->
-<button class="float-btn locate-btn" onclick="window.locateUser()" title="定位"><i class="fas fa-crosshairs"></i></button>
-<button class="float-btn voice-btn" id="voiceToggleBtn" onclick="window.toggleVoice()" title="语音导览"><i class="fas fa-volume-high"></i></button>
+<button class="float-btn locate-btn" onclick="window.locateUser()"><i class="fas fa-crosshairs"></i></button>
+<button class="float-btn voice-btn" id="voiceToggleBtn" onclick="window.toggleVoice()"><i class="fas fa-volume-high"></i></button>
 
-<!-- 面板：智能规划 -->
 <div class="panel" id="planPanel">
     <div class="panel-header">
         <h2><i class="fas fa-route text-green"></i> 智能行程规划</h2>
@@ -296,7 +289,6 @@
     </div>
 </div>
 
-<!-- 面板：我的 -->
 <div class="panel" id="myPanel">
     <div class="panel-header"><h2><i class="fas fa-user text-green"></i> 我的</h2><button class="close-btn" onclick="window.closePanel('myPanel')">&times;</button></div>
     <div class="panel-body">
@@ -321,19 +313,16 @@
     </div>
 </div>
 
-<!-- 商户详情面板 -->
 <div class="panel" id="merchantDetailPanel">
     <div class="panel-header"><h2 id="merchantDetailTitle">商户详情</h2><button class="close-btn" onclick="window.closePanel('merchantDetailPanel')">&times;</button></div>
     <div class="panel-body" id="merchantDetailContent"></div>
 </div>
 
-<!-- 导航面板 -->
 <div class="panel" id="navPanel">
     <div class="panel-header"><h2><i class="fas fa-compass text-green"></i> 实时导航</h2><button class="close-btn" onclick="window.closePanel('navPanel')">&times;</button></div>
     <div class="panel-body"><div id="navContent"><div class="d-flex justify-content-between align-items-center"><span class="fw-bold">今日进度</span><span id="navProgressText">0%</span></div><div class="progress-bar-custom"><div class="fill" id="navProgressBar" style="width:0%"></div></div><div id="navCurrentNode" class="card-modern"><div class="card-title" id="navPoiName">准备出发</div><div class="card-sub" id="navPoiStatus">等待开始导航...</div></div><div id="navTimeline" class="mt-3"></div><button class="btn btn-danger w-100 mt-3" onclick="window.endNavigation()"><i class="fas fa-stop"></i> 结束导航</button></div></div>
 </div>
 
-<!-- 依赖 -->
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
@@ -378,7 +367,6 @@ import {
     selectAllPois
 } from './js/trip-planner.js';
 
-// 暴露全局函数
 window.locateUser = locateUser;
 window.clearFilter = clearFilter;
 window.filterPOI = (category) => { applyFilter(category); };
@@ -403,7 +391,6 @@ window.savePreferences = savePreferences;
 window.submitFeedback = submitUserFeedback;
 window.selectAllPois = selectAllPois;
 
-// 商户详情（含预约）
 window.showPoiDetail = async function(poi) {
     try {
         const merchants = await getMerchantsByPoi(poi.id);
@@ -504,7 +491,6 @@ window.submitReservation = async function(merchantId) {
 
     const user = await getCurrentUser();
     if (!user) {
-        // 如果没有用户，尝试匿名登录再试
         try {
             await signInAnonymously();
             const newUser = await getCurrentUser();
@@ -513,7 +499,6 @@ window.submitReservation = async function(merchantId) {
             alert('请允许浏览器弹出登录或授权');
             return;
         }
-        // 重新获取用户后继续
         return submitReservation(merchantId);
     }
 
@@ -543,7 +528,6 @@ window.submitReservation = async function(merchantId) {
     }
 };
 
-// ===== 分类栏切换 =====
 const brandToggle = document.getElementById('brandToggle');
 const categoryBar = document.getElementById('categoryBar');
 let hideTimer = null;
@@ -570,16 +554,10 @@ document.addEventListener('click', function(e) {
     }
 });
 
-// ===== 初始化 =====
 async function init() {
     try {
-        // 匿名登录（自动，无需用户交互）
-        try {
-            await signInAnonymously();
-            console.log('[系统] 匿名登录成功');
-        } catch (e) {
-            console.warn('[系统] 匿名登录失败（不影响地图浏览）:', e.message);
-        }
+        try { await signInAnonymously(); console.log('[系统] 匿名登录成功'); } 
+        catch (e) { console.warn('[系统] 匿名登录失败（不影响地图浏览）:', e.message); }
 
         const pois = await getPois();
         window.__allPois = pois;
@@ -587,7 +565,6 @@ async function init() {
         initMap('map');
         loadPoisToMap(pois);
 
-        // 不再需要用户登录检查，直接渲染我的行程（若无用户则显示空）
         renderMyTrips();
         renderMyReservations();
         renderFeedbackHistory();

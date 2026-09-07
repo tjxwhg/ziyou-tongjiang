@@ -9,9 +9,6 @@ import {
     getPoiInternal, deleteInternalNodes, deleteInternalEdges
 } from './api.js';
 
-// ============================================================
-// 初始化管理后台
-// ============================================================
 export async function initAdminUI() {
     try {
         const pois = await getPois();
@@ -31,9 +28,6 @@ export async function initAdminUI() {
     }
 }
 
-// ============================================================
-// 渲染函数
-// ============================================================
 function renderPoiList(pois) {
     const container = document.getElementById('poi-list');
     if (!container) return;
@@ -87,7 +81,7 @@ function renderRouteList(routes) {
 function renderTransportEditor(presets) {
     const container = document.getElementById('transport-editor');
     if (!container) return;
-    container.innerHTML = '<p>交通耗时编辑器已加载（完整实现请参考扩展）</p>';
+    container.innerHTML = '<p>交通耗时编辑器已加载</p>';
 }
 
 function renderFeedbackList(feedbacks) {
@@ -112,9 +106,6 @@ function populateEditorSelect(pois) {
     pois.forEach(p => { sel.innerHTML += `<option value="${p.id}">${p.name}</option>`; });
 }
 
-// ============================================================
-// 全局函数
-// ============================================================
 window.editPoi = async (id) => { alert('编辑功能开发中'); };
 window.deletePoi = async (id) => {
     if (!confirm('确认删除此POI？')) return;

@@ -1,21 +1,16 @@
-// js/trip-planner.js - 行程规划核心
+// js/trip-planner.js - 行程规划核心（移除登录）
 import { getPois, saveTripSolution as apiSaveTripSolution, getUserTripSolutions, getTransportPresets } from './api.js';
-import { getCurrentUser, signInAnonymously } from './auth.js';
-import { formatTime, fetchWeatherForecast, getDayWeatherTip, timeToMinutes } from './utils.js';
-import { simulatedAnnealing, checkHardConstraints } from './simulated-annealing.js';
-import { POI_CATEGORIES, DAY_START, DAY_END } from './config.js';
+import { formatTime, timeToMinutes } from './utils.js';
+import { simulatedAnnealing } from './simulated-annealing.js';
+import { DAY_START, DAY_END } from './config.js';
 import { getAllPois } from './map.js';
 
-// ============================================================
 // 状态
-// ============================================================
 let currentSolutions = [];
 let selectedSolutionIndex = -1;
 let currentTripData = null;
 
-// ============================================================
 // 初始化规划面板
-// ============================================================
 export function initPlanPanel() {
     initTimeSelectors();
     initPreferenceTags();
@@ -68,11 +63,9 @@ function initPreferenceTags() {
 }
 
 async function loadPreferencesToUI() {
-    const user = await getCurrentUser();
-    if (!user) return;
     try {
         const { getUserPreferences } = await import('./api.js');
-        const prefs = await getUserPreferences(user.id);
+        const prefs = await getUserPreferences();
         if (prefs) {
             const cats = prefs.preferred_categories || [];
             document.querySelectorAll('#prefCategories .pref-tag, #settingsCategories .pref-tag').forEach(el => {
@@ -88,9 +81,7 @@ async function loadPreferencesToUI() {
     } catch (e) { console.warn('加载偏好失败:', e); }
 }
 
-// ============================================================
 // 加载POI选择列表
-// ============================================================
 export function loadPoiListForSelection(pois) {
     const container = document.getElementById('poiSelectContainer');
     if (!container) return;
@@ -132,9 +123,7 @@ export function selectAllPois(select) {
     updateSelectedCount();
 }
 
-// ============================================================
 // 生成行程方案
-// ============================================================
 export async function generatePlans() {
     const loadingEl = document.getElementById('planLoading');
     const stepPrefs = document.getElementById('stepPreferences');
@@ -178,7 +167,6 @@ export async function generatePlans() {
         selectedCats.push(el.dataset.value);
     });
 
-    const user = await getCurrentUser();
     const userPref = {
         preferred_categories: selectedCats,
         cuisine_prefs: [],
@@ -300,9 +288,7 @@ function buildSolutionData(result, poiList, constraints, startDate, startTime) {
     };
 }
 
-// ============================================================
 // 渲染方案
-// ============================================================
 function renderSolutions(solutions) {
     const container = document.getElementById('solutionCompareContainer');
     if (!container) return;
@@ -334,9 +320,7 @@ function renderSolutions(solutions) {
     document.getElementById('selectSolutionBtn').disabled = true;
 }
 
-// ============================================================
 // 方案操作
-// ============================================================
 export function selectSolutionCard(idx) {
     document.querySelectorAll('.solution-card').forEach(el => el.classList.remove('selected'));
     const card = document.getElementById(`sol-card-${idx}`);
@@ -384,11 +368,9 @@ export async function selectSolution() {
         return;
     }
     const sol = currentSolutions[selectedSolutionIndex];
-    const user = await getCurrentUser();
     try {
-        if (user) {
-            await apiSaveTripSolution(user.id, sol.data, sol.style, sol.score);
-        }
+        // 保存方案（使用设备ID）
+        await apiSaveTripSolution(null, sol.data, sol.style, sol.score);
         currentTripData = sol.data;
         showTripDetail(sol.data);
         document.getElementById('stepCompare').classList.add('hidden');
@@ -431,25 +413,11 @@ export function showTripDetail(data) {
     container.innerHTML = html;
 }
 
-// ============================================================
 // 保存与导航
-// ============================================================
 export async function saveTripSolution() {
     if (!currentTripData) { alert('没有可保存的行程'); return; }
-    const user = await getCurrentUser();
-    if (!user) {
-        try {
-            await signInAnonymously();
-            const newUser = await getCurrentUser();
-            if (!newUser) { alert('请允许自动登录'); return; }
-            return saveTripSolution();
-        } catch (e) {
-            alert('保存需要登录，请稍后重试');
-            return;
-        }
-    }
     try {
-        await apiSaveTripSolution(user.id, currentTripData, 'custom', 0);
+        await apiSaveTripSolution(null, currentTripData, 'custom', 0);
         alert('行程已保存');
         const { renderMyTrips } = await import('./user.js');
         renderMyTrips();
@@ -471,22 +439,8 @@ export function endNavigation() {
     });
 }
 
-// ============================================================
 // 偏好保存
-// ============================================================
 export async function savePreferences() {
-    const user = await getCurrentUser();
-    if (!user) {
-        try {
-            await signInAnonymously();
-            const newUser = await getCurrentUser();
-            if (!newUser) throw new Error('登录失败');
-            return savePreferences();
-        } catch (e) {
-            alert('保存偏好需要登录，请稍后重试');
-            return;
-        }
-    }
     const selectedCats = [];
     document.querySelectorAll('#settingsCategories .pref-tag.active').forEach(el => {
         selectedCats.push(el.dataset.value);
@@ -498,19 +452,20 @@ export async function savePreferences() {
     const pace = document.getElementById('settingsPace').value;
     try {
         const { saveUserPreferences } = await import('./api.js');
-        await saveUserPreferences({ user_id: user.id, preferred_categories: selectedCats, cuisine_prefs: selectedCuisine, pace: pace, updated_at: new Date().toISOString() });
+        await saveUserPreferences({
+            preferred_categories: selectedCats,
+            cuisine_prefs: selectedCuisine,
+            pace: pace,
+            updated_at: new Date().toISOString()
+        });
         alert('偏好已保存');
     } catch (error) { alert('保存失败：' + error.message); }
 }
 
-// ============================================================
 // 加载已保存方案
-// ============================================================
 async function loadSavedSolutions() {
-    const user = await getCurrentUser();
-    if (!user) return;
     try {
-        const solutions = await getUserTripSolutions(user.id);
+        const solutions = await getUserTripSolutions();
         console.log('已保存行程:', solutions.length);
     } catch (e) { console.warn('加载已保存方案失败:', e); }
 }

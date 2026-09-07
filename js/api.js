@@ -4,6 +4,16 @@ import { SUPABASE_URL, SUPABASE_ANON_KEY } from './config.js';
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
+// ========== 设备ID管理（匿名用户识别） ==========
+function getDeviceId() {
+    let deviceId = localStorage.getItem('device_id');
+    if (!deviceId) {
+        deviceId = crypto.randomUUID ? crypto.randomUUID() : 'device-' + Date.now() + '-' + Math.random().toString(36).slice(2);
+        localStorage.setItem('device_id', deviceId);
+    }
+    return deviceId;
+}
+
 // ========== POI ==========
 export async function getPois() {
     const { data, error } = await supabase.from('ztj_poi').select('*').eq('status', 'active');
@@ -187,16 +197,21 @@ export async function createMerchantRecord(id, displayName, poiId) {
     if (error) throw error;
 }
 
-// ========== 预约 ==========
+// ========== 预约（使用设备ID） ==========
 export async function getReservations(merchantId) {
     const query = supabase.from('reservations').select('*');
     if (merchantId) query.eq('merchant_id', merchantId);
+    // 只查询当前设备的预约
+    const deviceId = getDeviceId();
+    query.eq('user_id', deviceId);
     const { data, error } = await query.order('created_at', { ascending: false });
     if (error) throw error;
     return data || [];
 }
 
 export async function insertReservation(res) {
+    const deviceId = getDeviceId();
+    res.user_id = deviceId;
     const { data, error } = await supabase.from('reservations').insert(res).select();
     if (error) throw error;
     return data[0];
@@ -212,16 +227,21 @@ export async function deleteReservation(id) {
     if (error) throw error;
 }
 
-// ========== 留言 ==========
+// ========== 留言（使用设备ID） ==========
 export async function getFeedbacks(merchantId) {
     const query = supabase.from('ztj_feedbacks').select('*');
     if (merchantId) query.eq('merchant_id', merchantId);
+    // 只查询当前设备的留言
+    const deviceId = getDeviceId();
+    query.eq('user_id', deviceId);
     const { data, error } = await query.order('created_at', { ascending: false });
     if (error) throw error;
     return data || [];
 }
 
 export async function insertFeedback(fb) {
+    const deviceId = getDeviceId();
+    fb.user_id = deviceId;
     const { data, error } = await supabase.from('ztj_feedbacks').insert(fb).select();
     if (error) throw error;
     return data[0];
@@ -245,23 +265,29 @@ export async function uploadFile(bucket, path, file) {
     return publicUrl;
 }
 
-// ========== 用户偏好 ==========
+// ========== 用户偏好（使用设备ID） ==========
 export async function getUserPreferences(userId) {
-    const { data, error } = await supabase.from('user_preferences').select('*').eq('user_id', userId).single();
+    // userId 忽略，使用设备ID
+    const deviceId = getDeviceId();
+    const { data, error } = await supabase.from('user_preferences').select('*').eq('user_id', deviceId).single();
     if (error && error.code === 'PGRST116') return null;
     if (error) throw error;
     return data;
 }
 
 export async function saveUserPreferences(prefs) {
+    const deviceId = getDeviceId();
+    prefs.user_id = deviceId;
     const { error } = await supabase.from('user_preferences').upsert(prefs);
     if (error) throw error;
 }
 
-// ========== 行程方案 ==========
+// ========== 行程方案（使用设备ID） ==========
 export async function saveTripSolution(userId, solutionData, style, score) {
+    // userId 忽略，使用设备ID
+    const deviceId = getDeviceId();
     const { data, error } = await supabase.from('trip_solutions').insert({
-        user_id: userId,
+        user_id: deviceId,
         solution_data: solutionData,
         style: style,
         score: score
@@ -271,21 +297,24 @@ export async function saveTripSolution(userId, solutionData, style, score) {
 }
 
 export async function getUserTripSolutions(userId) {
+    const deviceId = getDeviceId();
     const { data, error } = await supabase.from('trip_solutions')
         .select('*')
-        .eq('user_id', userId)
+        .eq('user_id', deviceId)
         .order('created_at', { ascending: false });
     if (error) throw error;
     return data || [];
 }
 
-// ========== 偏差记录 ==========
+// ========== 偏差记录（使用设备ID） ==========
 export async function saveDeviationRecord(solutionId, deviationMinutes, reason, adjustedSolution) {
+    const deviceId = getDeviceId();
     const { error } = await supabase.from('real_time_deviation').insert({
         trip_solution_id: solutionId,
         deviation_minutes: deviationMinutes,
         trigger_reason: reason,
-        adjusted_solution: adjustedSolution
+        adjusted_solution: adjustedSolution,
+        user_id: deviceId
     });
     if (error) throw error;
 }

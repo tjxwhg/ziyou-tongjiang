@@ -1,14 +1,11 @@
-// js/user.js - 用户中心
-import { getCurrentUser } from './auth.js';
+// js/user.js - 用户中心（无登录）
 import { getReservations, getFeedbacks, insertFeedback, getUserTripSolutions, deleteReservation, getUserPreferences, saveUserPreferences } from './api.js';
 
 export async function renderMyTrips() {
     const container = document.getElementById('myTripsContent');
     if (!container) return;
-    const user = await getCurrentUser();
-    if (!user) { container.innerHTML = '<p class="text-secondary">请先登录</p>'; return; }
     try {
-        const solutions = await getUserTripSolutions(user.id);
+        const solutions = await getUserTripSolutions();
         if (!solutions || solutions.length === 0) {
             container.innerHTML = '<p class="text-secondary">暂无保存的行程</p>';
             return;
@@ -39,8 +36,6 @@ export async function renderMyTrips() {
 export async function renderMyReservations() {
     const container = document.getElementById('myReservationsContent');
     if (!container) return;
-    const user = await getCurrentUser();
-    if (!user) { container.innerHTML = '<p class="text-secondary">请先登录</p>'; return; }
     try {
         const data = await getReservations(null);
         if (!data || data.length === 0) {
@@ -91,8 +86,6 @@ export async function renderMyReservations() {
 export async function renderFeedbackHistory() {
     const container = document.getElementById('feedbackHistory');
     if (!container) return;
-    const user = await getCurrentUser();
-    if (!user) { container.innerHTML = '<p class="text-secondary">请先登录</p>'; return; }
     try {
         const data = await getFeedbacks(null);
         if (!data || data.length === 0) {
@@ -119,10 +112,8 @@ export async function renderFeedbackHistory() {
 export async function submitFeedback() {
     const msg = document.getElementById('feedbackMsg')?.value.trim();
     if (!msg) { alert('请输入内容'); return; }
-    const user = await getCurrentUser();
-    if (!user) { alert('请先登录'); return; }
     try {
-        await insertFeedback({ user_id: user.id, message: msg });
+        await insertFeedback({ message: msg });
         alert('提交成功');
         document.getElementById('feedbackMsg').value = '';
         renderFeedbackHistory();
@@ -146,6 +137,7 @@ window.deleteReservationHandler = async (id) => {
 
 window.deleteTripSolution = async (id) => {
     if (!confirm('确认删除此行程？')) return;
+    // 实际删除行程需要实现 deleteTripSolution API，此处暂不实现
     alert('删除功能暂未实现');
 };
 

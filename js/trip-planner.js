@@ -1,5 +1,5 @@
-// js/trip-planner.js - 行程规划核心（浏览器端执行）
-import { getPois, saveTripSolution as apiSaveTripSolution, getUserTripSolutions, getTransportPresets } from './api.js';
+// js/trip-planner.js - 行程规划核心
+import { getPois, saveTripSolution, getUserTripSolutions, getTransportPresets } from './api.js';
 import { getCurrentUser } from './auth.js';
 import { formatTime, fetchWeatherForecast, getDayWeatherTip } from './utils.js';
 import { simulatedAnnealing, checkHardConstraints } from './simulated-annealing.js';
@@ -133,7 +133,7 @@ export function selectAllPois(select) {
 }
 
 // ============================================================
-// 生成行程方案
+// 生成行程方案（修复数据源：优先使用 window.__allPois）
 // ============================================================
 export async function generatePlans() {
     const loadingEl = document.getElementById('planLoading');
@@ -147,16 +147,36 @@ export async function generatePlans() {
 
     if (!startDate) { alert('请选择出发日期'); return; }
 
+    // 获取选中的POI ID
     const selectedIds = [];
     document.querySelectorAll('#poiSelectContainer input:checked').forEach(cb => {
         selectedIds.push(cb.value);
     });
     if (selectedIds.length === 0) { alert('请至少选择一个景点'); return; }
 
-    const allPois = getAllPois();
-    const selectedPois = allPois.filter(p => selectedIds.includes(p.id));
-    if (selectedPois.length === 0) { alert('未找到选中的景点数据'); return; }
+    // 获取所有POI数据（优先从全局备用，其次从map.js）
+    let allPois = window.__allPois || [];
+    if (!allPois || allPois.length === 0) {
+        allPois = getAllPois();
+    }
+    // 如果仍然为空，尝试重新获取
+    if (!allPois || allPois.length === 0) {
+        try {
+            allPois = await getPois();
+            window.__allPois = allPois;
+        } catch (e) {
+            alert('无法获取景点数据，请刷新重试');
+            return;
+        }
+    }
 
+    const selectedPois = allPois.filter(p => selectedIds.includes(p.id));
+    if (selectedPois.length === 0) {
+        alert('未找到选中的景点数据，请重新选择');
+        return;
+    }
+
+    // 获取偏好
     const selectedCats = [];
     document.querySelectorAll('#prefCategories .pref-tag.active').forEach(el => {
         selectedCats.push(el.dataset.value);
@@ -169,6 +189,7 @@ export async function generatePlans() {
         pace: style
     };
 
+    // 构建约束
     const presets = await getTransportPresets();
     const travelTimes = {};
     presets.forEach(p => {
@@ -223,6 +244,12 @@ export async function generatePlans() {
         loadingEl.classList.add('hidden');
         stepPrefs.classList.remove('hidden');
     }
+}
+
+function timeToMinutes(timeStr) {
+    if (!timeStr) return 0;
+    const parts = timeStr.split(':');
+    return parseInt(parts[0]) * 60 + parseInt(parts[1]);
 }
 
 function buildSolutionData(result, poiList, constraints, startDate, startTime) {
@@ -282,12 +309,6 @@ function buildSolutionData(result, poiList, constraints, startDate, startTime) {
         total_pois: sequence.length,
         total_duration: Object.values(durations).reduce((a, b) => a + b, 0)
     };
-}
-
-function timeToMinutes(timeStr) {
-    if (!timeStr) return 0;
-    const parts = timeStr.split(':');
-    return parseInt(parts[0]) * 60 + parseInt(parts[1]);
 }
 
 // ============================================================
@@ -377,7 +398,7 @@ export async function selectSolution() {
     const user = await getCurrentUser();
     try {
         if (user) {
-            await apiSaveTripSolution(user.id, sol.data, sol.style, sol.score);
+            await saveTripSolution(user.id, sol.data, sol.style, sol.score);
         }
         currentTripData = sol.data;
         showTripDetail(sol.data);
@@ -422,14 +443,14 @@ export function showTripDetail(data) {
 }
 
 // ============================================================
-// 保存与导航（不再重复声明 saveTripSolution，使用 api 中的函数）
+// 保存与导航
 // ============================================================
 export async function saveTripSolution() {
     if (!currentTripData) { alert('没有可保存的行程'); return; }
     const user = await getCurrentUser();
     if (!user) { alert('请先登录'); return; }
     try {
-        await apiSaveTripSolution(user.id, currentTripData, 'custom', 0);
+        await saveTripSolution(user.id, currentTripData, 'custom', 0);
         alert('行程已保存');
         const { renderMyTrips } = await import('./user.js');
         renderMyTrips();

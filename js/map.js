@@ -15,7 +15,9 @@ let currentAudio = null;
 let currentFilterCategory = null;
 let internalPathLayer = null;
 
-// 初始化地图
+// ============================================================
+// 地图初始化
+// ============================================================
 export function initMap(containerId) {
     if (map) return map;
     map = L.map(containerId, { zoomControl: false }).setView([31.911705, 107.245033], 12);
@@ -27,9 +29,15 @@ export function initMap(containerId) {
     return map;
 }
 
+// ============================================================
 // 加载POI到地图
+// ============================================================
 export function loadPoisToMap(pois) {
     allPois = pois;
+    // 同步到全局备用（供 trip-planner 使用）
+    if (typeof window !== 'undefined') {
+        window.__allPois = pois;
+    }
     poiMarkers.forEach(m => map.removeLayer(m));
     poiMarkers = [];
     pois.forEach(p => {
@@ -42,18 +50,22 @@ export function loadPoisToMap(pois) {
         });
         const marker = L.marker([p.lat, p.lng], { icon }).addTo(map);
         marker.poiData = p;
+        // 绑定点击事件
         marker.on('click', function() {
             if (window.showPoiDetail) {
                 window.showPoiDetail(this.poiData);
+            } else {
+                console.warn('showPoiDetail not defined');
             }
-            showPoiInternal(this.poiData.id);
         });
         poiMarkers.push(marker);
     });
     if (currentFilterCategory) applyFilter(currentFilterCategory);
 }
 
+// ============================================================
 // 显示POI内部路网
+// ============================================================
 export async function showPoiInternal(poiId) {
     if (internalPathLayer) {
         map.removeLayer(internalPathLayer);
@@ -106,7 +118,9 @@ export async function showPoiInternal(poiId) {
     }
 }
 
+// ============================================================
 // 分类筛选
+// ============================================================
 export function applyFilter(category) {
     currentFilterCategory = category;
     poiMarkers.forEach(marker => {
@@ -143,7 +157,9 @@ export function clearFilter() {
     });
 }
 
+// ============================================================
 // 定位
+// ============================================================
 export function locateUser() {
     if (!navigator.geolocation) {
         alert('您的浏览器不支持定位');
@@ -218,6 +234,9 @@ function triggerVoice(poi) {
     speak(poi.voice_cn || poi.description || poi.name);
 }
 
+// ============================================================
+// 工具函数
+// ============================================================
 export function setVoiceEnabled(enabled) {
     voiceEnabled = enabled;
     if (!enabled) {

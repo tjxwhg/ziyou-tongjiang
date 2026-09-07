@@ -1,5 +1,5 @@
-// js/trip-planner.js - 行程规划核心（无重复声明）
-import { getPois, saveTripSolution as apiSaveTripSolution, getUserTripSolutions, getTransportPresets } from './api.js';
+// js/trip-planner.js - 行程规划核心（完整版）
+import { getPois, saveTripSolution, getUserTripSolutions, getTransportPresets } from './api.js';
 import { getCurrentUser } from './auth.js';
 import { formatTime, fetchWeatherForecast, getDayWeatherTip } from './utils.js';
 import { simulatedAnnealing, checkHardConstraints } from './simulated-annealing.js';
@@ -133,7 +133,7 @@ export function selectAllPois(select) {
 }
 
 // ============================================================
-// 生成行程方案
+// 生成行程方案（修复类型比较）
 // ============================================================
 export async function generatePlans() {
     const loadingEl = document.getElementById('planLoading');
@@ -147,12 +147,14 @@ export async function generatePlans() {
 
     if (!startDate) { alert('请选择出发日期'); return; }
 
+    // 获取选中的POI ID（字符串数组）
     const selectedIds = [];
     document.querySelectorAll('#poiSelectContainer input:checked').forEach(cb => {
         selectedIds.push(cb.value);
     });
     if (selectedIds.length === 0) { alert('请至少选择一个景点'); return; }
 
+    // 获取所有POI数据（优先从全局备用，其次从map.js）
     let allPois = window.__allPois || [];
     if (!allPois || allPois.length === 0) {
         allPois = getAllPois();
@@ -167,12 +169,14 @@ export async function generatePlans() {
         }
     }
 
-    const selectedPois = allPois.filter(p => selectedIds.includes(p.id));
+    // 修复：将 p.id 转为字符串与 selectedIds 比较
+    const selectedPois = allPois.filter(p => selectedIds.includes(String(p.id)));
     if (selectedPois.length === 0) {
         alert('未找到选中的景点数据，请重新选择');
         return;
     }
 
+    // 获取偏好
     const selectedCats = [];
     document.querySelectorAll('#prefCategories .pref-tag.active').forEach(el => {
         selectedCats.push(el.dataset.value);
@@ -185,6 +189,7 @@ export async function generatePlans() {
         pace: style
     };
 
+    // 构建约束
     const presets = await getTransportPresets();
     const travelTimes = {};
     presets.forEach(p => {
@@ -393,7 +398,7 @@ export async function selectSolution() {
     const user = await getCurrentUser();
     try {
         if (user) {
-            await apiSaveTripSolution(user.id, sol.data, sol.style, sol.score);
+            await saveTripSolution(user.id, sol.data, sol.style, sol.score);
         }
         currentTripData = sol.data;
         showTripDetail(sol.data);
@@ -438,14 +443,32 @@ export function showTripDetail(data) {
 }
 
 // ============================================================
-// 保存与导航（使用 apiSaveTripSolution，不再重复定义）
+// 保存与导航
 // ============================================================
 export async function saveTripSolution() {
     if (!currentTripData) { alert('没有可保存的行程'); return; }
     const user = await getCurrentUser();
-    if (!user) { alert('请先登录'); return; }
+    if (!user) { 
+        // 尝试匿名登录
+        try {
+            const { signInAnonymously } = await import('./auth.js');
+            await signInAnonymously();
+            // 重新获取用户
+            const newUser = await getCurrentUser();
+            if (newUser) {
+                // 递归调用
+                return saveTripSolution();
+            } else {
+                alert('请允许自动登录');
+                return;
+            }
+        } catch (e) {
+            alert('保存需要登录，请稍后重试');
+            return;
+        }
+    }
     try {
-        await apiSaveTripSolution(user.id, currentTripData, 'custom', 0);
+        await saveTripSolution(user.id, currentTripData, 'custom', 0);
         alert('行程已保存');
         const { renderMyTrips } = await import('./user.js');
         renderMyTrips();
@@ -472,7 +495,19 @@ export function endNavigation() {
 // ============================================================
 export async function savePreferences() {
     const user = await getCurrentUser();
-    if (!user) { alert('请先登录'); return; }
+    if (!user) {
+        try {
+            const { signInAnonymously } = await import('./auth.js');
+            await signInAnonymously();
+            const newUser = await getCurrentUser();
+            if (!newUser) throw new Error('登录失败');
+            // 重新调用
+            return savePreferences();
+        } catch (e) {
+            alert('保存偏好需要登录，请稍后重试');
+            return;
+        }
+    }
     const selectedCats = [];
     document.querySelectorAll('#settingsCategories .pref-tag.active').forEach(el => {
         selectedCats.push(el.dataset.value);

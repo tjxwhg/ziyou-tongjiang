@@ -8,13 +8,11 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
-        /* ===== 全局 ===== */
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; height: 100vh; overflow: hidden; background: #f0f2f5; }
         .hidden { display: none !important; }
         #map { height: 100vh; width: 100vw; z-index: 1; }
 
-        /* ===== 顶部栏（品牌点击切换分类） ===== */
         .top-bar {
             position: fixed;
             top: max(12px, env(safe-area-inset-top, 12px));
@@ -44,7 +42,6 @@
         }
         .top-bar .brand i { font-size: 20px; }
 
-        /* ===== 分类栏（品牌点击切换，自动隐藏） ===== */
         .category-bar {
             position: fixed;
             top: 0;
@@ -84,7 +81,6 @@
         .category-bar .cat-btn:hover { background: #e8f5e9; border-color: #2e7d32; }
         .category-bar .cat-btn.active { background: #2e7d32; color: white; border-color: #2e7d32; }
 
-        /* ===== 底部导航（精简） ===== */
         .bottom-nav {
             position: fixed;
             bottom: 24px;
@@ -120,7 +116,6 @@
         .bottom-nav .nav-btn.primary { background: #1b5e20; color: white; }
         .bottom-nav .nav-btn.primary:hover { background: #2e7d32; }
 
-        /* ===== 浮动按钮 ===== */
         .float-btn {
             position: fixed;
             z-index: 1500;
@@ -141,7 +136,6 @@
         .locate-btn { bottom: 110px; right: 20px; }
         .voice-btn { bottom: 170px; right: 20px; }
 
-        /* ===== 面板 ===== */
         .panel {
             position: fixed;
             top: 0;
@@ -174,7 +168,6 @@
         .panel-header .close-btn { background: none; border: none; font-size: 24px; cursor: pointer; color: #666; padding: 4px 8px; border-radius: 8px; transition: 0.2s; }
         .panel-body { flex: 1; padding: 16px 20px; overflow-y: auto; padding-bottom: 30px; }
 
-        /* ===== 其他组件样式（保持不变） ===== */
         .card-modern { background: white; border-radius: 12px; padding: 16px; margin-bottom: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); border: 1px solid #f0f0f0; }
         .card-modern .card-title { font-weight: 600; font-size: 16px; margin-bottom: 6px; color: #1b5e20; }
         .card-modern .card-sub { font-size: 13px; color: #888; }
@@ -232,7 +225,7 @@
 <!-- 地图 -->
 <div id="map"></div>
 
-<!-- 顶部栏（点击品牌切换分类） -->
+<!-- 顶部栏 -->
 <div class="top-bar" id="topBar">
     <span class="brand" id="brandToggle"><i class="fas fa-leaf"></i> 智游通江</span>
 </div>
@@ -272,7 +265,6 @@
         <button class="close-btn" onclick="window.closePanel('planPanel')">&times;</button>
     </div>
     <div class="panel-body">
-        <!-- 步骤1 -->
         <div id="stepPreferences">
             <h5><i class="fas fa-sliders-h text-green"></i> 旅行偏好</h5>
             <div class="row g-2 mt-2">
@@ -291,13 +283,11 @@
             <button class="btn btn-primary-custom w-100 mt-3" onclick="window.generatePlans()"><i class="fas fa-wand-magic-sparkles"></i> 生成行程方案</button>
             <div id="planLoading" class="text-center mt-3 hidden"><div class="spinner-border text-success" role="status"></div><p class="mt-2 text-secondary">正在为您规划最优行程...</p></div>
         </div>
-        <!-- 步骤2 -->
         <div id="stepCompare" class="hidden">
             <div class="d-flex justify-content-between align-items-center mb-3"><h5><i class="fas fa-chart-simple text-green"></i> 方案对比</h5><button class="btn btn-secondary btn-sm" onclick="window.backToPreferences()"><i class="fas fa-arrow-left"></i> 重新设置</button></div>
             <div id="solutionCompareContainer" class="solution-compare"></div>
             <div class="mt-3"><button class="btn btn-primary-custom w-100" onclick="window.selectSolution()" id="selectSolutionBtn" disabled><i class="fas fa-check"></i> 选择此方案</button></div>
         </div>
-        <!-- 步骤3 -->
         <div id="stepDetail" class="hidden">
             <div class="d-flex justify-content-between align-items-center mb-3"><h5><i class="fas fa-map text-green"></i> 我的行程</h5><button class="btn btn-secondary btn-sm" onclick="window.backToCompare()"><i class="fas fa-arrow-left"></i> 返回对比</button></div>
             <div id="tripDetailContainer"></div>
@@ -453,7 +443,6 @@ window.showPoiDetail = async function(poi) {
             let status = merchant.status === 'open' ? '营业中' : (merchant.status === 'closed' ? '休息' : '繁忙');
             let parking = merchant.parking_spots ?? 0;
             html += `<hr><p><i class="fas fa-phone"></i> ${phone} | <i class="fas fa-circle ${merchant.status === 'open' ? 'text-success' : 'text-danger'}"></i> ${status} | <i class="fas fa-parking"></i> ${parking} 个车位</p><p>${poi.description || ''}</p>`;
-            // 预约表单
             html += `
                 <div class="mt-3">
                     <button class="btn btn-primary-custom" onclick="window.toggleReservationForm('${merchant.id}')">
@@ -515,8 +504,17 @@ window.submitReservation = async function(merchantId) {
 
     const user = await getCurrentUser();
     if (!user) {
-        alert('请先登录');
-        return;
+        // 如果没有用户，尝试匿名登录再试
+        try {
+            await signInAnonymously();
+            const newUser = await getCurrentUser();
+            if (!newUser) throw new Error('匿名登录失败');
+        } catch (e) {
+            alert('请允许浏览器弹出登录或授权');
+            return;
+        }
+        // 重新获取用户后继续
+        return submitReservation(merchantId);
     }
 
     try {
@@ -545,7 +543,7 @@ window.submitReservation = async function(merchantId) {
     }
 };
 
-// ===== 分类栏切换（点击品牌文字） =====
+// ===== 分类栏切换 =====
 const brandToggle = document.getElementById('brandToggle');
 const categoryBar = document.getElementById('categoryBar');
 let hideTimer = null;
@@ -554,11 +552,9 @@ brandToggle.addEventListener('click', (e) => {
     e.stopPropagation();
     const isShowing = categoryBar.classList.contains('show');
     if (isShowing) {
-        // 如果已显示，隐藏
         categoryBar.classList.remove('show');
         clearTimeout(hideTimer);
     } else {
-        // 显示，并设置自动隐藏定时器
         categoryBar.classList.add('show');
         clearTimeout(hideTimer);
         hideTimer = setTimeout(() => {
@@ -567,7 +563,6 @@ brandToggle.addEventListener('click', (e) => {
     }
 });
 
-// 点击页面其他地方隐藏分类栏
 document.addEventListener('click', function(e) {
     if (!categoryBar.contains(e.target) && e.target !== brandToggle) {
         categoryBar.classList.remove('show');
@@ -578,8 +573,13 @@ document.addEventListener('click', function(e) {
 // ===== 初始化 =====
 async function init() {
     try {
-        try { await signInAnonymously(); console.log('[系统] 匿名登录成功'); } 
-        catch (e) { console.warn('[系统] 匿名登录失败（不影响地图浏览）:', e.message); }
+        // 匿名登录（自动，无需用户交互）
+        try {
+            await signInAnonymously();
+            console.log('[系统] 匿名登录成功');
+        } catch (e) {
+            console.warn('[系统] 匿名登录失败（不影响地图浏览）:', e.message);
+        }
 
         const pois = await getPois();
         window.__allPois = pois;
@@ -587,12 +587,7 @@ async function init() {
         initMap('map');
         loadPoisToMap(pois);
 
-        const user = await getCurrentUser();
-        if (user) {
-            const { loadUserPreferences } = await import('./js/user.js');
-            await loadUserPreferences(user.id);
-        }
-
+        // 不再需要用户登录检查，直接渲染我的行程（若无用户则显示空）
         renderMyTrips();
         renderMyReservations();
         renderFeedbackHistory();

@@ -50,7 +50,6 @@ export function renderPoiList(pois) {
     let html = '';
     for (let p of pois) {
         const level = p.data_level || 'L3';
-        // 查找所属景区名称
         const scenic = allScenic.find(s => s.id === p.scenic_id);
         const scenicName = scenic ? `[${scenic.name}]` : '';
         html += `<div class="poi-card" id="poi-card-${p.id}">
@@ -89,7 +88,6 @@ export async function togglePoiNodes(poiId) {
     container.innerHTML = html;
 }
 
-// 显示新增POI模态框
 export function showAddPoiModal() {
     currentEditingPoiId = null;
     document.getElementById('edit-poi-id').value = '';
@@ -102,7 +100,6 @@ export function showAddPoiModal() {
     document.getElementById('edit-poi-visit').value = '';
     document.getElementById('edit-poi-desc').value = '';
     document.getElementById('edit-poi-level').value = 'L3';
-    // 填充景区下拉
     const scenicSelect = document.getElementById('edit-poi-scenic');
     scenicSelect.innerHTML = '<option value="">无关联景区</option>';
     allScenic.forEach(s => {
@@ -115,7 +112,6 @@ export function showAddPoiModal() {
     modal.show();
 }
 
-// 编辑POI弹窗
 export async function showEditPoiModal(poiId) {
     currentEditingPoiId = poiId;
     const poi = allPois.find(p => p.id === poiId);
@@ -130,7 +126,6 @@ export async function showEditPoiModal(poiId) {
     document.getElementById('edit-poi-visit').value = poi.visit_duration || '';
     document.getElementById('edit-poi-desc').value = poi.description || '';
     document.getElementById('edit-poi-level').value = poi.data_level || 'L3';
-    // 填充景区下拉
     const scenicSelect = document.getElementById('edit-poi-scenic');
     scenicSelect.innerHTML = '<option value="">无关联景区</option>';
     allScenic.forEach(s => {
@@ -213,7 +208,6 @@ export async function savePoiEdit() {
         } else {
             await updatePoi(poiId, updates);
         }
-        // 保存内部节点
         const nodes = currentPoiNodes[poiId] || currentPoiNodes['new'] || [];
         if (savedPoiId) {
             await deleteInternalNodes(savedPoiId);
@@ -241,7 +235,7 @@ export async function deletePoi(id) {
 }
 
 // ============================================================
-// 景区管理（含关联POI）
+// 景区管理
 // ============================================================
 export function renderScenicList(scenics) {
     const container = document.getElementById('scenic-list');
@@ -301,7 +295,6 @@ export function showAddPoiToScenic(scenicId) {
             </div></div>
         </div>
     `;
-    // 移除旧模态框
     const old = document.getElementById('addPoiToScenicModal');
     if (old) old.remove();
     const div = document.createElement('div');
@@ -369,7 +362,6 @@ export async function saveScenicEdit() {
 export async function deleteScenic(id) {
     if (!confirm('确认删除此景区？关联的POI将解除关联')) return;
     try {
-        // 解除关联POI
         const related = allPois.filter(p => p.scenic_id === id);
         for (let p of related) {
             await updatePoi(p.id, { scenic_id: null });
@@ -458,7 +450,7 @@ export async function saveRouteEdit() {
         start_time: document.getElementById('edit-route-time').value,
         transport: document.getElementById('edit-route-transport').value,
         days: parseInt(document.getElementById('edit-route-days').value) || 1,
-        group_type: 'default'  // 修复非空约束
+        group_type: 'default'
     };
     try {
         let routeId = id;
@@ -484,7 +476,7 @@ export async function deleteRoute(id) {
 }
 
 // ============================================================
-// 交通耗时（折叠式UI + 双向自动填充）
+// 交通耗时
 // ============================================================
 export function renderTransportEditor(presets) {
     const container = document.getElementById('transport-editor');
@@ -530,20 +522,16 @@ window.saveTransportTime = async function(input) {
     const val = parseInt(input.value);
     if (isNaN(val) || val < 0) return;
     try {
-        // 保存正向
         await upsertTransportPreset(from, to, val);
-        // 检查反向是否存在，若不存在则自动填充
         const presets = await getTransportPresets();
         const reverseExists = presets.some(p => p.from_poi_id === to && p.to_poi_id === from);
         if (!reverseExists) {
             await upsertTransportPreset(to, from, val);
         }
-        // 刷新所有输入框显示（同步反向值）
         const allInputs = document.querySelectorAll('#transport-editor input[type="number"]');
         allInputs.forEach(inp => {
             const f = parseInt(inp.dataset.from);
             const t = parseInt(inp.dataset.to);
-            // 如果当前输入框是反向，且值为空，则填充
             if (f === to && t === from && inp.value === '') {
                 inp.value = val;
             }

@@ -173,7 +173,7 @@
         .card-modern .card-title { font-weight: 600; font-size: 16px; margin-bottom: 6px; color: #1b5e20; }
         .card-modern .card-sub { font-size: 13px; color: #888; }
 
-        /* ===== 行程展示样式（全新时间线） ===== */
+        /* ===== 行程展示样式 ===== */
         .trip-day-container {
             background: white;
             border-radius: 16px;
@@ -274,7 +274,6 @@
             white-space: nowrap;
         }
 
-        /* 节点类型颜色 */
         .trip-node.type-transport::before { border-color: #1565C0; background: #1565C0; }
         .trip-node.type-visit::before { border-color: #2E7D32; background: #2E7D32; }
         .trip-node.type-meal::before { border-color: #E65100; background: #E65100; }
@@ -328,7 +327,6 @@
         .biz-image-box { width: 100%; aspect-ratio: 16/9; border-radius: 8px; overflow: hidden; background: #f0f0f0; display: flex; align-items: center; justify-content: center; margin-top: 8px; }
         .biz-image-box img { width: 100%; height: 100%; object-fit: cover; }
 
-        /* 方案对比卡片（新版） */
         .solution-card {
             background: white;
             border-radius: 16px;
@@ -412,18 +410,22 @@
         <button class="close-btn" onclick="window.closePanel('planPanel')">&times;</button>
     </div>
     <div class="panel-body">
-        <!-- 步骤1：偏好设置 -->
         <div id="stepPreferences">
             <h5><i class="fas fa-sliders-h text-green"></i> 旅行偏好</h5>
             <div class="row g-2 mt-2">
                 <div class="col-6"><label class="form-label fw-semibold">出发日期</label><input type="date" id="planStartDate" class="form-control" /></div>
                 <div class="col-6"><label class="form-label fw-semibold">出发时间</label><select id="planStartTime" class="form-select"></select></div>
-                <div class="col-6"><label class="form-label fw-semibold">天数</label><select id="planDays" class="form-select"><option value="1">1 天</option><option value="2" selected>2 天</option><option value="3">3 天</option><option value="4">4 天</option><option value="5">5 天</option></select></div>
-                <div class="col-6"><label class="form-label fw-semibold">行程风格</label><select id="planStyle" class="form-select"><option value="compact">🚀 紧凑型</option><option value="relaxed" selected>🌿 舒适型</option><option value="indepth">🔍 深度游</option></select></div>
+                <div class="col-12">
+                    <label class="form-label fw-semibold">行程风格</label>
+                    <select id="planStyle" class="form-select">
+                        <option value="compact">🚀 紧凑型</option>
+                        <option value="relaxed" selected>🌿 舒适型</option>
+                        <option value="indepth">🔍 深度游</option>
+                    </select>
+                </div>
             </div>
-            <div class="mt-2"><label class="form-label fw-semibold">景点类型偏好</label><div id="prefCategories" class="d-flex flex-wrap gap-1"><span class="pref-tag" data-value="自然景区">🌿 自然</span><span class="pref-tag" data-value="红色景区">🔴 红色</span><span class="pref-tag" data-value="文博场馆">🏛️ 文博</span><span class="pref-tag" data-value="餐饮住宿">🍽️ 餐饮</span><span class="pref-tag" data-value="交通枢纽">🚌 交通</span><span class="pref-tag" data-value="游玩娱乐">🎢 游玩</span><span class="pref-tag" data-value="购物消费">🛍️ 购物</span><span class="pref-tag" data-value="公共服务">🏛️ 服务</span></div></div>
-            <div class="mt-2"><label class="form-label fw-semibold">用餐偏好</label><div id="prefCuisine" class="d-flex flex-wrap gap-1"><span class="pref-tag" data-value="川菜">🌶️ 川菜</span><span class="pref-tag" data-value="火锅">🫕 火锅</span><span class="pref-tag" data-value="小吃">🍢 小吃</span><span class="pref-tag" data-value="家常">🍳 家常</span><span class="pref-tag" data-value="简餐">🥪 简餐</span></div></div>
 
+            <!-- 景点选择 -->
             <div class="mt-2">
                 <label class="form-label fw-semibold">选择景点 <span class="text-secondary" style="font-weight:400;font-size:13px;">（点击主景点展开子景点）</span></label>
                 <div id="poiSelectContainer" class="poi-select-list" style="max-height:400px;overflow-y:auto;border:1px solid #e0e0e0;border-radius:8px;padding:8px;">
@@ -441,7 +443,7 @@
             <div id="planLoading" class="text-center mt-3 hidden"><div class="spinner-border text-success" role="status"></div><p class="mt-2 text-secondary">正在为您规划最优行程...</p></div>
         </div>
 
-        <!-- 步骤2：方案对比（详细时间线展示） -->
+        <!-- 步骤2：方案对比 -->
         <div id="stepCompare" class="hidden">
             <div class="d-flex justify-content-between align-items-center mb-3">
                 <h5><i class="fas fa-chart-simple text-green"></i> 方案对比</h5>
@@ -455,7 +457,7 @@
             </div>
         </div>
 
-        <!-- 步骤3：行程详情 + 编辑 -->
+        <!-- 步骤3：行程详情 -->
         <div id="stepDetail" class="hidden">
             <div class="d-flex justify-content-between align-items-center mb-3">
                 <h5><i class="fas fa-map text-green"></i> 我的行程</h5>
@@ -537,7 +539,7 @@
 
 <script type="module">
 // =============================================================
-// 主入口 - 使用全新的 trip-planner.js 引擎
+// 主入口 - 使用修复后的 trip-planner.js
 // =============================================================
 import { getPois, getMerchantsByPoi, getTransportPresets } from './js/api.js';
 import { initMap, loadPoisToMap, locateUser, setVoiceEnabled, getAllPois, clearFilter, applyFilter } from './js/map.js';
@@ -752,7 +754,7 @@ function updateSelectedInfo() {
     document.getElementById('selectedDurationDisplay').textContent = `已选景点总游览时长：${totalDuration} 分钟`;
 }
 
-// ===== 生成行程方案（使用新引擎） =====
+// ===== 生成行程方案 =====
 window.generatePlans = async function() {
     const loadingEl = document.getElementById('planLoading');
     const stepPrefs = document.getElementById('stepPreferences');
@@ -761,7 +763,6 @@ window.generatePlans = async function() {
 
     const startDate = document.getElementById('planStartDate').value;
     const startTime = document.getElementById('planStartTime').value;
-    const days = parseInt(document.getElementById('planDays').value);
     const mode = document.getElementById('planStyle').value;
 
     if (!startDate) { alert('请选择出发日期'); return; }
@@ -795,7 +796,6 @@ window.generatePlans = async function() {
             selectedPois,
             startDate,
             startTime,
-            days,
             mode,
             travelTimes,
             allPoiNodesMap,
@@ -803,7 +803,8 @@ window.generatePlans = async function() {
         );
 
         if (!result.days || result.days.length === 0) {
-            alert('无法生成有效的行程方案，请调整选择');
+            const msg = result.warnings && result.warnings.length > 0 ? result.warnings.join('；') : '请调整选择或检查景点数据';
+            alert('无法生成有效的行程方案：' + msg);
             loadingEl.classList.add('hidden');
             stepPrefs.classList.remove('hidden');
             return;
@@ -831,7 +832,7 @@ window.generatePlans = async function() {
     }
 };
 
-// ===== 渲染方案对比（使用时间线展示） =====
+// ===== 渲染方案对比 =====
 function renderDetailedSolutions(solutions) {
     const container = document.getElementById('solutionCompareContainer');
     if (!container) return;
@@ -870,7 +871,7 @@ function renderDetailedSolutions(solutions) {
     document.getElementById('selectSolutionBtn').disabled = true;
 }
 
-// 预览时间线（简版）
+// 预览时间线
 function renderTimelinePreview(day) {
     if (!day || !day.nodes) return '<span class="text-secondary">无数据</span>';
     let html = '';
@@ -907,7 +908,6 @@ window.previewSolution = function(idx) {
     if (!sol) return;
     const data = sol.data || {};
     if (data.days && data.days.length > 0) {
-        // 使用完整的详情展示
         showTripDetail(data);
         document.getElementById('stepCompare').classList.add('hidden');
         document.getElementById('stepDetail').classList.remove('hidden');
@@ -927,11 +927,10 @@ window.selectSolution = function() {
     showTripDetail(data);
     document.getElementById('stepCompare').classList.add('hidden');
     document.getElementById('stepDetail').classList.remove('hidden');
-    // 填充编辑下拉
     populateEditPoiSelect();
 };
 
-// ===== 展示详细行程（时间线完整版） =====
+// ===== 展示详细行程 =====
 function showTripDetail(data) {
     const container = document.getElementById('tripDetailContainer');
     if (!container) return;
@@ -1051,7 +1050,6 @@ function populateEditPoiSelect() {
     available.forEach(p => {
         sel.innerHTML += `<option value="${p.id}">${p.name}</option>`;
     });
-    // 更新插入位置选项
     const posSel = document.getElementById('editInsertPosition');
     posSel.innerHTML = '<option value="end">末尾</option>';
     if (currentTripData && currentTripData.days) {
@@ -1071,11 +1069,7 @@ window.insertPoiToTrip = function() {
     if (!poiId) { alert('请选择要插入的景点'); return; }
     const poi = getPoiById(poiId);
     if (!poi) { alert('未找到景点'); return; }
-
-    // 重新规划（插入景点后重新生成）
     alert('插入功能：将重新生成行程，请点击"生成行程方案"重新规划');
-    // 实际上我们重新调用 generatePlans 并带上新增的景点
-    // 由于需要保留原逻辑，我们简单提示
 };
 
 window.handleNodeClick = function(dayIdx, nodeIdx) {
@@ -1085,7 +1079,6 @@ window.handleNodeClick = function(dayIdx, nodeIdx) {
     const node = data.days[dayIdx].nodes[nodeIdx];
     if (!node) return;
 
-    // 删除节点（仅对非必要节点如等待、提醒等）
     if (node.type === 'weather' || node.type === 'reminder') {
         if (confirm(`删除此提醒？`)) {
             data.days[dayIdx].nodes.splice(nodeIdx, 1);
@@ -1094,16 +1087,13 @@ window.handleNodeClick = function(dayIdx, nodeIdx) {
         return;
     }
 
-    // 替换景点
     const allPoisData = window.__allPois || [];
     const options = allPoisData.filter(p => String(p.id) !== String(node.poiId));
     if (options.length === 0) { alert('无可替换的景点'); return; }
-    let optHtml = options.map(p => `<option value="${p.id}">${p.name}</option>`).join('');
     const newPoiId = prompt('输入新景点ID（从列表中选择）:\n' + options.map(p => `${p.id}: ${p.name}`).join('\n'));
     if (newPoiId) {
         const newPoi = getPoiById(newPoiId);
         if (newPoi) {
-            // 重新生成行程
             alert('替换功能：将重新生成行程，请点击"生成行程方案"重新规划');
         }
     }

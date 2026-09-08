@@ -1,4 +1,4 @@
-// js/admin.js - 管理后台完整逻辑
+// js/admin.js - 管理后台完整逻辑（修复 ID 比较）
 import {
     getPois, getPoi, insertPoi, updatePoi, deletePoi as apiDeletePoi,
     getScenicList, insertScenic, updateScenic, deleteScenic as apiDeleteScenic,
@@ -112,12 +112,14 @@ export function showAddPoiModal() {
 }
 
 export async function showEditPoiModal(poiId) {
-    currentEditingPoiId = poiId;
-    const poi = allPois.find(p => p.id === poiId);
+    // 修复：将 poiId 转为数字比较
+    const idNum = Number(poiId);
+    const poi = allPois.find(p => p.id === idNum);
     if (!poi) {
-        console.warn('POI 未找到:', poiId);
+        console.warn('POI 未找到:', poiId, 'allPois:', allPois.map(p => p.id));
         return;
     }
+    currentEditingPoiId = poiId;
     document.getElementById('edit-poi-id').value = poiId;
     document.getElementById('edit-poi-name').value = poi.name || '';
     document.getElementById('edit-poi-category').value = poi.category || '自然景区';
@@ -210,7 +212,6 @@ export async function savePoiEdit() {
         } else {
             await updatePoi(poiId, updates);
         }
-        // 保存内部节点
         const nodes = currentPoiNodes[poiId] || currentPoiNodes['new'] || [];
         if (savedPoiId) {
             await deleteInternalNodes(savedPoiId);
@@ -395,9 +396,11 @@ export function renderRouteList(routes) {
 let routeNodesData = [];
 
 export async function showEditRouteModal(id) {
-    const r = allRoutes.find(x => x.id === id);
+    // 修复：将 id 转为数字比较
+    const idNum = Number(id);
+    const r = allRoutes.find(x => x.id === idNum);
     if (!r) {
-        console.warn('路线未找到:', id);
+        console.warn('路线未找到:', id, 'allRoutes:', allRoutes.map(x => x.id));
         return;
     }
     document.getElementById('edit-route-id').value = id;

@@ -1,13 +1,13 @@
-// js/admin.js - 管理后台完整逻辑
+// js/admin.js - 管理后台完整逻辑（修复命名冲突）
 import {
-    getPois, getPoi, insertPoi, updatePoi, deletePoi,
-    getScenicList, insertScenic, updateScenic, deleteScenic,
-    getRoutes, getRoute, insertRoute, updateRoute, deleteRoute,
+    getPois, getPoi, insertPoi, updatePoi, deletePoi as apiDeletePoi,
+    getScenicList, insertScenic, updateScenic, deleteScenic as apiDeleteScenic,
+    getRoutes, getRoute, insertRoute, updateRoute, deleteRoute as apiDeleteRoute,
     getRouteNodes, insertRouteNodes, deleteRouteNodes,
-    getTransportPresets, upsertTransportPreset, deleteTransportPresetsForPoi,
+    getTransportPresets, upsertTransportPreset,
     getMerchantsByPoi, getMerchant, updateMerchant, createMerchantRecord,
     getReservations, updateReservation,
-    getFeedbacks, updateFeedback, deleteFeedback,
+    getFeedbacks, updateFeedback, deleteFeedback as apiDeleteFeedback,
     uploadFile, getPoiInternal, insertInternalNode, insertInternalEdge,
     deleteInternalNodes, deleteInternalEdges
 } from './api.js';
@@ -85,7 +85,7 @@ export async function togglePoiNodes(poiId) {
     container.innerHTML = html;
 }
 
-// POI 编辑弹窗
+// 编辑POI弹窗
 export async function showEditPoiModal(poiId) {
     const poi = allPois.find(p => p.id === poiId);
     if (!poi) return;
@@ -101,7 +101,6 @@ export async function showEditPoiModal(poiId) {
     document.getElementById('edit-poi-level').value = poi.data_level || 'L3';
     document.getElementById('poiModalTitle').textContent = `编辑POI - ${poi.name}`;
 
-    // 加载内部节点
     const data = await getPoiInternal(poiId);
     const nodes = data.nodes || [];
     currentPoiNodes[poiId] = nodes;
@@ -169,7 +168,6 @@ export async function savePoiEdit() {
     };
     try {
         await updatePoi(poiId, updates);
-        // 保存内部节点
         const nodes = currentPoiNodes[poiId] || [];
         await deleteInternalNodes(poiId);
         await deleteInternalEdges(poiId);
@@ -189,7 +187,7 @@ export async function deletePoi(id) {
     try {
         await deleteInternalNodes(id);
         await deleteInternalEdges(id);
-        await deletePoi(id);
+        await apiDeletePoi(id);
         await initAdminUI();
     } catch (e) { alert('删除失败：' + e.message); }
 }
@@ -252,7 +250,7 @@ export async function saveScenicEdit() {
 }
 export async function deleteScenic(id) {
     if (!confirm('确认删除？')) return;
-    try { await deleteScenic(id); await initAdminUI(); } catch (e) { alert('删除失败：' + e.message); }
+    try { await apiDeleteScenic(id); await initAdminUI(); } catch (e) { alert('删除失败：' + e.message); }
 }
 
 // ============================================================
@@ -284,7 +282,6 @@ export async function showEditRouteModal(id) {
     document.getElementById('edit-route-time').value = r.start_time || '08:30';
     document.getElementById('edit-route-transport').value = r.transport || '';
     document.getElementById('edit-route-days').value = r.days || 1;
-    // 加载节点
     const nodes = await getRouteNodes(id);
     routeNodesData = nodes.map(n => ({ poi_id: n.poi_id, duration_min: n.duration_min || 60 }));
     renderRouteNodesFields();
@@ -312,7 +309,7 @@ function renderRouteNodesFields() {
         </div>`;
     });
     container.innerHTML = html || '<p class="text-secondary">暂无节点</p>';
-    // 恢复选择值
+    // 恢复值
     document.querySelectorAll('#edit-route-nodes-container select').forEach((sel, i) => {
         if (routeNodesData[i] && routeNodesData[i].poi_id) sel.value = routeNodesData[i].poi_id;
     });
@@ -340,7 +337,6 @@ export async function saveRouteEdit() {
     try {
         let routeId = id;
         if (id) { await updateRoute(id, data); } else { const r = await insertRoute(data); routeId = r.id; }
-        // 保存节点
         await deleteRouteNodes(routeId);
         const nodes = routeNodesData.filter(n => n.poi_id).map((n, i) => ({
             route_id: parseInt(routeId),
@@ -358,7 +354,7 @@ export async function saveRouteEdit() {
 }
 export async function deleteRoute(id) {
     if (!confirm('确认删除？')) return;
-    try { await deleteRoute(id); await initAdminUI(); } catch (e) { alert('删除失败：' + e.message); }
+    try { await apiDeleteRoute(id); await initAdminUI(); } catch (e) { alert('删除失败：' + e.message); }
 }
 
 // ============================================================
@@ -369,7 +365,6 @@ export function renderTransportEditor(presets) {
     if (!container) return;
     const poiList = allPois.filter(p => !p.parent_id);
     if (poiList.length === 0) { container.innerHTML = '<p>暂无POI数据</p>'; return; }
-    // 构建矩阵
     const poiMap = {};
     poiList.forEach(p => { poiMap[p.id] = p.name; });
     const ids = poiList.map(p => p.id);
@@ -421,7 +416,6 @@ export async function createMerchant() {
     const name = prompt('商户名称：'); if (!name) return;
     const poiId = prompt('绑定POI ID（可留空）：');
     try {
-        // 注意：实际需通过 Supabase Admin API 创建用户，此处简化
         alert('创建商户功能需后端支持，请使用 Supabase Admin API');
     } catch (e) { alert('创建失败：' + e.message); }
 }
@@ -449,7 +443,7 @@ export async function replyFeedback(id) {
 }
 export async function deleteFeedback(id) {
     if (!confirm('确认删除？')) return;
-    try { await deleteFeedback(id); await initAdminUI(); } catch (e) { alert('删除失败：' + e.message); }
+    try { await apiDeleteFeedback(id); await initAdminUI(); } catch (e) { alert('删除失败：' + e.message); }
 }
 
 // ============================================================

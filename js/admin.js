@@ -1,4 +1,4 @@
-// js/admin.js - 管理后台完整逻辑（修复版）
+// js/admin.js - 管理后台完整逻辑
 import {
     getPois, getPoi, insertPoi, updatePoi, deletePoi as apiDeletePoi,
     getScenicList, insertScenic, updateScenic, deleteScenic as apiDeleteScenic,
@@ -114,7 +114,10 @@ export function showAddPoiModal() {
 export async function showEditPoiModal(poiId) {
     currentEditingPoiId = poiId;
     const poi = allPois.find(p => p.id === poiId);
-    if (!poi) return;
+    if (!poi) {
+        console.warn('POI 未找到:', poiId);
+        return;
+    }
     document.getElementById('edit-poi-id').value = poiId;
     document.getElementById('edit-poi-name').value = poi.name || '';
     document.getElementById('edit-poi-category').value = poi.category || '自然景区';
@@ -210,14 +213,10 @@ export async function savePoiEdit() {
         // 保存内部节点
         const nodes = currentPoiNodes[poiId] || currentPoiNodes['new'] || [];
         if (savedPoiId) {
-            // 先删除所有现有节点（这会级联删除边，如果外键设置了 CASCADE）
-            // 如果没有级联，我们需要先手动删除边
             await deleteInternalNodes(savedPoiId);
-            // 重新插入节点
             for (let n of nodes) {
                 await insertInternalNode({ ...n, poi_id: savedPoiId });
             }
-            // 注意：边暂时不处理，因为没有边数据来源，以后可扩展
         }
         alert(isNew ? '新增成功' : '保存成功');
         bootstrap.Modal.getInstance(document.getElementById('poiModal')).hide();
@@ -232,7 +231,6 @@ export async function deletePoi(id) {
     if (!confirm('确认删除此POI及其所有子景点？')) return;
     try {
         await deleteInternalNodes(id);
-        // 如果边需要单独删除，在这里处理，但 deleteInternalNodes 内部会处理（如果 api.js 正确实现）
         await apiDeletePoi(id);
         await initAdminUI();
     } catch (e) { alert('删除失败：' + e.message); }
@@ -398,7 +396,10 @@ let routeNodesData = [];
 
 export async function showEditRouteModal(id) {
     const r = allRoutes.find(x => x.id === id);
-    if (!r) return;
+    if (!r) {
+        console.warn('路线未找到:', id);
+        return;
+    }
     document.getElementById('edit-route-id').value = id;
     document.getElementById('edit-route-name').value = r.name || '';
     document.getElementById('edit-route-time').value = r.start_time || '08:30';

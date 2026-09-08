@@ -1,11 +1,11 @@
-// js/admin.js - 管理后台核心逻辑（完整版）
+// js/admin.js - 管理后台核心逻辑（修复重复声明）
 import {
-    getPois, insertPoi, updatePoi, deletePoi,
-    getScenicList, insertScenic, updateScenic, deleteScenic,
-    getRoutes, insertRoute, updateRoute, deleteRoute,
+    getPois, insertPoi, updatePoi, deletePoi as apiDeletePoi,
+    getScenicList, insertScenic, updateScenic, deleteScenic as apiDeleteScenic,
+    getRoutes, insertRoute, updateRoute, deleteRoute as apiDeleteRoute,
     getRouteNodes, insertRouteNodes, deleteRouteNodes,
     getTransportPresets, upsertTransportPreset, deleteTransportPresetsForPoi,
-    getFeedbacks, updateFeedback, deleteFeedback,
+    getFeedbacks, updateFeedback, deleteFeedback as apiDeleteFeedback,
     getMerchant, updateMerchant, createMerchantRecord,
     getPoiInternal, insertInternalNode, insertInternalEdge, deleteInternalNodes, deleteInternalEdges,
     uploadFile, getMerchantsByPoi
@@ -34,7 +34,7 @@ export async function initAdminUI() {
         allRoutes = await getRoutes();
         allTransportPresets = await getTransportPresets();
         allFeedbacks = await getFeedbacks(null);
-        allMerchants = await getMerchantsByPoi(null); // 获取所有商户
+        allMerchants = await getMerchantsByPoi(null);
 
         renderPoiList();
         renderScenicList();
@@ -89,15 +89,12 @@ export async function showPoiModal(poiId) {
         document.getElementById('edit-poi-desc').value = poi.description || '';
         document.getElementById('edit-poi-voice-text').value = poi.voice_cn || '';
         document.getElementById('edit-poi-level').value = poi.data_level || 'L3';
-        // 父级景区
         const parentSel = document.getElementById('edit-poi-parent');
         parentSel.innerHTML = '<option value="">无</option>';
         allScenics.forEach(s => {
             parentSel.innerHTML += `<option value="${s.id}" ${poi.parent_id === s.id ? 'selected' : ''}>${s.name}</option>`;
         });
-        // 加载内部节点
         await loadPoiNodes(poiId);
-        // 加载语音文件（如果有）
     } else {
         title.textContent = '新增景点';
         editingPoiId = null;
@@ -156,7 +153,6 @@ export function addPoiNode() {
         suggested_duration_max: durMax,
         lat: lat,
         lng: lng,
-        // 其他字段：audio_mp3, radius_geofence 等暂不处理
     });
     renderPoiNodes();
 }
@@ -202,9 +198,7 @@ export async function savePoi() {
     try {
         let poiId = id;
         if (id) {
-            // 更新
             await updatePoi(id, poiData);
-            // 处理节点
             await deleteInternalNodes(id);
             for (let node of poiNodes) {
                 await insertInternalNode({ ...node, poi_id: id });
@@ -216,7 +210,6 @@ export async function savePoi() {
                 await insertInternalNode({ ...node, poi_id: inserted.id });
             }
         }
-        // 处理语音文件上传
         const fileInput = document.getElementById('edit-poi-voice-file');
         if (fileInput && fileInput.files.length > 0) {
             const file = fileInput.files[0];
@@ -236,7 +229,7 @@ export async function deletePoi(id) {
     if (!confirm('确认删除此POI及其所有内部节点？')) return;
     try {
         await deleteInternalNodes(id);
-        await deletePoi(id);
+        await apiDeletePoi(id);
         await initAdminUI();
     } catch (e) { alert('删除失败：' + e.message); }
 }
@@ -290,7 +283,7 @@ export async function saveScenic() {
 export async function deleteScenic(id) {
     if (!confirm('确认删除此景区？')) return;
     try {
-        await deleteScenic(id);
+        await apiDeleteScenic(id);
         await initAdminUI();
     } catch (e) { alert('删除失败：' + e.message); }
 }
@@ -386,7 +379,6 @@ export async function saveRoute() {
             const inserted = await insertRoute({ name, start_time, transport, days: 1, group_type: 'default' });
             routeId = inserted.id;
         }
-        // 保存节点
         await deleteRouteNodes(routeId);
         const nodesPayload = routeNodes.filter(n => n.poi_id).map((n, i) => ({
             route_id: parseInt(routeId),
@@ -410,7 +402,7 @@ export async function deleteRoute(id) {
     if (!confirm('确认删除此路线？')) return;
     try {
         await deleteRouteNodes(id);
-        await deleteRoute(id);
+        await apiDeleteRoute(id);
         await initAdminUI();
     } catch (e) { alert('删除失败：' + e.message); }
 }
@@ -436,7 +428,6 @@ function renderTransportMatrix() {
     if (!container) return;
     if (allPois.length === 0) { container.innerHTML = '<p>请先添加POI</p>'; return; }
 
-    // 构建矩阵
     const poiMap = {};
     allPois.forEach(p => poiMap[p.id] = p);
     const poiIds = allPois.map(p => p.id);
@@ -471,13 +462,12 @@ export async function saveTransportCell(input) {
     if (isNaN(val) || val < 0) return;
     try {
         await upsertTransportPreset(from, to, val);
-        // 自动填充反向
         const reversePreset = allTransportPresets.find(p => p.from_poi_id == to && p.to_poi_id == from);
         if (!reversePreset) {
             await upsertTransportPreset(to, from, val);
         }
         alert('保存成功');
-        await initAdminUI(); // 刷新数据
+        await initAdminUI();
     } catch (e) { alert('保存失败：' + e.message); }
 }
 
@@ -499,12 +489,7 @@ export async function saveMerchant() {
 
     if (!email || !pwd || !name) { alert('请填写完整信息'); return; }
     try {
-        // 注意：此操作需要服务端支持，前端无法直接创建用户
-        // 我们仅创建商户记录，前提是用户已存在
-        // 实际应调用 Supabase Admin API 或云函数
         alert('商户创建功能需后端支持，暂未实现。请手动在 Supabase 创建用户后，在 ztj_merchants 插入记录。');
-        // 这里留作示例
-        // await createMerchantRecord(userId, name, poiId);
         bootstrap.Modal.getInstance(document.getElementById('merchantModal')).hide();
     } catch (e) { alert('创建失败：' + e.message); }
 }
@@ -512,7 +497,6 @@ export async function saveMerchant() {
 export async function deleteMerchant(id) {
     if (!confirm('确认删除此商户？')) return;
     try {
-        // 实际应删除商户记录和用户
         alert('删除功能需后端支持');
         await initAdminUI();
     } catch (e) { alert('删除失败：' + e.message); }
@@ -549,7 +533,7 @@ export async function replyFeedback(id) {
 export async function deleteFeedback(id) {
     if (!confirm('确认删除此留言？')) return;
     try {
-        await deleteFeedback(id);
+        await apiDeleteFeedback(id);
         await initAdminUI();
     } catch (e) { alert('删除失败：' + e.message); }
 }

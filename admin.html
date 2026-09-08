@@ -203,12 +203,8 @@
 
 <script type="module">
 import { signIn, signOut, getCurrentUser, onAuthStateChange } from './js/auth.js';
-import * as admin from './js/admin.js';
-
-// 挂载所有 admin 导出到 window
-Object.keys(admin).forEach(key => {
-    window[key] = admin[key];
-});
+// 直接导入 admin.js，其内部已自动挂载所有函数到 window
+import './js/admin.js';
 
 // 登录事件
 document.getElementById('loginBtn').addEventListener('click', async () => {
@@ -233,7 +229,8 @@ onAuthStateChange((event, session) => {
     if (event === 'SIGNED_IN') {
         document.getElementById('login-page').classList.add('hidden');
         document.getElementById('main').classList.remove('hidden');
-        admin.initAdminUI();
+        // 使用 window.initAdminUI（由 admin.js 挂载）
+        if (window.initAdminUI) window.initAdminUI();
     } else {
         document.getElementById('login-page').classList.remove('hidden');
         document.getElementById('main').classList.add('hidden');
@@ -246,7 +243,7 @@ onAuthStateChange((event, session) => {
     if (user) {
         document.getElementById('login-page').classList.add('hidden');
         document.getElementById('main').classList.remove('hidden');
-        admin.initAdminUI();
+        if (window.initAdminUI) window.initAdminUI();
     }
 })();
 </script>

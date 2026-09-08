@@ -8,26 +8,27 @@ import { DAY_START, DAY_END, LUNCH_START, LUNCH_END, DINNER_START, DINNER_END, M
 // ============================================================
 export class TripPlanner {
     /**
-     * @param {Array} pois - 用户选择的景点列表（每个需含id, name, lat, lng, visit_duration）
+     * @param {Array} pois - 用户选择的景点列表
      * @param {string} startDate - YYYY-MM-DD
      * @param {string} startTime - HH:MM
      * @param {string} mode - 'compact' | 'relaxed' | 'indepth'
      * @param {Object} travelTimes - 交通矩阵 { fromId_toId: minutes }
-     * @param {Object} poiNodesMap - { poiId: [nodes] } 预加载的内部节点列表
+     * @param {Object} poiNodesMap - { poiId: [nodes] }
      * @param {Array} accommodationPois - 所有住宿型POI列表
      */
     constructor(pois, startDate, startTime, mode, travelTimes, poiNodesMap, accommodationPois) {
-        this.pois = pois;
-        this.startDate = startDate;
-        this.startTime = startTime;
-        this.mode = mode;
-        this.travelTimes = travelTimes;
-        this.poiNodesMap = poiNodesMap;
-        this.accommodationPois = accommodationPois;
+        // 参数空值保护
+        this.pois = pois || [];
+        this.startDate = startDate || new Date().toISOString().slice(0, 10);
+        this.startTime = startTime || '08:00';
+        this.mode = mode || 'relaxed';
+        this.travelTimes = travelTimes || {};
+        this.poiNodesMap = poiNodesMap || {};
+        this.accommodationPois = accommodationPois || [];
 
         // 状态
-        this.currentDate = new Date(startDate);
-        this.currentTime = timeToMinutes(startTime);
+        this.currentDate = new Date(this.startDate);
+        this.currentTime = timeToMinutes(this.startTime) || DAY_START;
         this.currentDay = 1;
         this.lastPoiId = 'county';
         this.isAccommodationAtScenic = false;
@@ -39,7 +40,9 @@ export class TripPlanner {
         this.totalVisitMinutes = 0;
         this.totalWaitingMinutes = 0;
         this.accommodationPoiMap = {};
-        accommodationPois.forEach(p => this.accommodationPoiMap[p.id] = p);
+        this.accommodationPois.forEach(p => {
+            if (p && p.id) this.accommodationPoiMap[p.id] = p;
+        });
         this.maxDays = 5; // 最大天数限制
     }
 
@@ -52,7 +55,7 @@ export class TripPlanner {
         for (let poi of this.pois) {
             // 检查是否超出最大天数
             if (this.currentDay > this.maxDays) {
-                this.warnings.push(`行程超过 ${this.maxDays} 天，剩余景点 ${poi.name} 未安排`);
+                this.warnings.push(`行程超过 ${this.maxDays} 天，剩余景点 ${poi ? poi.name : '未知'} 未安排`);
                 break;
             }
 
@@ -60,9 +63,9 @@ export class TripPlanner {
             if (!nodes || nodes.length === 0) {
                 // 如果没有节点，使用POI本身作为一个游览节点
                 const fallbackNode = {
-                    node_name: poi.name,
+                    node_name: poi ? poi.name : '未知景点',
                     node_type: 'poi',
-                    suggested_duration_min: poi.visit_duration || 60,
+                    suggested_duration_min: (poi && poi.visit_duration) || 60,
                     isFallback: true
                 };
                 poi._selectedNodes = [fallbackNode];
@@ -112,6 +115,7 @@ export class TripPlanner {
 
     // 根据模式选取节点
     selectNodes(poi) {
+        if (!poi || !poi.id) return null;
         const nodes = this.poiNodesMap[poi.id] || [];
         if (this.mode === 'compact') {
             const core = nodes.filter(n => n.node_type === 'core_view');
@@ -137,6 +141,7 @@ export class TripPlanner {
 
     // 安排单个POI（包含交通、节点游览、就餐插入）
     schedulePoi(poi) {
+        if (!poi) return { newTime: this.currentTime, error: '无效的景点' };
         const travel = this.getTravelTime(this.lastPoiId, poi.id);
         let startTime = this.currentTime;
 
@@ -189,7 +194,7 @@ export class TripPlanner {
         }
 
         // 游览内部节点
-        const nodes = poi._selectedNodes;
+        const nodes = poi._selectedNodes || [];
         for (let node of nodes) {
             // 检查游览前是否到达用餐窗口
             const meal = this.checkVisitMealTrigger(currentTime, node.suggested_duration_min || 0);
@@ -245,7 +250,7 @@ export class TripPlanner {
         if (t === undefined) {
             const fromPoi = this.getPoiById(fromId);
             const toPoi = this.getPoiById(toId);
-            if (fromPoi && toPoi) {
+            if (fromPoi && toPoi && fromPoi.lat && fromPoi.lng && toPoi.lat && toPoi.lng) {
                 const dist = getDistance(fromPoi.lat, fromPoi.lng, toPoi.lat, toPoi.lng);
                 t = Math.round(dist / 5000 * 60);
             } else {
@@ -311,7 +316,7 @@ export class TripPlanner {
 
     // 添加节点到当天
     addNode(node) {
-        this.dayNodes.push(node);
+        if (node) this.dayNodes.push(node);
     }
 
     // 添加等待
@@ -321,47 +326,46 @@ export class TripPlanner {
 
     // 结束当天
     finishDay() {
-        if (this.dayNodes.length > 0) {
-            // 检查是否需要返回县城（若当天最后一个节点不是县城且不是住宿）
-            const last = this.dayNodes[this.dayNodes.length - 1];
-            if (last.type !== 'accommodation' && this.lastPoiId !== 'county') {
-                const returnTravel = this.getTravelTime(this.lastPoiId, 'county');
-                if (returnTravel > 0) {
-                    const returnNode = {
-                        type: 'transport',
-                        name: '返回县城',
-                        startTime: this.currentTime,
-                        endTime: this.currentTime + returnTravel,
-                        duration: returnTravel,
-                        from: this.lastPoiId,
-                        to: 'county'
-                    };
-                    this.addNode(returnNode);
-                    this.totalTravelMinutes += returnTravel;
-                    this.currentTime += returnTravel;
-                    this.lastPoiId = 'county';
-                }
+        if (this.dayNodes.length === 0) return;
+        // 检查是否需要返回县城（若当天最后一个节点不是县城且不是住宿）
+        const last = this.dayNodes[this.dayNodes.length - 1];
+        if (last.type !== 'accommodation' && this.lastPoiId !== 'county') {
+            const returnTravel = this.getTravelTime(this.lastPoiId, 'county');
+            if (returnTravel > 0) {
+                const returnNode = {
+                    type: 'transport',
+                    name: '返回县城',
+                    startTime: this.currentTime,
+                    endTime: this.currentTime + returnTravel,
+                    duration: returnTravel,
+                    from: this.lastPoiId,
+                    to: 'county'
+                };
+                this.addNode(returnNode);
+                this.totalTravelMinutes += returnTravel;
+                this.currentTime += returnTravel;
+                this.lastPoiId = 'county';
             }
-            // 添加住宿节点（若不在景区住宿，则默认县城住宿）
-            const accommodationNode = {
-                type: 'accommodation',
-                name: this.isAccommodationAtScenic ? '景区住宿' : '县城住宿',
-                startTime: this.currentTime,
-                endTime: this.currentTime + 1,
-                location: this.isAccommodationAtScenic ? this.lastPoiId : 'county'
-            };
-            this.addNode(accommodationNode);
-
-            // 存储当天
-            this.allDays.push({
-                day: this.currentDay,
-                date: this.currentDate.toISOString().slice(0, 10),
-                nodes: this.dayNodes
-            });
-            this.dayNodes = [];
-            this.isAccommodationAtScenic = false;
-            this.currentDay++;
         }
+        // 添加住宿节点（若不在景区住宿，则默认县城住宿）
+        const accommodationNode = {
+            type: 'accommodation',
+            name: this.isAccommodationAtScenic ? '景区住宿' : '县城住宿',
+            startTime: this.currentTime,
+            endTime: this.currentTime + 1,
+            location: this.isAccommodationAtScenic ? this.lastPoiId : 'county'
+        };
+        this.addNode(accommodationNode);
+
+        // 存储当天
+        this.allDays.push({
+            day: this.currentDay,
+            date: this.currentDate.toISOString().slice(0, 10),
+            nodes: this.dayNodes
+        });
+        this.dayNodes = [];
+        this.isAccommodationAtScenic = false;
+        this.currentDay++;
     }
 
     // 移到下一天

@@ -11,7 +11,6 @@ import {
     uploadFile, getPoiInternal, insertInternalNode, insertInternalEdge,
     deleteInternalNodes, deleteInternalEdges
 } from './api.js';
-import { POI_CATEGORIES } from './config.js';
 
 let allPois = [], allScenic = [], allRoutes = [], allPresets = [], allMerchants = [], allFeedbacks = [];
 let currentPoiNodes = {};
@@ -596,39 +595,3 @@ export async function deleteFeedback(id) {
 // 工具
 // ============================================================
 export function refreshData() { initAdminUI(); }
-
-// ============================================================
-// 将所有需要暴露的函数挂载到 window
-// ============================================================
-window.initAdminUI = initAdminUI;
-window.renderPoiList = renderPoiList;
-window.togglePoiNodes = togglePoiNodes;
-window.showAddPoiModal = showAddPoiModal;
-window.showEditPoiModal = showEditPoiModal;
-window.savePoiEdit = savePoiEdit;
-window.deletePoi = deletePoi;
-window.addNodeField = addNodeField;
-window.removeNodeField = removeNodeField;
-window.renderScenicList = renderScenicList;
-window.toggleScenicPois = toggleScenicPois;
-window.showAddPoiToScenic = showAddPoiToScenic;
-window.confirmAddPoiToScenic = confirmAddPoiToScenic;
-window.removePoiFromScenic = removePoiFromScenic;
-window.showEditScenicModal = showEditScenicModal;
-window.showAddScenicModal = showAddScenicModal;
-window.saveScenicEdit = saveScenicEdit;
-window.deleteScenic = deleteScenic;
-window.renderRouteList = renderRouteList;
-window.showEditRouteModal = showEditRouteModal;
-window.showAddRouteModal = showAddRouteModal;
-window.saveRouteEdit = saveRouteEdit;
-window.deleteRoute = deleteRoute;
-window.addRouteNodeField = addRouteNodeField;
-window.renderTransportEditor = renderTransportEditor;
-window.saveTransportTime = window.saveTransportTime;
-window.renderMerchantList = renderMerchantList;
-window.createMerchant = createMerchant;
-window.renderFeedbackList = renderFeedbackList;
-window.replyFeedback = replyFeedback;
-window.deleteFeedback = deleteFeedback;
-window.refreshData = refreshData;

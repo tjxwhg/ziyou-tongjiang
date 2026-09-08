@@ -8,12 +8,11 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
-        /* ===== 全局样式 ===== */
+        /* ===== 全局样式（与之前一致，略） ===== */
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; height: 100vh; overflow: hidden; background: #f0f2f5; }
         .hidden { display: none !important; }
         #map { height: 100vh; width: 100vw; z-index: 1; }
-
         .top-bar {
             position: fixed;
             top: max(12px, env(safe-area-inset-top, 12px));
@@ -42,7 +41,6 @@
             user-select: none;
         }
         .top-bar .brand i { font-size: 20px; }
-
         .category-bar {
             position: fixed;
             top: 0;
@@ -81,7 +79,6 @@
         }
         .category-bar .cat-btn:hover { background: #e8f5e9; border-color: #2e7d32; }
         .category-bar .cat-btn.active { background: #2e7d32; color: white; border-color: #2e7d32; }
-
         .bottom-nav {
             position: fixed;
             bottom: 24px;
@@ -116,7 +113,6 @@
         .bottom-nav .nav-btn:hover { background: #e8f5e9; color: #1b5e20; }
         .bottom-nav .nav-btn.primary { background: #1b5e20; color: white; }
         .bottom-nav .nav-btn.primary:hover { background: #2e7d32; }
-
         .float-btn {
             position: fixed;
             z-index: 1500;
@@ -136,7 +132,6 @@
         .float-btn:hover { transform: scale(1.08); }
         .locate-btn { bottom: 110px; right: 20px; }
         .voice-btn { bottom: 170px; right: 20px; }
-
         .panel {
             position: fixed;
             top: 0;
@@ -168,11 +163,9 @@
         .panel-header h2 { font-size: 18px; font-weight: 700; margin: 0; color: #1b5e20; }
         .panel-header .close-btn { background: none; border: none; font-size: 24px; cursor: pointer; color: #666; padding: 4px 8px; border-radius: 8px; transition: 0.2s; }
         .panel-body { flex: 1; padding: 16px 20px; overflow-y: auto; padding-bottom: 30px; }
-
         .card-modern { background: white; border-radius: 12px; padding: 16px; margin-bottom: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); border: 1px solid #f0f0f0; }
         .card-modern .card-title { font-weight: 600; font-size: 16px; margin-bottom: 6px; color: #1b5e20; }
         .card-modern .card-sub { font-size: 13px; color: #888; }
-
         .solution-card {
             background: white;
             border-radius: 16px;
@@ -195,7 +188,6 @@
         .solution-card .day-detail .time-line { display: flex; align-items: center; gap: 8px; padding: 3px 0; font-size: 14px; }
         .solution-card .day-detail .time-line .time { color: #888; min-width: 80px; }
         .solution-card .day-detail .time-line .icon { width: 24px; text-align: center; }
-
         .poi-category-group { margin-bottom: 12px; }
         .poi-category-title {
             font-weight: 600;
@@ -218,24 +210,20 @@
         .poi-item .poi-sub-list .sub-item input[type="checkbox"] { margin-right: 4px; }
         .poi-item .poi-duration-badge { font-size: 12px; color: #888; margin-left: 8px; }
         .total-duration { font-weight: 600; color: #1b5e20; background: #e8f5e9; padding: 6px 12px; border-radius: 6px; text-align: center; margin-top: 10px; }
-
         .pref-tag { display: inline-block; padding: 4px 14px; border-radius: 20px; background: #e8f5e9; color: #1b5e20; font-size: 13px; margin: 4px; cursor: pointer; transition: 0.2s; border: 2px solid transparent; }
         .pref-tag:hover { background: #c8e6c9; }
         .pref-tag.active { border-color: #1b5e20; background: #1b5e20; color: white; }
-
         .day-block { background: #f8f9fa; border-radius: 12px; padding: 12px 16px; margin-bottom: 12px; border-left: 4px solid #1b5e20; }
         .day-block .day-title { font-weight: 700; color: #1b5e20; margin-bottom: 8px; }
         .node-item { display: flex; align-items: flex-start; gap: 12px; padding: 6px 0; border-bottom: 1px dashed #eee; font-size: 14px; }
         .node-item .node-time { color: #888; font-size: 13px; min-width: 80px; flex-shrink: 0; }
         .node-item .node-icon { width: 28px; text-align: center; flex-shrink: 0; color: #1b5e20; }
-
         .reservation-form { background: #f8f9fa; border-radius: 8px; padding: 12px; margin-top: 10px; }
         .reservation-form .form-group { margin-bottom: 8px; }
         .reservation-form label { font-weight: 500; font-size: 14px; }
         .reservation-form input, .reservation-form select, .reservation-form textarea { width: 100%; padding: 6px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; }
         .biz-image-box { width: 100%; aspect-ratio: 16/9; border-radius: 8px; overflow: hidden; background: #f0f0f0; display: flex; align-items: center; justify-content: center; margin-top: 8px; }
         .biz-image-box img { width: 100%; height: 100%; object-fit: cover; }
-
         @media (max-width: 640px) {
             .top-bar { top: max(8px, env(safe-area-inset-top, 8px)); padding: 4px 12px; height: 38px; }
             .top-bar .brand { font-size: 15px; }
@@ -404,23 +392,26 @@
 
 <script type="module">
 // =============================================================
-// 完全自包含的行程规划逻辑（仅依赖 config, api, auth, utils, map）
+// 完全自包含的行程规划逻辑（使用 Supabase 匿名用户ID）
 // =============================================================
-import { getPois, getMerchantsByPoi, insertReservation, insertFeedback, saveTripSolution as apiSaveTripSolution, getUserTripSolutions, getReservations, getFeedbacks, getTransportPresets } from './js/api.js';
+import { getPois, getMerchantsByPoi, insertReservation, insertFeedback, saveTripSolution as apiSaveTripSolution, getUserTripSolutions, getReservations, getFeedbacks, getTransportPresets, saveUserPreferences } from './js/api.js';
 import { getCurrentUser, signInAnonymously } from './js/auth.js';
 import { initMap, loadPoisToMap, locateUser, setVoiceEnabled, getAllPois, clearFilter, applyFilter } from './js/map.js';
 import { formatTime, timeToMinutes, fetchWeatherForecast, getDayWeatherTip, speak, cancelSpeech } from './js/utils.js';
 
-// ===== 设备ID =====
-function getDeviceId() {
-    let id = localStorage.getItem('deviceId');
-    if (!id) {
-        id = 'dev_' + Date.now() + '_' + Math.random().toString(36).substr(2, 8);
-        localStorage.setItem('deviceId', id);
+// ===== 获取或创建用户ID（自动匿名登录） =====
+let cachedUserId = null;
+async function getUserId() {
+    if (cachedUserId) return cachedUserId;
+    let user = await getCurrentUser();
+    if (!user) {
+        await signInAnonymously();
+        user = await getCurrentUser();
+        if (!user) throw new Error('无法获取用户ID');
     }
-    return id;
+    cachedUserId = user.id;
+    return cachedUserId;
 }
-const DEVICE_ID = getDeviceId();
 
 // ===== 全局状态 =====
 let allPois = [];
@@ -434,6 +425,25 @@ function fmtTime(minutes) {
     const h = Math.floor(minutes / 60);
     const m = minutes % 60;
     return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+
+// ===== 初始化时间选择器 =====
+function initTimeSelectors() {
+    const sel = document.getElementById('planStartTime');
+    if (!sel) return;
+    sel.innerHTML = '';
+    for (let h = 0; h < 24; h++) {
+        for (let m = 0; m < 60; m += 10) {
+            const val = String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0');
+            sel.innerHTML += `<option value="${val}">${val}</option>`;
+        }
+    }
+    const now = new Date();
+    let h = now.getHours(), m = Math.floor(now.getMinutes() / 10) * 10;
+    if (m === 60) { m = 0; h = (h + 1) % 24; }
+    sel.value = String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0');
+    const dateInput = document.getElementById('planStartDate');
+    if (dateInput) dateInput.value = now.toISOString().slice(0, 10);
 }
 
 // ===== 渲染景点选择列表（分类+子景点） =====
@@ -514,21 +524,33 @@ window.togglePoiChildren = function(poiId) {
 };
 
 window.togglePoiSelection = function(poiId) {
-    if (selectedPoiIds.has(poiId)) {
-        selectedPoiIds.delete(poiId);
+    const idStr = String(poiId);
+    if (selectedPoiIds.has(idStr)) {
+        selectedPoiIds.delete(idStr);
     } else {
-        selectedPoiIds.add(poiId);
+        selectedPoiIds.add(idStr);
     }
     // 同步UI
     const container = document.getElementById('poiSelectContainer');
-    const checkbox = container.querySelector(`[data-poi-id="${poiId}"] input[type="checkbox"]`);
-    if (checkbox) checkbox.checked = selectedPoiIds.has(poiId);
-    // 子景点联动
+    const allCheckboxes = container.querySelectorAll('input[type="checkbox"]');
+    allCheckboxes.forEach(cb => {
+        const val = cb.value || cb.getAttribute('value');
+        if (String(val) === idStr) {
+            cb.checked = selectedPoiIds.has(idStr);
+        }
+    });
+    // 子景点联动（如果是主景点，同步子景点）
     const allPoisData = window.__allPois || [];
-    const children = allPoisData.filter(p => p.parent_id === poiId);
+    const children = allPoisData.filter(p => String(p.parent_id) === idStr);
     if (children.length > 0) {
         container.querySelectorAll(`#sub-${poiId} input[type="checkbox"]`).forEach(cb => {
-            cb.checked = selectedPoiIds.has(poiId);
+            const childId = cb.value || cb.getAttribute('value');
+            cb.checked = selectedPoiIds.has(idStr);
+            if (selectedPoiIds.has(idStr)) {
+                selectedPoiIds.add(String(childId));
+            } else {
+                selectedPoiIds.delete(String(childId));
+            }
         });
     }
     updateSelectedInfo();
@@ -553,7 +575,7 @@ function updateSelectedInfo() {
     const allPoisData = window.__allPois || [];
     let totalDuration = 0;
     selectedPoiIds.forEach(id => {
-        const poi = allPoisData.find(p => p.id === id);
+        const poi = allPoisData.find(p => String(p.id) === id);
         if (poi) totalDuration += poi.visit_duration || 0;
     });
     document.getElementById('selectedDurationDisplay').textContent = `已选景点总游览时长：${totalDuration} 分钟`;
@@ -575,7 +597,8 @@ window.generatePlans = async function() {
     if (selectedPoiIds.size === 0) { alert('请至少选择一个景点'); return; }
 
     const allPoisData = window.__allPois || [];
-    const selectedPois = allPoisData.filter(p => selectedPoiIds.has(p.id));
+    // 使用字符串比较
+    const selectedPois = allPoisData.filter(p => selectedPoiIds.has(String(p.id)));
     if (selectedPois.length === 0) {
         alert('未找到选中的景点数据，请重新选择');
         return;
@@ -810,18 +833,20 @@ function showTripDetail(data) {
 window.saveTripSolution = async function() {
     if (!currentTripData) { alert('没有可保存的行程'); return; }
     try {
-        await apiSaveTripSolution(DEVICE_ID, currentTripData, 'custom', 0);
+        const userId = await getUserId();
+        await apiSaveTripSolution(userId, currentTripData, 'custom', 0);
         alert('行程已保存');
         window.renderMyTrips();
     } catch (error) { alert('保存失败：' + error.message); }
 };
 
-// ===== 我的行程、预约、留言 =====
+// ===== 我的行程、预约、留言（使用真实用户ID） =====
 window.renderMyTrips = async function() {
     const container = document.getElementById('myTripsContent');
     if (!container) return;
     try {
-        const solutions = await getUserTripSolutions(DEVICE_ID);
+        const userId = await getUserId();
+        const solutions = await getUserTripSolutions(userId);
         if (!solutions || solutions.length === 0) {
             container.innerHTML = '<p class="text-secondary">暂无保存的行程</p>';
             return;
@@ -853,8 +878,9 @@ window.renderMyReservations = async function() {
     const container = document.getElementById('myReservationsContent');
     if (!container) return;
     try {
+        const userId = await getUserId();
         const allReservations = await getReservations(null);
-        const myReservations = allReservations.filter(r => r.user_id === DEVICE_ID);
+        const myReservations = allReservations.filter(r => r.user_id === userId);
         if (!myReservations || myReservations.length === 0) {
             container.innerHTML = '<p class="text-secondary">暂无预约</p>';
             return;
@@ -904,8 +930,9 @@ window.renderFeedbackHistory = async function() {
     const container = document.getElementById('feedbackHistory');
     if (!container) return;
     try {
+        const userId = await getUserId();
         const allFeedbacks = await getFeedbacks(null);
-        const myFeedbacks = allFeedbacks.filter(f => f.user_id === DEVICE_ID);
+        const myFeedbacks = allFeedbacks.filter(f => f.user_id === userId);
         if (!myFeedbacks || myFeedbacks.length === 0) {
             container.innerHTML = '<p class="text-secondary">暂无留言</p>';
             return;
@@ -951,12 +978,13 @@ window.viewTripSolution = (id) => {
     alert('查看详情功能开发中');
 };
 
-// ===== 提交留言/预约 =====
+// ===== 提交留言/预约（使用真实用户ID） =====
 window.submitFeedback = async function() {
     const msg = document.getElementById('feedbackMsg')?.value.trim();
     if (!msg) { alert('请输入内容'); return; }
     try {
-        await insertFeedback({ user_id: DEVICE_ID, message: msg });
+        const userId = await getUserId();
+        await insertFeedback({ user_id: userId, message: msg });
         alert('提交成功');
         document.getElementById('feedbackMsg').value = '';
         window.renderFeedbackHistory();
@@ -978,6 +1006,7 @@ window.submitReservation = async function(merchantId) {
     }
 
     try {
+        const userId = await getUserId();
         await insertReservation({
             merchant_id: merchantId,
             reservation_date: date,
@@ -988,7 +1017,7 @@ window.submitReservation = async function(merchantId) {
             visitor_count: count,
             remark: remark,
             status: 'pending',
-            user_id: DEVICE_ID
+            user_id: userId
         });
         alert('预约提交成功！');
         document.getElementById(`res-date-${merchantId}`).value = '';
@@ -1006,6 +1035,33 @@ window.submitReservation = async function(merchantId) {
 window.toggleReservationForm = function(merchantId) {
     const form = document.getElementById(`reservation-form-${merchantId}`);
     if (form) form.classList.toggle('hidden');
+};
+
+// ===== 保存偏好 =====
+window.savePreferences = async function() {
+    const selectedCats = [];
+    document.querySelectorAll('#settingsCategories .pref-tag.active').forEach(el => {
+        selectedCats.push(el.dataset.value);
+    });
+    const selectedCuisine = [];
+    document.querySelectorAll('#settingsCuisine .pref-tag.active').forEach(el => {
+        selectedCuisine.push(el.dataset.value);
+    });
+    const pace = document.getElementById('settingsPace').value;
+    try {
+        const userId = await getUserId();
+        await saveUserPreferences({
+            user_id: userId,
+            preferred_categories: selectedCats,
+            cuisine_prefs: selectedCuisine,
+            pace: pace,
+            updated_at: new Date().toISOString()
+        });
+        alert('偏好已保存');
+    } catch (error) {
+        console.error(error);
+        alert('保存偏好失败：' + error.message);
+    }
 };
 
 // ===== 商户详情 =====
@@ -1118,22 +1174,6 @@ window.startNavigation = function() {
 window.endNavigation = function() {
     document.getElementById('navPanel').classList.remove('active');
 };
-window.savePreferences = async function() {
-    const selectedCats = [];
-    document.querySelectorAll('#settingsCategories .pref-tag.active').forEach(el => {
-        selectedCats.push(el.dataset.value);
-    });
-    const selectedCuisine = [];
-    document.querySelectorAll('#settingsCuisine .pref-tag.active').forEach(el => {
-        selectedCuisine.push(el.dataset.value);
-    });
-    const pace = document.getElementById('settingsPace').value;
-    try {
-        const { saveUserPreferences } = await import('./js/api.js');
-        await saveUserPreferences({ user_id: DEVICE_ID, preferred_categories: selectedCats, cuisine_prefs: selectedCuisine, pace: pace, updated_at: new Date().toISOString() });
-        alert('偏好已保存');
-    } catch (error) { alert('保存失败：' + error.message); }
-};
 
 // ===== 分类栏切换 =====
 const brandToggle = document.getElementById('brandToggle');
@@ -1165,12 +1205,18 @@ document.addEventListener('click', function(e) {
 // ===== 初始化 =====
 async function init() {
     try {
+        // 确保匿名登录，获取用户ID
+        await getUserId();
+
         const pois = await getPois();
         allPois = pois;
         window.__allPois = pois;
 
         initMap('map');
         loadPoisToMap(pois);
+
+        // 初始化时间选择器
+        initTimeSelectors();
 
         renderPoiSelection(pois);
 

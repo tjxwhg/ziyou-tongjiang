@@ -1,4 +1,4 @@
-// js/admin.js - 管理后台完整逻辑（含所有导出）
+// js/admin.js - 管理后台完整逻辑
 import {
     getPois, getPoi, insertPoi, updatePoi, deletePoi as apiDeletePoi,
     getScenicList, insertScenic, updateScenic, deleteScenic as apiDeleteScenic,
@@ -15,6 +15,7 @@ import { POI_CATEGORIES } from './config.js';
 
 let allPois = [], allScenic = [], allRoutes = [], allPresets = [], allMerchants = [], allFeedbacks = [];
 let currentPoiNodes = {};
+let currentEditingPoiId = null;
 
 // ============================================================
 // 初始化
@@ -49,9 +50,12 @@ export function renderPoiList(pois) {
     let html = '';
     for (let p of pois) {
         const level = p.data_level || 'L3';
+        // 查找所属景区名称
+        const scenic = allScenic.find(s => s.id === p.scenic_id);
+        const scenicName = scenic ? `[${scenic.name}]` : '';
         html += `<div class="poi-card" id="poi-card-${p.id}">
             <div class="poi-header">
-                <span><b>${p.name}</b> [${p.category || '未分类'}] <span class="data-quality-badge quality-${level}">${level}</span></span>
+                <span><b>${p.name}</b> ${scenicName} [${p.category || '未分类'}] <span class="data-quality-badge quality-${level}">${level}</span></span>
                 <div>
                     <button class="btn btn-sm btn-secondary" onclick="window.showEditPoiModal('${p.id}')"><i class="fas fa-edit"></i> 编辑</button>
                     <button class="btn btn-sm btn-danger" onclick="window.deletePoi('${p.id}')"><i class="fas fa-trash"></i> 删除</button>
@@ -85,8 +89,35 @@ export async function togglePoiNodes(poiId) {
     container.innerHTML = html;
 }
 
+// 显示新增POI模态框
+export function showAddPoiModal() {
+    currentEditingPoiId = null;
+    document.getElementById('edit-poi-id').value = '';
+    document.getElementById('edit-poi-name').value = '';
+    document.getElementById('edit-poi-category').value = '自然景区';
+    document.getElementById('edit-poi-lat').value = '';
+    document.getElementById('edit-poi-lng').value = '';
+    document.getElementById('edit-poi-open').value = '08:00';
+    document.getElementById('edit-poi-close').value = '18:00';
+    document.getElementById('edit-poi-visit').value = '';
+    document.getElementById('edit-poi-desc').value = '';
+    document.getElementById('edit-poi-level').value = 'L3';
+    // 填充景区下拉
+    const scenicSelect = document.getElementById('edit-poi-scenic');
+    scenicSelect.innerHTML = '<option value="">无关联景区</option>';
+    allScenic.forEach(s => {
+        scenicSelect.innerHTML += `<option value="${s.id}">${s.name}</option>`;
+    });
+    document.getElementById('poiModalTitle').textContent = '新增POI';
+    currentPoiNodes['new'] = [];
+    renderNodesFields('new');
+    const modal = new bootstrap.Modal(document.getElementById('poiModal'));
+    modal.show();
+}
+
 // 编辑POI弹窗
 export async function showEditPoiModal(poiId) {
+    currentEditingPoiId = poiId;
     const poi = allPois.find(p => p.id === poiId);
     if (!poi) return;
     document.getElementById('edit-poi-id').value = poiId;
@@ -99,6 +130,12 @@ export async function showEditPoiModal(poiId) {
     document.getElementById('edit-poi-visit').value = poi.visit_duration || '';
     document.getElementById('edit-poi-desc').value = poi.description || '';
     document.getElementById('edit-poi-level').value = poi.data_level || 'L3';
+    // 填充景区下拉
+    const scenicSelect = document.getElementById('edit-poi-scenic');
+    scenicSelect.innerHTML = '<option value="">无关联景区</option>';
+    allScenic.forEach(s => {
+        scenicSelect.innerHTML += `<option value="${s.id}" ${poi.scenic_id === s.id ? 'selected' : ''}>${s.name}</option>`;
+    });
     document.getElementById('poiModalTitle').textContent = `编辑POI - ${poi.name}`;
 
     const data = await getPoiInternal(poiId);
@@ -111,7 +148,7 @@ export async function showEditPoiModal(poiId) {
 
 export function renderNodesFields(poiId) {
     const container = document.getElementById('edit-nodes-container');
-    const nodes = currentPoiNodes[poiId] || [];
+    const nodes = currentPoiNodes[poiId] || currentPoiNodes['new'] || [];
     let html = '';
     nodes.forEach((n, idx) => {
         const typeLabel = { 'core_view': '核心景点', 'entrance': '入口', 'exit': '出口', 'rest_area': '休息区', 'wc': '洗手间', 'food': '餐饮', 'other': '其他' }[n.node_type] || n.node_type;
@@ -127,8 +164,7 @@ export function renderNodesFields(poiId) {
 }
 
 export function addNodeField() {
-    const poiId = document.getElementById('edit-poi-id').value;
-    if (!poiId) return;
+    const poiId = document.getElementById('edit-poi-id').value || 'new';
     if (!currentPoiNodes[poiId]) currentPoiNodes[poiId] = [];
     const name = prompt('节点名称：');
     if (!name) return;
@@ -145,7 +181,7 @@ export function addNodeField() {
 }
 
 export function removeNodeField(idx) {
-    const poiId = document.getElementById('edit-poi-id').value;
+    const poiId = document.getElementById('edit-poi-id').value || 'new';
     if (!poiId || !currentPoiNodes[poiId]) return;
     if (!confirm('删除此节点？')) return;
     currentPoiNodes[poiId].splice(idx, 1);
@@ -154,27 +190,39 @@ export function removeNodeField(idx) {
 
 export async function savePoiEdit() {
     const poiId = document.getElementById('edit-poi-id').value;
-    if (!poiId) return;
+    const isNew = !poiId;
+    const scenicId = document.getElementById('edit-poi-scenic').value || null;
     const updates = {
         name: document.getElementById('edit-poi-name').value.trim(),
         category: document.getElementById('edit-poi-category').value,
-        lat: parseFloat(document.getElementById('edit-poi-lat').value),
-        lng: parseFloat(document.getElementById('edit-poi-lng').value),
+        lat: parseFloat(document.getElementById('edit-poi-lat').value) || 0,
+        lng: parseFloat(document.getElementById('edit-poi-lng').value) || 0,
         open_time: document.getElementById('edit-poi-open').value,
         close_time: document.getElementById('edit-poi-close').value,
         visit_duration: parseInt(document.getElementById('edit-poi-visit').value) || 0,
         description: document.getElementById('edit-poi-desc').value,
-        data_level: document.getElementById('edit-poi-level').value
+        data_level: document.getElementById('edit-poi-level').value,
+        scenic_id: scenicId,
+        status: 'active'
     };
     try {
-        await updatePoi(poiId, updates);
-        const nodes = currentPoiNodes[poiId] || [];
-        await deleteInternalNodes(poiId);
-        await deleteInternalEdges(poiId);
-        for (let n of nodes) {
-            await insertInternalNode({ ...n, poi_id: poiId });
+        let savedPoiId = poiId;
+        if (isNew) {
+            const result = await insertPoi(updates);
+            savedPoiId = result.id;
+        } else {
+            await updatePoi(poiId, updates);
         }
-        alert('保存成功');
+        // 保存内部节点
+        const nodes = currentPoiNodes[poiId] || currentPoiNodes['new'] || [];
+        if (savedPoiId) {
+            await deleteInternalNodes(savedPoiId);
+            await deleteInternalEdges(savedPoiId);
+            for (let n of nodes) {
+                await insertInternalNode({ ...n, poi_id: savedPoiId });
+            }
+        }
+        alert(isNew ? '新增成功' : '保存成功');
         bootstrap.Modal.getInstance(document.getElementById('poiModal')).hide();
         await initAdminUI();
     } catch (e) {
@@ -192,29 +240,93 @@ export async function deletePoi(id) {
     } catch (e) { alert('删除失败：' + e.message); }
 }
 
-// 新增POI（占位但已导出）
-export function showAddPoiModal() {
-    // 由于新增功能较复杂，暂时提示用户通过编辑已有POI后保存为新记录
-    alert('新增POI功能：请先编辑一个已有POI，然后将ID清空并保存，系统将自动创建新POI。');
-}
-
 // ============================================================
-// 景区管理
+// 景区管理（含关联POI）
 // ============================================================
 export function renderScenicList(scenics) {
     const container = document.getElementById('scenic-list');
     if (!container) return;
-    container.innerHTML = scenics.map(s => `
-        <div class="poi-card">
+    let html = '';
+    for (let s of scenics) {
+        const relatedPois = allPois.filter(p => p.scenic_id === s.id);
+        html += `<div class="poi-card" id="scenic-card-${s.id}">
             <div class="poi-header">
-                <span><b>${s.name}</b> [${s.area || '未分区'}]</span>
+                <span><b>${s.name}</b> [${s.area || '未分区'}] <span class="text-secondary">(${relatedPois.length}个关联POI)</span></span>
                 <div>
                     <button class="btn btn-sm btn-secondary" onclick="window.showEditScenicModal('${s.id}')"><i class="fas fa-edit"></i> 编辑</button>
                     <button class="btn btn-sm btn-danger" onclick="window.deleteScenic('${s.id}')"><i class="fas fa-trash"></i> 删除</button>
                 </div>
             </div>
+            <div id="scenic-pois-${s.id}" class="hidden mt-2">
+                <div class="d-flex gap-2 mb-1">
+                    <span class="fw-bold">关联POI：</span>
+                    <button class="btn btn-sm btn-outline-success" onclick="window.showAddPoiToScenic('${s.id}')"><i class="fas fa-plus"></i> 添加POI</button>
+                </div>
+                ${relatedPois.length > 0 ? relatedPois.map(p => `
+                    <div class="node-item">
+                        <span>${p.name} [${p.category || '未分类'}]</span>
+                        <button class="btn btn-sm btn-danger" onclick="window.removePoiFromScenic('${p.id}', '${s.id}')"><i class="fas fa-times"></i> 移除</button>
+                    </div>
+                `).join('') : '<p class="text-secondary">暂无关联POI</p>'}
+            </div>
+            <button class="btn btn-sm btn-outline-secondary mt-1" onclick="window.toggleScenicPois('${s.id}')"><i class="fas fa-list"></i> 显示关联POI</button>
+        </div>`;
+    }
+    container.innerHTML = html || '<p>暂无景区</p>';
+}
+
+export function toggleScenicPois(scenicId) {
+    const container = document.getElementById(`scenic-pois-${scenicId}`);
+    if (container) container.classList.toggle('hidden');
+}
+
+export function showAddPoiToScenic(scenicId) {
+    const unassignedPois = allPois.filter(p => !p.scenic_id);
+    if (unassignedPois.length === 0) {
+        alert('没有未关联的POI可添加');
+        return;
+    }
+    const options = unassignedPois.map(p => `<option value="${p.id}">${p.name}</option>`).join('');
+    const html = `
+        <div class="modal fade" id="addPoiToScenicModal" tabindex="-1">
+            <div class="modal-dialog"><div class="modal-content">
+                <div class="modal-header"><h5>添加POI到景区</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+                <div class="modal-body">
+                    <select id="add-poi-select" class="form-select">${options}</select>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button class="btn btn-success" onclick="window.confirmAddPoiToScenic('${scenicId}')">添加</button>
+                </div>
+            </div></div>
         </div>
-    `).join('') || '<p>暂无景区</p>';
+    `;
+    // 移除旧模态框
+    const old = document.getElementById('addPoiToScenicModal');
+    if (old) old.remove();
+    const div = document.createElement('div');
+    div.innerHTML = html;
+    document.body.appendChild(div);
+    const modal = new bootstrap.Modal(document.getElementById('addPoiToScenicModal'));
+    modal.show();
+}
+
+export async function confirmAddPoiToScenic(scenicId) {
+    const poiId = document.getElementById('add-poi-select').value;
+    if (!poiId) return;
+    try {
+        await updatePoi(poiId, { scenic_id: scenicId });
+        document.getElementById('addPoiToScenicModal').querySelector('.btn-close').click();
+        await initAdminUI();
+    } catch (e) { alert('添加失败：' + e.message); }
+}
+
+export async function removePoiFromScenic(poiId, scenicId) {
+    if (!confirm('确认从景区移除该POI？')) return;
+    try {
+        await updatePoi(poiId, { scenic_id: null });
+        await initAdminUI();
+    } catch (e) { alert('移除失败：' + e.message); }
 }
 
 export async function showEditScenicModal(id) {
@@ -242,8 +354,8 @@ export async function saveScenicEdit() {
     const data = {
         name: document.getElementById('edit-scenic-name').value.trim(),
         area: document.getElementById('edit-scenic-area').value.trim(),
-        lat: parseFloat(document.getElementById('edit-scenic-lat').value),
-        lng: parseFloat(document.getElementById('edit-scenic-lng').value),
+        lat: parseFloat(document.getElementById('edit-scenic-lat').value) || 0,
+        lng: parseFloat(document.getElementById('edit-scenic-lng').value) || 0,
         description: document.getElementById('edit-scenic-desc').value
     };
     try {
@@ -255,8 +367,16 @@ export async function saveScenicEdit() {
     } catch (e) { alert('保存失败：' + e.message); }
 }
 export async function deleteScenic(id) {
-    if (!confirm('确认删除？')) return;
-    try { await apiDeleteScenic(id); await initAdminUI(); } catch (e) { alert('删除失败：' + e.message); }
+    if (!confirm('确认删除此景区？关联的POI将解除关联')) return;
+    try {
+        // 解除关联POI
+        const related = allPois.filter(p => p.scenic_id === id);
+        for (let p of related) {
+            await updatePoi(p.id, { scenic_id: null });
+        }
+        await apiDeleteScenic(id);
+        await initAdminUI();
+    } catch (e) { alert('删除失败：' + e.message); }
 }
 
 // ============================================================
@@ -337,7 +457,8 @@ export async function saveRouteEdit() {
         name: document.getElementById('edit-route-name').value.trim(),
         start_time: document.getElementById('edit-route-time').value,
         transport: document.getElementById('edit-route-transport').value,
-        days: parseInt(document.getElementById('edit-route-days').value) || 1
+        days: parseInt(document.getElementById('edit-route-days').value) || 1,
+        group_type: 'default'  // 修复非空约束
     };
     try {
         let routeId = id;
@@ -363,43 +484,75 @@ export async function deleteRoute(id) {
 }
 
 // ============================================================
-// 交通耗时
+// 交通耗时（折叠式UI + 双向自动填充）
 // ============================================================
 export function renderTransportEditor(presets) {
     const container = document.getElementById('transport-editor');
     if (!container) return;
     const poiList = allPois.filter(p => !p.parent_id);
     if (poiList.length === 0) { container.innerHTML = '<p>暂无POI数据</p>'; return; }
-    const poiMap = {};
-    poiList.forEach(p => { poiMap[p.id] = p.name; });
-    const ids = poiList.map(p => p.id);
-    let html = '<table class="transport-matrix"><thead><tr><th>→</th>';
-    ids.forEach(id => { html += `<th>${poiMap[id]}</th>`; });
-    html += '</tr></thead><tbody>';
-    for (let from of ids) {
-        html += `<tr><td><b>${poiMap[from]}</b></td>`;
-        for (let to of ids) {
-            if (from === to) { html += `<td>—</td>`; continue; }
-            const key = `${from}_${to}`;
-            const revKey = `${to}_${from}`;
-            let val = presets.find(p => p.from_poi_id == from && p.to_poi_id == to)?.time_min;
-            if (val === undefined) val = presets.find(p => p.from_poi_id == to && p.to_poi_id == from)?.time_min;
+    
+    let html = '';
+    poiList.forEach(fromPoi => {
+        html += `<div class="transport-group card mb-2">
+            <div class="card-header" style="cursor:pointer;background:#f8f9fa;" onclick="this.nextElementSibling.classList.toggle('hidden')">
+                <b>🚩 ${fromPoi.name}</b> <span class="text-secondary">(点击展开)</span>
+            </div>
+            <div class="card-body hidden">`;
+        poiList.forEach(toPoi => {
+            if (fromPoi.id === toPoi.id) return;
+            const key = `${fromPoi.id}_${toPoi.id}`;
+            const revKey = `${toPoi.id}_${fromPoi.id}`;
+            let val = presets.find(p => p.from_poi_id == fromPoi.id && p.to_poi_id == toPoi.id)?.time_min;
+            if (val === undefined) val = presets.find(p => p.from_poi_id == toPoi.id && p.to_poi_id == fromPoi.id)?.time_min;
             const isEstimate = val === undefined;
             const displayVal = isEstimate ? '' : val;
-            html += `<td><input type="number" value="${displayVal}" placeholder="分钟" data-from="${from}" data-to="${to}" style="${isEstimate ? 'background:#fff3cd;' : ''}" onchange="window.saveTransportTime(this)"></td>`;
-        }
-        html += '</tr>';
-    }
-    html += '</tbody></table>';
+            html += `<div class="transport-item d-flex justify-content-between align-items-center py-1 border-bottom">
+                <span>→ ${toPoi.name}</span>
+                <div>
+                    <input type="number" class="form-control form-control-sm" style="width:80px;display:inline-block;" 
+                           value="${displayVal}" placeholder="分钟" 
+                           data-from="${fromPoi.id}" data-to="${toPoi.id}" 
+                           style="${isEstimate ? 'background:#fff3cd;' : ''}" 
+                           onchange="window.saveTransportTime(this)">
+                    <span class="save-status ms-1" style="font-size:12px;color:#2e7d32;"></span>
+                </div>
+            </div>`;
+        });
+        html += `</div></div>`;
+    });
     container.innerHTML = html;
 }
+
 window.saveTransportTime = async function(input) {
     const from = parseInt(input.dataset.from);
     const to = parseInt(input.dataset.to);
     const val = parseInt(input.value);
     if (isNaN(val) || val < 0) return;
     try {
+        // 保存正向
         await upsertTransportPreset(from, to, val);
+        // 检查反向是否存在，若不存在则自动填充
+        const presets = await getTransportPresets();
+        const reverseExists = presets.some(p => p.from_poi_id === to && p.to_poi_id === from);
+        if (!reverseExists) {
+            await upsertTransportPreset(to, from, val);
+        }
+        // 刷新所有输入框显示（同步反向值）
+        const allInputs = document.querySelectorAll('#transport-editor input[type="number"]');
+        allInputs.forEach(inp => {
+            const f = parseInt(inp.dataset.from);
+            const t = parseInt(inp.dataset.to);
+            // 如果当前输入框是反向，且值为空，则填充
+            if (f === to && t === from && inp.value === '') {
+                inp.value = val;
+            }
+        });
+        const status = input.parentElement.querySelector('.save-status');
+        if (status) {
+            status.textContent = '✓已保存';
+            setTimeout(() => status.textContent = '', 1500);
+        }
         input.style.background = '#e8f5e9';
         setTimeout(() => input.style.background = '', 1500);
     } catch (e) { alert('保存失败：' + e.message); }
@@ -455,3 +608,39 @@ export async function deleteFeedback(id) {
 // 工具
 // ============================================================
 export function refreshData() { initAdminUI(); }
+
+// ============================================================
+// 将所有需要暴露的函数挂载到 window
+// ============================================================
+window.initAdminUI = initAdminUI;
+window.renderPoiList = renderPoiList;
+window.togglePoiNodes = togglePoiNodes;
+window.showAddPoiModal = showAddPoiModal;
+window.showEditPoiModal = showEditPoiModal;
+window.savePoiEdit = savePoiEdit;
+window.deletePoi = deletePoi;
+window.addNodeField = addNodeField;
+window.removeNodeField = removeNodeField;
+window.renderScenicList = renderScenicList;
+window.toggleScenicPois = toggleScenicPois;
+window.showAddPoiToScenic = showAddPoiToScenic;
+window.confirmAddPoiToScenic = confirmAddPoiToScenic;
+window.removePoiFromScenic = removePoiFromScenic;
+window.showEditScenicModal = showEditScenicModal;
+window.showAddScenicModal = showAddScenicModal;
+window.saveScenicEdit = saveScenicEdit;
+window.deleteScenic = deleteScenic;
+window.renderRouteList = renderRouteList;
+window.showEditRouteModal = showEditRouteModal;
+window.showAddRouteModal = showAddRouteModal;
+window.saveRouteEdit = saveRouteEdit;
+window.deleteRoute = deleteRoute;
+window.addRouteNodeField = addRouteNodeField;
+window.renderTransportEditor = renderTransportEditor;
+window.saveTransportTime = window.saveTransportTime;
+window.renderMerchantList = renderMerchantList;
+window.createMerchant = createMerchant;
+window.renderFeedbackList = renderFeedbackList;
+window.replyFeedback = replyFeedback;
+window.deleteFeedback = deleteFeedback;
+window.refreshData = refreshData;

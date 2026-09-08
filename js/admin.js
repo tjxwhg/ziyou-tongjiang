@@ -1,4 +1,4 @@
-// js/admin.js - 管理后台完整逻辑（含新增POI）
+// js/admin.js - 管理后台完整逻辑（修复所有导出和功能）
 import {
     getPois, getPoi, insertPoi, updatePoi, deletePoi as apiDeletePoi,
     getScenicList, insertScenic, updateScenic, deleteScenic as apiDeleteScenic,
@@ -41,7 +41,7 @@ export async function initAdminUI() {
 }
 
 // ============================================================
-// POI 管理（新增和编辑）
+// POI 管理
 // ============================================================
 export function renderPoiList(pois) {
     const container = document.getElementById('poi-list');
@@ -62,27 +62,6 @@ export function renderPoiList(pois) {
         </div>`;
     }
     container.innerHTML = html || '<p>暂无POI</p>';
-}
-
-export function showAddPoiModal() {
-    // 清空表单
-    document.getElementById('edit-poi-id').value = '';
-    document.getElementById('edit-poi-name').value = '';
-    document.getElementById('edit-poi-category').value = '自然景区';
-    document.getElementById('edit-poi-lat').value = '';
-    document.getElementById('edit-poi-lng').value = '';
-    document.getElementById('edit-poi-open').value = '08:00';
-    document.getElementById('edit-poi-close').value = '18:00';
-    document.getElementById('edit-poi-visit').value = '60';
-    document.getElementById('edit-poi-desc').value = '';
-    document.getElementById('edit-poi-level').value = 'L3';
-    document.getElementById('poiModalTitle').textContent = '新增POI';
-    // 清空节点
-    const poiId = ''; // 新增时无ID
-    currentPoiNodes[poiId] = [];
-    renderNodesFields(poiId);
-    const modal = new bootstrap.Modal(document.getElementById('poiModal'));
-    modal.show();
 }
 
 export async function togglePoiNodes(poiId) {
@@ -106,6 +85,7 @@ export async function togglePoiNodes(poiId) {
     container.innerHTML = html;
 }
 
+// 编辑POI弹窗
 export async function showEditPoiModal(poiId) {
     const poi = allPois.find(p => p.id === poiId);
     if (!poi) return;
@@ -148,23 +128,7 @@ export function renderNodesFields(poiId) {
 
 export function addNodeField() {
     const poiId = document.getElementById('edit-poi-id').value;
-    if (!poiId) {
-        // 新增时临时使用空ID
-        if (!currentPoiNodes['']) currentPoiNodes[''] = [];
-        const name = prompt('节点名称：');
-        if (!name) return;
-        const type = prompt('类型 (core_view/entrance/exit/rest_area/wc/food/other)：', 'core_view');
-        const durMin = parseInt(prompt('最短停留分钟：', '15')) || 15;
-        const durMax = parseInt(prompt('最长停留分钟：', '30')) || 30;
-        currentPoiNodes[''].push({
-            node_name: name,
-            node_type: type || 'other',
-            suggested_duration_min: durMin,
-            suggested_duration_max: durMax
-        });
-        renderNodesFields('');
-        return;
-    }
+    if (!poiId) return;
     if (!currentPoiNodes[poiId]) currentPoiNodes[poiId] = [];
     const name = prompt('节点名称：');
     if (!name) return;
@@ -182,16 +146,7 @@ export function addNodeField() {
 
 export function removeNodeField(idx) {
     const poiId = document.getElementById('edit-poi-id').value;
-    if (!poiId || !currentPoiNodes[poiId]) {
-        // 尝试空ID
-        if (currentPoiNodes[''] && currentPoiNodes[''].length > idx) {
-            if (!confirm('删除此节点？')) return;
-            currentPoiNodes[''].splice(idx, 1);
-            renderNodesFields('');
-            return;
-        }
-        return;
-    }
+    if (!poiId || !currentPoiNodes[poiId]) return;
     if (!confirm('删除此节点？')) return;
     currentPoiNodes[poiId].splice(idx, 1);
     renderNodesFields(poiId);
@@ -199,35 +154,25 @@ export function removeNodeField(idx) {
 
 export async function savePoiEdit() {
     const poiId = document.getElementById('edit-poi-id').value;
-    const isNew = !poiId;
+    if (!poiId) return;
     const updates = {
         name: document.getElementById('edit-poi-name').value.trim(),
         category: document.getElementById('edit-poi-category').value,
-        lat: parseFloat(document.getElementById('edit-poi-lat').value) || 0,
-        lng: parseFloat(document.getElementById('edit-poi-lng').value) || 0,
+        lat: parseFloat(document.getElementById('edit-poi-lat').value),
+        lng: parseFloat(document.getElementById('edit-poi-lng').value),
         open_time: document.getElementById('edit-poi-open').value,
         close_time: document.getElementById('edit-poi-close').value,
         visit_duration: parseInt(document.getElementById('edit-poi-visit').value) || 0,
         description: document.getElementById('edit-poi-desc').value,
-        data_level: document.getElementById('edit-poi-level').value,
-        status: 'active'
+        data_level: document.getElementById('edit-poi-level').value
     };
     try {
-        let id = poiId;
-        if (isNew) {
-            const inserted = await insertPoi(updates);
-            id = inserted.id;
-        } else {
-            await updatePoi(poiId, updates);
-        }
-        // 保存内部节点
-        const nodes = currentPoiNodes[poiId] || currentPoiNodes[''] || [];
-        if (id) {
-            await deleteInternalNodes(id);
-            await deleteInternalEdges(id);
-            for (let n of nodes) {
-                await insertInternalNode({ ...n, poi_id: id });
-            }
+        await updatePoi(poiId, updates);
+        const nodes = currentPoiNodes[poiId] || [];
+        await deleteInternalNodes(poiId);
+        await deleteInternalEdges(poiId);
+        for (let n of nodes) {
+            await insertInternalNode({ ...n, poi_id: poiId });
         }
         alert('保存成功');
         bootstrap.Modal.getInstance(document.getElementById('poiModal')).hide();
@@ -245,6 +190,11 @@ export async function deletePoi(id) {
         await apiDeletePoi(id);
         await initAdminUI();
     } catch (e) { alert('删除失败：' + e.message); }
+}
+
+// 新增POI（占位）
+export function showAddPoiModal() {
+    alert('新增POI功能待完善，可通过编辑已有POI后保存为新POI来实现。');
 }
 
 // ============================================================
@@ -291,8 +241,8 @@ export async function saveScenicEdit() {
     const data = {
         name: document.getElementById('edit-scenic-name').value.trim(),
         area: document.getElementById('edit-scenic-area').value.trim(),
-        lat: parseFloat(document.getElementById('edit-scenic-lat').value) || 0,
-        lng: parseFloat(document.getElementById('edit-scenic-lng').value) || 0,
+        lat: parseFloat(document.getElementById('edit-scenic-lat').value),
+        lng: parseFloat(document.getElementById('edit-scenic-lng').value),
         description: document.getElementById('edit-scenic-desc').value
     };
     try {

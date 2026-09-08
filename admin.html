@@ -13,7 +13,6 @@
         .container-custom { max-width: 1400px; margin: 20px auto; padding: 0 16px; }
         .tab-content { background: white; padding: 20px; border-radius: 0 0 8px 8px; border: 1px solid #dee2e6; border-top: none; }
         .nav-tabs .nav-link.active { background: #2e7d32; color: white; border-color: #2e7d32; }
-        .inline-edit { background: #f8f9fa; border: 1px solid #2e7d32; border-radius: 8px; padding: 15px; margin-top: 10px; }
         .hidden { display: none !important; }
         #login-page { max-width: 400px; margin: 80px auto; }
         #login-page .card { padding: 24px; border-radius: 12px; box-shadow: 0 8px 32px rgba(0,0,0,0.1); }
@@ -26,13 +25,14 @@
         .node-list { margin-left: 20px; padding-left: 10px; border-left: 2px solid #2e7d32; }
         .node-item { display: flex; justify-content: space-between; align-items: center; padding: 4px 8px; border-bottom: 1px solid #f0f0f0; font-size: 13px; }
         .node-item .badge { font-size: 10px; }
-        .transport-matrix { width: 100%; border-collapse: collapse; font-size: 13px; }
-        .transport-matrix th, .transport-matrix td { border: 1px solid #ddd; padding: 4px 8px; text-align: center; }
-        .transport-matrix th { background: #e8f5e9; }
-        .transport-matrix input { width: 60px; padding: 2px 4px; border: 1px solid #ccc; border-radius: 4px; text-align: center; }
+        .transport-group { border: 1px solid #ddd; border-radius: 6px; margin-bottom: 8px; }
+        .transport-group .card-header { padding: 8px 12px; cursor: pointer; background: #f8f9fa; border-bottom: 1px solid #ddd; }
+        .transport-group .card-body { padding: 8px 12px; }
+        .transport-item { display: flex; justify-content: space-between; align-items: center; padding: 4px 0; border-bottom: 1px solid #f0f0f0; }
+        .transport-item:last-child { border-bottom: none; }
+        .transport-item input { width: 80px; padding: 2px 6px; border: 1px solid #ccc; border-radius: 4px; text-align: center; display: inline-block; }
+        .save-status { font-size: 12px; color: #2e7d32; margin-left: 6px; }
         .modal-lg-custom { max-width: 800px; }
-        .edit-toolbar { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
-        .edit-toolbar .btn { font-size: 12px; padding: 2px 10px; }
         @media (max-width: 768px) { .header { flex-direction: column; gap: 8px; } }
     </style>
 </head>
@@ -90,7 +90,7 @@
             <!-- 交通耗时 -->
             <div class="tab-pane" id="tab-transport">
                 <h5><i class="fas fa-clock text-success"></i> 景点间交通耗时（分钟）</h5>
-                <p class="text-secondary">修改后自动保存。红色背景表示数据为估算值，请更新为实际值。</p>
+                <p class="text-secondary">点击景点展开，修改后自动保存，反向数据自动填充。</p>
                 <div id="transport-editor" class="mt-2"></div>
             </div>
 
@@ -132,7 +132,10 @@
                     <div class="col-4"><label class="form-label">闭馆时间</label><input type="time" id="edit-poi-close" class="form-control" value="18:00"></div>
                     <div class="col-4"><label class="form-label">游览时长(分钟)</label><input type="number" id="edit-poi-visit" class="form-control"></div>
                     <div class="col-12"><label class="form-label">简介</label><textarea id="edit-poi-desc" class="form-control" rows="2"></textarea></div>
-                    <div class="col-12"><label class="form-label">数据等级</label>
+                    <div class="col-6"><label class="form-label">所属景区</label>
+                        <select id="edit-poi-scenic" class="form-select"><option value="">无关联景区</option></select>
+                    </div>
+                    <div class="col-6"><label class="form-label">数据等级</label>
                         <select id="edit-poi-level" class="form-select">
                             <option value="L3">L3 - 基础信息</option>
                             <option value="L2">L2 - 有内部路线</option>
@@ -200,44 +203,12 @@
 
 <script type="module">
 import { signIn, signOut, getCurrentUser, onAuthStateChange } from './js/auth.js';
-import {
-    initAdminUI,
-    showAddPoiModal,
-    showEditPoiModal,
-    savePoiEdit,
-    deletePoi,
-    addNodeField,
-    showAddScenicModal,
-    saveScenicEdit,
-    deleteScenic,
-    showAddRouteModal,
-    saveRouteEdit,
-    deleteRoute,
-    addRouteNodeField,
-    createMerchant,
-    refreshData,
-    replyFeedback,
-    deleteFeedback
-} from './js/admin.js';
+import * as admin from './js/admin.js';
 
-// 挂载到全局
-window.initAdminUI = initAdminUI;
-window.showAddPoiModal = showAddPoiModal;
-window.showEditPoiModal = showEditPoiModal;
-window.savePoiEdit = savePoiEdit;
-window.deletePoi = deletePoi;
-window.addNodeField = addNodeField;
-window.showAddScenicModal = showAddScenicModal;
-window.saveScenicEdit = saveScenicEdit;
-window.deleteScenic = deleteScenic;
-window.showAddRouteModal = showAddRouteModal;
-window.saveRouteEdit = saveRouteEdit;
-window.deleteRoute = deleteRoute;
-window.addRouteNodeField = addRouteNodeField;
-window.createMerchant = createMerchant;
-window.refreshData = refreshData;
-window.replyFeedback = replyFeedback;
-window.deleteFeedback = deleteFeedback;
+// 挂载所有 admin 导出到 window
+Object.keys(admin).forEach(key => {
+    window[key] = admin[key];
+});
 
 // 登录事件
 document.getElementById('loginBtn').addEventListener('click', async () => {
@@ -262,7 +233,7 @@ onAuthStateChange((event, session) => {
     if (event === 'SIGNED_IN') {
         document.getElementById('login-page').classList.add('hidden');
         document.getElementById('main').classList.remove('hidden');
-        initAdminUI();
+        admin.initAdminUI();
     } else {
         document.getElementById('login-page').classList.remove('hidden');
         document.getElementById('main').classList.add('hidden');
@@ -275,7 +246,7 @@ onAuthStateChange((event, session) => {
     if (user) {
         document.getElementById('login-page').classList.add('hidden');
         document.getElementById('main').classList.remove('hidden');
-        initAdminUI();
+        admin.initAdminUI();
     }
 })();
 </script>

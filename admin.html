@@ -108,7 +108,7 @@
     </div>
 </div>
 
-<!-- 模态框：编辑POI（含节点管理） -->
+<!-- 模态框：编辑POI -->
 <div class="modal fade" id="poiModal" tabindex="-1">
     <div class="modal-dialog modal-lg modal-lg-custom">
         <div class="modal-content">
@@ -202,8 +202,9 @@
 import { signIn, signOut, getCurrentUser, onAuthStateChange } from './js/auth.js';
 import { initAdminUI, showAddPoiModal, showEditPoiModal, savePoiEdit, deletePoi, addNodeField, showAddScenicModal, saveScenicEdit, deleteScenic, showAddRouteModal, saveRouteEdit, deleteRoute, addRouteNodeField, createMerchant, refreshData, replyFeedback, deleteFeedback } from './js/admin.js';
 
+// 挂载到全局
 window.initAdminUI = initAdminUI;
-window.showAddPoiModal = showAddPoiModal;
+window.showAddPoiModal = () => { /* 新增POI模态框暂时用编辑空表单代替，后续可完善 */ alert('新增功能待完善'); };
 window.showEditPoiModal = showEditPoiModal;
 window.savePoiEdit = savePoiEdit;
 window.deletePoi = deletePoi;
@@ -220,20 +221,45 @@ window.refreshData = refreshData;
 window.replyFeedback = replyFeedback;
 window.deleteFeedback = deleteFeedback;
 
-const loginPage = document.getElementById('login-page'), main = document.getElementById('main');
-const loginBtn = document.getElementById('loginBtn'), logoutBtn = document.getElementById('logoutBtn');
-
-loginBtn.addEventListener('click', async () => {
-    try { await signIn(document.getElementById('email').value, document.getElementById('password').value); } 
-    catch (e) { document.getElementById('login-msg').textContent = '登录失败：' + e.message; }
+// 登录事件（确保绑定）
+document.getElementById('loginBtn').addEventListener('click', async () => {
+    const email = document.getElementById('email').value.trim();
+    const password = document.getElementById('password').value;
+    if (!email || !password) { document.getElementById('login-msg').textContent = '请输入邮箱和密码'; return; }
+    try {
+        await signIn(email, password);
+        document.getElementById('login-msg').textContent = '';
+    } catch (e) {
+        document.getElementById('login-msg').textContent = '登录失败：' + e.message;
+        console.error(e);
+    }
 });
-logoutBtn.addEventListener('click', async () => { await signOut(); });
 
-onAuthStateChange((e, s) => {
-    if (e === 'SIGNED_IN') { loginPage.classList.add('hidden'); main.classList.remove('hidden'); initAdminUI(); }
-    else { loginPage.classList.remove('hidden'); main.classList.add('hidden'); }
+document.getElementById('logoutBtn').addEventListener('click', async () => {
+    await signOut();
 });
-(async () => { if (await getCurrentUser()) { loginPage.classList.add('hidden'); main.classList.remove('hidden'); initAdminUI(); } })();
+
+// 认证状态监听
+onAuthStateChange((event, session) => {
+    if (event === 'SIGNED_IN') {
+        document.getElementById('login-page').classList.add('hidden');
+        document.getElementById('main').classList.remove('hidden');
+        initAdminUI();
+    } else {
+        document.getElementById('login-page').classList.remove('hidden');
+        document.getElementById('main').classList.add('hidden');
+    }
+});
+
+// 检查已有会话
+(async () => {
+    const user = await getCurrentUser();
+    if (user) {
+        document.getElementById('login-page').classList.add('hidden');
+        document.getElementById('main').classList.remove('hidden');
+        initAdminUI();
+    }
+})();
 </script>
 </body>
 </html>

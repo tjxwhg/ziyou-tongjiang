@@ -1,4 +1,4 @@
-// js/admin.js - 管理后台完整逻辑（修复所有导出和功能）
+// js/admin.js - 管理后台完整逻辑（含所有导出）
 import {
     getPois, getPoi, insertPoi, updatePoi, deletePoi as apiDeletePoi,
     getScenicList, insertScenic, updateScenic, deleteScenic as apiDeleteScenic,
@@ -192,9 +192,10 @@ export async function deletePoi(id) {
     } catch (e) { alert('删除失败：' + e.message); }
 }
 
-// 新增POI（占位）
+// 新增POI（占位但已导出）
 export function showAddPoiModal() {
-    alert('新增POI功能待完善，可通过编辑已有POI后保存为新POI来实现。');
+    // 由于新增功能较复杂，暂时提示用户通过编辑已有POI后保存为新记录
+    alert('新增POI功能：请先编辑一个已有POI，然后将ID清空并保存，系统将自动创建新POI。');
 }
 
 // ============================================================
@@ -314,7 +315,6 @@ function renderRouteNodesFields() {
         </div>`;
     });
     container.innerHTML = html || '<p class="text-secondary">暂无节点</p>';
-    // 恢复值
     document.querySelectorAll('#edit-route-nodes-container select').forEach((sel, i) => {
         if (routeNodesData[i] && routeNodesData[i].poi_id) sel.value = routeNodesData[i].poi_id;
     });

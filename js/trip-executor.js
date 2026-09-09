@@ -43,6 +43,10 @@ export function stopNavigation() {
     }
 }
 
+export function endNavigation() {
+    stopNavigation();
+}
+
 function startGpsTracking() {
     if (!navigator.geolocation) return;
     if (watchId) navigator.geolocation.clearWatch(watchId);

@@ -1,4 +1,9 @@
 // js/utils.js - 通用工具函数
+import { COUNTY_SPOT_KEYWORDS } from './config.js';
+
+// ============================================================
+// 坐标转换 WGS84 → GCJ02
+// ============================================================
 export function wgs84ToGcj02(lat, lon) {
     const a = 6378245.0;
     const ee = 0.00669342162296594323;
@@ -30,6 +35,9 @@ export function wgs84ToGcj02(lat, lon) {
     return { lat: lat + dLatFinal, lng: lon + dLonFinal };
 }
 
+// ============================================================
+// 距离计算
+// ============================================================
 export function getDistance(lat1, lng1, lat2, lng2) {
     const R = 6371000;
     const dLat = (lat2 - lat1) * Math.PI / 180;
@@ -40,6 +48,9 @@ export function getDistance(lat1, lng1, lat2, lng2) {
     return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
+// ============================================================
+// 时间格式化
+// ============================================================
 export function formatTime(minutes) {
     const h = Math.floor(minutes / 60);
     const m = minutes % 60;
@@ -52,6 +63,9 @@ export function timeToMinutes(timeStr) {
     return parseInt(parts[0]) * 60 + parseInt(parts[1]);
 }
 
+// ============================================================
+// 天气
+// ============================================================
 let weatherCache = null;
 let weatherCacheTime = null;
 
@@ -66,6 +80,19 @@ export async function fetchWeatherForecast() {
         if (!response.ok) throw new Error('天气API请求失败');
         const data = await response.json();
         if (!data.daily || !data.daily.time) throw new Error('天气数据格式异常');
+
+        let uvIndexData = [];
+        try {
+            const uvUrl = `https://api.open-meteo.com/v1/forecast?latitude=31.911705&longitude=107.245033&daily=uv_index_max&timezone=Asia/Shanghai&forecast_days=16`;
+            const uvResponse = await fetch(uvUrl);
+            if (uvResponse.ok) {
+                const uvData = await uvResponse.json();
+                if (uvData.daily && uvData.daily.uv_index_max) {
+                    uvIndexData = uvData.daily.uv_index_max;
+                }
+            }
+        } catch (e) { /* 紫外线数据不可用 */ }
+
         const codes = data.daily.weathercode || [];
         const tempsMax = data.daily.temperature_2m_max || [];
         const tempsMin = data.daily.temperature_2m_min || [];
@@ -85,7 +112,10 @@ export async function fetchWeatherForecast() {
             weather: codeMap[codes[i]] || '未知天气',
             tempMax: tempsMax[i] !== undefined ? Math.round(tempsMax[i]) : '--',
             tempMin: tempsMin[i] !== undefined ? Math.round(tempsMin[i]) : '--',
-            wind: winds[i] !== undefined ? Math.round(winds[i]) : '--'
+            wind: winds[i] !== undefined ? Math.round(winds[i]) : '--',
+            uvIndex: uvIndexData[i] !== undefined ? Math.round(uvIndexData[i]) : null,
+            humidity: null,
+            pressure: null
         }));
         weatherCache = forecast;
         weatherCacheTime = now;
@@ -105,18 +135,26 @@ export function getDayWeatherTip(weatherObj) {
         tip += `，最高气温 ${weatherObj.tempMax}℃`;
     }
     if (weatherObj.wind !== '--') tip += `，风力 ${weatherObj.wind} km/h`;
+    if (weatherObj.uvIndex && weatherObj.uvIndex > 0) {
+        if (weatherObj.uvIndex >= 8) tip += '，☀️ 紫外线极强，请做好防晒措施';
+        else if (weatherObj.uvIndex >= 6) tip += '，☀️ 紫外线强，建议涂抹防晒霜';
+        else if (weatherObj.uvIndex >= 3) tip += '，🌤️ 紫外线中等，可适当防晒';
+    }
     if (weatherObj.weather.includes('雨') || weatherObj.weather.includes('雷') || weatherObj.weather.includes('雾')) {
-        tip += '，☔ 有降雨或大雾，注意出行安全。';
+        tip += '，☔ 有降雨或大雾，请携带雨具，注意出行安全。';
     } else if (weatherObj.tempMax !== '--' && weatherObj.tempMax > 33) {
-        tip += '，☀️ 气温较高，注意防暑防晒。';
+        tip += '，🌡️ 气温较高，注意防暑防晒，多补充水分。';
     } else if (weatherObj.tempMax !== '--' && weatherObj.tempMax < 10) {
         tip += '，🧥 气温较低，注意保暖。';
     } else {
-        tip += '，🌿 天气适宜出行。';
+        tip += '，🌿 天气适宜出行，祝您旅途愉快！';
     }
     return tip;
 }
 
+// ============================================================
+// 语音合成
+// ============================================================
 export function speak(text, lang = 'zh-CN') {
     if (!('speechSynthesis' in window)) return;
     const utterance = new SpeechSynthesisUtterance(text);

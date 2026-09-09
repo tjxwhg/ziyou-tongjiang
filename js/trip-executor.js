@@ -27,16 +27,11 @@ export function initNavigation(tripData) {
 }
 
 export function startNavigation(tripData) {
-    // 兼容外部调用：如果传入 tripData 则使用，否则使用已存储的 navData
-    if (tripData) {
-        navData = tripData;
-    }
-    if (!navData) {
+    if (!tripData) {
         alert('没有可导航的行程');
-        return false;
+        return;
     }
-    initNavigation(navData);
-    return true;
+    initNavigation(tripData);
 }
 
 export function stopNavigation() {

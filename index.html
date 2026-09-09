@@ -8,6 +8,7 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
+        /* 样式与之前相同，省略以节省篇幅，实际部署时请包含完整样式 */
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; height: 100vh; overflow: hidden; background: #f0f2f5; }
         .hidden { display: none !important; }
@@ -171,29 +172,6 @@
         .card-modern { background: white; border-radius: 12px; padding: 16px; margin-bottom: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); border: 1px solid #f0f0f0; }
         .card-modern .card-title { font-weight: 600; font-size: 16px; margin-bottom: 6px; color: #1b5e20; }
         .card-modern .card-sub { font-size: 13px; color: #888; }
-
-        .solution-card {
-            background: white;
-            border-radius: 16px;
-            padding: 20px;
-            border: 2px solid #e8f5e9;
-            transition: all 0.3s;
-            cursor: pointer;
-            margin-bottom: 16px;
-        }
-        .solution-card:hover { border-color: #1b5e20; transform: translateY(-4px); }
-        .solution-card.selected { border-color: #1b5e20; background: #f1f8e9; }
-        .solution-card .badge-style { display: inline-block; padding: 4px 14px; border-radius: 20px; font-size: 12px; font-weight: 600; margin-bottom: 8px; }
-        .badge-compact { background: #fff3e0; color: #e65100; }
-        .badge-relaxed { background: #e3f2fd; color: #0d47a1; }
-        .badge-indepth { background: #fce4ec; color: #880e4f; }
-        .solution-card .stat-row { display: flex; justify-content: space-between; padding: 4px 0; font-size: 13px; border-bottom: 1px solid #f5f5f5; }
-        .solution-card .stat-row:last-child { border-bottom: none; }
-        .solution-card .day-detail { margin-top: 12px; border-top: 1px solid #eee; padding-top: 12px; }
-        .solution-card .day-detail .day-title { font-weight: 600; color: #1b5e20; margin-bottom: 6px; }
-        .solution-card .day-detail .time-line { display: flex; align-items: center; gap: 8px; padding: 3px 0; font-size: 14px; }
-        .solution-card .day-detail .time-line .time { color: #888; min-width: 80px; }
-        .solution-card .day-detail .time-line .icon { width: 24px; text-align: center; }
 
         .trip-day-container {
             background: white;
@@ -394,7 +372,6 @@
             .trip-timeline { padding-left: 16px; }
             .trip-node { padding: 4px 0 4px 12px; gap: 8px; }
             .trip-node::before { left: -14px; top: 10px; width: 10px; height: 10px; }
-            .solution-card .day-detail .time-line { font-size: 12px; }
         }
         .text-green { color: #1b5e20; }
         .btn-primary-custom { background: #1b5e20; color: white; border: none; padding: 8px 16px; border-radius: 8px; font-weight: 600; transition: 0.2s; cursor: pointer; }
@@ -478,23 +455,14 @@
         </div>
 
         <div id="stepCompare" class="hidden">
-            <div class="d-flex justify-content-between align-items-center mb-3">
-                <h5><i class="fas fa-chart-simple text-green"></i> 方案对比</h5>
-                <button class="btn btn-secondary btn-sm" onclick="window.backToPreferences()"><i class="fas fa-arrow-left"></i> 重新设置</button>
-            </div>
-            <div id="solutionCompareContainer"></div>
-            <div class="mt-3">
-                <button class="btn btn-primary-custom w-100" onclick="window.selectSolution()" id="selectSolutionBtn" disabled>
-                    <i class="fas fa-check"></i> 选择此方案
-                </button>
-            </div>
+            <!-- 保留但隐藏，不再使用 -->
         </div>
 
         <div id="stepDetail" class="hidden">
             <div class="d-flex justify-content-between align-items-center mb-3">
                 <h5><i class="fas fa-map text-green"></i> 我的行程</h5>
                 <div>
-                    <button class="btn btn-secondary btn-sm me-1" onclick="window.backToCompare()"><i class="fas fa-arrow-left"></i> 返回对比</button>
+                    <button class="btn btn-secondary btn-sm me-1" onclick="window.backToPreferences()"><i class="fas fa-arrow-left"></i> 重新选择</button>
                     <button class="btn btn-outline-custom btn-sm" onclick="window.toggleEditMode()"><i class="fas fa-edit"></i> 编辑行程</button>
                 </div>
             </div>
@@ -574,7 +542,7 @@
 
 <script type="module">
 // =============================================================
-// 主入口
+// 主入口 - 完整版（移除方案对比，直接显示行程）
 // =============================================================
 import { getPois, getMerchantsByPoi, getTransportPresets, insertReservation, insertFeedback, saveTripSolution as apiSaveTripSolution, getUserTripSolutions, getReservations, getFeedbacks } from './js/api.js';
 import { getCurrentUser, signInAnonymously } from './js/auth.js';
@@ -582,7 +550,6 @@ import { initMap, loadPoisToMap, locateUser, setVoiceEnabled, getAllPois, clearF
 import { formatTime, timeToMinutes } from './js/utils.js';
 import { generateTripPlan } from './js/trip-planner.js';
 import { startNavigation, endNavigation } from './js/trip-executor.js';
-import { renderMyReservations as originalRenderMyReservations, renderFeedbackHistory as originalRenderFeedbackHistory, submitFeedback as submitUserFeedback } from './js/user.js';
 
 // ===== 设备ID =====
 function getDeviceId() {
@@ -636,7 +603,6 @@ function initTimeSelectors() {
             sel.innerHTML += `<option value="${val}">${val}</option>`;
         }
     }
-    // 设置默认时间为当前时间+10分钟
     setDefaultStartTime();
 }
 
@@ -648,7 +614,6 @@ function setDefaultStartTime() {
     const timeStr = h + ':' + m;
     const sel = document.getElementById('planStartTime');
     if (sel) {
-        // 确保该选项存在
         let exists = false;
         for (let opt of sel.options) {
             if (opt.value === timeStr) { exists = true; break; }
@@ -811,11 +776,11 @@ function updateSelectedInfo() {
     document.getElementById('selectedDurationDisplay').textContent = `已选景点总游览时长：${totalDuration} 分钟`;
 }
 
-// ===== 生成行程方案 =====
+// ===== 生成行程方案（直接显示详情，跳过对比） =====
 window.generatePlans = async function() {
     const loadingEl = document.getElementById('planLoading');
     const stepPrefs = document.getElementById('stepPreferences');
-    const stepCompare = document.getElementById('stepCompare');
+    const stepDetail = document.getElementById('stepDetail');
     const generateBtn = document.getElementById('generatePlanBtn');
 
     const startDate = document.getElementById('planStartDate').value;
@@ -864,17 +829,17 @@ window.generatePlans = async function() {
             return;
         }
 
-        currentSolutions = [{
-            style: mode,
-            data: result,
-            score: 0.85
-        }];
-        selectedSolutionIndex = -1;
-
-        renderDetailedSolutions(currentSolutions);
+        currentTripData = result;
+        // 直接显示行程详情
+        showTripDetail(result);
         loadingEl.classList.add('hidden');
         stepPrefs.classList.add('hidden');
-        stepCompare.classList.remove('hidden');
+        stepDetail.classList.remove('hidden');
+        populateEditPoiSelect();
+        
+        const stepCompare = document.getElementById('stepCompare');
+        if (stepCompare) stepCompare.classList.add('hidden');
+        
     } catch (e) {
         alert('生成方案失败：' + e.message);
         console.error(e);
@@ -885,104 +850,7 @@ window.generatePlans = async function() {
     }
 };
 
-// ===== 渲染方案对比 =====
-function renderDetailedSolutions(solutions) {
-    const container = document.getElementById('solutionCompareContainer');
-    if (!container) return;
-
-    const styleLabels = {
-        compact: { label: '紧凑型', badge: 'badge-compact', icon: '🚀' },
-        relaxed: { label: '舒适型', badge: 'badge-relaxed', icon: '🌿' },
-        indepth: { label: '深度游', badge: 'badge-indepth', icon: '🔍' }
-    };
-
-    let html = '';
-    solutions.forEach((sol, idx) => {
-        const info = styleLabels[sol.style] || styleLabels.relaxed;
-        const data = sol.data || {};
-        const totalPois = data.totalVisit ? Math.round(data.totalVisit / 60) : 0;
-        const totalDays = data.days ? data.days.length : 1;
-
-        html += `
-            <div class="solution-card" onclick="window.selectSolutionCard(${idx})" id="sol-card-${idx}">
-                <div class="badge-style ${info.badge}">${info.icon} ${info.label}</div>
-                <div class="stat-row"><span>📅 天数</span><span>${totalDays} 天</span></div>
-                <div class="stat-row"><span>⏱️ 交通总时长</span><span>${Math.round((data.totalTravel||0)/60)} 小时</span></div>
-                <div class="stat-row"><span>⏱️ 游览总时长</span><span>${Math.round((data.totalVisit||0)/60)} 小时</span></div>
-                <div style="margin-top:12px;max-height:300px;overflow-y:auto;border-top:1px solid #eee;padding-top:8px;">
-                    ${data.days && data.days.length > 0 ? renderTimelinePreview(data.days[0]) : '<span class="text-secondary">无行程数据</span>'}
-                    ${data.days && data.days.length > 1 ? `<div class="text-secondary text-center mt-1">... 共 ${data.days.length} 天</div>` : ''}
-                </div>
-                <button class="btn btn-sm btn-outline-custom mt-2 w-100" onclick="event.stopPropagation(); window.previewSolution(${idx})">
-                    <i class="fas fa-eye"></i> 查看完整行程
-                </button>
-            </div>
-        `;
-    });
-
-    container.innerHTML = html;
-    document.getElementById('selectSolutionBtn').disabled = true;
-}
-
-function renderTimelinePreview(day) {
-    if (!day || !day.nodes) return '<span class="text-secondary">无数据</span>';
-    let html = '';
-    let count = 0;
-    for (let node of day.nodes) {
-        if (count > 5) break;
-        if (node.type === 'transport' || node.type === 'visit' || node.type === 'meal') {
-            const icon = node.type === 'transport' ? '🚗' : node.type === 'visit' ? '📍' : '🍽️';
-            const timeStr = node.startTime !== undefined ? fmtTime(node.startTime) : '';
-            html += `<div style="font-size:13px;padding:2px 0;border-bottom:1px dashed #f0f0f0;">
-                ${timeStr ? `<span style="color:#888;font-size:12px;">${timeStr}</span>` : ''}
-                ${icon} ${node.name || '游览'}
-                ${node.duration ? `<span style="color:#999;font-size:11px;">(${node.duration}分钟)</span>` : ''}
-            </div>`;
-            count++;
-        }
-    }
-    if (day.nodes.length > 5) {
-        html += `<div style="font-size:12px;color:#888;text-align:center;">... 还有 ${day.nodes.length - 5} 个节点</div>`;
-    }
-    return html;
-}
-
-window.selectSolutionCard = function(idx) {
-    document.querySelectorAll('.solution-card').forEach(el => el.classList.remove('selected'));
-    const card = document.getElementById(`sol-card-${idx}`);
-    if (card) card.classList.add('selected');
-    selectedSolutionIndex = idx;
-    document.getElementById('selectSolutionBtn').disabled = false;
-};
-
-window.previewSolution = function(idx) {
-    const sol = currentSolutions[idx];
-    if (!sol) return;
-    const data = sol.data || {};
-    if (data.days && data.days.length > 0) {
-        showTripDetail(data);
-        document.getElementById('stepCompare').classList.add('hidden');
-        document.getElementById('stepDetail').classList.remove('hidden');
-    } else {
-        alert('暂无详细行程数据');
-    }
-};
-
-window.selectSolution = function() {
-    if (selectedSolutionIndex < 0 || selectedSolutionIndex >= currentSolutions.length) {
-        alert('请先选择一个方案');
-        return;
-    }
-    const sol = currentSolutions[selectedSolutionIndex];
-    const data = sol.data || {};
-    currentTripData = data;
-    showTripDetail(data);
-    document.getElementById('stepCompare').classList.add('hidden');
-    document.getElementById('stepDetail').classList.remove('hidden');
-    populateEditPoiSelect();
-};
-
-// ===== 展示详细行程 =====
+// ===== 显示行程详情 =====
 function showTripDetail(data) {
     const container = document.getElementById('tripDetailContainer');
     if (!container) return;
@@ -990,10 +858,11 @@ function showTripDetail(data) {
     let html = '';
     if (data.days) {
         data.days.forEach((day, dayIdx) => {
+            const visitCount = day.nodes ? day.nodes.filter(n => n.type === 'visit').length : 0;
             html += `<div class="trip-day-container">`;
             html += `<div class="trip-day-title">
                 <span>📅 第${dayIdx + 1}天 (${day.date})</span>
-                <span class="day-badge">${day.nodes ? day.nodes.filter(n => n.type === 'visit').length : 0} 个景点</span>
+                <span class="day-badge">${visitCount} 个景点</span>
             </div>`;
             html += `<div class="trip-timeline">`;
 
@@ -1049,7 +918,6 @@ function showTripDetail(data) {
                         timeDisplay = timeStr;
                     }
 
-                    // 住宿节点特殊处理
                     if (node.type === 'accommodation') {
                         html += `
                             <div class="trip-node type-${typeClass}" data-node-index="${nodeIdx}">
@@ -1058,7 +926,7 @@ function showTripDetail(data) {
                                 ${contentHtml}
                             </div>
                         `;
-                        return; // 跳过后续渲染
+                        return;
                     }
 
                     html += `
@@ -1125,13 +993,10 @@ function populateEditPoiSelect() {
 window.insertNodeAfter = function(dayIdx, nodeIdx) {
     const sel = document.getElementById('editAddPoi');
     const posSel = document.getElementById('editInsertPosition');
-    // 自动设置插入位置
     posSel.value = `${dayIdx}-${nodeIdx}`;
-    // 打开编辑工具栏
     if (document.getElementById('editToolbar').classList.contains('hidden')) {
         window.toggleEditMode();
     }
-    // 高亮提示
     alert('请在编辑工具栏中选择要插入的景点，然后点击"插入"按钮');
 };
 
@@ -1145,7 +1010,6 @@ window.removeNode = function(dayIdx, nodeIdx) {
     const node = data.days[dayIdx].nodes[nodeIdx];
     if (!node) return;
 
-    // 不允许删除核心节点（如餐食、住宿、交通中的关键节点）
     if (node.type === 'meal' || node.type === 'accommodation') {
         alert('餐食和住宿节点不可删除');
         return;
@@ -1163,9 +1027,7 @@ window.insertPoiToTrip = function() {
     const poi = getPoiById(poiId);
     if (!poi) { alert('未找到景点'); return; }
 
-    // 将景点添加到选择列表并重新生成
     selectedPoiIds.add(String(poiId));
-    // 更新UI
     const container = document.getElementById('poiSelectContainer');
     const checkbox = container.querySelector(`[data-poi-id="${poiId}"] input[type="checkbox"]`);
     if (checkbox) checkbox.checked = true;
@@ -1178,9 +1040,7 @@ window.insertPoiToTrip = function() {
 // ===== 重新生成行程 =====
 window.regenerateTrip = async function() {
     if (!currentTripData) { alert('没有可重新生成的行程'); return; }
-    // 使用已选景点重新生成
     const loadingEl = document.getElementById('planLoading');
-    const stepCompare = document.getElementById('stepCompare');
     const stepDetail = document.getElementById('stepDetail');
     const generateBtn = document.getElementById('generatePlanBtn');
 
@@ -1232,8 +1092,8 @@ window.regenerateTrip = async function() {
         currentTripData = result;
         showTripDetail(result);
         loadingEl.classList.add('hidden');
-        stepCompare.classList.add('hidden');
         stepDetail.classList.remove('hidden');
+        populateEditPoiSelect();
         alert('行程已重新生成！');
     } catch (e) {
         alert('重新生成失败：' + e.message);
@@ -1244,12 +1104,12 @@ window.regenerateTrip = async function() {
     }
 };
 
-// ===== 保存行程（带命名） =====
+// ===== 保存行程 =====
 window.saveTripSolution = function() {
     if (!currentTripData) { alert('没有可保存的行程'); return; }
     const defaultName = `行程_${new Date().toISOString().slice(0, 10)}`;
     const name = prompt('请输入行程名称：', defaultName);
-    if (name === null) return; // 用户取消
+    if (name === null) return;
     const tripName = name.trim() || defaultName;
     const trips = getLocalData('trips');
     trips.push({
@@ -1307,7 +1167,6 @@ window.viewTripSolution = function(id) {
     showTripDetail(trip.data);
     document.getElementById('planPanel').classList.add('active');
     document.getElementById('stepPreferences').classList.add('hidden');
-    document.getElementById('stepCompare').classList.add('hidden');
     document.getElementById('stepDetail').classList.remove('hidden');
 };
 
@@ -1570,15 +1429,10 @@ window.toggleVoice = () => {
     document.querySelector('#voiceToggleBtn i').className = 'fas ' + icon;
 };
 window.backToPreferences = function() {
-    document.getElementById('stepCompare').classList.add('hidden');
     document.getElementById('stepDetail').classList.add('hidden');
     document.getElementById('stepPreferences').classList.remove('hidden');
     selectedSolutionIndex = -1;
     currentSolutions = [];
-};
-window.backToCompare = function() {
-    document.getElementById('stepDetail').classList.add('hidden');
-    document.getElementById('stepCompare').classList.remove('hidden');
 };
 window.startNavigation = startNavigation;
 window.endNavigation = endNavigation;

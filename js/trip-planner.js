@@ -1,4 +1,4 @@
-// js/trip-planner.js - 智能行程规划引擎（修复显示问题）
+// js/trip-planner.js - 智能行程规划引擎（修复游览时长显示）
 import { formatTime, timeToMinutes, getDistance, fetchWeatherForecast, getDayWeatherTip } from './utils.js';
 import { DAY_START, DAY_END, LUNCH_START, LUNCH_END, DINNER_START, DINNER_END, MEAL_DURATION } from './config.js';
 
@@ -96,6 +96,7 @@ export class TripPlanner {
                 }
             }
 
+            // 选择游览节点
             const nodes = this.selectNodes(poi);
             if (!nodes || nodes.length === 0) {
                 const fallbackNode = {
@@ -109,6 +110,19 @@ export class TripPlanner {
             } else {
                 poi._selectedNodes = nodes;
                 poi._totalDuration = nodes.reduce((sum, n) => sum + (n.suggested_duration_min || 0), 0);
+            }
+
+            // 修复：如果总时长为0，强制使用 visit_duration
+            if (poi._totalDuration === 0) {
+                const fallbackDur = poi.visit_duration || 60;
+                const fallbackNode = {
+                    node_name: poi.name,
+                    node_type: 'poi',
+                    suggested_duration_min: fallbackDur,
+                    isFallback: true
+                };
+                poi._selectedNodes = [fallbackNode];
+                poi._totalDuration = fallbackDur;
             }
 
             let remaining = poi._totalDuration;
@@ -288,7 +302,6 @@ export class TripPlanner {
     finishDay() {
         if (this.dayNodes.length === 0) return;
         const last = this.dayNodes[this.dayNodes.length - 1];
-        // 如果最后不是住宿节点，且未返回县城，则插入返回县城
         if (last.type !== 'accommodation' && this.lastPoiId !== 'county') {
             const returnTravel = this.getTravelTime(this.lastPoiId, 'county');
             if (returnTravel > 0 && returnTravel <= 180) {
@@ -309,7 +322,6 @@ export class TripPlanner {
                 this.warnings.push(`返回县城交通耗时 ${returnTravel} 分钟超过限制，请检查数据。`);
             }
         }
-        // 住宿节点：不显示时间，只显示文本
         this.addNode({
             type: 'accommodation',
             name: '今天行程结束，住宿休息',

@@ -38,3 +38,11 @@ export const WEIGHT_TEMPLATES = {
     relaxed: { alpha: 0.25, beta: 0.15, gamma: 0.30, delta: 0.15, epsilon: 0.15 },
     indepth: { alpha: 0.20, beta: 0.20, gamma: 0.20, delta: 0.20, epsilon: 0.20 }
 };
+
+// 补全缺失的导出
+export const COUNTY_SPOT_KEYWORDS = ['轿房沟美食街', '银耳博物馆', '红四方面军总指挥部旧址纪念馆', '省委党校旧址纪念馆', '通江花月夜'];
+export const LONG_SPOT_NAMES = ['空山天盆', '诺水河溶洞', '王坪烈士陵园', '红军烈士陵园'];
+export const ALLOWED_CATEGORIES = ['自然景区', '红色景区', '文博场馆'];
+export const NON_VISIT_CATEGORIES = ['交通枢纽','餐饮住宿','公共服务','特产购物','游玩娱乐'];
+export const EXCLUDED_TRANSPORT_CATS = ['公共服务','游玩娱乐','特产购物'];
+export const COUNTY = { lat:31.911705, lng:107.245033, name:'红军广场', id:'county' };

@@ -1,4 +1,4 @@
-// js/api.js - Supabase API 操作
+// js/api.js - Supabase API 操作（完整修复版）
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from './config.js';
 
@@ -166,7 +166,7 @@ export async function deleteTransportPresetsForPoi(poiId) {
 
 // ========== 商户 ==========
 export async function getMerchant(id) {
-    const { data, error } = await supabase.from('ztj_merchants').select('*').eq('id', id).single();
+    const { data, error } = await supabase.from('ztj_merchants').select('*').eq('id', id).maybeSingle();
     if (error) throw error;
     return data;
 }

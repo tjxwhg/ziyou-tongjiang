@@ -1,4 +1,4 @@
-// js/admin.js - 管理后台完整逻辑（修复 ID 比较）
+// js/admin.js - 管理后台完整逻辑（修复 RLS 错误提示）
 import {
     getPois, getPoi, insertPoi, updatePoi, deletePoi as apiDeletePoi,
     getScenicList, insertScenic, updateScenic, deleteScenic as apiDeleteScenic,
@@ -112,11 +112,10 @@ export function showAddPoiModal() {
 }
 
 export async function showEditPoiModal(poiId) {
-    // 修复：将 poiId 转为数字比较
     const idNum = Number(poiId);
     const poi = allPois.find(p => p.id === idNum);
     if (!poi) {
-        console.warn('POI 未找到:', poiId, 'allPois:', allPois.map(p => p.id));
+        console.warn('POI 未找到:', poiId);
         return;
     }
     currentEditingPoiId = poiId;
@@ -216,7 +215,17 @@ export async function savePoiEdit() {
         if (savedPoiId) {
             await deleteInternalNodes(savedPoiId);
             for (let n of nodes) {
-                await insertInternalNode({ ...n, poi_id: savedPoiId });
+                try {
+                    await insertInternalNode({ ...n, poi_id: savedPoiId });
+                } catch (insertErr) {
+                    // RLS错误或插入错误
+                    if (insertErr.code === '42501') {
+                        alert('插入子景点失败：行级安全策略(RLS)限制。请在 Supabase 中为 "poi_internal_nodes" 表启用允许认证用户插入的策略。');
+                    } else {
+                        throw insertErr;
+                    }
+                    return;
+                }
             }
         }
         alert(isNew ? '新增成功' : '保存成功');
@@ -396,11 +405,10 @@ export function renderRouteList(routes) {
 let routeNodesData = [];
 
 export async function showEditRouteModal(id) {
-    // 修复：将 id 转为数字比较
     const idNum = Number(id);
     const r = allRoutes.find(x => x.id === idNum);
     if (!r) {
-        console.warn('路线未找到:', id, 'allRoutes:', allRoutes.map(x => x.id));
+        console.warn('路线未找到:', id);
         return;
     }
     document.getElementById('edit-route-id').value = id;

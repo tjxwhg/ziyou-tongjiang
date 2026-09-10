@@ -1,4 +1,4 @@
-// js/admin.js - 管理后台完整逻辑（修复 RLS 错误提示）
+// js/admin.js - 管理后台完整逻辑（优化版：并行加载 + 弹窗先显后填）
 import {
     getPois, getPoi, insertPoi, updatePoi, deletePoi as apiDeletePoi,
     getScenicList, insertScenic, updateScenic, deleteScenic as apiDeleteScenic,
@@ -17,16 +17,24 @@ let currentPoiNodes = {};
 let currentEditingPoiId = null;
 
 // ============================================================
-// 初始化
+// 初始化（优化：六类数据并行加载）
 // ============================================================
 export async function initAdminUI() {
     try {
-        allPois = await getPois();
-        allScenic = await getScenicList();
-        allRoutes = await getRoutes();
-        allPresets = await getTransportPresets();
-        allMerchants = await getMerchantsByPoi(null);
-        allFeedbacks = await getFeedbacks(null);
+        const [pois, scenic, routes, presets, merchants, feedbacks] = await Promise.all([
+            getPois(),
+            getScenicList(),
+            getRoutes(),
+            getTransportPresets(),
+            getMerchantsByPoi(null),
+            getFeedbacks(null)
+        ]);
+        allPois = pois;
+        allScenic = scenic;
+        allRoutes = routes;
+        allPresets = presets;
+        allMerchants = merchants;
+        allFeedbacks = feedbacks;
         renderPoiList(allPois);
         renderScenicList(allScenic);
         renderRouteList(allRoutes);
@@ -71,6 +79,7 @@ export async function togglePoiNodes(poiId) {
     if (!container) return;
     if (!container.classList.contains('hidden')) { container.classList.add('hidden'); return; }
     container.classList.remove('hidden');
+    container.innerHTML = '<p class="text-secondary">加载中...</p>';
     const data = await getPoiInternal(poiId);
     const nodes = data.nodes || [];
     if (nodes.length === 0) {
@@ -111,6 +120,7 @@ export function showAddPoiModal() {
     modal.show();
 }
 
+// 优化：先显示模态框，再异步加载节点数据
 export async function showEditPoiModal(poiId) {
     const idNum = Number(poiId);
     const poi = allPois.find(p => p.id === idNum);
@@ -136,12 +146,21 @@ export async function showEditPoiModal(poiId) {
     });
     document.getElementById('poiModalTitle').textContent = `编辑POI - ${poi.name}`;
 
-    const data = await getPoiInternal(poiId);
-    const nodes = data.nodes || [];
-    currentPoiNodes[poiId] = nodes;
-    renderNodesFields(poiId);
+    // ★ 优化：先显示"加载中"，立即弹出模态框
+    document.getElementById('edit-nodes-container').innerHTML = '<p class="text-secondary">加载中...</p>';
     const modal = new bootstrap.Modal(document.getElementById('poiModal'));
     modal.show();
+
+    // ★ 异步加载节点数据，完成后更新节点区域
+    try {
+        const data = await getPoiInternal(poiId);
+        const nodes = data.nodes || [];
+        currentPoiNodes[poiId] = nodes;
+        renderNodesFields(poiId);
+    } catch (e) {
+        console.warn('加载节点失败:', e);
+        document.getElementById('edit-nodes-container').innerHTML = '<p class="text-danger">节点加载失败</p>';
+    }
 }
 
 export function renderNodesFields(poiId) {
@@ -218,7 +237,6 @@ export async function savePoiEdit() {
                 try {
                     await insertInternalNode({ ...n, poi_id: savedPoiId });
                 } catch (insertErr) {
-                    // RLS错误或插入错误
                     if (insertErr.code === '42501') {
                         alert('插入子景点失败：行级安全策略(RLS)限制。请在 Supabase 中为 "poi_internal_nodes" 表启用允许认证用户插入的策略。');
                     } else {
@@ -404,6 +422,7 @@ export function renderRouteList(routes) {
 
 let routeNodesData = [];
 
+// 优化：先显示模态框，再异步加载路线节点
 export async function showEditRouteModal(id) {
     const idNum = Number(id);
     const r = allRoutes.find(x => x.id === idNum);
@@ -416,10 +435,21 @@ export async function showEditRouteModal(id) {
     document.getElementById('edit-route-time').value = r.start_time || '08:30';
     document.getElementById('edit-route-transport').value = r.transport || '';
     document.getElementById('edit-route-days').value = r.days || 1;
-    const nodes = await getRouteNodes(id);
-    routeNodesData = nodes.map(n => ({ poi_id: n.poi_id, duration_min: n.duration_min || 60 }));
-    renderRouteNodesFields();
-    new bootstrap.Modal(document.getElementById('routeModal')).show();
+
+    // ★ 优化：先显示"加载中"，立即弹出模态框
+    document.getElementById('edit-route-nodes-container').innerHTML = '<p class="text-secondary">加载中...</p>';
+    const modal = new bootstrap.Modal(document.getElementById('routeModal'));
+    modal.show();
+
+    // ★ 异步加载路线节点
+    try {
+        const nodes = await getRouteNodes(id);
+        routeNodesData = nodes.map(n => ({ poi_id: n.poi_id, duration_min: n.duration_min || 60 }));
+        renderRouteNodesFields();
+    } catch (e) {
+        console.warn('加载路线节点失败:', e);
+        document.getElementById('edit-route-nodes-container').innerHTML = '<p class="text-danger">节点加载失败</p>';
+    }
 }
 export function showAddRouteModal() {
     document.getElementById('edit-route-id').value = '';
@@ -499,7 +529,7 @@ export function renderTransportEditor(presets) {
     if (!container) return;
     const poiList = allPois.filter(p => !p.parent_id);
     if (poiList.length === 0) { container.innerHTML = '<p>暂无POI数据</p>'; return; }
-    
+
     let html = '';
     poiList.forEach(fromPoi => {
         html += `<div class="transport-group card mb-2">

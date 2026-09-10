@@ -258,20 +258,6 @@
             white-space: nowrap;
         }
 
-        /* 天气、提醒、住宿节点：图标与时间列起始对齐 */
-        .trip-node.type-weather,
-        .trip-node.type-reminder,
-        .trip-node.type-accommodation {
-            padding-left: 0;
-        }
-        .trip-node.type-weather .node-icon,
-        .trip-node.type-reminder .node-icon,
-        .trip-node.type-accommodation .node-icon {
-            width: 110px;
-            text-align: left;
-            margin-left: 0;
-        }
-
         .trip-node.type-transport::before { border-color: #1565C0; background: #1565C0; }
         .trip-node.type-visit::before { border-color: #2E7D32; background: #2E7D32; }
         .trip-node.type-meal::before { border-color: #E65100; background: #E65100; }
@@ -341,11 +327,6 @@
             .trip-timeline { padding-left: 16px; }
             .trip-node { padding: 4px 0 4px 12px; gap: 8px; }
             .trip-node::before { left: -14px; top: 10px; width: 10px; height: 10px; }
-            .trip-node.type-weather .node-icon,
-            .trip-node.type-reminder .node-icon,
-            .trip-node.type-accommodation .node-icon {
-                width: 80px;
-            }
         }
         .text-green { color: #1b5e20; }
         .btn-primary-custom { background: #1b5e20; color: white; border: none; padding: 8px 16px; border-radius: 8px; font-weight: 600; transition: 0.2s; cursor: pointer; }
@@ -555,7 +536,7 @@ function setLocalData(key, data) {
 let allPois = [];
 let currentTripData = null;
 let selectedPoiIds = new Set();
-let selectedPoiOrder = [];   // 有序的已选景点ID
+let selectedPoiOrder = [];
 let allPoiNodesMap = {};
 let accommodationPois = [];
 
@@ -727,7 +708,6 @@ window.togglePoiSelection = function(poiId) {
             }
         });
     }
-    // 同步顺序数组
     if (selectedPoiIds.has(idStr)) {
         if (!selectedPoiOrder.includes(idStr)) selectedPoiOrder.push(idStr);
     } else {
@@ -892,7 +872,7 @@ function renderTripNodeHtml(node) {
     const iconMap = { transport: '🚗', visit: '📍', meal: '🍽️', accommodation: '🏨', weather: '🌤️', reminder: '⚠️', waiting: '⏳' };
     const icon = iconMap[typeClass] || '•';
 
-    // 天气、提醒、住宿：图标与时间列起始对齐，无时间显示
+    // 天气、提醒、住宿：不占时间列，图标直接紧随文字
     if (typeClass === 'weather' || typeClass === 'reminder' || typeClass === 'accommodation') {
         const text = typeClass === 'accommodation' ? (node.name || '住宿休息') : (node.message || '');
         const textClass = typeClass === 'weather' ? 'weather-text' : (typeClass === 'reminder' ? 'reminder-text' : '');
@@ -1221,7 +1201,6 @@ window.toggleReservationForm = function(merchantId) {
     if (form) form.classList.toggle('hidden');
 };
 
-// 更新预约内容的小类
 window.updateResContent = function(merchantId) {
     const catSel = document.getElementById(`res-cat-${merchantId}`);
     const contentSel = document.getElementById(`res-content-${merchantId}`);
@@ -1323,7 +1302,6 @@ window.showPoiDetail = async function(poi) {
             const sd = merchant.service_data || {};
             categories = sd.businessCategories || [];
             items = sd.businessItems || [];
-            // 保存到全局供 updateResContent 使用
             window.__currentMerchantCategories = categories;
             window.__currentMerchantItems = items;
 
@@ -1357,7 +1335,6 @@ window.showPoiDetail = async function(poi) {
             let parking = merchant.parking_spots ?? 0;
             html += `<hr><p><i class="fas fa-phone"></i> ${phone} | <i class="fas fa-circle ${merchant.status === 'open' ? 'text-success' : 'text-danger'}"></i> ${status} | <i class="fas fa-parking"></i> ${parking} 个车位</p><p>${poi.description || ''}</p>`;
 
-            // 预约表单（增加预约内容）
             const categoryOptions = categories.map(c => `<option value="${c}">${c}</option>`).join('');
             html += `
                 <div class="mt-3">

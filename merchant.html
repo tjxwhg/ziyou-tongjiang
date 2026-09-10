@@ -329,11 +329,9 @@ async function initMerchantUI() {
         merchant = await initMerchant();
         merchantNameSpan.textContent = merchant.display_name || '商户';
 
-        // 占位
         document.getElementById('business-container').innerHTML = '<div class="loading-placeholder">加载中...</div>';
         document.getElementById('reservation-list').innerHTML = '<div class="loading-placeholder">加载中...</div>';
 
-        // 加载业务数据
         const data = loadBusinessData();
         businessCategories = data.businessCategories || [];
         businessItems = data.businessItems || [];
@@ -341,7 +339,6 @@ async function initMerchantUI() {
         renderCategoryList();
         renderNewResCategoryOptions();
 
-        // 并行加载预约
         const reservations = await fetchReservations().catch(e => {
             console.warn('预约加载失败:', e);
             return [];
@@ -349,7 +346,6 @@ async function initMerchantUI() {
         reservationsCache = reservations || [];
         renderReservations();
 
-        // 基本信息
         renderInfo();
     } catch (e) {
         console.error('初始化商户端失败:', e);
@@ -375,7 +371,6 @@ window.addCategory = function() {
     renderCategoryList();
     renderBusiness();
     renderNewResCategoryOptions();
-    // 同步刷新项目编辑的分类下拉
     renderItemCategoryOptions();
 };
 
@@ -531,7 +526,6 @@ window.saveItem = async function() {
     saveBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 保存中...';
 
     try {
-        // 上传图片（若有）
         let imageUrl = document.getElementById('item-image-url').value || '';
         const fileInput = document.getElementById('item-image-file');
         if (fileInput.files && fileInput.files[0]) {
@@ -601,6 +595,7 @@ window.updateNewResContent = function() {
         catItems.map(i => `<option value="${i.name}">${i.name}${i.price ? ' ' + i.price : ''}</option>`).join('');
 };
 
+// ★ 预约列表：折叠展开模式
 function renderReservations() {
     const container = document.getElementById('reservation-list');
     if (!container) return;
@@ -611,29 +606,40 @@ function renderReservations() {
     const sorted = [...reservationsCache].sort((a, b) =>
         new Date(b.reservation_date || b.created_at) - new Date(a.reservation_date || a.created_at)
     );
-    container.innerHTML = sorted.map(r => `
+    container.innerHTML = sorted.map((r, idx) => `
         <div class="reservation-card">
-            <div class="d-flex justify-content-between align-items-center mb-1">
-                <b>📅 ${r.reservation_date || ''} ${r.time_slot_start || ''}-${r.time_slot_end || ''}</b>
+            <div class="d-flex justify-content-between align-items-center" style="cursor:pointer;" onclick="window.toggleReservationCard(${idx})">
+                <div>
+                    <b>📅 ${r.reservation_date || ''} ${r.time_slot_start || ''}-${r.time_slot_end || ''}</b>
+                    <div class="text-secondary small mt-1">${r.reservation_content || '未选择预约内容'}</div>
+                </div>
                 <span class="status-badge status-${r.status || 'pending'}">${translateStatus(r.status)}</span>
             </div>
-            <div class="row-line"><b>联系人：</b>${r.name || ''} ${r.phone || ''}</div>
-            <div class="row-line"><b>单位：</b>${r.unit || '—'}</div>
-            <div class="row-line"><b>人数：</b>${r.visitor_count || 1}</div>
-            <div class="row-line"><b>预约内容：</b>${r.reservation_content || '—'}</div>
-            <div class="row-line"><b>地点：</b>${r.room || '—'}</div>
-            <div class="row-line"><b>备注：</b>${r.remark || '—'}</div>
-            <div class="row-line"><b>提交时间：</b>${r.created_at ? new Date(r.created_at).toLocaleString() : '—'}</div>
-            <div class="mt-2 d-flex gap-2">
-                ${r.status === 'pending' ? `
-                    <button class="btn btn-sm btn-success" onclick="window.confirmReservation('${r.id}')">确认</button>
-                    <button class="btn btn-sm btn-warning" onclick="window.rejectReservation('${r.id}')">拒绝</button>
-                ` : ''}
-                <button class="btn btn-sm btn-danger" onclick="window.deleteReservationHandler('${r.id}')">删除</button>
+            <div id="res-card-detail-${idx}" class="hidden mt-2 pt-2" style="border-top: 1px dashed #ddd;">
+                <div class="row-line"><b>联系人：</b>${r.name || ''} ${r.phone || ''}</div>
+                <div class="row-line"><b>单位：</b>${r.unit || '—'}</div>
+                <div class="row-line"><b>人数：</b>${r.visitor_count || 1}</div>
+                <div class="row-line"><b>预约内容：</b>${r.reservation_content || '—'}</div>
+                <div class="row-line"><b>地点：</b>${r.room || '—'}</div>
+                <div class="row-line"><b>备注：</b>${r.remark || '—'}</div>
+                <div class="row-line"><b>提交时间：</b>${r.created_at ? new Date(r.created_at).toLocaleString() : '—'}</div>
+                <div class="mt-2 d-flex gap-2">
+                    ${r.status === 'pending' ? `
+                        <button class="btn btn-sm btn-success" onclick="event.stopPropagation(); window.confirmReservation('${r.id}')">确认</button>
+                        <button class="btn btn-sm btn-warning" onclick="event.stopPropagation(); window.rejectReservation('${r.id}')">拒绝</button>
+                    ` : ''}
+                    <button class="btn btn-sm btn-danger" onclick="event.stopPropagation(); window.deleteReservationHandler('${r.id}')">删除</button>
+                </div>
             </div>
         </div>
     `).join('');
 }
+
+// ★ 展开/收起预约卡片
+window.toggleReservationCard = function(idx) {
+    const el = document.getElementById(`res-card-detail-${idx}`);
+    if (el) el.classList.toggle('hidden');
+};
 
 window.confirmReservation = async function(id) {
     try {
@@ -686,10 +692,9 @@ window.saveNewReservation = async function() {
             visitor_count: count,
             reservation_content: content,
             room, remark,
-            status: 'confirmed'  // 商户代客预约直接确认
+            status: 'confirmed'
         });
         alert('预约已保存');
-        // 清空表单
         ['new-res-date', 'new-res-unit', 'new-res-name', 'new-res-phone', 'new-res-room', 'new-res-remark'].forEach(id => {
             document.getElementById(id).value = '';
         });
@@ -698,7 +703,6 @@ window.saveNewReservation = async function() {
         document.getElementById('new-res-content').innerHTML = '<option value="">请选择具体项目</option>';
         window.toggleNewReservationForm();
 
-        // 重新加载列表
         reservationsCache = await fetchReservations();
         renderReservations();
     } catch (e) {
@@ -731,7 +735,6 @@ window.exportReservations = function() {
     const csv = [headers, ...rows]
         .map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
         .join('\n');
-    // 加 BOM 防止 Excel 乱码
     const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');

@@ -1,4 +1,4 @@
-// js/trip-planner.js - 智能行程规划引擎（最终修复版 v3）
+// js/trip-planner.js - 智能行程规划引擎（最终修复版 v4）
 import { formatTime, timeToMinutes, getDistance, fetchWeatherForecast } from './utils.js';
 import { DAY_START, DAY_END, LUNCH_START, LUNCH_END, DINNER_START, DINNER_END, MEAL_DURATION } from './config.js';
 
@@ -11,7 +11,7 @@ export class TripPlanner {
         this.travelTimes = travelTimes || {};
         this.poiNodesMap = poiNodesMap || {};
         this.accommodationPois = accommodationPois || [];
-        this.lodgingMode = lodgingMode; // 'all' | 'county'
+        this.lodgingMode = lodgingMode;
 
         this.currentDate = new Date(this.startDate);
         this.currentTime = timeToMinutes(this.startTime);
@@ -100,20 +100,18 @@ export class TripPlanner {
                     totalDuration = this.calculateTotalDuration(poi);
                 }
 
-                // ★ 县城模式预检查
+                // 县城模式预检查
                 if (this.lodgingMode === 'county') {
                     const arrival = this.currentTime + travel;
-                    let estimatedEnd = arrival + totalDuration;
-                    // 估算餐食
-                    if (!this.lunchInserted && arrival < LUNCH_END) estimatedEnd += MEAL_DURATION;
-                    if (!this.dinnerInserted && arrival < DINNER_END && arrival >= DINNER_START - 60) estimatedEnd += MEAL_DURATION;
-                    // 加返回县城交通
-                    const returnTravel = this.getTravelTime(poi.id, 'county');
-                    estimatedEnd += (returnTravel > 0 ? returnTravel : 0);
-
+                    const estimatedEnd = arrival + totalDuration;
                     if (estimatedEnd > DAY_END) {
                         queue.unshift(item);
                         this.warnings.push(`📌 因选择县城住宿，${poi.name} 今日时间不足，已移至次日。`);
+                        // 在原规划位置显示提示
+                        this.addNode({
+                            type: 'reminder',
+                            message: `因该景点当前规划游览时间不足，已移至次日游览，建议当前时间规划为其他景点游览。（景点：${poi.name}）`
+                        });
                         break;
                     }
                 }
@@ -215,8 +213,7 @@ export class TripPlanner {
                 // 游览完成
                 if (remaining === 0) {
                     this.lastPoiId = poi.id;
-                    // ★ 关键修复：仅当队列中还有景点时才立即插餐
-                    // 如果队列为空，说明是当天最后一个景点，不插餐，等返回县城后再插
+                    // 仅当队列中还有景点时才立即插餐
                     if (queue.length > 0) {
                         this.checkAndInsertMealAfterVisit();
                     }
@@ -239,7 +236,7 @@ export class TripPlanner {
                 continue;
             }
 
-            // ★ 先返回县城，再检查餐食
+            // 先返回县城，再检查餐食
             if (this.lastPoiId !== 'county') {
                 const returnTravel = this.getTravelTime(this.lastPoiId, 'county');
                 if (returnTravel > 0 && returnTravel <= 180) {
@@ -256,7 +253,6 @@ export class TripPlanner {
                     this.totalTravelMinutes += returnTravel;
                     this.currentTime += returnTravel;
                     this.lastPoiId = 'county';
-                    // 交通结束后检查餐食
                     this.checkAndInsertMealAfterTransport(travelStart, this.currentTime);
                 } else if (returnTravel > 180) {
                     this.warnings.push(`返回县城交通耗时 ${returnTravel} 分钟超过限制。`);
@@ -268,9 +264,19 @@ export class TripPlanner {
 
             // 住宿节点
             const isLate = this.currentTime > 1080;
+            let accLocation = '';
+            if (this.lastPoiId === 'county') {
+                // 在县城住宿，尝试获取具体酒店名（默认红军广场附近）
+                accLocation = '';
+            } else {
+                const nearestAcc = this.findNearestAccommodation(this.lastPoiId);
+                if (nearestAcc) {
+                    accLocation = `（${nearestAcc.name}）`;
+                }
+            }
             this.addNode({
                 type: 'accommodation',
-                name: isLate ? '今天行程结束，住宿休息' : '今天行程结束',
+                name: (isLate ? '今天行程结束，住宿休息' : '今天行程结束') + accLocation,
                 startTime: this.currentTime,
                 endTime: this.currentTime + 1,
                 location: ''
@@ -462,6 +468,23 @@ export class TripPlanner {
 
     addWaiting(minutes) { this.totalWaitingMinutes += minutes; }
 
+    findNearestAccommodation(poiId) {
+        const poi = this.getPoiById(poiId);
+        if (!poi) return null;
+        let nearest = null, minDist = Infinity;
+        for (let id in this.accommodationPoiMap) {
+            const acc = this.accommodationPoiMap[id];
+            if (!acc.lat || !acc.lng) continue;
+            const dist = getDistance(poi.lat, poi.lng, acc.lat, acc.lng);
+            if (dist < minDist) {
+                minDist = dist;
+                nearest = acc;
+            }
+        }
+        if (nearest && minDist <= 5000) return nearest;
+        return null;
+    }
+
     addReminders() {
         if (this.weatherData && this.weatherData.length > 0) {
             for (let i = 0; i < this.allDays.length; i++) {
@@ -482,15 +505,16 @@ export class TripPlanner {
                 }
                 if (node.type === 'visit') dailyVisit += node.duration || 0;
             }
-            if (singleLongTravel) day.nodes.push({ type: 'reminder', message: '⚠️ 本段交通较长（超过2小时），请准备休息' });
-            if (dailyTravel > 180) day.nodes.push({ type: 'reminder', message: '⚠️ 今日交通较多（累计超过3小时），建议途中适当休息' });
-            if (dailyVisit > 300) day.nodes.push({ type: 'reminder', message: '⚠️ 今日游览时间较长（超过5小时），注意体力' });
+            if (singleLongTravel) day.nodes.push({ type: 'reminder', message: '本段交通较长（超过2小时），请准备休息' });
+            if (dailyTravel > 180) day.nodes.push({ type: 'reminder', message: '今日交通较多（累计超过3小时），建议途中适当休息' });
+            if (dailyVisit > 300) day.nodes.push({ type: 'reminder', message: '今日游览时间较长（超过5小时），注意体力' });
         }
     }
 
     generateWeatherTips(weatherData) {
         const { weather, tempMax, tempMin, wind, uvIndex } = weatherData;
-        let tips = `🌤️ 天气：${weather}，气温 ${tempMin}℃ ～ ${tempMax}℃`;
+        // 注意：不重复添加开头的 🌤️，图标由前端渲染
+        let tips = `天气：${weather}，气温 ${tempMin}℃ ～ ${tempMax}℃`;
         if (wind && wind !== '--') tips += `，风力 ${wind} km/h`;
         if (uvIndex && uvIndex > 0) {
             if (uvIndex >= 8) tips += '，☀️ 紫外线极强，请做好防晒措施';

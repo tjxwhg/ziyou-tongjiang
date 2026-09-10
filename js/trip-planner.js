@@ -1,4 +1,4 @@
-// js/trip-planner.js - 智能行程规划引擎（最终修复版 v4）
+// js/trip-planner.js - 智能行程规划引擎（优化版 v5）
 import { formatTime, timeToMinutes, getDistance, fetchWeatherForecast } from './utils.js';
 import { DAY_START, DAY_END, LUNCH_START, LUNCH_END, DINNER_START, DINNER_END, MEAL_DURATION } from './config.js';
 
@@ -45,7 +45,6 @@ export class TripPlanner {
             let processedCount = 0;
             const MAX_PER_DAY = 15;
 
-            // ============ 当天内层循环 ============
             while (queue.length > 0 && this.currentTime < DAY_END && processedCount < MAX_PER_DAY) {
                 processedCount++;
                 const item = queue.shift();
@@ -64,33 +63,22 @@ export class TripPlanner {
 
                 const arrivalTime = this.currentTime + travel;
 
-                // 17:00 后不规划新景点
+                // 规则4：17:00 后不规划新景点
                 if (arrivalTime >= 1020) {
                     this.warnings.push(`⏰ 到达 ${poi.name} 时间 ${formatTime(arrivalTime)} 已超过17:00，该景点移到明天。`);
                     queue.unshift(item);
                     break;
                 }
 
+                // 规则10：到达时间 >= 18:00
                 if (arrivalTime >= DAY_END) {
                     queue.unshift(item);
                     break;
                 }
 
-                // 等待景区开放
-                if (arrivalTime < DAY_START) {
-                    const adjust = DAY_START - arrivalTime;
-                    if (adjust > 0) {
-                        this.addWaiting(adjust);
-                        this.addNode({
-                            type: 'waiting',
-                            name: '等待景区开放',
-                            startTime: this.currentTime,
-                            endTime: this.currentTime + adjust,
-                            duration: adjust
-                        });
-                        this.currentTime += adjust;
-                    }
-                }
+                // 规则9：到达早于 08:00 —— 记录等待标记，不单独插入节点
+                const needWaitOpen = arrivalTime < DAY_START;
+                const waitMinutes = needWaitOpen ? (DAY_START - arrivalTime) : 0;
 
                 // 计算总游览时长
                 let totalDuration;
@@ -107,22 +95,25 @@ export class TripPlanner {
                     if (estimatedEnd > DAY_END) {
                         queue.unshift(item);
                         this.warnings.push(`📌 因选择县城住宿，${poi.name} 今日时间不足，已移至次日。`);
-                        // 在原规划位置显示提示
                         this.addNode({
                             type: 'reminder',
-                            message: `因该景点当前规划游览时间不足，已移至次日游览，建议当前时间规划为其他景点游览。（景点：${poi.name}）`
+                            message: `因该景点当前规划游览时间不足，已移至次日游览，建议当前时间规划为附近景点游览。（景点：${poi.name}）`
                         });
                         break;
                     }
                 }
 
-                // 插入交通节点
+                // 插入交通节点（规则9：追加"等待景区开放"）
                 if (travel > 0) {
                     const fromName = this.getPoiName(this.lastPoiId);
                     const travelStart = this.currentTime;
+                    let transportName = `前往 ${poi.name}`;
+                    if (needWaitOpen) {
+                        transportName += `，等待景区开放`;
+                    }
                     this.addNode({
                         type: 'transport',
-                        name: `前往 ${poi.name}`,
+                        name: transportName,
                         startTime: this.currentTime,
                         endTime: this.currentTime + travel,
                         duration: travel,
@@ -135,9 +126,15 @@ export class TripPlanner {
                     this.checkAndInsertMealAfterTransport(travelStart, this.currentTime);
                 }
 
+                // 规则9：等待景区开放，将当前时间拨到 08:00，中间时间不显示
+                if (needWaitOpen && this.currentTime < DAY_START) {
+                    this.addWaiting(this.DAY_START - this.currentTime);
+                    this.currentTime = DAY_START;
+                }
+
                 dayHasContent = true;
 
-                // ============ 游览循环 ============
+                // 游览循环
                 let remaining = totalDuration;
                 while (remaining > 0 && this.currentTime < DAY_END) {
                     let meal = null;
@@ -189,7 +186,6 @@ export class TripPlanner {
                     remaining -= maxContinuous;
                 }
 
-                // ============ 处理剩余时间 ============
                 if (remaining > 0) {
                     if (remaining >= 60) {
                         this.warnings.push(`⏳ ${poi.name} 剩余 ${remaining} 分钟游览时间，将顺延至明天。`);
@@ -210,17 +206,14 @@ export class TripPlanner {
                     }
                 }
 
-                // 游览完成
                 if (remaining === 0) {
                     this.lastPoiId = poi.id;
-                    // 仅当队列中还有景点时才立即插餐
                     if (queue.length > 0) {
                         this.checkAndInsertMealAfterVisit();
                     }
                 }
             }
 
-            // ============ 当天收尾 ============
             if (!dayHasContent && this.dayNodes.length === 0) {
                 if (queue.length > 0) {
                     this.advanceToNextDay(false);
@@ -259,24 +252,17 @@ export class TripPlanner {
                 }
             }
 
-            // 返回后检查餐食（备用）
             this.checkAndInsertMealAfterVisit();
 
-            // 住宿节点
             const isLate = this.currentTime > 1080;
-            let accLocation = '';
-            if (this.lastPoiId === 'county') {
-                // 在县城住宿，尝试获取具体酒店名（默认红军广场附近）
-                accLocation = '';
-            } else {
+            let accName = isLate ? '今天行程结束，住宿休息' : '今天行程结束';
+            if (this.lastPoiId !== 'county') {
                 const nearestAcc = this.findNearestAccommodation(this.lastPoiId);
-                if (nearestAcc) {
-                    accLocation = `（${nearestAcc.name}）`;
-                }
+                if (nearestAcc) accName += `（${nearestAcc.name}）`;
             }
             this.addNode({
                 type: 'accommodation',
-                name: (isLate ? '今天行程结束，住宿休息' : '今天行程结束') + accLocation,
+                name: accName,
                 startTime: this.currentTime,
                 endTime: this.currentTime + 1,
                 location: ''
@@ -513,7 +499,6 @@ export class TripPlanner {
 
     generateWeatherTips(weatherData) {
         const { weather, tempMax, tempMin, wind, uvIndex } = weatherData;
-        // 注意：不重复添加开头的 🌤️，图标由前端渲染
         let tips = `天气：${weather}，气温 ${tempMin}℃ ～ ${tempMax}℃`;
         if (wind && wind !== '--') tips += `，风力 ${wind} km/h`;
         if (uvIndex && uvIndex > 0) {

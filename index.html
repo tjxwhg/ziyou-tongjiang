@@ -8,7 +8,6 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
-        /* 样式与之前相同，省略以节省篇幅，实际部署时请包含完整样式 */
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; height: 100vh; overflow: hidden; background: #f0f2f5; }
         .hidden { display: none !important; }
@@ -192,14 +191,6 @@
             border-bottom: 2px solid #e8f5e9;
             padding-bottom: 8px;
         }
-        .trip-day-title .day-badge {
-            background: #e8f5e9;
-            padding: 2px 12px;
-            border-radius: 20px;
-            font-size: 13px;
-            font-weight: 600;
-            color: #1b5e20;
-        }
         .trip-timeline {
             position: relative;
             padding-left: 24px;
@@ -223,7 +214,6 @@
             gap: 12px;
             border-radius: 6px;
             transition: 0.2s;
-            cursor: default;
         }
         .trip-node::before {
             content: '';
@@ -258,11 +248,6 @@
             padding: 2px 0;
             line-height: 1.5;
         }
-        .trip-node .node-content .node-sub {
-            color: #888;
-            font-size: 13px;
-            margin-left: 6px;
-        }
         .trip-node .node-content .node-duration {
             color: #666;
             font-size: 12px;
@@ -272,29 +257,20 @@
             margin-left: 6px;
             white-space: nowrap;
         }
-        .trip-node .node-actions {
-            display: flex;
-            gap: 4px;
-            align-items: center;
-            margin-left: 6px;
+
+        /* 天气、提醒、住宿节点：图标与时间列起始对齐 */
+        .trip-node.type-weather,
+        .trip-node.type-reminder,
+        .trip-node.type-accommodation {
+            padding-left: 0;
         }
-        .trip-node .node-actions .action-btn {
-            border: none;
-            background: #e8f5e9;
-            border-radius: 50%;
-            width: 24px;
-            height: 24px;
-            font-size: 14px;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            transition: 0.2s;
-            color: #1b5e20;
+        .trip-node.type-weather .node-icon,
+        .trip-node.type-reminder .node-icon,
+        .trip-node.type-accommodation .node-icon {
+            width: 110px;
+            text-align: left;
+            margin-left: 0;
         }
-        .trip-node .node-actions .action-btn:hover { background: #1b5e20; color: white; }
-        .trip-node .node-actions .action-btn.remove { background: #ffcdd2; color: #c62828; }
-        .trip-node .node-actions .action-btn.remove:hover { background: #c62828; color: white; }
 
         .trip-node.type-transport::before { border-color: #1565C0; background: #1565C0; }
         .trip-node.type-visit::before { border-color: #2E7D32; background: #2E7D32; }
@@ -303,7 +279,6 @@
         .trip-node.type-weather::before { border-color: #00BCD4; background: #00BCD4; }
         .trip-node.type-reminder::before { border-color: #C62828; background: #C62828; }
         .trip-node.type-waiting::before { border-color: #FF6F00; background: #FF6F00; }
-        .trip-node.type-accommodation .node-time { display: none; }
 
         .trip-node .icon-transport { color: #1565C0; }
         .trip-node .icon-visit { color: #2E7D32; }
@@ -342,12 +317,6 @@
         .pref-tag:hover { background: #c8e6c9; }
         .pref-tag.active { border-color: #1b5e20; background: #1b5e20; color: white; }
 
-        .day-block { background: #f8f9fa; border-radius: 12px; padding: 12px 16px; margin-bottom: 12px; border-left: 4px solid #1b5e20; }
-        .day-block .day-title { font-weight: 700; color: #1b5e20; margin-bottom: 8px; }
-        .node-item { display: flex; align-items: flex-start; gap: 12px; padding: 6px 0; border-bottom: 1px dashed #eee; font-size: 14px; }
-        .node-item .node-time { color: #888; font-size: 13px; min-width: 80px; flex-shrink: 0; }
-        .node-item .node-icon { width: 28px; text-align: center; flex-shrink: 0; color: #1b5e20; }
-
         .poi-select-list { max-height: 400px; overflow-y: auto; border: 1px solid #e0e0e0; border-radius: 8px; padding: 8px; }
 
         .reservation-form { background: #f8f9fa; border-radius: 8px; padding: 12px; margin-top: 10px; }
@@ -372,6 +341,11 @@
             .trip-timeline { padding-left: 16px; }
             .trip-node { padding: 4px 0 4px 12px; gap: 8px; }
             .trip-node::before { left: -14px; top: 10px; width: 10px; height: 10px; }
+            .trip-node.type-weather .node-icon,
+            .trip-node.type-reminder .node-icon,
+            .trip-node.type-accommodation .node-icon {
+                width: 80px;
+            }
         }
         .text-green { color: #1b5e20; }
         .btn-primary-custom { background: #1b5e20; color: white; border: none; padding: 8px 16px; border-radius: 8px; font-weight: 600; transition: 0.2s; cursor: pointer; }
@@ -381,6 +355,10 @@
         .btn-warning-custom { background: #ff9800; color: white; border: none; padding: 8px 16px; border-radius: 8px; font-weight: 600; transition: 0.2s; cursor: pointer; }
         .btn-warning-custom:hover { background: #fb8c00; }
         .btn-danger-custom { background: #dc3545; color: white; border: none; padding: 6px 14px; border-radius: 6px; font-weight: 600; cursor: pointer; }
+        .order-item { display: flex; align-items: center; justify-content: space-between; padding: 6px 8px; border-bottom: 1px solid #f0f0f0; }
+        .order-item:last-child { border-bottom: none; }
+        .order-item .order-name { font-size: 14px; color: #333; }
+        .order-item .order-actions button { padding: 2px 8px; font-size: 12px; margin-left: 4px; }
     </style>
 </head>
 <body>
@@ -435,6 +413,13 @@
                         <option value="indepth">🔍 深度游</option>
                     </select>
                 </div>
+                <div class="col-12">
+                    <label class="form-label fw-semibold">住宿地点</label>
+                    <select id="planLodging" class="form-select">
+                        <option value="all" selected>全部（智能决定）</option>
+                        <option value="county">县城（每天返回县城）</option>
+                    </select>
+                </div>
             </div>
 
             <div class="mt-2">
@@ -450,31 +435,27 @@
                 </div>
             </div>
 
+            <div class="mt-2">
+                <label class="form-label fw-semibold">景点顺序 <span class="text-secondary" style="font-weight:400;font-size:13px;">（可上下调整）</span></label>
+                <div id="selectedOrderContainer" class="border rounded p-2" style="min-height:40px;background:#fafafa;">
+                    <span class="text-secondary">尚未选择景点</span>
+                </div>
+            </div>
+
             <button class="btn btn-primary-custom w-100 mt-3" id="generatePlanBtn"><i class="fas fa-wand-magic-sparkles"></i> 生成行程方案</button>
             <div id="planLoading" class="text-center mt-3 hidden"><div class="spinner-border text-success" role="status"></div><p class="mt-2 text-secondary">正在为您规划最优行程...</p></div>
         </div>
 
-        <div id="stepCompare" class="hidden">
-            <!-- 保留但隐藏，不再使用 -->
-        </div>
+        <div id="stepCompare" class="hidden"></div>
 
         <div id="stepDetail" class="hidden">
             <div class="d-flex justify-content-between align-items-center mb-3">
                 <h5><i class="fas fa-map text-green"></i> 我的行程</h5>
                 <div>
                     <button class="btn btn-secondary btn-sm me-1" onclick="window.backToPreferences()"><i class="fas fa-arrow-left"></i> 重新选择</button>
-                    <button class="btn btn-outline-custom btn-sm" onclick="window.toggleEditMode()"><i class="fas fa-edit"></i> 编辑行程</button>
                 </div>
             </div>
             <div id="tripDetailContainer"></div>
-            <div id="editToolbar" class="hidden mt-3 p-3 bg-light rounded">
-                <div class="row g-2">
-                    <div class="col-6"><label class="form-label">添加景点</label><select id="editAddPoi" class="form-select"><option value="">--选择--</option></select></div>
-                    <div class="col-4"><label class="form-label">插入位置</label><select id="editInsertPosition" class="form-select"><option value="end">末尾</option></select></div>
-                    <div class="col-2"><button class="btn btn-primary-custom w-100 mt-3" onclick="window.insertPoiToTrip()">插入</button></div>
-                </div>
-                <div class="mt-2"><span class="text-secondary">点击时间线上的 + 可插入景点，点击 - 可删除节点</span></div>
-            </div>
             <div class="mt-3 d-flex gap-2">
                 <button class="btn btn-primary-custom flex-grow-1" onclick="window.saveTripSolution()"><i class="fas fa-save"></i> 保存行程</button>
                 <button class="btn btn-outline-custom" onclick="window.startNavigation()"><i class="fas fa-location-dot"></i> 开始导航</button>
@@ -572,13 +553,11 @@ function setLocalData(key, data) {
 
 // ===== 全局状态 =====
 let allPois = [];
-let currentSolutions = [];
-let selectedSolutionIndex = -1;
 let currentTripData = null;
 let selectedPoiIds = new Set();
+let selectedPoiOrder = [];   // 有序的已选景点ID
 let allPoiNodesMap = {};
 let accommodationPois = [];
-let editMode = false;
 
 // ===== 工具函数 =====
 function fmtTime(minutes) {
@@ -748,7 +727,14 @@ window.togglePoiSelection = function(poiId) {
             }
         });
     }
+    // 同步顺序数组
+    if (selectedPoiIds.has(idStr)) {
+        if (!selectedPoiOrder.includes(idStr)) selectedPoiOrder.push(idStr);
+    } else {
+        selectedPoiOrder = selectedPoiOrder.filter(x => x !== idStr);
+    }
     updateSelectedInfo();
+    renderSelectedOrder();
 };
 
 window.selectAllPois = function(select) {
@@ -756,12 +742,18 @@ window.selectAllPois = function(select) {
     checkboxes.forEach(cb => {
         const id = cb.value || cb.getAttribute('value');
         if (id) {
-            if (select) selectedPoiIds.add(id);
-            else selectedPoiIds.delete(id);
+            if (select) {
+                selectedPoiIds.add(id);
+                if (!selectedPoiOrder.includes(id)) selectedPoiOrder.push(id);
+            } else {
+                selectedPoiIds.delete(id);
+            }
             cb.checked = select;
         }
     });
+    if (!select) selectedPoiOrder = [];
     updateSelectedInfo();
+    renderSelectedOrder();
 };
 
 function updateSelectedInfo() {
@@ -776,6 +768,48 @@ function updateSelectedInfo() {
     document.getElementById('selectedDurationDisplay').textContent = `已选景点总游览时长：${totalDuration} 分钟`;
 }
 
+// ===== 渲染景点顺序 =====
+window.renderSelectedOrder = function() {
+    const container = document.getElementById('selectedOrderContainer');
+    if (!container) return;
+    if (selectedPoiOrder.length === 0) {
+        container.innerHTML = '<span class="text-secondary">尚未选择景点</span>';
+        return;
+    }
+    const allPoisData = window.__allPois || [];
+    let html = '';
+    selectedPoiOrder.forEach((id, idx) => {
+        const poi = allPoisData.find(p => String(p.id) === id);
+        if (!poi) return;
+        html += `
+            <div class="order-item">
+                <span class="order-name"><b>${idx + 1}.</b> ${poi.name}</span>
+                <div class="order-actions">
+                    <button class="btn btn-sm btn-outline-secondary" onclick="window.movePoiUp('${id}')" ${idx === 0 ? 'disabled' : ''}>↑</button>
+                    <button class="btn btn-sm btn-outline-secondary" onclick="window.movePoiDown('${id}')" ${idx === selectedPoiOrder.length - 1 ? 'disabled' : ''}>↓</button>
+                </div>
+            </div>
+        `;
+    });
+    container.innerHTML = html;
+};
+
+window.movePoiUp = function(id) {
+    const idx = selectedPoiOrder.indexOf(id);
+    if (idx > 0) {
+        [selectedPoiOrder[idx - 1], selectedPoiOrder[idx]] = [selectedPoiOrder[idx], selectedPoiOrder[idx - 1]];
+        renderSelectedOrder();
+    }
+};
+
+window.movePoiDown = function(id) {
+    const idx = selectedPoiOrder.indexOf(id);
+    if (idx >= 0 && idx < selectedPoiOrder.length - 1) {
+        [selectedPoiOrder[idx + 1], selectedPoiOrder[idx]] = [selectedPoiOrder[idx], selectedPoiOrder[idx + 1]];
+        renderSelectedOrder();
+    }
+};
+
 // ===== 生成行程方案 =====
 window.generatePlans = async function() {
     const loadingEl = document.getElementById('planLoading');
@@ -786,12 +820,15 @@ window.generatePlans = async function() {
     const startDate = document.getElementById('planStartDate').value;
     const startTime = document.getElementById('planStartTime').value;
     const mode = document.getElementById('planStyle').value;
+    const lodgingMode = document.getElementById('planLodging')?.value || 'all';
 
     if (!startDate) { alert('请选择出发日期'); return; }
-    if (selectedPoiIds.size === 0) { alert('请至少选择一个景点'); return; }
+    if (selectedPoiOrder.length === 0) { alert('请至少选择一个景点'); return; }
 
     const allPoisData = window.__allPois || [];
-    const selectedPois = allPoisData.filter(p => selectedPoiIds.has(String(p.id)));
+    const selectedPois = selectedPoiOrder
+        .map(id => allPoisData.find(p => String(p.id) === id))
+        .filter(Boolean);
     if (selectedPois.length === 0) {
         alert('未找到选中的景点数据，请重新选择');
         return;
@@ -818,7 +855,8 @@ window.generatePlans = async function() {
             mode,
             travelTimes,
             allPoiNodesMap,
-            accommodationPois
+            accommodationPois,
+            lodgingMode
         );
 
         if (!result.days || result.days.length === 0) {
@@ -834,7 +872,6 @@ window.generatePlans = async function() {
         loadingEl.classList.add('hidden');
         stepPrefs.classList.add('hidden');
         stepDetail.classList.remove('hidden');
-        populateEditPoiSelect();
         
         const stepCompare = document.getElementById('stepCompare');
         if (stepCompare) stepCompare.classList.add('hidden');
@@ -849,19 +886,18 @@ window.generatePlans = async function() {
     }
 };
 
-// ===== 渲染单个节点 HTML（用于地图界面规划详情） =====
-function renderTripNodeHtml(node, includeActions = true) {
+// ===== 渲染单个节点 HTML =====
+function renderTripNodeHtml(node) {
     const typeClass = node.type || 'other';
     const iconMap = { transport: '🚗', visit: '📍', meal: '🍽️', accommodation: '🏨', weather: '🌤️', reminder: '⚠️', waiting: '⏳' };
     const icon = iconMap[typeClass] || '•';
 
-    // 天气、提醒、住宿：无时间、无操作按钮，图标与时间列对齐
+    // 天气、提醒、住宿：图标与时间列起始对齐，无时间显示
     if (typeClass === 'weather' || typeClass === 'reminder' || typeClass === 'accommodation') {
         const text = typeClass === 'accommodation' ? (node.name || '住宿休息') : (node.message || '');
         const textClass = typeClass === 'weather' ? 'weather-text' : (typeClass === 'reminder' ? 'reminder-text' : '');
         return `
             <div class="trip-node type-${typeClass}">
-                <span class="node-time"></span>
                 <span class="node-icon icon-${typeClass}">${icon}</span>
                 <span class="node-content"><span class="${textClass}">${text}</span></span>
             </div>
@@ -888,24 +924,16 @@ function renderTripNodeHtml(node, includeActions = true) {
         content = node.name || '未知节点';
     }
 
-    const actionsHtml = includeActions ? `
-        <div class="node-actions">
-            <button class="action-btn" onclick="event.stopPropagation(); window.insertNodeAfter(${node.__dayIdx ?? 0}, ${node.__nodeIdx ?? 0})" title="在此插入景点">➕</button>
-            <button class="action-btn remove" onclick="event.stopPropagation(); window.removeNode(${node.__dayIdx ?? 0}, ${node.__nodeIdx ?? 0})" title="删除此节点">➖</button>
-        </div>
-    ` : '';
-
     return `
         <div class="trip-node type-${typeClass}">
             <span class="node-time">${timeDisplay}</span>
             <span class="node-icon icon-${typeClass}">${icon}</span>
             <span class="node-content">${content}</span>
-            ${actionsHtml}
         </div>
     `;
 }
 
-// ===== 显示行程详情（地图界面规划面板） =====
+// ===== 显示行程详情 =====
 function showTripDetail(data) {
     const container = document.getElementById('tripDetailContainer');
     if (!container) return;
@@ -913,19 +941,13 @@ function showTripDetail(data) {
     let html = '';
     if (data.days) {
         data.days.forEach((day, dayIdx) => {
-            const visitCount = day.nodes ? day.nodes.filter(n => n.type === 'visit').length : 0;
             html += `<div class="trip-day-container">`;
-            html += `<div class="trip-day-title">
-                <span>📅 第${dayIdx + 1}天 (${day.date})</span>
-                <span class="day-badge">${visitCount} 个景点</span>
-            </div>`;
+            html += `<div class="trip-day-title"><span>📅 第${dayIdx + 1}天 (${day.date})</span></div>`;
             html += `<div class="trip-timeline">`;
 
             if (day.nodes) {
-                day.nodes.forEach((node, nodeIdx) => {
-                    node.__dayIdx = dayIdx;
-                    node.__nodeIdx = nodeIdx;
-                    html += renderTripNodeHtml(node, true);
+                day.nodes.forEach((node) => {
+                    html += renderTripNodeHtml(node);
                 });
             }
 
@@ -935,93 +957,6 @@ function showTripDetail(data) {
 
     container.innerHTML = html;
 }
-
-// ===== 编辑功能 =====
-window.toggleEditMode = function() {
-    editMode = !editMode;
-    document.getElementById('editToolbar').classList.toggle('hidden', !editMode);
-    if (editMode) populateEditPoiSelect();
-};
-
-function populateEditPoiSelect() {
-    const sel = document.getElementById('editAddPoi');
-    if (!sel) return;
-    const allPoisData = window.__allPois || [];
-    const currentPoiIds = new Set();
-    if (currentTripData && currentTripData.days) {
-        currentTripData.days.forEach(day => {
-            if (day.nodes) {
-                day.nodes.forEach(node => {
-                    if (node.poiId) currentPoiIds.add(String(node.poiId));
-                });
-            }
-        });
-    }
-    const available = allPoisData.filter(p => !currentPoiIds.has(String(p.id)));
-    sel.innerHTML = '<option value="">--选择--</option>';
-    available.forEach(p => {
-        sel.innerHTML += `<option value="${p.id}">${p.name}</option>`;
-    });
-    const posSel = document.getElementById('editInsertPosition');
-    posSel.innerHTML = '<option value="end">末尾</option>';
-    if (currentTripData && currentTripData.days) {
-        currentTripData.days.forEach((day, di) => {
-            if (day.nodes) {
-                day.nodes.forEach((node, ni) => {
-                    const name = node.poiName || node.name || '节点';
-                    posSel.innerHTML += `<option value="${di}-${ni}">第${di+1}天 在"${name}"后</option>`;
-                });
-            }
-        });
-    }
-}
-
-window.insertNodeAfter = function(dayIdx, nodeIdx) {
-    const sel = document.getElementById('editAddPoi');
-    const posSel = document.getElementById('editInsertPosition');
-    posSel.value = `${dayIdx}-${nodeIdx}`;
-    if (document.getElementById('editToolbar').classList.contains('hidden')) {
-        window.toggleEditMode();
-    }
-    alert('请在编辑工具栏中选择要插入的景点，然后点击"插入"按钮');
-};
-
-window.removeNode = function(dayIdx, nodeIdx) {
-    if (!editMode) {
-        alert('请先点击"编辑行程"开启编辑模式');
-        return;
-    }
-    const data = currentTripData;
-    if (!data || !data.days || !data.days[dayIdx]) return;
-    const node = data.days[dayIdx].nodes[nodeIdx];
-    if (!node) return;
-
-    if (node.type === 'meal' || node.type === 'accommodation') {
-        alert('餐食和住宿节点不可删除');
-        return;
-    }
-    if (!confirm(`确认删除"${node.name || '此节点'}"？`)) return;
-
-    data.days[dayIdx].nodes.splice(nodeIdx, 1);
-    showTripDetail(data);
-};
-
-window.insertPoiToTrip = function() {
-    const poiId = document.getElementById('editAddPoi').value;
-    const position = document.getElementById('editInsertPosition').value;
-    if (!poiId) { alert('请选择要插入的景点'); return; }
-    const poi = getPoiById(poiId);
-    if (!poi) { alert('未找到景点'); return; }
-
-    selectedPoiIds.add(String(poiId));
-    const container = document.getElementById('poiSelectContainer');
-    const checkbox = container.querySelector(`[data-poi-id="${poiId}"] input[type="checkbox"]`);
-    if (checkbox) checkbox.checked = true;
-    updateSelectedInfo();
-
-    alert(`已添加"${poi.name}"，正在重新生成行程...`);
-    window.regenerateTrip();
-};
 
 // ===== 重新生成行程 =====
 window.regenerateTrip = async function() {
@@ -1033,12 +968,15 @@ window.regenerateTrip = async function() {
     const startDate = document.getElementById('planStartDate').value;
     const startTime = document.getElementById('planStartTime').value;
     const mode = document.getElementById('planStyle').value;
+    const lodgingMode = document.getElementById('planLodging')?.value || 'all';
 
     if (!startDate) { alert('请选择出发日期'); return; }
-    if (selectedPoiIds.size === 0) { alert('请至少选择一个景点'); return; }
+    if (selectedPoiOrder.length === 0) { alert('请至少选择一个景点'); return; }
 
     const allPoisData = window.__allPois || [];
-    const selectedPois = allPoisData.filter(p => selectedPoiIds.has(String(p.id)));
+    const selectedPois = selectedPoiOrder
+        .map(id => allPoisData.find(p => String(p.id) === id))
+        .filter(Boolean);
     if (selectedPois.length === 0) {
         alert('未找到选中的景点数据，请重新选择');
         return;
@@ -1065,7 +1003,8 @@ window.regenerateTrip = async function() {
             mode,
             travelTimes,
             allPoiNodesMap,
-            accommodationPois
+            accommodationPois,
+            lodgingMode
         );
 
         if (!result.days || result.days.length === 0) {
@@ -1079,7 +1018,6 @@ window.regenerateTrip = async function() {
         showTripDetail(result);
         loadingEl.classList.add('hidden');
         stepDetail.classList.remove('hidden');
-        populateEditPoiSelect();
         alert('行程已重新生成！');
     } catch (e) {
         alert('重新生成失败：' + e.message);
@@ -1122,14 +1060,13 @@ window.renderMyTrips = function() {
     let html = '';
     trips.forEach((trip) => {
         const data = trip.data || {};
-        const poiCount = data.days ? data.days.reduce((s, d) => s + (d.nodes ? d.nodes.filter(n => n.type === 'visit').length : 0), 0) : 0;
         html += `
             <div class="card-modern">
                 <div class="d-flex justify-content-between align-items-center" style="cursor:pointer;" onclick="window.toggleTripDetail('${trip.id}')">
                     <div class="card-title">📅 ${trip.name || '未命名'}</div>
                     <button class="btn btn-sm btn-danger" onclick="event.stopPropagation(); window.deleteTripSolution('${trip.id}')">删除</button>
                 </div>
-                <div class="card-sub">天数: ${data.days ? data.days.length : 0} 天 | 景点: ${poiCount} 个</div>
+                <div class="card-sub">天数: ${data.days ? data.days.length : 0} 天</div>
                 <div id="trip-detail-${trip.id}" class="hidden mt-2"></div>
             </div>
         `;
@@ -1137,7 +1074,6 @@ window.renderMyTrips = function() {
     container.innerHTML = html;
 };
 
-// 原地展开/收起行程详情
 window.toggleTripDetail = function(tripId) {
     const container = document.getElementById(`trip-detail-${tripId}`);
     if (!container) return;
@@ -1153,18 +1089,16 @@ window.toggleTripDetail = function(tripId) {
     container.classList.remove('hidden');
 };
 
-// 渲染行程详情到指定容器
 function renderTripDetailInline(container, data) {
     let html = '';
     if (data && data.days) {
         data.days.forEach((day, dayIdx) => {
-            const visitCount = day.nodes ? day.nodes.filter(n => n.type === 'visit').length : 0;
             html += `<div class="trip-day-container" style="margin-top:8px;">`;
-            html += `<div class="trip-day-title"><span>📅 第${dayIdx + 1}天 (${day.date})</span><span class="day-badge">${visitCount} 个景点</span></div>`;
+            html += `<div class="trip-day-title"><span>📅 第${dayIdx + 1}天 (${day.date})</span></div>`;
             html += `<div class="trip-timeline">`;
             if (day.nodes) {
                 day.nodes.forEach((node) => {
-                    html += renderTripNodeHtml(node, false);
+                    html += renderTripNodeHtml(node);
                 });
             }
             html += `</div></div>`;
@@ -1181,7 +1115,6 @@ window.deleteTripSolution = function(id) {
     window.renderMyTrips();
 };
 
-// 兼容旧的查看入口（在“我的”中点击按钮时也走原地展开）
 window.viewTripSolution = function(id) {
     window.toggleTripDetail(id);
 };
@@ -1210,6 +1143,7 @@ window.renderMyReservations = function() {
                     <p><b>电话：</b>${r.phone || ''}</p>
                     <p><b>人数：</b>${r.visitor_count}</p>
                     <p><b>时段：</b>${r.time_slot_start} - ${r.time_slot_end || ''}</p>
+                    <p><b>预约内容：</b>${r.reservation_content || '未选择'}</p>
                     <p><b>备注：</b>${r.remark || ''}</p>
                     <p><b>状态：</b>${r.status}</p>
                     <button class="btn btn-sm btn-danger" onclick="window.deleteReservationHandler('${r.id}')">删除</button>
@@ -1241,9 +1175,14 @@ window.submitReservation = function(merchantId, merchantName, category) {
     const phone = document.getElementById(`res-phone-${merchantId}`).value.trim();
     const count = parseInt(document.getElementById(`res-count-${merchantId}`).value) || 1;
     const remark = document.getElementById(`res-remark-${merchantId}`).value.trim();
+    const content = document.getElementById(`res-content-${merchantId}`)?.value || '';
 
     if (!date || !name || !phone) {
         alert('请填写日期、联系人和电话');
+        return;
+    }
+    if (!content) {
+        alert('请选择预约内容');
         return;
     }
 
@@ -1260,6 +1199,7 @@ window.submitReservation = function(merchantId, merchantName, category) {
         name: name,
         phone: phone,
         visitor_count: count,
+        reservation_content: content,
         remark: remark,
         status: 'pending'
     });
@@ -1270,6 +1210,8 @@ window.submitReservation = function(merchantId, merchantName, category) {
     document.getElementById(`res-phone-${merchantId}`).value = '';
     document.getElementById(`res-count-${merchantId}`).value = '1';
     document.getElementById(`res-remark-${merchantId}`).value = '';
+    const contentSel = document.getElementById(`res-content-${merchantId}`);
+    if (contentSel) contentSel.value = '';
     window.toggleReservationForm(merchantId);
     window.renderMyReservations();
 };
@@ -1277,6 +1219,23 @@ window.submitReservation = function(merchantId, merchantName, category) {
 window.toggleReservationForm = function(merchantId) {
     const form = document.getElementById(`reservation-form-${merchantId}`);
     if (form) form.classList.toggle('hidden');
+};
+
+// 更新预约内容的小类
+window.updateResContent = function(merchantId) {
+    const catSel = document.getElementById(`res-cat-${merchantId}`);
+    const contentSel = document.getElementById(`res-content-${merchantId}`);
+    if (!catSel || !contentSel) return;
+    const cat = catSel.value;
+    if (!cat) {
+        contentSel.innerHTML = '<option value="">请选择具体项目</option>';
+        return;
+    }
+    const categories = window.__currentMerchantCategories || [];
+    const items = window.__currentMerchantItems || [];
+    const catItems = items.filter(item => item.category === cat);
+    contentSel.innerHTML = '<option value="">请选择具体项目</option>' +
+        catItems.map(item => `<option value="${item.name}">${item.name}${item.price ? ' ' + item.price : ''}</option>`).join('');
 };
 
 // ===== 留言 =====
@@ -1337,12 +1296,12 @@ window.savePreferences = function() {
 function loadPreferences() {
     const prefs = JSON.parse(localStorage.getItem('userPrefs_' + DEVICE_ID) || '{}');
     if (prefs.preferred_categories) {
-        document.querySelectorAll('#settingsCategories .pref-tag, #prefCategories .pref-tag').forEach(el => {
+        document.querySelectorAll('#settingsCategories .pref-tag').forEach(el => {
             el.classList.toggle('active', prefs.preferred_categories.includes(el.dataset.value));
         });
     }
     if (prefs.cuisine_prefs) {
-        document.querySelectorAll('#settingsCuisine .pref-tag, #prefCuisine .pref-tag').forEach(el => {
+        document.querySelectorAll('#settingsCuisine .pref-tag').forEach(el => {
             el.classList.toggle('active', prefs.cuisine_prefs.includes(el.dataset.value));
         });
     }
@@ -1358,10 +1317,16 @@ window.showPoiDetail = async function(poi) {
         const merchant = merchants && merchants.length > 0 ? merchants[0] : null;
         document.getElementById('merchantDetailTitle').textContent = poi.name;
         let html = '';
+        let categories = [];
+        let items = [];
         if (merchant) {
             const sd = merchant.service_data || {};
-            const categories = sd.businessCategories || [];
-            const items = sd.businessItems || [];
+            categories = sd.businessCategories || [];
+            items = sd.businessItems || [];
+            // 保存到全局供 updateResContent 使用
+            window.__currentMerchantCategories = categories;
+            window.__currentMerchantItems = items;
+
             if (categories.length > 0 && items.length > 0) {
                 categories.forEach(cat => {
                     const catItems = items.filter(item => item.category === cat);
@@ -1391,6 +1356,9 @@ window.showPoiDetail = async function(poi) {
             let status = merchant.status === 'open' ? '营业中' : (merchant.status === 'closed' ? '休息' : '繁忙');
             let parking = merchant.parking_spots ?? 0;
             html += `<hr><p><i class="fas fa-phone"></i> ${phone} | <i class="fas fa-circle ${merchant.status === 'open' ? 'text-success' : 'text-danger'}"></i> ${status} | <i class="fas fa-parking"></i> ${parking} 个车位</p><p>${poi.description || ''}</p>`;
+
+            // 预约表单（增加预约内容）
+            const categoryOptions = categories.map(c => `<option value="${c}">${c}</option>`).join('');
             html += `
                 <div class="mt-3">
                     <button class="btn btn-primary-custom" onclick="window.toggleReservationForm('${merchant.id}')">
@@ -1409,6 +1377,16 @@ window.showPoiDetail = async function(poi) {
                                 <option value="14:00-15:00">14:00-15:00</option>
                                 <option value="15:00-16:00">15:00-16:00</option>
                                 <option value="16:00-17:00">16:00-17:00</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>预约内容</label>
+                            <select id="res-cat-${merchant.id}" class="form-select mb-1" onchange="window.updateResContent('${merchant.id}')">
+                                <option value="">请选择大类</option>
+                                ${categoryOptions}
+                            </select>
+                            <select id="res-content-${merchant.id}" class="form-select">
+                                <option value="">请选择具体项目</option>
                             </select>
                         </div>
                         <div class="form-group"><label>联系人</label><input type="text" id="res-name-${merchant.id}" class="form-control" placeholder="姓名" /></div>
@@ -1447,8 +1425,6 @@ window.toggleVoice = () => {
 window.backToPreferences = function() {
     document.getElementById('stepDetail').classList.add('hidden');
     document.getElementById('stepPreferences').classList.remove('hidden');
-    selectedSolutionIndex = -1;
-    currentSolutions = [];
 };
 window.startNavigation = startNavigation;
 window.endNavigation = endNavigation;
@@ -1492,6 +1468,7 @@ async function init() {
 
         initTimeSelectors();
         renderPoiSelection(pois);
+        renderSelectedOrder();
         loadPreferences();
 
         await window.renderMyTrips();

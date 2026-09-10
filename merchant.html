@@ -10,18 +10,28 @@
         body { background: #f5f5f5; font-family: system-ui, sans-serif; }
         .header { background: #1b5e20; color: white; padding: 12px 24px; display: flex; justify-content: space-between; align-items: center; }
         .header h3 { margin: 0; display: flex; align-items: center; gap: 10px; }
-        .container-custom { max-width: 1000px; margin: 20px auto; padding: 0 16px; }
+        .container-custom { max-width: 1100px; margin: 20px auto; padding: 0 16px; }
         .tab-content { background: white; padding: 20px; border-radius: 0 0 8px 8px; border: 1px solid #dee2e6; border-top: none; }
         .nav-tabs .nav-link.active { background: #2e7d32; color: white; border-color: #2e7d32; }
         .item-header { background: #f0f0f0; padding: 8px; border-radius: 4px; cursor: pointer; display: flex; justify-content: space-between; }
         .item-detail { padding: 10px; border: 1px solid #ddd; border-radius: 4px; margin-top: 4px; background: white; }
-        .upload-preview { max-width: 200px; max-height: 150px; border-radius: 4px; border: 1px solid #ddd; }
-        .category-header { cursor: pointer; background: #f9f9f9; padding: 8px; border: 1px solid #ddd; border-radius: 4px; display: flex; justify-content: space-between; margin: 4px 0; }
+        .upload-preview { max-width: 160px; max-height: 120px; border-radius: 4px; border: 1px solid #ddd; }
+        .category-header { cursor: pointer; background: #f9f9f9; padding: 8px; border: 1px solid #ddd; border-radius: 4px; display: flex; justify-content: space-between; align-items: center; margin: 4px 0; }
+        .category-header:hover { background: #e8f5e9; }
         .hidden { display: none !important; }
         #login-page { max-width: 400px; margin: 80px auto; }
         #login-page .card { padding: 24px; border-radius: 12px; box-shadow: 0 8px 32px rgba(0,0,0,0.1); }
         .btn-sm { font-size: 12px; padding: 4px 8px; }
         .loading-placeholder { color: #888; padding: 12px 0; text-align: center; }
+        .status-badge { display: inline-block; padding: 2px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; }
+        .status-pending { background: #fff3cd; color: #856404; }
+        .status-confirmed { background: #d4edda; color: #155724; }
+        .status-rejected { background: #f8d7da; color: #721c24; }
+        .item-row { display: flex; justify-content: space-between; align-items: center; padding: 6px 0; border-bottom: 1px solid #f0f0f0; }
+        .item-row:last-child { border-bottom: none; }
+        .reservation-card { border: 1px solid #e0e0e0; border-radius: 8px; padding: 12px; margin-bottom: 10px; background: #fafafa; }
+        .reservation-card .row-line { font-size: 13px; margin: 2px 0; }
+        .reservation-card .row-line b { display: inline-block; min-width: 70px; color: #555; }
         @media (max-width: 768px) { .header { flex-direction: column; gap: 8px; } }
     </style>
 </head>
@@ -59,34 +69,51 @@
         <ul class="nav nav-tabs" id="merchantTabs">
             <li class="nav-item"><a class="nav-link active" data-bs-toggle="tab" href="#tab-business">📦 业务管理</a></li>
             <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-reservations">📅 预约列表</a></li>
-            <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-feedbacks">💬 留言</a></li>
             <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-info">🏪 基本信息</a></li>
         </ul>
         <div class="tab-content">
-            <!-- 业务管理 -->
+            <!-- ==================== 业务管理 ==================== -->
             <div class="tab-pane active" id="tab-business">
-                <div class="d-flex justify-content-between align-items-center">
-                    <h5>业务分类与项目</h5>
-                    <button class="btn btn-secondary btn-sm" onclick="window.toggleCategoryPanel()">管理分类</button>
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <h5 class="mb-0">业务分类与项目</h5>
+                    <button class="btn btn-secondary btn-sm" onclick="window.toggleCategoryPanel()">
+                        <i class="fas fa-tags"></i> 管理分类
+                    </button>
                 </div>
+
+                <!-- 分类管理面板 -->
                 <div id="category-panel" class="card p-3 mb-3 hidden">
-                    <div class="d-flex gap-2"><input id="new-category-input" class="form-control" placeholder="新分类名称">
-                        <button class="btn btn-success" onclick="window.addCategory()">添加</button></div>
-                    <div id="category-list" class="mt-2"></div>
+                    <h6 class="mb-2">分类管理</h6>
+                    <div class="d-flex gap-2 mb-2">
+                        <input id="new-category-input" class="form-control form-control-sm" placeholder="输入新分类名称">
+                        <button class="btn btn-success btn-sm" onclick="window.addCategory()">添加</button>
+                    </div>
+                    <div id="category-list"></div>
                 </div>
+
+                <!-- 业务项目列表 -->
                 <div id="business-container">
                     <div class="loading-placeholder">加载中...</div>
                 </div>
-                <button class="btn btn-success mt-3" onclick="window.showAddItemForm()"><i class="fas fa-plus"></i> 添加项目</button>
+
+                <button class="btn btn-success mt-3" onclick="window.showAddItemForm()">
+                    <i class="fas fa-plus"></i> 添加项目
+                </button>
             </div>
 
-            <!-- 预约列表 -->
+            <!-- ==================== 预约列表 ==================== -->
             <div class="tab-pane" id="tab-reservations">
                 <div class="d-flex justify-content-between mb-3">
-                    <button class="btn btn-success" onclick="window.toggleReservationForm()"><i class="fas fa-plus"></i> 新增预约</button>
-                    <button class="btn btn-warning" onclick="window.exportReservations()"><i class="fas fa-file-export"></i> 导出</button>
+                    <button class="btn btn-success" onclick="window.toggleNewReservationForm()">
+                        <i class="fas fa-plus"></i> 新增预约
+                    </button>
+                    <button class="btn btn-warning" onclick="window.exportReservations()">
+                        <i class="fas fa-file-export"></i> 导出 Excel
+                    </button>
                 </div>
-                <div id="add-reservation-form" class="card p-3 mb-3 hidden">
+
+                <!-- 新增预约表单 -->
+                <div id="new-reservation-form" class="card p-3 mb-3 hidden">
                     <h6>新增预约</h6>
                     <div class="row g-2">
                         <div class="col-md-4"><label class="form-label">预约日期</label><input type="date" id="new-res-date" class="form-control"></div>
@@ -101,27 +128,32 @@
                         <div class="col-md-4"><label class="form-label">单位</label><input id="new-res-unit" class="form-control"></div>
                         <div class="col-md-4"><label class="form-label">联系人</label><input id="new-res-name" class="form-control"></div>
                         <div class="col-md-4"><label class="form-label">电话</label><input id="new-res-phone" class="form-control"></div>
-                        <div class="col-md-4"><label class="form-label">人数</label><input type="number" id="new-res-count" class="form-control"></div>
-                        <div class="col-md-4"><label class="form-label">活动类别</label><select id="new-res-activity" class="form-select"></select></div>
+                        <div class="col-md-4"><label class="form-label">人数</label><input type="number" id="new-res-count" class="form-control" value="1" min="1"></div>
+                        <div class="col-md-4"><label class="form-label">活动类别</label>
+                            <select id="new-res-cat" class="form-select" onchange="window.updateNewResContent()">
+                                <option value="">请选择大类</option>
+                            </select>
+                        </div>
+                        <div class="col-md-4"><label class="form-label">具体项目</label>
+                            <select id="new-res-content" class="form-select">
+                                <option value="">请选择具体项目</option>
+                            </select>
+                        </div>
                         <div class="col-md-4"><label class="form-label">地点</label><input id="new-res-room" class="form-control"></div>
                         <div class="col-12"><label class="form-label">备注</label><textarea id="new-res-remark" class="form-control" rows="2"></textarea></div>
                     </div>
-                    <button class="btn btn-success mt-2" onclick="window.saveReservation()">保存</button>
-                    <button class="btn btn-secondary mt-2" onclick="window.toggleReservationForm()">取消</button>
+                    <div class="mt-2">
+                        <button class="btn btn-success" onclick="window.saveNewReservation()">保存</button>
+                        <button class="btn btn-secondary" onclick="window.toggleNewReservationForm()">取消</button>
+                    </div>
                 </div>
+
                 <div id="reservation-list">
                     <div class="loading-placeholder">加载中...</div>
                 </div>
             </div>
 
-            <!-- 留言 -->
-            <div class="tab-pane" id="tab-feedbacks">
-                <div id="feedback-list">
-                    <div class="loading-placeholder">加载中...</div>
-                </div>
-            </div>
-
-            <!-- 基本信息 -->
+            <!-- ==================== 基本信息 ==================== -->
             <div class="tab-pane" id="tab-info">
                 <div class="row g-2">
                     <div class="col-md-6"><label class="form-label">业务类型</label>
@@ -133,14 +165,63 @@
                         </select>
                     </div>
                     <div class="col-md-6"><label class="form-label">营业状态</label>
-                        <select id="status" class="form-select"><option value="open">营业中</option><option value="closed">休息</option></select>
+                        <select id="status" class="form-select">
+                            <option value="open">营业中</option><option value="closed">休息</option>
+                        </select>
                     </div>
                     <div class="col-md-6"><label class="form-label">电话</label><input id="phone" class="form-control"></div>
                     <div class="col-md-6"><label class="form-label">地址</label><input id="address" class="form-control"></div>
                     <div class="col-md-6"><label class="form-label">停车位</label><input type="number" id="parking" class="form-control"></div>
                     <div class="col-12"><label class="form-label">简介</label><textarea id="intro" class="form-control" rows="2"></textarea></div>
                 </div>
-                <button class="btn btn-success mt-3" onclick="window.saveInfo()"><i class="fas fa-save"></i> 保存</button>
+                <button class="btn btn-success mt-3" onclick="window.saveInfo()">
+                    <i class="fas fa-save"></i> 保存
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 项目编辑模态框 -->
+<div class="modal fade" id="itemModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="itemModalTitle">添加项目</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="item-edit-index">
+                <div class="mb-2">
+                    <label class="form-label">所属分类</label>
+                    <select id="item-category" class="form-select"></select>
+                </div>
+                <div class="mb-2">
+                    <label class="form-label">项目名称 <span class="text-danger">*</span></label>
+                    <input id="item-name" class="form-control" placeholder="如：标准间 / 红烧肉">
+                </div>
+                <div class="mb-2">
+                    <label class="form-label">价格</label>
+                    <input id="item-price" class="form-control" placeholder="如：¥288">
+                </div>
+                <div class="mb-2">
+                    <label class="form-label">时长/规格</label>
+                    <input id="item-duration" class="form-control" placeholder="如：1晚 / 1份">
+                </div>
+                <div class="mb-2">
+                    <label class="form-label">描述</label>
+                    <textarea id="item-description" class="form-control" rows="2"></textarea>
+                </div>
+                <div class="mb-2">
+                    <label class="form-label">图片</label>
+                    <input type="file" id="item-image-file" class="form-control" accept="image/*" onchange="window.previewItemImage(event)">
+                    <input type="hidden" id="item-image-url">
+                    <div id="item-image-preview" class="mt-2"></div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button class="btn btn-success" onclick="window.saveItem()">保存</button>
             </div>
         </div>
     </div>
@@ -165,9 +246,26 @@ import { signIn, signOut, getCurrentUser, onAuthStateChange } from './js/auth.js
 import {
     initMerchant, getMerchantData, loadBusinessData, saveBusinessData,
     fetchReservations, addReservation, updateReservationStatus,
-    fetchFeedbacks, replyFeedback, updateInfo, loadPoiList
+    updateInfo, loadPoiList
 } from './js/merchant.js';
+import { deleteReservation, uploadFile } from './js/api.js';
 
+// ============================================================
+// 状态中文映射
+// ============================================================
+const STATUS_MAP = {
+    pending: '待确认',
+    confirmed: '已确认',
+    rejected: '已拒绝',
+    cancelled: '已取消'
+};
+function translateStatus(s) {
+    return STATUS_MAP[s] || s || '未知';
+}
+
+// ============================================================
+// 全局状态
+// ============================================================
 const loginPage = document.getElementById('login-page');
 const main = document.getElementById('main');
 const loginBtn = document.getElementById('loginBtn');
@@ -176,7 +274,13 @@ const loginMsg = document.getElementById('login-msg');
 const merchantNameSpan = document.getElementById('merchant-name');
 
 let merchant = null;
+let businessCategories = [];
+let businessItems = [];
+let reservationsCache = [];
 
+// ============================================================
+// 登录与认证
+// ============================================================
 loginBtn.addEventListener('click', async () => {
     const email = document.getElementById('account').value.trim();
     const pwd = document.getElementById('password').value;
@@ -197,7 +301,7 @@ logoutBtn.addEventListener('click', async () => {
     await signOut();
 });
 
-onAuthStateChange((event, session) => {
+onAuthStateChange((event) => {
     if (event === 'SIGNED_IN') {
         loginPage.classList.add('hidden');
         main.classList.remove('hidden');
@@ -217,27 +321,35 @@ onAuthStateChange((event, session) => {
     }
 })();
 
-// ★ 优化：并行加载三类数据，页面立即响应
+// ============================================================
+// 初始化商户端
+// ============================================================
 async function initMerchantUI() {
     try {
         merchant = await initMerchant();
         merchantNameSpan.textContent = merchant.display_name || '商户';
 
-        // 显示加载占位
+        // 占位
         document.getElementById('business-container').innerHTML = '<div class="loading-placeholder">加载中...</div>';
         document.getElementById('reservation-list').innerHTML = '<div class="loading-placeholder">加载中...</div>';
-        document.getElementById('feedback-list').innerHTML = '<div class="loading-placeholder">加载中...</div>';
 
-        // ★ 并行加载：业务数据（本地）、预约、留言
-        const businessData = loadBusinessData();
-        const [reservationsData, feedbacksData] = await Promise.all([
-            fetchReservations().catch(e => { console.warn('预约加载失败:', e); return []; }),
-            fetchFeedbacks().catch(e => { console.warn('留言加载失败:', e); return []; })
-        ]);
+        // 加载业务数据
+        const data = loadBusinessData();
+        businessCategories = data.businessCategories || [];
+        businessItems = data.businessItems || [];
+        renderBusiness();
+        renderCategoryList();
+        renderNewResCategoryOptions();
 
-        renderBusiness(businessData.businessCategories, businessData.businessItems);
-        renderReservationsList(reservationsData);
-        renderFeedbacksList(feedbacksData);
+        // 并行加载预约
+        const reservations = await fetchReservations().catch(e => {
+            console.warn('预约加载失败:', e);
+            return [];
+        });
+        reservationsCache = reservations || [];
+        renderReservations();
+
+        // 基本信息
         renderInfo();
     } catch (e) {
         console.error('初始化商户端失败:', e);
@@ -245,12 +357,75 @@ async function initMerchantUI() {
     }
 }
 
-function renderBusiness(categories, items) {
+// ============================================================
+// 业务管理 - 分类
+// ============================================================
+window.toggleCategoryPanel = function() {
+    document.getElementById('category-panel').classList.toggle('hidden');
+};
+
+window.addCategory = function() {
+    const input = document.getElementById('new-category-input');
+    const name = input.value.trim();
+    if (!name) { alert('请输入分类名称'); return; }
+    if (businessCategories.includes(name)) { alert('该分类已存在'); return; }
+    businessCategories.push(name);
+    input.value = '';
+    saveBusinessData(businessCategories, businessItems).catch(e => alert('保存失败：' + e.message));
+    renderCategoryList();
+    renderBusiness();
+    renderNewResCategoryOptions();
+    // 同步刷新项目编辑的分类下拉
+    renderItemCategoryOptions();
+};
+
+window.deleteCategory = async function(name) {
+    const catItems = businessItems.filter(i => i.category === name);
+    const msg = catItems.length > 0
+        ? `该分类下有 ${catItems.length} 个项目，删除后将一并删除，是否继续？`
+        : '确认删除该分类？';
+    if (!confirm(msg)) return;
+    businessCategories = businessCategories.filter(c => c !== name);
+    businessItems = businessItems.filter(i => i.category !== name);
+    try {
+        await saveBusinessData(businessCategories, businessItems);
+        renderCategoryList();
+        renderBusiness();
+        renderNewResCategoryOptions();
+        renderItemCategoryOptions();
+    } catch (e) {
+        alert('删除失败：' + e.message);
+    }
+};
+
+function renderCategoryList() {
+    const container = document.getElementById('category-list');
+    if (!container) return;
+    if (businessCategories.length === 0) {
+        container.innerHTML = '<p class="text-secondary small mb-0">暂无分类</p>';
+        return;
+    }
+    container.innerHTML = businessCategories.map(c => `
+        <div class="item-row">
+            <span>📁 ${c}</span>
+            <button class="btn btn-sm btn-danger" onclick="window.deleteCategory('${c.replace(/'/g, "\\'")}')">删除</button>
+        </div>
+    `).join('');
+}
+
+// ============================================================
+// 业务管理 - 项目
+// ============================================================
+function renderBusiness() {
     const container = document.getElementById('business-container');
     if (!container) return;
+    if (businessCategories.length === 0 && businessItems.length === 0) {
+        container.innerHTML = '<p class="text-secondary">暂无业务项目，请先添加分类和项目</p>';
+        return;
+    }
     let html = '';
-    categories.forEach(cat => {
-        const catItems = items.filter(i => i.category === cat);
+    businessCategories.forEach(cat => {
+        const catItems = businessItems.filter(i => i.category === cat);
         html += `
             <div class="card mb-2">
                 <div class="category-header" onclick="this.nextElementSibling.classList.toggle('hidden')">
@@ -258,59 +433,317 @@ function renderBusiness(categories, items) {
                     <span>▼</span>
                 </div>
                 <div class="hidden p-2">
-                    ${catItems.map((item, idx) => `
-                        <div class="border-bottom py-1">
-                            <div class="d-flex justify-content-between">
-                                <span>${item.name} ${item.price || ''}</span>
-                                <div>
-                                    <button class="btn btn-sm btn-secondary" onclick="window.editItem(${idx})">编辑</button>
-                                    <button class="btn btn-sm btn-danger" onclick="window.deleteItem(${idx})">删除</button>
+                    ${catItems.length === 0 ? '<p class="text-secondary small mb-0">该分类下暂无项目</p>' :
+                        catItems.map((item) => {
+                            const globalIdx = businessItems.indexOf(item);
+                            return `
+                                <div class="item-row">
+                                    <div>
+                                        <span>${item.name || '未命名'}</span>
+                                        ${item.price ? `<span class="text-success ms-2">${item.price}</span>` : ''}
+                                        ${item.duration ? `<span class="text-secondary ms-2 small">${item.duration}</span>` : ''}
+                                    </div>
+                                    <div>
+                                        <button class="btn btn-sm btn-secondary" onclick="window.editItem(${globalIdx})">编辑</button>
+                                        <button class="btn btn-sm btn-danger" onclick="window.deleteItem(${globalIdx})">删除</button>
+                                    </div>
                                 </div>
-                            </div>
-                            ${item.image ? `<img src="${item.image}" class="upload-preview mt-1">` : ''}
-                        </div>
-                    `).join('')}
+                                ${item.description ? `<div class="text-secondary small ms-2">${item.description}</div>` : ''}
+                                ${item.image ? `<div class="ms-2 mt-1"><img src="${item.image}" class="upload-preview"></div>` : ''}
+                            `;
+                        }).join('')
+                    }
                 </div>
             </div>
         `;
     });
-    container.innerHTML = html || '<p>暂无业务项目</p>';
+    container.innerHTML = html || '<p class="text-secondary">暂无业务项目</p>';
 }
 
-function renderReservationsList(data) {
+window.showAddItemForm = function() {
+    if (businessCategories.length === 0) {
+        alert('请先添加分类');
+        return;
+    }
+    document.getElementById('item-edit-index').value = '';
+    document.getElementById('item-name').value = '';
+    document.getElementById('item-price').value = '';
+    document.getElementById('item-duration').value = '';
+    document.getElementById('item-description').value = '';
+    document.getElementById('item-image-url').value = '';
+    document.getElementById('item-image-file').value = '';
+    document.getElementById('item-image-preview').innerHTML = '';
+    renderItemCategoryOptions();
+    document.getElementById('itemModalTitle').textContent = '添加项目';
+    new bootstrap.Modal(document.getElementById('itemModal')).show();
+};
+
+window.editItem = function(idx) {
+    const item = businessItems[idx];
+    if (!item) return;
+    document.getElementById('item-edit-index').value = idx;
+    document.getElementById('item-name').value = item.name || '';
+    document.getElementById('item-price').value = item.price || '';
+    document.getElementById('item-duration').value = item.duration || '';
+    document.getElementById('item-description').value = item.description || '';
+    document.getElementById('item-image-url').value = item.image || '';
+    document.getElementById('item-image-file').value = '';
+    document.getElementById('item-image-preview').innerHTML = item.image
+        ? `<img src="${item.image}" class="upload-preview">`
+        : '';
+    renderItemCategoryOptions(item.category);
+    document.getElementById('itemModalTitle').textContent = '编辑项目';
+    new bootstrap.Modal(document.getElementById('itemModal')).show();
+};
+
+function renderItemCategoryOptions(selected) {
+    const sel = document.getElementById('item-category');
+    if (!sel) return;
+    sel.innerHTML = businessCategories.map(c =>
+        `<option value="${c}" ${c === selected ? 'selected' : ''}>${c}</option>`
+    ).join('');
+}
+
+window.previewItemImage = function(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+        document.getElementById('item-image-preview').innerHTML = `<img src="${e.target.result}" class="upload-preview">`;
+    };
+    reader.readAsDataURL(file);
+};
+
+window.saveItem = async function() {
+    const idx = document.getElementById('item-edit-index').value;
+    const category = document.getElementById('item-category').value;
+    const name = document.getElementById('item-name').value.trim();
+    const price = document.getElementById('item-price').value.trim();
+    const duration = document.getElementById('item-duration').value.trim();
+    const description = document.getElementById('item-description').value.trim();
+
+    if (!name) { alert('请输入项目名称'); return; }
+    if (!category) { alert('请选择所属分类'); return; }
+
+    const saveBtn = document.querySelector('#itemModal .btn-success');
+    const originalText = saveBtn.innerHTML;
+    saveBtn.disabled = true;
+    saveBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 保存中...';
+
+    try {
+        // 上传图片（若有）
+        let imageUrl = document.getElementById('item-image-url').value || '';
+        const fileInput = document.getElementById('item-image-file');
+        if (fileInput.files && fileInput.files[0]) {
+            const file = fileInput.files[0];
+            const ext = file.name.split('.').pop() || 'jpg';
+            const path = `${merchant.id}/${Date.now()}.${ext}`;
+            imageUrl = await uploadFile('merchant-images', path, file);
+        }
+
+        const newItem = { category, name, price, duration, description, image: imageUrl };
+        if (idx === '') {
+            businessItems.push(newItem);
+        } else {
+            businessItems[parseInt(idx)] = newItem;
+        }
+
+        await saveBusinessData(businessCategories, businessItems);
+        bootstrap.Modal.getInstance(document.getElementById('itemModal')).hide();
+        renderBusiness();
+        alert('保存成功');
+    } catch (e) {
+        alert('保存失败：' + e.message);
+        console.error(e);
+    } finally {
+        saveBtn.disabled = false;
+        saveBtn.innerHTML = originalText;
+    }
+};
+
+window.deleteItem = async function(idx) {
+    const item = businessItems[idx];
+    if (!item) return;
+    if (!confirm(`确认删除"${item.name}"？`)) return;
+    businessItems.splice(idx, 1);
+    try {
+        await saveBusinessData(businessCategories, businessItems);
+        renderBusiness();
+    } catch (e) {
+        alert('删除失败：' + e.message);
+    }
+};
+
+// ============================================================
+// 预约列表
+// ============================================================
+window.toggleNewReservationForm = function() {
+    document.getElementById('new-reservation-form').classList.toggle('hidden');
+};
+
+function renderNewResCategoryOptions() {
+    const sel = document.getElementById('new-res-cat');
+    if (!sel) return;
+    sel.innerHTML = '<option value="">请选择大类</option>' +
+        businessCategories.map(c => `<option value="${c}">${c}</option>`).join('');
+    document.getElementById('new-res-content').innerHTML = '<option value="">请选择具体项目</option>';
+}
+
+window.updateNewResContent = function() {
+    const cat = document.getElementById('new-res-cat').value;
+    const contentSel = document.getElementById('new-res-content');
+    if (!cat) {
+        contentSel.innerHTML = '<option value="">请选择具体项目</option>';
+        return;
+    }
+    const catItems = businessItems.filter(i => i.category === cat);
+    contentSel.innerHTML = '<option value="">请选择具体项目</option>' +
+        catItems.map(i => `<option value="${i.name}">${i.name}${i.price ? ' ' + i.price : ''}</option>`).join('');
+};
+
+function renderReservations() {
     const container = document.getElementById('reservation-list');
     if (!container) return;
-    const html = (data || []).map(r => `
-        <div class="card mb-2">
-            <div class="d-flex justify-content-between">
-                <span><b>${r.reservation_date}</b> ${r.name}</span>
-                <span class="badge ${r.status === 'pending' ? 'bg-warning' : r.status === 'confirmed' ? 'bg-success' : 'bg-secondary'}">${r.status}</span>
+    if (!reservationsCache || reservationsCache.length === 0) {
+        container.innerHTML = '<p class="text-secondary">暂无预约</p>';
+        return;
+    }
+    const sorted = [...reservationsCache].sort((a, b) =>
+        new Date(b.reservation_date || b.created_at) - new Date(a.reservation_date || a.created_at)
+    );
+    container.innerHTML = sorted.map(r => `
+        <div class="reservation-card">
+            <div class="d-flex justify-content-between align-items-center mb-1">
+                <b>📅 ${r.reservation_date || ''} ${r.time_slot_start || ''}-${r.time_slot_end || ''}</b>
+                <span class="status-badge status-${r.status || 'pending'}">${translateStatus(r.status)}</span>
             </div>
-            <div class="text-secondary">${r.remark || ''}</div>
-            ${r.status === 'pending' ? `
-                <button class="btn btn-sm btn-success mt-1" onclick="window.confirmReservation(${r.id})">确认</button>
-                <button class="btn btn-sm btn-danger mt-1" onclick="window.rejectReservation(${r.id})">拒绝</button>
-            ` : ''}
+            <div class="row-line"><b>联系人：</b>${r.name || ''} ${r.phone || ''}</div>
+            <div class="row-line"><b>单位：</b>${r.unit || '—'}</div>
+            <div class="row-line"><b>人数：</b>${r.visitor_count || 1}</div>
+            <div class="row-line"><b>预约内容：</b>${r.reservation_content || '—'}</div>
+            <div class="row-line"><b>地点：</b>${r.room || '—'}</div>
+            <div class="row-line"><b>备注：</b>${r.remark || '—'}</div>
+            <div class="row-line"><b>提交时间：</b>${r.created_at ? new Date(r.created_at).toLocaleString() : '—'}</div>
+            <div class="mt-2 d-flex gap-2">
+                ${r.status === 'pending' ? `
+                    <button class="btn btn-sm btn-success" onclick="window.confirmReservation('${r.id}')">确认</button>
+                    <button class="btn btn-sm btn-warning" onclick="window.rejectReservation('${r.id}')">拒绝</button>
+                ` : ''}
+                <button class="btn btn-sm btn-danger" onclick="window.deleteReservationHandler('${r.id}')">删除</button>
+            </div>
         </div>
-    `).join('') || '<p>暂无预约</p>';
-    container.innerHTML = html;
+    `).join('');
 }
 
-function renderFeedbacksList(data) {
-    const container = document.getElementById('feedback-list');
-    if (!container) return;
-    const html = (data || []).map(f => `
-        <div class="card mb-2">
-            <p>${f.message}</p>
-            <small>${new Date(f.created_at).toLocaleString()}</small>
-            ${f.reply ? `<div class="text-success">回复：${f.reply}</div>` : ''}
-            <textarea id="reply-${f.id}" class="form-control mt-1" rows="2">${f.reply || ''}</textarea>
-            <button class="btn btn-sm btn-primary mt-1" onclick="window.replyFeedback(${f.id})">回复</button>
-        </div>
-    `).join('') || '<p>暂无留言</p>';
-    container.innerHTML = html;
-}
+window.confirmReservation = async function(id) {
+    try {
+        await updateReservationStatus(id, 'confirmed');
+        const item = reservationsCache.find(r => String(r.id) === String(id));
+        if (item) item.status = 'confirmed';
+        renderReservations();
+    } catch (e) { alert('操作失败：' + e.message); }
+};
 
+window.rejectReservation = async function(id) {
+    try {
+        await updateReservationStatus(id, 'rejected');
+        const item = reservationsCache.find(r => String(r.id) === String(id));
+        if (item) item.status = 'rejected';
+        renderReservations();
+    } catch (e) { alert('操作失败：' + e.message); }
+};
+
+window.deleteReservationHandler = async function(id) {
+    if (!confirm('确认删除此预约？')) return;
+    try {
+        await deleteReservation(id);
+        reservationsCache = reservationsCache.filter(r => String(r.id) !== String(id));
+        renderReservations();
+    } catch (e) { alert('删除失败：' + e.message); }
+};
+
+window.saveNewReservation = async function() {
+    const date = document.getElementById('new-res-date').value;
+    const timeRange = document.getElementById('new-res-time').value;
+    const [start, end] = timeRange.split('-');
+    const unit = document.getElementById('new-res-unit').value.trim();
+    const name = document.getElementById('new-res-name').value.trim();
+    const phone = document.getElementById('new-res-phone').value.trim();
+    const count = parseInt(document.getElementById('new-res-count').value) || 1;
+    const content = document.getElementById('new-res-content').value;
+    const room = document.getElementById('new-res-room').value.trim();
+    const remark = document.getElementById('new-res-remark').value.trim();
+
+    if (!date || !name || !phone) { alert('请填写日期、联系人、电话'); return; }
+    if (!content) { alert('请选择具体项目'); return; }
+
+    try {
+        await addReservation({
+            reservation_date: date,
+            time_slot_start: start,
+            time_slot_end: end,
+            unit, name, phone,
+            visitor_count: count,
+            reservation_content: content,
+            room, remark,
+            status: 'confirmed'  // 商户代客预约直接确认
+        });
+        alert('预约已保存');
+        // 清空表单
+        ['new-res-date', 'new-res-unit', 'new-res-name', 'new-res-phone', 'new-res-room', 'new-res-remark'].forEach(id => {
+            document.getElementById(id).value = '';
+        });
+        document.getElementById('new-res-count').value = '1';
+        document.getElementById('new-res-cat').value = '';
+        document.getElementById('new-res-content').innerHTML = '<option value="">请选择具体项目</option>';
+        window.toggleNewReservationForm();
+
+        // 重新加载列表
+        reservationsCache = await fetchReservations();
+        renderReservations();
+    } catch (e) {
+        alert('保存失败：' + e.message);
+    }
+};
+
+// ============================================================
+// 导出 Excel（CSV 带 BOM，Excel 可打开）
+// ============================================================
+window.exportReservations = function() {
+    if (!reservationsCache || reservationsCache.length === 0) {
+        alert('暂无预约可导出');
+        return;
+    }
+    const headers = ['预约日期', '时段', '单位', '联系人', '电话', '人数', '预约内容', '地点', '备注', '状态', '提交时间'];
+    const rows = reservationsCache.map(r => [
+        r.reservation_date || '',
+        `${r.time_slot_start || ''}-${r.time_slot_end || ''}`,
+        r.unit || '',
+        r.name || '',
+        r.phone || '',
+        r.visitor_count || 1,
+        r.reservation_content || '',
+        r.room || '',
+        r.remark || '',
+        translateStatus(r.status),
+        r.created_at ? new Date(r.created_at).toLocaleString() : ''
+    ]);
+    const csv = [headers, ...rows]
+        .map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+        .join('\n');
+    // 加 BOM 防止 Excel 乱码
+    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `预约列表_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+};
+
+// ============================================================
+// 基本信息
+// ============================================================
 function renderInfo() {
     if (!merchant) return;
     document.getElementById('business_type').value = merchant.business_type || 'other';
@@ -321,39 +754,7 @@ function renderInfo() {
     document.getElementById('intro').value = merchant.intro || '';
 }
 
-// ===== 全局函数 =====
-window.toggleCategoryPanel = () => document.getElementById('category-panel').classList.toggle('hidden');
-window.toggleReservationForm = () => document.getElementById('add-reservation-form').classList.toggle('hidden');
-window.addCategory = () => alert('添加分类功能开发中');
-window.showAddItemForm = () => alert('添加项目功能开发中');
-window.editItem = (idx) => alert('编辑项目功能开发中');
-window.deleteItem = (idx) => alert('删除项目功能开发中');
-window.saveReservation = () => alert('保存预约功能开发中');
-window.confirmReservation = async (id) => {
-    try {
-        await updateReservationStatus(id, 'confirmed');
-        const data = await fetchReservations();
-        renderReservationsList(data);
-    } catch (e) { alert('操作失败：' + e.message); }
-};
-window.rejectReservation = async (id) => {
-    try {
-        await updateReservationStatus(id, 'rejected');
-        const data = await fetchReservations();
-        renderReservationsList(data);
-    } catch (e) { alert('操作失败：' + e.message); }
-};
-window.replyFeedback = async (id) => {
-    const el = document.getElementById(`reply-${id}`);
-    if (!el) return;
-    try {
-        await replyFeedback(id, el.value);
-        alert('回复成功');
-        const data = await fetchFeedbacks();
-        renderFeedbacksList(data);
-    } catch (e) { alert('回复失败：' + e.message); }
-};
-window.saveInfo = async () => {
+window.saveInfo = async function() {
     try {
         await updateInfo({
             business_type: document.getElementById('business_type').value,
@@ -366,7 +767,6 @@ window.saveInfo = async () => {
         alert('保存成功');
     } catch (e) { alert('保存失败：' + e.message); }
 };
-window.exportReservations = () => alert('导出功能开发中');
 </script>
 </body>
 </html>

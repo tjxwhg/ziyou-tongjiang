@@ -21,6 +21,7 @@
         #login-page { max-width: 400px; margin: 80px auto; }
         #login-page .card { padding: 24px; border-radius: 12px; box-shadow: 0 8px 32px rgba(0,0,0,0.1); }
         .btn-sm { font-size: 12px; padding: 4px 8px; }
+        .loading-placeholder { color: #888; padding: 12px 0; text-align: center; }
         @media (max-width: 768px) { .header { flex-direction: column; gap: 8px; } }
     </style>
 </head>
@@ -73,7 +74,9 @@
                         <button class="btn btn-success" onclick="window.addCategory()">添加</button></div>
                     <div id="category-list" class="mt-2"></div>
                 </div>
-                <div id="business-container"></div>
+                <div id="business-container">
+                    <div class="loading-placeholder">加载中...</div>
+                </div>
                 <button class="btn btn-success mt-3" onclick="window.showAddItemForm()"><i class="fas fa-plus"></i> 添加项目</button>
             </div>
 
@@ -106,12 +109,16 @@
                     <button class="btn btn-success mt-2" onclick="window.saveReservation()">保存</button>
                     <button class="btn btn-secondary mt-2" onclick="window.toggleReservationForm()">取消</button>
                 </div>
-                <div id="reservation-list"></div>
+                <div id="reservation-list">
+                    <div class="loading-placeholder">加载中...</div>
+                </div>
             </div>
 
             <!-- 留言 -->
             <div class="tab-pane" id="tab-feedbacks">
-                <div id="feedback-list"></div>
+                <div id="feedback-list">
+                    <div class="loading-placeholder">加载中...</div>
+                </div>
             </div>
 
             <!-- 基本信息 -->
@@ -155,7 +162,11 @@
 
 <script type="module">
 import { signIn, signOut, getCurrentUser, onAuthStateChange } from './js/auth.js';
-import { initMerchant, getMerchantData, loadBusinessData, saveBusinessData, fetchReservations, addReservation, updateReservationStatus, fetchFeedbacks, replyFeedback, updateInfo, loadPoiList } from './js/merchant.js';
+import {
+    initMerchant, getMerchantData, loadBusinessData, saveBusinessData,
+    fetchReservations, addReservation, updateReservationStatus,
+    fetchFeedbacks, replyFeedback, updateInfo, loadPoiList
+} from './js/merchant.js';
 
 const loginPage = document.getElementById('login-page');
 const main = document.getElementById('main');
@@ -206,15 +217,27 @@ onAuthStateChange((event, session) => {
     }
 })();
 
+// ★ 优化：并行加载三类数据，页面立即响应
 async function initMerchantUI() {
     try {
         merchant = await initMerchant();
         merchantNameSpan.textContent = merchant.display_name || '商户';
 
-        const { businessCategories, businessItems } = loadBusinessData();
-        renderBusiness(businessCategories, businessItems);
-        await renderReservations();
-        await renderFeedbacks();
+        // 显示加载占位
+        document.getElementById('business-container').innerHTML = '<div class="loading-placeholder">加载中...</div>';
+        document.getElementById('reservation-list').innerHTML = '<div class="loading-placeholder">加载中...</div>';
+        document.getElementById('feedback-list').innerHTML = '<div class="loading-placeholder">加载中...</div>';
+
+        // ★ 并行加载：业务数据（本地）、预约、留言
+        const businessData = loadBusinessData();
+        const [reservationsData, feedbacksData] = await Promise.all([
+            fetchReservations().catch(e => { console.warn('预约加载失败:', e); return []; }),
+            fetchFeedbacks().catch(e => { console.warn('留言加载失败:', e); return []; })
+        ]);
+
+        renderBusiness(businessData.businessCategories, businessData.businessItems);
+        renderReservationsList(reservationsData);
+        renderFeedbacksList(feedbacksData);
         renderInfo();
     } catch (e) {
         console.error('初始化商户端失败:', e);
@@ -254,10 +277,9 @@ function renderBusiness(categories, items) {
     container.innerHTML = html || '<p>暂无业务项目</p>';
 }
 
-async function renderReservations() {
+function renderReservationsList(data) {
     const container = document.getElementById('reservation-list');
     if (!container) return;
-    const data = await fetchReservations();
     const html = (data || []).map(r => `
         <div class="card mb-2">
             <div class="d-flex justify-content-between">
@@ -274,10 +296,9 @@ async function renderReservations() {
     container.innerHTML = html;
 }
 
-async function renderFeedbacks() {
+function renderFeedbacksList(data) {
     const container = document.getElementById('feedback-list');
     if (!container) return;
-    const data = await fetchFeedbacks();
     const html = (data || []).map(f => `
         <div class="card mb-2">
             <p>${f.message}</p>
@@ -300,7 +321,7 @@ function renderInfo() {
     document.getElementById('intro').value = merchant.intro || '';
 }
 
-// 挂载全局函数
+// ===== 全局函数 =====
 window.toggleCategoryPanel = () => document.getElementById('category-panel').classList.toggle('hidden');
 window.toggleReservationForm = () => document.getElementById('add-reservation-form').classList.toggle('hidden');
 window.addCategory = () => alert('添加分类功能开发中');
@@ -308,10 +329,43 @@ window.showAddItemForm = () => alert('添加项目功能开发中');
 window.editItem = (idx) => alert('编辑项目功能开发中');
 window.deleteItem = (idx) => alert('删除项目功能开发中');
 window.saveReservation = () => alert('保存预约功能开发中');
-window.confirmReservation = (id) => alert('确认预约功能开发中');
-window.rejectReservation = (id) => alert('拒绝预约功能开发中');
-window.replyFeedback = (id) => alert('回复留言功能开发中');
-window.saveInfo = () => alert('保存信息功能开发中');
+window.confirmReservation = async (id) => {
+    try {
+        await updateReservationStatus(id, 'confirmed');
+        const data = await fetchReservations();
+        renderReservationsList(data);
+    } catch (e) { alert('操作失败：' + e.message); }
+};
+window.rejectReservation = async (id) => {
+    try {
+        await updateReservationStatus(id, 'rejected');
+        const data = await fetchReservations();
+        renderReservationsList(data);
+    } catch (e) { alert('操作失败：' + e.message); }
+};
+window.replyFeedback = async (id) => {
+    const el = document.getElementById(`reply-${id}`);
+    if (!el) return;
+    try {
+        await replyFeedback(id, el.value);
+        alert('回复成功');
+        const data = await fetchFeedbacks();
+        renderFeedbacksList(data);
+    } catch (e) { alert('回复失败：' + e.message); }
+};
+window.saveInfo = async () => {
+    try {
+        await updateInfo({
+            business_type: document.getElementById('business_type').value,
+            status: document.getElementById('status').value,
+            phone: document.getElementById('phone').value,
+            address: document.getElementById('address').value,
+            parking_spots: parseInt(document.getElementById('parking').value) || 0,
+            intro: document.getElementById('intro').value
+        });
+        alert('保存成功');
+    } catch (e) { alert('保存失败：' + e.message); }
+};
 window.exportReservations = () => alert('导出功能开发中');
 </script>
 </body>

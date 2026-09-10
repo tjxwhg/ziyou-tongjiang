@@ -20,11 +20,15 @@
         .quality-L1 { background: #c8e6c9; color: #1b5e20; }
         .quality-L2 { background: #fff9c4; color: #f57f17; }
         .quality-L3 { background: #ffcdd2; color: #c62828; }
+        .type-badge-scenic { background: #e3f2fd; color: #1565c0; padding: 2px 8px; border-radius: 10px; font-size: 11px; }
+        .type-badge-spot { background: #f3e5f5; color: #6a1b9a; padding: 2px 8px; border-radius: 10px; font-size: 11px; }
         .poi-card { border: 1px solid #e0e0e0; border-radius: 8px; padding: 12px; margin-bottom: 10px; background: #fafafa; }
         .poi-card .poi-header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; }
         .node-list { margin-left: 20px; padding-left: 10px; border-left: 2px solid #2e7d32; }
-        .node-item { display: flex; justify-content: space-between; align-items: center; padding: 4px 8px; border-bottom: 1px solid #f0f0f0; font-size: 13px; }
+        .node-item { display: flex; justify-content: space-between; align-items: center; padding: 6px 8px; border-bottom: 1px solid #f0f0f0; font-size: 13px; }
         .node-item .badge { font-size: 10px; }
+        .sub-poi-item { display: flex; justify-content: space-between; align-items: center; padding: 8px 10px; border-bottom: 1px solid #f0f0f0; font-size: 13px; }
+        .sub-poi-item:last-child { border-bottom: none; }
         .transport-group { border: 1px solid #ddd; border-radius: 6px; margin-bottom: 8px; }
         .transport-group .card-header { padding: 8px 12px; cursor: pointer; background: #f8f9fa; border-bottom: 1px solid #ddd; }
         .transport-group .card-body { padding: 8px 12px; }
@@ -117,8 +121,15 @@
                 <input type="hidden" id="edit-poi-id">
                 <div class="row g-2">
                     <div class="col-6"><label class="form-label">名称</label><input id="edit-poi-name" class="form-control"></div>
-                    <div class="col-6"><label class="form-label">类别</label>
-                        <!-- ★ 统一为 8 类 -->
+                    <div class="col-3">
+                        <label class="form-label">类型</label>
+                        <select id="edit-poi-type" class="form-select" onchange="window.togglePoiTypeUI()">
+                            <option value="spot">景点（独立）</option>
+                            <option value="scenic">景区（含子景点）</option>
+                        </select>
+                    </div>
+                    <div class="col-3">
+                        <label class="form-label">类别</label>
                         <select id="edit-poi-category" class="form-select">
                             <option value="自然景区">自然景区</option>
                             <option value="红色景区">红色景区</option>
@@ -147,10 +158,24 @@
                         </select>
                     </div>
                 </div>
+
+                <!-- ★ 子景点管理（仅当类型为"景区"时显示） -->
+                <div id="sub-poi-section" class="hidden">
+                    <hr>
+                    <div class="d-flex justify-content-between align-items-center">
+                        <h6 class="mb-0"><i class="fas fa-layer-group text-success"></i> 子景点管理</h6>
+                        <button type="button" class="btn btn-success btn-sm" onclick="window.showSelectSubPoiModal()">
+                            <i class="fas fa-plus"></i> 从现有POI添加子景点
+                        </button>
+                    </div>
+                    <p class="text-secondary small mt-2 mb-1">子景点是已经存在的独立景点POI，勾选后自动归入当前景区，无需重复录入数据。</p>
+                    <div id="sub-poi-list" class="mt-2"></div>
+                </div>
+
                 <hr>
                 <div class="d-flex justify-content-between align-items-center">
-                    <h6><i class="fas fa-sitemap text-success"></i> 内部节点（子景点）</h6>
-                    <button class="btn btn-success btn-sm" onclick="window.addNodeField()"><i class="fas fa-plus"></i> 添加节点</button>
+                    <h6><i class="fas fa-sitemap text-success"></i> 内部点位（入口/休息区/洗手间等）</h6>
+                    <button class="btn btn-success btn-sm" onclick="window.addNodeField()"><i class="fas fa-plus"></i> 添加点位</button>
                 </div>
                 <div id="edit-nodes-container" class="mt-2"></div>
             </div>
@@ -162,7 +187,27 @@
     </div>
 </div>
 
-<!-- 模态框：编辑景区 -->
+<!-- ★ 模态框：选择子景点 -->
+<div class="modal fade" id="selectSubPoiModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">选择要添加的子景点</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p class="text-secondary small">勾选现有独立景点，点击确定后立即生效。已被其他景区使用的景点不显示。</p>
+                <div id="sub-poi-select-list" style="max-height: 400px; overflow-y: auto; border: 1px solid #eee; border-radius: 8px; padding: 8px;"></div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button class="btn btn-success" onclick="window.confirmSubPoiSelection()"><i class="fas fa-check"></i> 确定添加</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 模态框：编辑景区（scenic 表） -->
 <div class="modal fade" id="scenicModal" tabindex="-1">
     <div class="modal-dialog"><div class="modal-content">
         <div class="modal-header"><h5 class="modal-title">编辑景区</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
@@ -230,7 +275,7 @@ document.getElementById('logoutBtn').addEventListener('click', async () => {
     await signOut();
 });
 
-// ★ 修复：Auth 事件去重，避免 Token 刷新触发重复初始化
+// Auth 事件去重
 let hasInitialized = false;
 
 onAuthStateChange((event, session) => {
@@ -246,7 +291,6 @@ onAuthStateChange((event, session) => {
     }
 });
 
-// 检查已有会话
 (async () => {
     const user = await getCurrentUser();
     if (user && !hasInitialized) {

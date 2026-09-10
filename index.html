@@ -507,9 +507,15 @@
 
 <script type="module">
 // =============================================================
-// 主入口 - 完整优化版
+// 主入口 - 完整优化版（预约/留言统一走 Supabase）
 // =============================================================
-import { getPois, getMerchantsByPoi, getTransportPresets, insertReservation, insertFeedback, saveTripSolution as apiSaveTripSolution, getUserTripSolutions, getReservations, getFeedbacks, getPoiInternal } from './js/api.js';
+import {
+    getPois, getMerchantsByPoi, getMerchantByPoi, getTransportPresets,
+    insertReservation, insertFeedback,
+    getReservationsByDevice, getFeedbacksByDevice,
+    deleteReservation, deleteFeedback,
+    getPoiInternal
+} from './js/api.js';
 import { getCurrentUser, signInAnonymously } from './js/auth.js';
 import { initMap, loadPoisToMap, locateUser, setVoiceEnabled, getAllPois, clearFilter, applyFilter } from './js/map.js';
 import { formatTime, timeToMinutes } from './js/utils.js';
@@ -535,7 +541,7 @@ function setLocalData(key, data) {
     localStorage.setItem(key, JSON.stringify(data));
 }
 
-// ===== 缓存工具（优化：减少重复网络请求） =====
+// ===== 缓存工具 =====
 const CACHE_TTL = 5 * 60 * 1000;
 const CACHE_PREFIX = 'ztj_cache_';
 
@@ -569,6 +575,17 @@ async function getTransportPresetsCached() {
     const data = await getTransportPresets();
     setCache('transport', data);
     return data;
+}
+
+// ===== 状态中文映射 =====
+const STATUS_MAP = {
+    pending: '待确认',
+    confirmed: '已确认',
+    rejected: '已拒绝',
+    cancelled: '已取消'
+};
+function translateStatus(status) {
+    return STATUS_MAP[status] || status || '未知';
 }
 
 // ===== 全局状态 =====
@@ -629,7 +646,7 @@ function setDefaultStartTime() {
     if (dateInput) dateInput.value = now.toISOString().slice(0, 10);
 }
 
-// ===== 加载内部节点（并行请求 + 缓存） =====
+// ===== 加载内部节点（并行 + 缓存） =====
 async function loadPoiNodes(poiIds) {
     const promises = poiIds.map(async (id) => {
         const cached = getCache(`poinodes_${id}`);
@@ -834,7 +851,7 @@ window.movePoiDown = function(id) {
     }
 };
 
-// ===== 生成行程方案（优化：加载提示立即可见） =====
+// ===== 生成行程方案 =====
 window.generatePlans = async function() {
     const loadingEl = document.getElementById('planLoading');
     const stepPrefs = document.getElementById('stepPreferences');
@@ -855,15 +872,11 @@ window.generatePlans = async function() {
         .filter(Boolean);
     if (selectedPois.length === 0) { alert('未找到选中的景点数据'); return; }
 
-    // ★ 关键优化：立即显示加载提示，禁用按钮
     generateBtn.disabled = true;
     loadingEl.classList.remove('hidden');
-
-    // 让浏览器先渲染加载提示，再执行后续逻辑（双 requestAnimationFrame 确保一帧完成）
     await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
 
     try {
-        // 并行加载网络数据（缓存优先）
         const [_, presets] = await Promise.all([
             loadPoiNodes(selectedPois.map(p => p.id)),
             getTransportPresetsCached()
@@ -913,7 +926,6 @@ function renderTripNodeHtml(node) {
     const iconMap = { transport: '🚗', visit: '📍', meal: '🍽️', accommodation: '🏨', weather: '🌤️', reminder: '⚠️', waiting: '⏳' };
     const icon = iconMap[typeClass] || '•';
 
-    // 天气、提醒、住宿：图标直接紧随文字，不占时间列
     if (typeClass === 'weather' || typeClass === 'reminder' || typeClass === 'accommodation') {
         const text = typeClass === 'accommodation' ? (node.name || '住宿休息') : (node.message || '');
         const textClass = typeClass === 'weather' ? 'weather-text' : (typeClass === 'reminder' ? 'reminder-text' : '');
@@ -1043,7 +1055,7 @@ window.regenerateTrip = async function() {
     }
 };
 
-// ===== 保存行程 =====
+// ===== 保存行程（本地） =====
 window.saveTripSolution = function() {
     if (!currentTripData) { alert('没有可保存的行程'); return; }
     const defaultName = `行程_${new Date().toISOString().slice(0, 10)}`;
@@ -1134,39 +1146,49 @@ window.viewTripSolution = function(id) {
     window.toggleTripDetail(id);
 };
 
-// ===== 预约 =====
-window.renderMyReservations = function() {
+// =============================================================
+// 预约（改为 Supabase）
+// =============================================================
+
+// 拉取并渲染我的预约
+window.renderMyReservations = async function() {
     const container = document.getElementById('myReservationsContent');
     if (!container) return;
-    const reservations = getLocalData('reservations').filter(r => r.deviceId === DEVICE_ID);
-    if (reservations.length === 0) {
-        container.innerHTML = '<p class="text-secondary">暂无预约</p>';
-        return;
+    container.innerHTML = '<p class="text-secondary">加载中...</p>';
+    try {
+        const reservations = await getReservationsByDevice(DEVICE_ID);
+        if (!reservations || reservations.length === 0) {
+            container.innerHTML = '<p class="text-secondary">暂无预约</p>';
+            return;
+        }
+        const sorted = reservations.sort((a, b) => new Date(b.reservation_date || b.created_at) - new Date(a.reservation_date || a.created_at));
+        let html = '';
+        sorted.forEach((r, idx) => {
+            html += `
+                <div class="card-modern">
+                    <div onclick="window.toggleReservationDetail(${idx})" style="cursor:pointer;">
+                        <div class="card-title">📅 ${r.reservation_date} | ${r.merchant_name || '商户'}</div>
+                        <div class="card-sub">状态：${translateStatus(r.status)}</div>
+                    </div>
+                    <div id="res-detail-${idx}" class="hidden mt-2">
+                        <p><b>单位：</b>${r.unit || ''}</p>
+                        <p><b>联系人：</b>${r.name || ''}</p>
+                        <p><b>电话：</b>${r.phone || ''}</p>
+                        <p><b>人数：</b>${r.visitor_count || 1}</p>
+                        <p><b>时段：</b>${r.time_slot_start || ''} - ${r.time_slot_end || ''}</p>
+                        <p><b>预约内容：</b>${r.reservation_content || '未选择'}</p>
+                        <p><b>备注：</b>${r.remark || ''}</p>
+                        <p><b>状态：</b>${translateStatus(r.status)}</p>
+                        <button class="btn btn-sm btn-danger" onclick="window.deleteReservationHandler('${r.id}')">删除</button>
+                    </div>
+                </div>
+            `;
+        });
+        container.innerHTML = html;
+    } catch (e) {
+        console.error('加载预约失败:', e);
+        container.innerHTML = '<p class="text-danger">加载失败，请刷新重试</p>';
     }
-    const sorted = reservations.sort((a, b) => new Date(b.reservation_date) - new Date(a.reservation_date));
-    let html = '';
-    sorted.forEach((r, idx) => {
-        html += `
-            <div class="card-modern">
-                <div onclick="window.toggleReservationDetail(${idx})" style="cursor:pointer;">
-                    <div class="card-title">📅 ${r.reservation_date} | ${r.merchantName || '未知商户'}</div>
-                    <div class="card-sub">${r.category || '未分类'}</div>
-                </div>
-                <div id="res-detail-${idx}" class="hidden mt-2">
-                    <p><b>单位：</b>${r.unit || ''}</p>
-                    <p><b>联系人：</b>${r.name || ''}</p>
-                    <p><b>电话：</b>${r.phone || ''}</p>
-                    <p><b>人数：</b>${r.visitor_count}</p>
-                    <p><b>时段：</b>${r.time_slot_start} - ${r.time_slot_end || ''}</p>
-                    <p><b>预约内容：</b>${r.reservation_content || '未选择'}</p>
-                    <p><b>备注：</b>${r.remark || ''}</p>
-                    <p><b>状态：</b>${r.status}</p>
-                    <button class="btn btn-sm btn-danger" onclick="window.deleteReservationHandler('${r.id}')">删除</button>
-                </div>
-            </div>
-        `;
-    });
-    container.innerHTML = html;
 };
 
 window.toggleReservationDetail = function(idx) {
@@ -1174,18 +1196,22 @@ window.toggleReservationDetail = function(idx) {
     if (el) el.classList.toggle('hidden');
 };
 
-window.deleteReservationHandler = function(id) {
+window.deleteReservationHandler = async function(id) {
     if (!confirm('确认删除此预约？')) return;
-    let reservations = getLocalData('reservations');
-    reservations = reservations.filter(r => r.id !== id);
-    setLocalData('reservations', reservations);
-    window.renderMyReservations();
+    try {
+        await deleteReservation(id);
+        alert('已删除');
+        window.renderMyReservations();
+    } catch (e) {
+        alert('删除失败：' + e.message);
+    }
 };
 
-window.submitReservation = function(merchantId, merchantName, category) {
+// 提交预约（改为 Supabase）
+window.submitReservation = async function(merchantId, merchantName, category) {
     const date = document.getElementById(`res-date-${merchantId}`).value;
     const timeRange = document.getElementById(`res-time-${merchantId}`).value;
-    const [start, end] = timeRange.split('-');
+    const [start, end] = (timeRange || '-').split('-');
     const name = document.getElementById(`res-name-${merchantId}`).value.trim();
     const phone = document.getElementById(`res-phone-${merchantId}`).value.trim();
     const count = parseInt(document.getElementById(`res-count-${merchantId}`).value) || 1;
@@ -1201,34 +1227,36 @@ window.submitReservation = function(merchantId, merchantName, category) {
         return;
     }
 
-    const reservations = getLocalData('reservations');
-    reservations.push({
-        id: 'res_' + Date.now(),
-        deviceId: DEVICE_ID,
-        merchant_id: merchantId,
-        merchantName: merchantName,
-        category: category,
-        reservation_date: date,
-        time_slot_start: start,
-        time_slot_end: end,
-        name: name,
-        phone: phone,
-        visitor_count: count,
-        reservation_content: content,
-        remark: remark,
-        status: 'pending'
-    });
-    setLocalData('reservations', reservations);
-    alert('预约提交成功！');
-    document.getElementById(`res-date-${merchantId}`).value = '';
-    document.getElementById(`res-name-${merchantId}`).value = '';
-    document.getElementById(`res-phone-${merchantId}`).value = '';
-    document.getElementById(`res-count-${merchantId}`).value = '1';
-    document.getElementById(`res-remark-${merchantId}`).value = '';
-    const contentSel = document.getElementById(`res-content-${merchantId}`);
-    if (contentSel) contentSel.value = '';
-    window.toggleReservationForm(merchantId);
-    window.renderMyReservations();
+    try {
+        await insertReservation({
+            merchant_id: merchantId,
+            merchant_name: merchantName,
+            device_id: DEVICE_ID,
+            reservation_date: date,
+            time_slot_start: start || '',
+            time_slot_end: end || '',
+            name: name,
+            phone: phone,
+            visitor_count: count,
+            reservation_content: content,
+            remark: remark,
+            category: category || '',
+            status: 'pending'
+        });
+        alert('预约提交成功！');
+        document.getElementById(`res-date-${merchantId}`).value = '';
+        document.getElementById(`res-name-${merchantId}`).value = '';
+        document.getElementById(`res-phone-${merchantId}`).value = '';
+        document.getElementById(`res-count-${merchantId}`).value = '1';
+        document.getElementById(`res-remark-${merchantId}`).value = '';
+        const contentSel = document.getElementById(`res-content-${merchantId}`);
+        if (contentSel) contentSel.value = '';
+        window.toggleReservationForm(merchantId);
+        window.renderMyReservations();
+    } catch (e) {
+        alert('预约提交失败：' + e.message);
+        console.error(e);
+    }
 };
 
 window.toggleReservationForm = function(merchantId) {
@@ -1252,43 +1280,64 @@ window.updateResContent = function(merchantId) {
         catItems.map(item => `<option value="${item.name}">${item.name}${item.price ? ' ' + item.price : ''}</option>`).join('');
 };
 
-// ===== 留言 =====
-window.renderFeedbackHistory = function() {
+// =============================================================
+// 留言（改为 Supabase）
+// =============================================================
+
+window.renderFeedbackHistory = async function() {
     const container = document.getElementById('feedbackHistory');
     if (!container) return;
-    const feedbacks = getLocalData('feedbacks').filter(f => f.deviceId === DEVICE_ID);
-    if (feedbacks.length === 0) {
-        container.innerHTML = '<p class="text-secondary">暂无留言</p>';
-        return;
+    container.innerHTML = '<p class="text-secondary">加载中...</p>';
+    try {
+        const feedbacks = await getFeedbacksByDevice(DEVICE_ID);
+        if (!feedbacks || feedbacks.length === 0) {
+            container.innerHTML = '<p class="text-secondary">暂无留言</p>';
+            return;
+        }
+        let html = '';
+        feedbacks.forEach(f => {
+            html += `
+                <div class="card-modern">
+                    <p>${f.message}</p>
+                    <small class="text-secondary">${new Date(f.created_at).toLocaleString()}</small>
+                    ${f.reply ? `<div class="bg-green-light p-2 mt-2 rounded">📌 回复：${f.reply}</div>` : ''}
+                    <button class="btn btn-sm btn-danger mt-2" onclick="window.deleteFeedbackHandler('${f.id}')">删除</button>
+                </div>
+            `;
+        });
+        container.innerHTML = html;
+    } catch (e) {
+        console.error('加载留言失败:', e);
+        container.innerHTML = '<p class="text-danger">加载失败</p>';
     }
-    let html = '';
-    feedbacks.forEach(f => {
-        html += `
-            <div class="card-modern">
-                <p>${f.message}</p>
-                <small class="text-secondary">${new Date(f.created_at).toLocaleString()}</small>
-                ${f.reply ? `<div class="bg-green-light p-2 mt-2 rounded">📌 回复：${f.reply}</div>` : ''}
-            </div>
-        `;
-    });
-    container.innerHTML = html;
 };
 
-window.submitFeedback = function() {
+window.submitFeedback = async function() {
     const msg = document.getElementById('feedbackMsg')?.value.trim();
     if (!msg) { alert('请输入内容'); return; }
-    const feedbacks = getLocalData('feedbacks');
-    feedbacks.push({
-        id: 'fb_' + Date.now(),
-        deviceId: DEVICE_ID,
-        message: msg,
-        reply: null,
-        created_at: new Date().toISOString()
-    });
-    setLocalData('feedbacks', feedbacks);
-    alert('留言提交成功');
-    document.getElementById('feedbackMsg').value = '';
-    window.renderFeedbackHistory();
+    try {
+        await insertFeedback({
+            device_id: DEVICE_ID,
+            message: msg,
+            reply: null
+        });
+        alert('留言提交成功');
+        document.getElementById('feedbackMsg').value = '';
+        window.renderFeedbackHistory();
+    } catch (e) {
+        alert('提交失败：' + e.message);
+    }
+};
+
+window.deleteFeedbackHandler = async function(id) {
+    if (!confirm('确认删除此留言？')) return;
+    try {
+        await deleteFeedback(id);
+        alert('已删除');
+        window.renderFeedbackHistory();
+    } catch (e) {
+        alert('删除失败：' + e.message);
+    }
 };
 
 // ===== 保存偏好 =====
@@ -1468,7 +1517,7 @@ document.addEventListener('click', function(e) {
     }
 });
 
-// ===== 初始化（优化：并行加载） =====
+// ===== 初始化 =====
 async function init() {
     try {
         const pois = await getPoisCached();
@@ -1483,11 +1532,11 @@ async function init() {
         renderSelectedOrder();
         loadPreferences();
 
-        // 并行加载本地数据展示
+        // 并行加载
         await Promise.all([
-            Promise.resolve(window.renderMyTrips()),
-            Promise.resolve(window.renderMyReservations()),
-            Promise.resolve(window.renderFeedbackHistory())
+            window.renderMyTrips(),
+            window.renderMyReservations(),
+            window.renderFeedbackHistory()
         ]);
 
         locateUser();

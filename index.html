@@ -542,7 +542,7 @@
 
 <script type="module">
 // =============================================================
-// 主入口 - 完整版（移除方案对比，直接显示行程）
+// 主入口 - 完整版
 // =============================================================
 import { getPois, getMerchantsByPoi, getTransportPresets, insertReservation, insertFeedback, saveTripSolution as apiSaveTripSolution, getUserTripSolutions, getReservations, getFeedbacks } from './js/api.js';
 import { getCurrentUser, signInAnonymously } from './js/auth.js';
@@ -776,7 +776,7 @@ function updateSelectedInfo() {
     document.getElementById('selectedDurationDisplay').textContent = `已选景点总游览时长：${totalDuration} 分钟`;
 }
 
-// ===== 生成行程方案（直接显示详情，跳过对比） =====
+// ===== 生成行程方案 =====
 window.generatePlans = async function() {
     const loadingEl = document.getElementById('planLoading');
     const stepPrefs = document.getElementById('stepPreferences');
@@ -830,7 +830,6 @@ window.generatePlans = async function() {
         }
 
         currentTripData = result;
-        // 直接显示行程详情
         showTripDetail(result);
         loadingEl.classList.add('hidden');
         stepPrefs.classList.add('hidden');
@@ -850,7 +849,63 @@ window.generatePlans = async function() {
     }
 };
 
-// ===== 显示行程详情 =====
+// ===== 渲染单个节点 HTML（用于地图界面规划详情） =====
+function renderTripNodeHtml(node, includeActions = true) {
+    const typeClass = node.type || 'other';
+    const iconMap = { transport: '🚗', visit: '📍', meal: '🍽️', accommodation: '🏨', weather: '🌤️', reminder: '⚠️', waiting: '⏳' };
+    const icon = iconMap[typeClass] || '•';
+
+    // 天气、提醒、住宿：无时间、无操作按钮，图标与时间列对齐
+    if (typeClass === 'weather' || typeClass === 'reminder' || typeClass === 'accommodation') {
+        const text = typeClass === 'accommodation' ? (node.name || '住宿休息') : (node.message || '');
+        const textClass = typeClass === 'weather' ? 'weather-text' : (typeClass === 'reminder' ? 'reminder-text' : '');
+        return `
+            <div class="trip-node type-${typeClass}">
+                <span class="node-time"></span>
+                <span class="node-icon icon-${typeClass}">${icon}</span>
+                <span class="node-content"><span class="${textClass}">${text}</span></span>
+            </div>
+        `;
+    }
+
+    let timeDisplay = '';
+    if (node.startTime !== undefined && node.endTime !== undefined) {
+        timeDisplay = `${fmtTime(node.startTime)} - ${fmtTime(node.endTime)}`;
+    } else if (node.startTime !== undefined) {
+        timeDisplay = fmtTime(node.startTime);
+    }
+
+    let content = '';
+    if (node.type === 'transport') {
+        content = `${node.name || '交通'} ${node.duration ? `<span class="node-duration">${node.duration}分钟</span>` : ''}`;
+    } else if (node.type === 'visit') {
+        content = `${node.name || '游览'} ${node.duration ? `<span class="node-duration">${node.duration}分钟</span>` : ''}`;
+    } else if (node.type === 'meal') {
+        content = `${node.name || '就餐'} ${node.duration ? `<span class="node-duration">${node.duration}分钟</span>` : ''}`;
+    } else if (node.type === 'waiting') {
+        content = `${node.name || '等待'} ${node.duration ? `<span class="node-duration">${node.duration}分钟</span>` : ''}`;
+    } else {
+        content = node.name || '未知节点';
+    }
+
+    const actionsHtml = includeActions ? `
+        <div class="node-actions">
+            <button class="action-btn" onclick="event.stopPropagation(); window.insertNodeAfter(${node.__dayIdx ?? 0}, ${node.__nodeIdx ?? 0})" title="在此插入景点">➕</button>
+            <button class="action-btn remove" onclick="event.stopPropagation(); window.removeNode(${node.__dayIdx ?? 0}, ${node.__nodeIdx ?? 0})" title="删除此节点">➖</button>
+        </div>
+    ` : '';
+
+    return `
+        <div class="trip-node type-${typeClass}">
+            <span class="node-time">${timeDisplay}</span>
+            <span class="node-icon icon-${typeClass}">${icon}</span>
+            <span class="node-content">${content}</span>
+            ${actionsHtml}
+        </div>
+    `;
+}
+
+// ===== 显示行程详情（地图界面规划面板） =====
 function showTripDetail(data) {
     const container = document.getElementById('tripDetailContainer');
     if (!container) return;
@@ -868,78 +923,9 @@ function showTripDetail(data) {
 
             if (day.nodes) {
                 day.nodes.forEach((node, nodeIdx) => {
-                    const typeClass = node.type || 'other';
-                    const iconMap = {
-                        transport: '🚗',
-                        visit: '📍',
-                        meal: '🍽️',
-                        accommodation: '🏨',
-                        weather: '🌤️',
-                        reminder: '⚠️',
-                        waiting: '⏳'
-                    };
-                    const icon = iconMap[typeClass] || '•';
-
-                    let contentHtml = '';
-                    let timeDisplay = '';
-
-                    if (node.type === 'transport') {
-                        const timeStr = node.startTime !== undefined ? fmtTime(node.startTime) : '';
-                        const endTimeStr = node.endTime !== undefined ? fmtTime(node.endTime) : '';
-                        timeDisplay = timeStr && endTimeStr ? `${timeStr} - ${endTimeStr}` : timeStr;
-                        contentHtml = `<span class="node-content">${node.name || '交通'} ${node.duration ? `<span class="node-duration">${node.duration}分钟</span>` : ''}</span>`;
-                    } else if (node.type === 'visit') {
-                        const timeStr = node.startTime !== undefined ? fmtTime(node.startTime) : '';
-                        const endTimeStr = node.endTime !== undefined ? fmtTime(node.endTime) : '';
-                        timeDisplay = timeStr && endTimeStr ? `${timeStr} - ${endTimeStr}` : timeStr;
-                        contentHtml = `<span class="node-content">${node.name || '游览'} ${node.duration ? `<span class="node-duration">${node.duration}分钟</span>` : ''}</span>`;
-                    } else if (node.type === 'meal') {
-                        const timeStr = node.startTime !== undefined ? fmtTime(node.startTime) : '';
-                        const endTimeStr = node.endTime !== undefined ? fmtTime(node.endTime) : '';
-                        timeDisplay = timeStr && endTimeStr ? `${timeStr} - ${endTimeStr}` : timeStr;
-                        contentHtml = `<span class="node-content">${node.name || '就餐'} ${node.duration ? `<span class="node-duration">${node.duration}分钟</span>` : ''}</span>`;
-                    } else if (node.type === 'accommodation') {
-                        timeDisplay = '';
-                        contentHtml = `<span class="node-content">${node.name || '住宿休息'}</span>`;
-                    } else if (node.type === 'weather') {
-                        timeDisplay = '';
-                        contentHtml = `<span class="node-content"><span class="weather-text">${node.message || '天气信息'}</span></span>`;
-                    } else if (node.type === 'reminder') {
-                        timeDisplay = '';
-                        contentHtml = `<span class="node-content"><span class="reminder-text">${node.message || '提醒'}</span></span>`;
-                    } else if (node.type === 'waiting') {
-                        const timeStr = node.startTime !== undefined ? fmtTime(node.startTime) : '';
-                        const endTimeStr = node.endTime !== undefined ? fmtTime(node.endTime) : '';
-                        timeDisplay = timeStr && endTimeStr ? `${timeStr} - ${endTimeStr}` : timeStr;
-                        contentHtml = `<span class="node-content">${node.name || '等待'} ${node.duration ? `<span class="node-duration">${node.duration}分钟</span>` : ''}</span>`;
-                    } else {
-                        const timeStr = node.startTime !== undefined ? fmtTime(node.startTime) : '';
-                        contentHtml = `<span class="node-content">${node.name || '未知节点'}</span>`;
-                        timeDisplay = timeStr;
-                    }
-
-                    if (node.type === 'accommodation') {
-                        html += `
-                            <div class="trip-node type-${typeClass}" data-node-index="${nodeIdx}">
-                                <span class="node-time"></span>
-                                <span class="node-icon icon-${typeClass}">🏨</span>
-                                ${contentHtml}
-                            </div>
-                        `;
-                        return;
-                    }
-
-                    html += `
-                        <div class="trip-node type-${typeClass}" data-node-index="${nodeIdx}">
-                            <span class="node-time">${timeDisplay}</span>
-                            <span class="node-icon icon-${typeClass}">${icon}</span>
-                            ${contentHtml}
-                            <div class="node-actions">
-                                <button class="action-btn" onclick="event.stopPropagation(); window.insertNodeAfter(${dayIdx}, ${nodeIdx})" title="在此插入景点">➕</button>
-                                <button class="action-btn remove" onclick="event.stopPropagation(); window.removeNode(${dayIdx}, ${nodeIdx})" title="删除此节点">➖</button>
-                            </div>
-                        </div>
-                    `;
+                    node.__dayIdx = dayIdx;
+                    node.__nodeIdx = nodeIdx;
+                    html += renderTripNodeHtml(node, true);
                 });
             }
 
@@ -1124,7 +1110,7 @@ window.saveTripSolution = function() {
     window.renderMyTrips();
 };
 
-// ===== 我的行程 =====
+// ===== 我的行程（原地折叠展开） =====
 window.renderMyTrips = function() {
     const container = document.getElementById('myTripsContent');
     if (!container) return;
@@ -1136,21 +1122,56 @@ window.renderMyTrips = function() {
     let html = '';
     trips.forEach((trip) => {
         const data = trip.data || {};
+        const poiCount = data.days ? data.days.reduce((s, d) => s + (d.nodes ? d.nodes.filter(n => n.type === 'visit').length : 0), 0) : 0;
         html += `
             <div class="card-modern">
-                <div class="d-flex justify-content-between align-items-center">
+                <div class="d-flex justify-content-between align-items-center" style="cursor:pointer;" onclick="window.toggleTripDetail('${trip.id}')">
                     <div class="card-title">📅 ${trip.name || '未命名'}</div>
-                    <button class="btn btn-sm btn-danger" onclick="window.deleteTripSolution('${trip.id}')">删除</button>
+                    <button class="btn btn-sm btn-danger" onclick="event.stopPropagation(); window.deleteTripSolution('${trip.id}')">删除</button>
                 </div>
-                <div class="card-sub">天数: ${data.days ? data.days.length : 0} 天</div>
-                <button class="btn btn-sm btn-outline-custom mt-2" onclick="window.viewTripSolution('${trip.id}')">
-                    <i class="fas fa-eye"></i> 查看详情
-                </button>
+                <div class="card-sub">天数: ${data.days ? data.days.length : 0} 天 | 景点: ${poiCount} 个</div>
+                <div id="trip-detail-${trip.id}" class="hidden mt-2"></div>
             </div>
         `;
     });
     container.innerHTML = html;
 };
+
+// 原地展开/收起行程详情
+window.toggleTripDetail = function(tripId) {
+    const container = document.getElementById(`trip-detail-${tripId}`);
+    if (!container) return;
+    if (!container.classList.contains('hidden')) {
+        container.classList.add('hidden');
+        container.innerHTML = '';
+        return;
+    }
+    const trips = getLocalData('trips');
+    const trip = trips.find(t => t.id === tripId);
+    if (!trip) return;
+    renderTripDetailInline(container, trip.data);
+    container.classList.remove('hidden');
+};
+
+// 渲染行程详情到指定容器
+function renderTripDetailInline(container, data) {
+    let html = '';
+    if (data && data.days) {
+        data.days.forEach((day, dayIdx) => {
+            const visitCount = day.nodes ? day.nodes.filter(n => n.type === 'visit').length : 0;
+            html += `<div class="trip-day-container" style="margin-top:8px;">`;
+            html += `<div class="trip-day-title"><span>📅 第${dayIdx + 1}天 (${day.date})</span><span class="day-badge">${visitCount} 个景点</span></div>`;
+            html += `<div class="trip-timeline">`;
+            if (day.nodes) {
+                day.nodes.forEach((node) => {
+                    html += renderTripNodeHtml(node, false);
+                });
+            }
+            html += `</div></div>`;
+        });
+    }
+    container.innerHTML = html || '<p class="text-secondary">暂无详情</p>';
+}
 
 window.deleteTripSolution = function(id) {
     if (!confirm('确认删除此行程？')) return;
@@ -1160,14 +1181,9 @@ window.deleteTripSolution = function(id) {
     window.renderMyTrips();
 };
 
+// 兼容旧的查看入口（在“我的”中点击按钮时也走原地展开）
 window.viewTripSolution = function(id) {
-    const trips = getLocalData('trips');
-    const trip = trips.find(t => t.id === id);
-    if (!trip) return;
-    showTripDetail(trip.data);
-    document.getElementById('planPanel').classList.add('active');
-    document.getElementById('stepPreferences').classList.add('hidden');
-    document.getElementById('stepDetail').classList.remove('hidden');
+    window.toggleTripDetail(id);
 };
 
 // ===== 预约 =====

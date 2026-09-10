@@ -12,17 +12,27 @@ export const MEAL_DURATION = 60;
 export const NEW_ARRIVAL_CUTOFF = 1020;
 export const MAX_RETURN_TIME = 1260;
 
-export const POI_CATEGORIES = ['自然景区', '人文历史', '民俗风情', '景观地标', '游玩娱乐', '购物消费', '餐饮住宿', '交通枢纽', '公共服务'];
+// ★ 统一分类：8 类（含通江红色旅游特色）
+export const POI_CATEGORIES = [
+    '自然景区',
+    '红色景区',
+    '文博场馆',
+    '餐饮住宿',
+    '交通枢纽',
+    '游玩娱乐',
+    '购物消费',
+    '公共服务'
+];
 
+// ★ 分类颜色映射
 export const poiColors = {
     '自然景区': '#2E7D32',
-    '人文历史': '#6A1B9A',
-    '民俗风情': '#E65100',
-    '景观地标': '#0D47A1',
-    '游玩娱乐': '#FF5722',
-    '购物消费': '#F9A825',
+    '红色景区': '#C62828',
+    '文博场馆': '#6A1B9A',
     '餐饮住宿': '#FF9800',
     '交通枢纽': '#00BCD4',
+    '游玩娱乐': '#FF5722',
+    '购物消费': '#F9A825',
     '公共服务': '#607D8B'
 };
 
@@ -43,6 +53,6 @@ export const WEIGHT_TEMPLATES = {
 export const COUNTY_SPOT_KEYWORDS = ['轿房沟美食街', '银耳博物馆', '红四方面军总指挥部旧址纪念馆', '省委党校旧址纪念馆', '通江花月夜'];
 export const LONG_SPOT_NAMES = ['空山天盆', '诺水河溶洞', '王坪烈士陵园', '红军烈士陵园'];
 export const ALLOWED_CATEGORIES = ['自然景区', '红色景区', '文博场馆'];
-export const NON_VISIT_CATEGORIES = ['交通枢纽','餐饮住宿','公共服务','特产购物','游玩娱乐'];
-export const EXCLUDED_TRANSPORT_CATS = ['公共服务','游玩娱乐','特产购物'];
-export const COUNTY = { lat:31.911705, lng:107.245033, name:'红军广场', id:'county' };
+export const NON_VISIT_CATEGORIES = ['交通枢纽', '餐饮住宿', '公共服务', '购物消费', '游玩娱乐'];
+export const EXCLUDED_TRANSPORT_CATS = ['公共服务', '游玩娱乐', '购物消费'];
+export const COUNTY = { lat: 31.911705, lng: 107.245033, name: '红军广场', id: 'county' };

@@ -507,7 +507,7 @@
 
 <script type="module">
 // =============================================================
-// 主入口 - 完整优化版（预约/留言统一走 Supabase）
+// 主入口 - 完整优化版
 // =============================================================
 import {
     getPois, getMerchantsByPoi, getMerchantByPoi, getTransportPresets,
@@ -664,7 +664,7 @@ async function loadPoiNodes(poiIds) {
     results.forEach(r => { allPoiNodesMap[r.id] = r.nodes; });
 }
 
-// ===== 渲染景点选择列表 =====
+// ===== 渲染景点选择列表（★ 景区类默认展开，其他默认折叠） =====
 function renderPoiSelection(pois) {
     const container = document.getElementById('poiSelectContainer');
     if (!container) return;
@@ -696,9 +696,13 @@ function renderPoiSelection(pois) {
         const mainItems = items.filter(p => !p.parent_id);
         if (mainItems.length === 0) return;
 
+        // ★ 景区类默认展开，其他默认折叠
+        const isScenicCategory = ['自然景区', '红色景区', '文博场馆'].includes(cat);
+        const contentHiddenClass = isScenicCategory ? '' : 'hidden';
+
         html += `<div class="poi-category-group">`;
         html += `<div class="poi-category-title" onclick="this.nextElementSibling.classList.toggle('hidden')">${cat} (${mainItems.length}) <span>▼</span></div>`;
-        html += `<div class="poi-category-content">`;
+        html += `<div class="poi-category-content ${contentHiddenClass}">`;
 
         mainItems.forEach(p => {
             const hasChildren = childrenMap[p.id] && childrenMap[p.id].length > 0;
@@ -1147,10 +1151,8 @@ window.viewTripSolution = function(id) {
 };
 
 // =============================================================
-// 预约（改为 Supabase）
+// 预约（Supabase）
 // =============================================================
-
-// 拉取并渲染我的预约
 window.renderMyReservations = async function() {
     const container = document.getElementById('myReservationsContent');
     if (!container) return;
@@ -1207,7 +1209,7 @@ window.deleteReservationHandler = async function(id) {
     }
 };
 
-// 提交预约（改为 Supabase）
+// 提交预约
 window.submitReservation = async function(merchantId, merchantName, category) {
     const date = document.getElementById(`res-date-${merchantId}`).value;
     const timeRange = document.getElementById(`res-time-${merchantId}`).value;
@@ -1281,9 +1283,8 @@ window.updateResContent = function(merchantId) {
 };
 
 // =============================================================
-// 留言（改为 Supabase）
+// 留言（Supabase）
 // =============================================================
-
 window.renderFeedbackHistory = async function() {
     const container = document.getElementById('feedbackHistory');
     if (!container) return;
@@ -1532,11 +1533,10 @@ async function init() {
         renderSelectedOrder();
         loadPreferences();
 
-        // 并行加载
         await Promise.all([
-            window.renderMyTrips(),
-            window.renderMyReservations(),
-            window.renderFeedbackHistory()
+            Promise.resolve(window.renderMyTrips()),
+            Promise.resolve(window.renderMyReservations()),
+            Promise.resolve(window.renderFeedbackHistory())
         ]);
 
         locateUser();

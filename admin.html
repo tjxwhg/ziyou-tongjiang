@@ -7,7 +7,6 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
-        /* 样式与之前相同，省略 */
         body { background: #f0f2f5; font-family: system-ui, sans-serif; }
         .header { background: #1b5e20; color: white; padding: 12px 24px; display: flex; justify-content: space-between; align-items: center; }
         .header h2 { margin: 0; font-size: 20px; display: flex; align-items: center; gap: 10px; }
@@ -119,11 +118,15 @@
                 <div class="row g-2">
                     <div class="col-6"><label class="form-label">名称</label><input id="edit-poi-name" class="form-control"></div>
                     <div class="col-6"><label class="form-label">类别</label>
+                        <!-- ★ 统一为 8 类 -->
                         <select id="edit-poi-category" class="form-select">
-                            <option value="自然景区">自然景区</option><option value="人文历史">人文历史</option>
-                            <option value="民俗风情">民俗风情</option><option value="景观地标">景观地标</option>
-                            <option value="游玩娱乐">游玩娱乐</option><option value="购物消费">购物消费</option>
-                            <option value="餐饮住宿">餐饮住宿</option><option value="交通枢纽">交通枢纽</option>
+                            <option value="自然景区">自然景区</option>
+                            <option value="红色景区">红色景区</option>
+                            <option value="文博场馆">文博场馆</option>
+                            <option value="餐饮住宿">餐饮住宿</option>
+                            <option value="交通枢纽">交通枢纽</option>
+                            <option value="游玩娱乐">游玩娱乐</option>
+                            <option value="购物消费">购物消费</option>
                             <option value="公共服务">公共服务</option>
                         </select>
                     </div>
@@ -206,38 +209,8 @@
 import { signIn, signOut, getCurrentUser, onAuthStateChange } from './js/auth.js';
 import * as admin from './js/admin.js';
 
-// ===== 显式挂载所有管理函数到 window =====
-window.showAddPoiModal = admin.showAddPoiModal;
-window.showEditPoiModal = admin.showEditPoiModal;
-window.savePoiEdit = admin.savePoiEdit;
-window.deletePoi = admin.deletePoi;
-window.addNodeField = admin.addNodeField;
-window.removeNodeField = admin.removeNodeField;
-window.togglePoiNodes = admin.togglePoiNodes;
-
-window.showAddScenicModal = admin.showAddScenicModal;
-window.showEditScenicModal = admin.showEditScenicModal;
-window.saveScenicEdit = admin.saveScenicEdit;
-window.deleteScenic = admin.deleteScenic;
-window.toggleScenicPois = admin.toggleScenicPois;
-window.showAddPoiToScenic = admin.showAddPoiToScenic;
-window.confirmAddPoiToScenic = admin.confirmAddPoiToScenic;
-window.removePoiFromScenic = admin.removePoiFromScenic;
-
-window.showAddRouteModal = admin.showAddRouteModal;
-window.showEditRouteModal = admin.showEditRouteModal;
-window.saveRouteEdit = admin.saveRouteEdit;
-window.deleteRoute = admin.deleteRoute;
-window.addRouteNodeField = admin.addRouteNodeField;
-
-window.renderTransportEditor = admin.renderTransportEditor;
-window.saveTransportTime = admin.saveTransportTime;
-
-window.createMerchant = admin.createMerchant;
-window.replyFeedback = admin.replyFeedback;
-window.deleteFeedback = admin.deleteFeedback;
-window.refreshData = admin.refreshData;
-window.initAdminUI = admin.initAdminUI;
+// 显式挂载所有 admin 导出到 window
+Object.assign(window, admin);
 
 // 登录事件
 document.getElementById('loginBtn').addEventListener('click', async () => {
@@ -257,13 +230,17 @@ document.getElementById('logoutBtn').addEventListener('click', async () => {
     await signOut();
 });
 
-// 认证状态监听
+// ★ 修复：Auth 事件去重，避免 Token 刷新触发重复初始化
+let hasInitialized = false;
+
 onAuthStateChange((event, session) => {
-    if (event === 'SIGNED_IN') {
+    if (event === 'SIGNED_IN' && !hasInitialized) {
+        hasInitialized = true;
         document.getElementById('login-page').classList.add('hidden');
         document.getElementById('main').classList.remove('hidden');
         admin.initAdminUI();
-    } else {
+    } else if (event === 'SIGNED_OUT') {
+        hasInitialized = false;
         document.getElementById('login-page').classList.remove('hidden');
         document.getElementById('main').classList.add('hidden');
     }
@@ -272,7 +249,8 @@ onAuthStateChange((event, session) => {
 // 检查已有会话
 (async () => {
     const user = await getCurrentUser();
-    if (user) {
+    if (user && !hasInitialized) {
+        hasInitialized = true;
         document.getElementById('login-page').classList.add('hidden');
         document.getElementById('main').classList.remove('hidden');
         admin.initAdminUI();

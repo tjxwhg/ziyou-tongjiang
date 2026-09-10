@@ -1,4 +1,4 @@
-// js/api.js - Supabase API 操作（完整修复版）
+// js/api.js - Supabase API 操作（完整版 v2）
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from './config.js';
 
@@ -193,11 +193,33 @@ export async function createMerchantRecord(id, displayName, poiId) {
     if (error) throw error;
 }
 
+// ★ 新增：根据 POI 查关联商户（一个 POI 关联 1 个商户）
+export async function getMerchantByPoi(poiId) {
+    const { data, error } = await supabase
+        .from('ztj_merchants')
+        .select('*')
+        .eq('poi_id', poiId)
+        .maybeSingle();
+    if (error) throw error;
+    return data;
+}
+
 // ========== 预约 ==========
 export async function getReservations(merchantId) {
     const query = supabase.from('reservations').select('*');
     if (merchantId) query.eq('merchant_id', merchantId);
     const { data, error } = await query.order('created_at', { ascending: false });
+    if (error) throw error;
+    return data || [];
+}
+
+// ★ 新增：按 device_id 查询游客预约
+export async function getReservationsByDevice(deviceId) {
+    const { data, error } = await supabase
+        .from('reservations')
+        .select('*')
+        .eq('device_id', deviceId)
+        .order('created_at', { ascending: false });
     if (error) throw error;
     return data || [];
 }
@@ -227,6 +249,17 @@ export async function getFeedbacks(merchantId) {
     return data || [];
 }
 
+// ★ 新增：按 device_id 查询游客留言
+export async function getFeedbacksByDevice(deviceId) {
+    const { data, error } = await supabase
+        .from('ztj_feedbacks')
+        .select('*')
+        .eq('device_id', deviceId)
+        .order('created_at', { ascending: false });
+    if (error) throw error;
+    return data || [];
+}
+
 export async function insertFeedback(fb) {
     const { data, error } = await supabase.from('ztj_feedbacks').insert(fb).select();
     if (error) throw error;
@@ -245,7 +278,7 @@ export async function deleteFeedback(id) {
 
 // ========== 文件上传 ==========
 export async function uploadFile(bucket, path, file) {
-    const { error } = await supabase.storage.from(bucket).upload(path, file);
+    const { error } = await supabase.storage.from(bucket).upload(path, file, { upsert: true });
     if (error) throw error;
     const { data: { publicUrl } } = supabase.storage.from(bucket).getPublicUrl(path);
     return publicUrl;

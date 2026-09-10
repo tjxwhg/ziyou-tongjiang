@@ -1,4 +1,4 @@
-// js/api.js - Supabase API 操作（完整版 v2）
+// js/api.js - Supabase API 操作（完整修复版 v3）
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from './config.js';
 
@@ -193,7 +193,7 @@ export async function createMerchantRecord(id, displayName, poiId) {
     if (error) throw error;
 }
 
-// ★ 新增：根据 POI 查关联商户（一个 POI 关联 1 个商户）
+// ★ 根据 POI 查关联商户（一个 POI 关联 1 个商户）
 export async function getMerchantByPoi(poiId) {
     const { data, error } = await supabase
         .from('ztj_merchants')
@@ -205,15 +205,16 @@ export async function getMerchantByPoi(poiId) {
 }
 
 // ========== 预约 ==========
+// ★ 修复：过滤条件必须赋值回 query
 export async function getReservations(merchantId) {
-    const query = supabase.from('reservations').select('*');
-    if (merchantId) query.eq('merchant_id', merchantId);
+    let query = supabase.from('reservations').select('*');
+    if (merchantId) query = query.eq('merchant_id', merchantId);
     const { data, error } = await query.order('created_at', { ascending: false });
     if (error) throw error;
     return data || [];
 }
 
-// ★ 新增：按 device_id 查询游客预约
+// ★ 按 device_id 查询游客预约
 export async function getReservationsByDevice(deviceId) {
     const { data, error } = await supabase
         .from('reservations')
@@ -241,15 +242,16 @@ export async function deleteReservation(id) {
 }
 
 // ========== 留言 ==========
+// ★ 修复：过滤条件必须赋值回 query
 export async function getFeedbacks(merchantId) {
-    const query = supabase.from('ztj_feedbacks').select('*');
-    if (merchantId) query.eq('merchant_id', merchantId);
+    let query = supabase.from('ztj_feedbacks').select('*');
+    if (merchantId) query = query.eq('merchant_id', merchantId);
     const { data, error } = await query.order('created_at', { ascending: false });
     if (error) throw error;
     return data || [];
 }
 
-// ★ 新增：按 device_id 查询游客留言
+// ★ 按 device_id 查询游客留言
 export async function getFeedbacksByDevice(deviceId) {
     const { data, error } = await supabase
         .from('ztj_feedbacks')

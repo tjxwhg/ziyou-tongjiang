@@ -335,7 +335,7 @@
         .btn-outline-custom:hover { background: #1b5e20; color: white; }
         .btn-warning-custom { background: #ff9800; color: white; border: none; padding: 8px 16px; border-radius: 8px; font-weight: 600; transition: 0.2s; cursor: pointer; }
         .btn-warning-custom:hover { background: #fb8c00; }
-        .btn-danger-custom { background: #dc3545; color: white; border: none; padding: 6px 14px; border-radius: 6px; font-weight: 600; cursor: pointer; }
+        .btn-danger-custom { background: #dc3545; color: white; border: none; padding: 6px 14px; border-radius: 8px; font-weight: 600; cursor: pointer; }
         .order-item { display: flex; align-items: center; justify-content: space-between; padding: 6px 8px; border-bottom: 1px solid #f0f0f0; }
         .order-item:last-child { border-bottom: none; }
         .order-item .order-name { font-size: 14px; color: #333; }
@@ -424,7 +424,10 @@
             </div>
 
             <button class="btn btn-primary-custom w-100 mt-3" id="generatePlanBtn"><i class="fas fa-wand-magic-sparkles"></i> 生成行程方案</button>
-            <div id="planLoading" class="text-center mt-3 hidden"><div class="spinner-border text-success" role="status"></div><p class="mt-2 text-secondary">正在为您规划最优行程...</p></div>
+            <div id="planLoading" class="text-center mt-3 hidden">
+                <div class="spinner-border text-success" role="status"></div>
+                <p class="mt-2 text-secondary">正在为您规划最优行程，请稍候...</p>
+            </div>
         </div>
 
         <div id="stepCompare" class="hidden"></div>
@@ -504,9 +507,9 @@
 
 <script type="module">
 // =============================================================
-// 主入口 - 完整版
+// 主入口 - 完整优化版
 // =============================================================
-import { getPois, getMerchantsByPoi, getTransportPresets, insertReservation, insertFeedback, saveTripSolution as apiSaveTripSolution, getUserTripSolutions, getReservations, getFeedbacks } from './js/api.js';
+import { getPois, getMerchantsByPoi, getTransportPresets, insertReservation, insertFeedback, saveTripSolution as apiSaveTripSolution, getUserTripSolutions, getReservations, getFeedbacks, getPoiInternal } from './js/api.js';
 import { getCurrentUser, signInAnonymously } from './js/auth.js';
 import { initMap, loadPoisToMap, locateUser, setVoiceEnabled, getAllPois, clearFilter, applyFilter } from './js/map.js';
 import { formatTime, timeToMinutes } from './js/utils.js';
@@ -530,6 +533,42 @@ function getLocalData(key) {
 }
 function setLocalData(key, data) {
     localStorage.setItem(key, JSON.stringify(data));
+}
+
+// ===== 缓存工具（优化：减少重复网络请求） =====
+const CACHE_TTL = 5 * 60 * 1000;
+const CACHE_PREFIX = 'ztj_cache_';
+
+function getCache(key) {
+    try {
+        const raw = localStorage.getItem(CACHE_PREFIX + key);
+        if (!raw) return null;
+        const { data, ts } = JSON.parse(raw);
+        if (Date.now() - ts > CACHE_TTL) return null;
+        return data;
+    } catch { return null; }
+}
+
+function setCache(key, data) {
+    try {
+        localStorage.setItem(CACHE_PREFIX + key, JSON.stringify({ data, ts: Date.now() }));
+    } catch (e) { /* 忽略存储错误 */ }
+}
+
+async function getPoisCached() {
+    const cached = getCache('pois');
+    if (cached) return cached;
+    const data = await getPois();
+    setCache('pois', data);
+    return data;
+}
+
+async function getTransportPresetsCached() {
+    const cached = getCache('transport');
+    if (cached) return cached;
+    const data = await getTransportPresets();
+    setCache('transport', data);
+    return data;
 }
 
 // ===== 全局状态 =====
@@ -590,17 +629,22 @@ function setDefaultStartTime() {
     if (dateInput) dateInput.value = now.toISOString().slice(0, 10);
 }
 
-// ===== 加载内部节点 =====
+// ===== 加载内部节点（并行请求 + 缓存） =====
 async function loadPoiNodes(poiIds) {
-    const { getPoiInternal } = await import('./js/api.js');
-    for (let id of poiIds) {
+    const promises = poiIds.map(async (id) => {
+        const cached = getCache(`poinodes_${id}`);
+        if (cached) return { id, nodes: cached };
         try {
             const data = await getPoiInternal(id);
-            allPoiNodesMap[id] = data.nodes || [];
+            const nodes = data.nodes || [];
+            setCache(`poinodes_${id}`, nodes);
+            return { id, nodes };
         } catch (e) {
-            allPoiNodesMap[id] = [];
+            return { id, nodes: [] };
         }
-    }
+    });
+    const results = await Promise.all(promises);
+    results.forEach(r => { allPoiNodesMap[r.id] = r.nodes; });
 }
 
 // ===== 渲染景点选择列表 =====
@@ -790,7 +834,7 @@ window.movePoiDown = function(id) {
     }
 };
 
-// ===== 生成行程方案 =====
+// ===== 生成行程方案（优化：加载提示立即可见） =====
 window.generatePlans = async function() {
     const loadingEl = document.getElementById('planLoading');
     const stepPrefs = document.getElementById('stepPreferences');
@@ -809,34 +853,32 @@ window.generatePlans = async function() {
     const selectedPois = selectedPoiOrder
         .map(id => allPoisData.find(p => String(p.id) === id))
         .filter(Boolean);
-    if (selectedPois.length === 0) {
-        alert('未找到选中的景点数据，请重新选择');
-        return;
-    }
+    if (selectedPois.length === 0) { alert('未找到选中的景点数据'); return; }
 
-    await loadPoiNodes(selectedPois.map(p => p.id));
-
-    const presets = await getTransportPresets();
-    const travelTimes = {};
-    presets.forEach(p => {
-        travelTimes[`${p.from_poi_id}_${p.to_poi_id}`] = p.time_min;
-    });
-
-    accommodationPois = allPoisData.filter(p => p.category && p.category.includes('住宿'));
-
+    // ★ 关键优化：立即显示加载提示，禁用按钮
     generateBtn.disabled = true;
     loadingEl.classList.remove('hidden');
 
+    // 让浏览器先渲染加载提示，再执行后续逻辑（双 requestAnimationFrame 确保一帧完成）
+    await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+
     try {
+        // 并行加载网络数据（缓存优先）
+        const [_, presets] = await Promise.all([
+            loadPoiNodes(selectedPois.map(p => p.id)),
+            getTransportPresetsCached()
+        ]);
+
+        const travelTimes = {};
+        presets.forEach(p => {
+            travelTimes[`${p.from_poi_id}_${p.to_poi_id}`] = p.time_min;
+        });
+
+        accommodationPois = allPoisData.filter(p => p.category && p.category.includes('住宿'));
+
         const result = await generateTripPlan(
-            selectedPois,
-            startDate,
-            startTime,
-            mode,
-            travelTimes,
-            allPoiNodesMap,
-            accommodationPois,
-            lodgingMode
+            selectedPois, startDate, startTime, mode,
+            travelTimes, allPoiNodesMap, accommodationPois, lodgingMode
         );
 
         if (!result.days || result.days.length === 0) {
@@ -852,15 +894,14 @@ window.generatePlans = async function() {
         loadingEl.classList.add('hidden');
         stepPrefs.classList.add('hidden');
         stepDetail.classList.remove('hidden');
-        
+
         const stepCompare = document.getElementById('stepCompare');
         if (stepCompare) stepCompare.classList.add('hidden');
-        
+
     } catch (e) {
         alert('生成方案失败：' + e.message);
         console.error(e);
         loadingEl.classList.add('hidden');
-        generateBtn.disabled = false;
     } finally {
         generateBtn.disabled = false;
     }
@@ -872,7 +913,7 @@ function renderTripNodeHtml(node) {
     const iconMap = { transport: '🚗', visit: '📍', meal: '🍽️', accommodation: '🏨', weather: '🌤️', reminder: '⚠️', waiting: '⏳' };
     const icon = iconMap[typeClass] || '•';
 
-    // 天气、提醒、住宿：不占时间列，图标直接紧随文字
+    // 天气、提醒、住宿：图标直接紧随文字，不占时间列
     if (typeClass === 'weather' || typeClass === 'reminder' || typeClass === 'accommodation') {
         const text = typeClass === 'accommodation' ? (node.name || '住宿休息') : (node.message || '');
         const textClass = typeClass === 'weather' ? 'weather-text' : (typeClass === 'reminder' ? 'reminder-text' : '');
@@ -957,34 +998,28 @@ window.regenerateTrip = async function() {
     const selectedPois = selectedPoiOrder
         .map(id => allPoisData.find(p => String(p.id) === id))
         .filter(Boolean);
-    if (selectedPois.length === 0) {
-        alert('未找到选中的景点数据，请重新选择');
-        return;
-    }
-
-    await loadPoiNodes(selectedPois.map(p => p.id));
-
-    const presets = await getTransportPresets();
-    const travelTimes = {};
-    presets.forEach(p => {
-        travelTimes[`${p.from_poi_id}_${p.to_poi_id}`] = p.time_min;
-    });
-
-    accommodationPois = allPoisData.filter(p => p.category && p.category.includes('住宿'));
+    if (selectedPois.length === 0) { alert('未找到选中的景点数据'); return; }
 
     generateBtn.disabled = true;
     loadingEl.classList.remove('hidden');
+    await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
 
     try {
+        const [_, presets] = await Promise.all([
+            loadPoiNodes(selectedPois.map(p => p.id)),
+            getTransportPresetsCached()
+        ]);
+
+        const travelTimes = {};
+        presets.forEach(p => {
+            travelTimes[`${p.from_poi_id}_${p.to_poi_id}`] = p.time_min;
+        });
+
+        accommodationPois = allPoisData.filter(p => p.category && p.category.includes('住宿'));
+
         const result = await generateTripPlan(
-            selectedPois,
-            startDate,
-            startTime,
-            mode,
-            travelTimes,
-            allPoiNodesMap,
-            accommodationPois,
-            lodgingMode
+            selectedPois, startDate, startTime, mode,
+            travelTimes, allPoiNodesMap, accommodationPois, lodgingMode
         );
 
         if (!result.days || result.days.length === 0) {
@@ -1433,10 +1468,10 @@ document.addEventListener('click', function(e) {
     }
 });
 
-// ===== 初始化 =====
+// ===== 初始化（优化：并行加载） =====
 async function init() {
     try {
-        const pois = await getPois();
+        const pois = await getPoisCached();
         allPois = pois;
         window.__allPois = pois;
 
@@ -1448,9 +1483,12 @@ async function init() {
         renderSelectedOrder();
         loadPreferences();
 
-        await window.renderMyTrips();
-        await window.renderMyReservations();
-        await window.renderFeedbackHistory();
+        // 并行加载本地数据展示
+        await Promise.all([
+            Promise.resolve(window.renderMyTrips()),
+            Promise.resolve(window.renderMyReservations()),
+            Promise.resolve(window.renderFeedbackHistory())
+        ]);
 
         locateUser();
 

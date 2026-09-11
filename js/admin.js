@@ -1,4 +1,4 @@
-// js/admin.js - 管理后台完整逻辑（facility子类型 + UUID兼容 + 浏览路线 + 子项管理）
+// js/admin.js - 管理后台完整逻辑（facility多子类型 + UUID兼容 + 浏览路线）
 import {
     getPois, getPoi, insertPoi, updatePoi, deletePoi as apiDeletePoi,
     getScenicList, insertScenic, updateScenic, deleteScenic as apiDeleteScenic,
@@ -47,14 +47,38 @@ const FACILITY_SUBTYPE_CLASSES = {
     service: 'type-badge-service'
 };
 
+// ★ 支持 facility_subtype 为数组，显示多个徽章
 function getTypeBadge(type, facilitySubtype) {
     const t = type || 'spot';
-    if (t === 'facility' && facilitySubtype) {
-        const cls = FACILITY_SUBTYPE_CLASSES[facilitySubtype] || 'type-badge-facility';
-        const label = FACILITY_SUBTYPE_LABELS[facilitySubtype] || '🏢 公共场所';
-        return `<span class="type-badge ${cls}">${label}</span>`;
+
+    if (t === 'facility') {
+        // 数组处理：兼容 null、字符串、数组三种情况
+        let subtypes = [];
+        if (Array.isArray(facilitySubtype)) {
+            subtypes = facilitySubtype.filter(s => s);
+        } else if (facilitySubtype) {
+            subtypes = [facilitySubtype];
+        }
+
+        if (subtypes.length === 0) {
+            return `<span class="type-badge type-badge-facility">🏢 公共场所</span>`;
+        }
+
+        // 显示多个徽章
+        return subtypes.map(sub => {
+            const cls = FACILITY_SUBTYPE_CLASSES[sub] || 'type-badge-facility';
+            const label = FACILITY_SUBTYPE_LABELS[sub] || sub;
+            return `<span class="type-badge ${cls}">${label}</span>`;
+        }).join('');
     }
+
     return `<span class="type-badge ${TYPE_CLASSES[t] || 'type-badge-spot'}">${TYPE_LABELS[t] || t}</span>`;
+}
+
+// 将子类型数组转为简短文字（用于路线显示）
+function subtypesToText(subtypes) {
+    if (!Array.isArray(subtypes) || subtypes.length === 0) return '';
+    return subtypes.map(s => (FACILITY_SUBTYPE_LABELS[s] || s).replace(/^[^\s]+\s/, '')).join('/');
 }
 
 // ============================================================
@@ -166,7 +190,9 @@ export function showAddPoiModal() {
     document.getElementById('edit-poi-desc').value = '';
     document.getElementById('edit-poi-level').value = 'L3';
     document.getElementById('edit-poi-featured').checked = false;
-    document.getElementById('edit-poi-facility-subtype').value = 'restaurant';
+
+    // ★ 清除所有子类型复选框
+    setFacilitySubtypeCheckboxes([]);
 
     const scenicSelect = document.getElementById('edit-poi-scenic');
     scenicSelect.innerHTML = '<option value="">无关联</option>';
@@ -190,7 +216,6 @@ export function showAddPoiModal() {
 }
 
 export async function showEditPoiModal(poiId) {
-    // ★ 宽松比较
     const poi = allPois.find(p => String(p.id) === String(poiId));
     if (!poi) {
         console.warn('POI 未找到:', poiId);
@@ -210,7 +235,12 @@ export async function showEditPoiModal(poiId) {
     document.getElementById('edit-poi-desc').value = poi.description || '';
     document.getElementById('edit-poi-level').value = poi.data_level || 'L3';
     document.getElementById('edit-poi-featured').checked = !!poi.is_featured;
-    document.getElementById('edit-poi-facility-subtype').value = poi.facility_subtype || 'restaurant';
+
+    // ★ 回填子类型复选框（兼容数组/字符串/null）
+    let subtypes = [];
+    if (Array.isArray(poi.facility_subtype)) subtypes = poi.facility_subtype;
+    else if (poi.facility_subtype) subtypes = [poi.facility_subtype];
+    setFacilitySubtypeCheckboxes(subtypes);
 
     const scenicSelect = document.getElementById('edit-poi-scenic');
     scenicSelect.innerHTML = '<option value="">无关联</option>';
@@ -230,7 +260,9 @@ export async function showEditPoiModal(poiId) {
     if (poi.tour_route && Array.isArray(poi.tour_route)) {
         poi.tour_route.forEach(id => {
             const sub = allPois.find(x => String(x.id) === String(id));
-            if (sub) currentTourRoute.push({ id: sub.id, name: sub.name, type: sub.type, facility_subtype: sub.facility_subtype });
+            if (sub) currentTourRoute.push({
+                id: sub.id, name: sub.name, type: sub.type, facility_subtype: sub.facility_subtype
+            });
         });
     }
 
@@ -241,6 +273,31 @@ export async function showEditPoiModal(poiId) {
 
     const modal = new bootstrap.Modal(document.getElementById('poiModal'));
     modal.show();
+}
+
+// ============================================================
+// 子类型复选框：读取 / 回填
+// ============================================================
+function getFacilitySubtypeCheckboxes() {
+    const ids = ['subtype-restaurant', 'subtype-hotel', 'subtype-shopping', 'subtype-service'];
+    const values = [];
+    ids.forEach(id => {
+        const cb = document.getElementById(id);
+        if (cb && cb.checked) values.push(cb.value);
+    });
+    return values;
+}
+
+function setFacilitySubtypeCheckboxes(values) {
+    const arr = Array.isArray(values) ? values : (values ? [values] : []);
+    const ids = ['subtype-restaurant', 'subtype-hotel', 'subtype-shopping', 'subtype-service'];
+    ids.forEach(id => {
+        const cb = document.getElementById(id);
+        if (cb) {
+            const val = cb.value;
+            cb.checked = arr.includes(val);
+        }
+    });
 }
 
 // ============================================================
@@ -258,7 +315,7 @@ export function togglePoiTypeUI() {
     const routeSection = document.getElementById('tour-route-section');
     const parentRequired = document.getElementById('parent-required');
 
-    // 默认全部隐藏
+    // 全部隐藏
     fieldCategory.classList.add('hidden');
     fieldFacilitySubtype.classList.add('hidden');
     fieldParent.classList.add('hidden');
@@ -274,18 +331,15 @@ export function togglePoiTypeUI() {
     } else if (type === 'core_node') {
         fieldParent.classList.remove('hidden');
         fieldDuration.classList.remove('hidden');
-        // ★ 核心节点必须关联景区
         if (parentRequired) parentRequired.textContent = '*';
     } else if (type === 'spot') {
         fieldParent.classList.remove('hidden');
         fieldDuration.classList.remove('hidden');
         fieldFeatured.classList.remove('hidden');
-        // ★ 景点必须关联景区
         if (parentRequired) parentRequired.textContent = '*';
     } else if (type === 'facility') {
         fieldFacilitySubtype.classList.remove('hidden');
         fieldParent.classList.remove('hidden');
-        // ★ 公共场所可选关联景区，非必填
         if (parentRequired) parentRequired.textContent = '（可选）';
     }
 }
@@ -362,7 +416,7 @@ export function showSelectSubPoiModal() {
         html += `<div style="margin-bottom:8px;"><b style="color:#1b5e20;">${TYPE_LABELS[t] || t}</b></div>`;
         grouped[t].forEach(p => {
             const subLabel = (t === 'facility' && p.facility_subtype)
-                ? ` <span class="text-secondary" style="font-size:11px;">[${FACILITY_SUBTYPE_LABELS[p.facility_subtype] || ''}]</span>`
+                ? ` <span class="text-secondary" style="font-size:11px;">[${subtypesToText(p.facility_subtype)}]</span>`
                 : '';
             html += `<label style="display:flex;align-items:center;padding:6px 8px;border-bottom:1px solid #f0f0f0;cursor:pointer;">
                 <input type="checkbox" value="${p.id}" style="margin-right:8px;">
@@ -445,7 +499,7 @@ function renderTourRoute() {
     currentTourRoute.forEach((item, idx) => {
         let typeLabel = '';
         if (item.type === 'facility' && item.facility_subtype) {
-            typeLabel = (FACILITY_SUBTYPE_LABELS[item.facility_subtype] || '').replace(/^[^\s]+\s/, '');
+            typeLabel = subtypesToText(item.facility_subtype);
         } else {
             typeLabel = (TYPE_LABELS[item.type] || item.type || '').replace(/^[^\s]+\s/, '');
         }
@@ -498,7 +552,7 @@ export function addTourRouteItem() {
     let msg = '请选择要添加的子项（输入序号）：\n';
     subPois.forEach((p, i) => {
         const label = p.type === 'facility' && p.facility_subtype
-            ? (FACILITY_SUBTYPE_LABELS[p.facility_subtype] || '').replace(/^[^\s]+\s/, '')
+            ? subtypesToText(p.facility_subtype)
             : (TYPE_LABELS[p.type] || '').replace(/^[^\s]+\s/, '');
         msg += `${i + 1}. ${p.name} [${label}]\n`;
     });
@@ -532,11 +586,9 @@ export async function savePoiEdit() {
     const isNew = !poiId;
     const poiType = document.getElementById('edit-poi-type').value;
 
-    // 关联 scenic 表
     const scenicIdRaw = document.getElementById('edit-poi-scenic').value;
     const scenicId = scenicIdRaw || null;
 
-    // ★ parent_id：只有 core_node / spot 强制；facility 可选
     let parentId = null;
     if (poiType !== 'scenic') {
         const parentRaw = document.getElementById('edit-poi-parent').value;
@@ -557,9 +609,14 @@ export async function savePoiEdit() {
         status: 'active'
     };
 
-    // ★ facility_subtype（公共场所专用）
+    // ★ 公共场所子类型（数组）
     if (poiType === 'facility') {
-        updates.facility_subtype = document.getElementById('edit-poi-facility-subtype').value || 'service';
+        const subtypes = getFacilitySubtypeCheckboxes();
+        if (subtypes.length === 0) {
+            alert('公共场所至少选择一种子类型');
+            return;
+        }
+        updates.facility_subtype = subtypes;   // 数组
     } else {
         updates.facility_subtype = null;
     }
@@ -568,13 +625,16 @@ export async function savePoiEdit() {
     if (poiType === 'scenic') {
         updates.category = document.getElementById('edit-poi-category').value;
     } else if (poiType === 'facility' && !parentId) {
-        // 县城内的独立公共场所：根据子类型推断分类
-        const subtype = updates.facility_subtype;
-        if (subtype === 'restaurant' || subtype === 'hotel') updates.category = '餐饮住宿';
-        else if (subtype === 'shopping') updates.category = '购物消费';
-        else updates.category = '公共服务';
+        // 独立公共场所：根据子类型推断分类
+        const subtypes = updates.facility_subtype || [];
+        if (subtypes.includes('restaurant') || subtypes.includes('hotel')) {
+            updates.category = '餐饮住宿';
+        } else if (subtypes.includes('shopping')) {
+            updates.category = '购物消费';
+        } else {
+            updates.category = '公共服务';
+        }
     } else {
-        // 其他情况继承父景区分类
         if (parentId) {
             const parent = allPois.find(p => String(p.id) === String(parentId));
             updates.category = parent ? (parent.category || '自然景区') : '自然景区';
@@ -595,14 +655,13 @@ export async function savePoiEdit() {
         ? document.getElementById('edit-poi-featured').checked
         : false;
 
-    // 浏览路线（仅景区）
+    // 浏览路线
     if (poiType === 'scenic') {
         updates.tour_route = currentTourRoute.map(x => x.id);
     } else {
         updates.tour_route = null;
     }
 
-    // ★ 校验：只有 core_node / spot 强制要求所属景区
     if (!updates.name) { alert('请输入名称'); return; }
     if ((poiType === 'core_node' || poiType === 'spot') && !parentId) {
         alert('核心节点/景点必须选择所属景区');

@@ -20,15 +20,16 @@
         .quality-L1 { background: #c8e6c9; color: #1b5e20; }
         .quality-L2 { background: #fff9c4; color: #f57f17; }
         .quality-L3 { background: #ffcdd2; color: #c62828; }
-        
-        /* 类型徽章 */
         .type-badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; margin-right: 4px; }
         .type-badge-scenic { background: #e3f2fd; color: #1565c0; }
         .type-badge-core { background: #fff3e0; color: #e65100; }
         .type-badge-spot { background: #f3e5f5; color: #6a1b9a; }
         .type-badge-facility { background: #e0f2f1; color: #00695c; }
+        .type-badge-restaurant { background: #fff8e1; color: #ef6c00; }
+        .type-badge-hotel { background: #fce4ec; color: #ad1457; }
+        .type-badge-service { background: #e8eaf6; color: #283593; }
+        .type-badge-shopping { background: #f1f8e9; color: #558b2f; }
         .featured-badge { background: #ffeb3b; color: #f57f17; padding: 1px 6px; border-radius: 8px; font-size: 10px; font-weight: 600; }
-        
         .poi-card { border: 1px solid #e0e0e0; border-radius: 8px; padding: 12px; margin-bottom: 10px; background: #fafafa; }
         .poi-card .poi-header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; }
         .node-list { margin-left: 20px; padding-left: 10px; border-left: 2px solid #2e7d32; }
@@ -81,38 +82,27 @@
             <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-feedbacks">💬 留言</a></li>
         </ul>
         <div class="tab-content">
-            <!-- POI管理 -->
             <div class="tab-pane active" id="tab-poi">
                 <button class="btn btn-success mb-2" onclick="window.showAddPoiModal()"><i class="fas fa-plus"></i> 新增POI</button>
                 <div id="poi-list"></div>
             </div>
-
-            <!-- 景区管理 -->
             <div class="tab-pane" id="tab-scenic">
                 <button class="btn btn-success mb-2" onclick="window.showAddScenicModal()"><i class="fas fa-plus"></i> 新增景区</button>
                 <div id="scenic-list"></div>
             </div>
-
-            <!-- 路线管理 -->
             <div class="tab-pane" id="tab-routes">
                 <button class="btn btn-success mb-2" onclick="window.showAddRouteModal()"><i class="fas fa-plus"></i> 新增路线</button>
                 <div id="route-list"></div>
             </div>
-
-            <!-- 交通耗时 -->
             <div class="tab-pane" id="tab-transport">
                 <h5><i class="fas fa-clock text-success"></i> 景点间交通耗时（分钟）</h5>
                 <p class="text-secondary">点击景点展开，修改后自动保存，反向数据自动填充。<strong>只统计景区/景点之间的交通，景区内部移动时间含在游览时长中。</strong></p>
                 <div id="transport-editor" class="mt-2"></div>
             </div>
-
-            <!-- 商户 -->
             <div class="tab-pane" id="tab-merchants">
                 <button class="btn btn-success" onclick="window.createMerchant()"><i class="fas fa-user-plus"></i> 创建商户</button>
                 <div id="merchant-list" class="mt-3"></div>
             </div>
-
-            <!-- 留言 -->
             <div class="tab-pane" id="tab-feedbacks">
                 <div id="feedback-list"></div>
             </div>
@@ -131,7 +121,6 @@
             <div class="modal-body">
                 <input type="hidden" id="edit-poi-id">
                 
-                <!-- 基础信息 -->
                 <div class="row g-2">
                     <div class="col-6"><label class="form-label">名称 <span class="text-danger">*</span></label><input id="edit-poi-name" class="form-control"></div>
                     <div class="col-6">
@@ -139,7 +128,7 @@
                         <select id="edit-poi-type" class="form-select" onchange="window.togglePoiTypeUI()">
                             <option value="scenic">🏞️ 景区</option>
                             <option value="core_node">⭐ 核心节点</option>
-                            <option value="spot">📍 景点</option>
+                            <option value="spot">📍 景点/游玩项目</option>
                             <option value="facility">🏢 公共场所</option>
                         </select>
                     </div>
@@ -158,20 +147,29 @@
                             <option value="公共服务">公共服务</option>
                         </select>
                     </div>
-                    
-                    <!-- 所属景区（非景区显示） -->
-                    <div class="col-6 hidden" id="field-parent">
-                        <label class="form-label">所属景区 <span class="text-danger">*</span></label>
-                        <select id="edit-poi-parent" class="form-select">
-                            <option value="">-- 请选择 --</option>
+
+                    <!-- ★ 公共场所子类型（facility 显示） -->
+                    <div class="col-6 hidden" id="field-facility-subtype">
+                        <label class="form-label">公共场所子类型 <span class="text-danger">*</span></label>
+                        <select id="edit-poi-facility-subtype" class="form-select">
+                            <option value="restaurant">🍽️ 餐厅</option>
+                            <option value="hotel">🏨 住宿</option>
+                            <option value="shopping">🛍️ 购物</option>
+                            <option value="service">🚻 服务设施（停车场/厕所/医院等）</option>
                         </select>
                     </div>
                     
-                    <!-- 经纬度 -->
+                    <!-- 所属景区（core_node/spot 显示） -->
+                    <div class="col-6 hidden" id="field-parent">
+                        <label class="form-label">所属景区 <span class="text-danger" id="parent-required">*</span></label>
+                        <select id="edit-poi-parent" class="form-select">
+                            <option value="">-- 不关联（独立存在）--</option>
+                        </select>
+                    </div>
+                    
                     <div class="col-6"><label class="form-label">纬度</label><input type="number" step="any" id="edit-poi-lat" class="form-control"></div>
                     <div class="col-6"><label class="form-label">经度</label><input type="number" step="any" id="edit-poi-lng" class="form-control"></div>
                     
-                    <!-- 开放/闭馆 -->
                     <div class="col-6"><label class="form-label">开放时间</label><input type="time" id="edit-poi-open" class="form-control" value="08:00"></div>
                     <div class="col-6"><label class="form-label">闭馆时间</label><input type="time" id="edit-poi-close" class="form-control" value="18:00"></div>
                     
@@ -190,12 +188,10 @@
                         </div>
                     </div>
                     
-                    <!-- 所属景区（景区自身用 scenic_id） -->
                     <div class="col-6"><label class="form-label">关联景区表（scenic）</label>
                         <select id="edit-poi-scenic" class="form-select"><option value="">无关联</option></select>
                     </div>
                     
-                    <!-- 数据等级 -->
                     <div class="col-6"><label class="form-label">数据等级</label>
                         <select id="edit-poi-level" class="form-select">
                             <option value="L3">L3 - 基础信息</option>
@@ -204,7 +200,6 @@
                         </select>
                     </div>
                     
-                    <!-- 简介 -->
                     <div class="col-12"><label class="form-label">简介</label><textarea id="edit-poi-desc" class="form-control" rows="2"></textarea></div>
                 </div>
 
@@ -265,7 +260,7 @@
     </div>
 </div>
 
-<!-- 模态框：编辑景区（scenic 表，保留原逻辑） -->
+<!-- 模态框：编辑景区（scenic 表） -->
 <div class="modal fade" id="scenicModal" tabindex="-1">
     <div class="modal-dialog"><div class="modal-content">
         <div class="modal-header"><h5 class="modal-title">编辑景区</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
@@ -341,8 +336,8 @@ onAuthStateChange((event) => {
         admin.initAdminUI();
     } else if (event === 'SIGNED_OUT') {
         hasInitialized = false;
-        document.getElementById('login-page').classList.add('hidden');
-        document.getElementById('main').classList.remove('hidden');
+        document.getElementById('login-page').classList.remove('hidden');
+        document.getElementById('main').classList.add('hidden');
     }
 });
 

@@ -2,33 +2,41 @@
 export const SUPABASE_URL = 'https://aermnnksvhezfykxefla.supabase.co';
 export const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFlcm1ubmtzdmhlemZ5a3hlZmxhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIwNzQ4ODEsImV4cCI6MjA5NzY1MDg4MX0.c2Wemu90PiezEaXn2Hv3tBL-D5YFXYTVxei14CI-Rvk';
 
-// 时间参数
-export const DAY_START = 480;
-export const PLAN_CUTOFF = 1020;
-export const VISIT_END = 1080;
-export const LUNCH_START = 690;
-export const LUNCH_END = 750;
-export const DINNER_START = 1080;
-export const DINNER_END = 1140;
+// ========== 时间参数 ==========
+export const DAY_START = 480;          // 08:00
+export const PLAN_CUTOFF = 1020;       // 17:00 规划截止
+export const VISIT_END = 1080;         // 18:00 游览截止
+export const LUNCH_START = 690;        // 11:30
+export const LUNCH_END = 750;          // 12:30
+export const DINNER_START = 1080;      // 18:00
+export const DINNER_END = 1140;        // 19:00
 export const MEAL_DURATION = 60;
 export const MAX_RETURN_TIME = 180;
 export const MIN_SEGMENT = 45;
 export const MIN_REST_DURATION = 10;
 
-// 行程风格配置
+// ========== POI 类型 ==========
+export const POI_TYPES = {
+    scenic: { label: '🏞️ 景区', key: 'scenic' },
+    core_node: { label: '⭐ 核心节点', key: 'core_node' },
+    spot: { label: '📍 景点', key: 'spot' },
+    facility: { label: '🏢 公共场所', key: 'facility' }
+};
+
+// ========== 行程风格配置 ==========
 export const STYLE_CONFIG = {
     compact: {
         name: '紧凑型',
         icon: '🚀',
-        includeCoreNodes: true,
-        featuredSpotCount: 0,
-        includeAllSpots: false
+        includeCoreNodes: true,       // 包含核心节点
+        featuredSpotCount: 0,          // 经典景点数量
+        includeAllSpots: false         // 是否包含所有景点
     },
     relaxed: {
         name: '舒适型',
         icon: '🌿',
         includeCoreNodes: true,
-        featuredSpotCount: 2,
+        featuredSpotCount: 2,          // 最多2个经典景点
         includeAllSpots: false
     },
     indepth: {
@@ -36,11 +44,11 @@ export const STYLE_CONFIG = {
         icon: '🔍',
         includeCoreNodes: true,
         featuredSpotCount: 999,
-        includeAllSpots: true
+        includeAllSpots: true          // 所有景点
     }
 };
 
-// POI 分类
+// ========== POI 分类 ==========
 export const POI_CATEGORIES = [
     '自然景区', '红色景区', '文博场馆', '餐饮住宿',
     '交通枢纽', '游玩娱乐', '购物消费', '公共服务'
@@ -55,14 +63,6 @@ export const poiColors = {
     '游玩娱乐': '#FF5722',
     '购物消费': '#F9A825',
     '公共服务': '#607D8B'
-};
-
-// POI 类型
-export const POI_TYPES = {
-    scenic: '🏞️ 景区',
-    core_node: '⭐ 核心节点',
-    spot: '📍 景点',
-    facility: '🏢 公共场所'
 };
 
 export const SA_CONFIG = {

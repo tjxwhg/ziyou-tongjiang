@@ -1,4 +1,4 @@
-// js/admin.js - 管理后台完整逻辑（facility多子类型 + UUID兼容 + 浏览路线）
+// js/admin.js - 管理后台完整逻辑（分类与类型解耦 + facility多子类型 + UUID兼容）
 import {
     getPois, getPoi, insertPoi, updatePoi, deletePoi as apiDeletePoi,
     getScenicList, insertScenic, updateScenic, deleteScenic as apiDeleteScenic,
@@ -15,6 +15,9 @@ let allPois = [], allScenic = [], allRoutes = [], allPresets = [], allMerchants 
 let currentEditingPoiId = null;
 let currentSubPoiIds = [];
 let currentTourRoute = [];
+
+// ★ 追踪用户是否手动修改过分类
+let categoryManuallySet = false;
 
 // ============================================================
 // 类型标签与徽章
@@ -47,12 +50,21 @@ const FACILITY_SUBTYPE_CLASSES = {
     service: 'type-badge-service'
 };
 
-// ★ 支持 facility_subtype 为数组，显示多个徽章
+const CATEGORY_ICONS = {
+    '自然景区': '🏔️',
+    '红色景区': '🔴',
+    '文博场馆': '🏛️',
+    '餐饮住宿': '🍽️',
+    '交通枢纽': '🚌',
+    '游玩娱乐': '🎢',
+    '购物消费': '🛍️',
+    '公共服务': '🏛️'
+};
+
 function getTypeBadge(type, facilitySubtype) {
     const t = type || 'spot';
 
     if (t === 'facility') {
-        // 数组处理：兼容 null、字符串、数组三种情况
         let subtypes = [];
         if (Array.isArray(facilitySubtype)) {
             subtypes = facilitySubtype.filter(s => s);
@@ -64,7 +76,6 @@ function getTypeBadge(type, facilitySubtype) {
             return `<span class="type-badge type-badge-facility">🏢 公共场所</span>`;
         }
 
-        // 显示多个徽章
         return subtypes.map(sub => {
             const cls = FACILITY_SUBTYPE_CLASSES[sub] || 'type-badge-facility';
             const label = FACILITY_SUBTYPE_LABELS[sub] || sub;
@@ -75,7 +86,6 @@ function getTypeBadge(type, facilitySubtype) {
     return `<span class="type-badge ${TYPE_CLASSES[t] || 'type-badge-spot'}">${TYPE_LABELS[t] || t}</span>`;
 }
 
-// 将子类型数组转为简短文字（用于路线显示）
 function subtypesToText(subtypes) {
     if (!Array.isArray(subtypes) || subtypes.length === 0) return '';
     return subtypes.map(s => (FACILITY_SUBTYPE_LABELS[s] || s).replace(/^[^\s]+\s/, '')).join('/');
@@ -130,6 +140,10 @@ export function renderPoiList(pois) {
         const poiType = p.type || 'spot';
         const typeBadge = getTypeBadge(poiType, p.facility_subtype);
 
+        // 分类徽章
+        const catIcon = CATEGORY_ICONS[p.category] || '';
+        const catBadge = p.category ? `<span class="category-badge">${catIcon} ${p.category}</span>` : '';
+
         // 子项
         const subItems = pois.filter(x => String(x.parent_id) === String(p.id));
         const coreCount = subItems.filter(x => x.type === 'core_node').length;
@@ -145,7 +159,7 @@ export function renderPoiList(pois) {
 
         html += `<div class="poi-card" id="poi-card-${p.id}">
             <div class="poi-header">
-                <span>${typeBadge} <b>${p.name}</b>${featuredTag} ${scenicName} [${p.category || '未分类'}] <span class="data-quality-badge quality-${level}">${level}</span>${subInfo}</span>
+                <span>${typeBadge} <b>${p.name}</b>${featuredTag} ${scenicName} ${catBadge} <span class="data-quality-badge quality-${level}">${level}</span>${subInfo}</span>
                 <div>
                     <button class="btn btn-sm btn-secondary" onclick="window.showEditPoiModal('${p.id}')"><i class="fas fa-edit"></i> 编辑</button>
                     <button class="btn btn-sm btn-danger" onclick="window.deletePoi('${p.id}')"><i class="fas fa-trash"></i> 删除</button>
@@ -157,8 +171,10 @@ export function renderPoiList(pois) {
             subItems.forEach(sub => {
                 const subType = sub.type || 'spot';
                 const subBadge = getTypeBadge(subType, sub.facility_subtype);
+                const subCatIcon = CATEGORY_ICONS[sub.category] || '';
+                const subCat = sub.category ? ` <span class="category-badge">${subCatIcon} ${sub.category}</span>` : '';
                 html += `<div class="sub-poi-item">
-                    <span>${subBadge} ${sub.name} <span class="text-secondary small">(${sub.visit_duration || 0}分钟)</span></span>
+                    <span>${subBadge} ${sub.name}${subCat} <span class="text-secondary small">(${sub.visit_duration || 0}分钟)</span></span>
                     <button class="btn btn-sm btn-outline-secondary" onclick="window.showEditPoiModal('${sub.id}')"><i class="fas fa-edit"></i></button>
                 </div>`;
             });
@@ -177,6 +193,7 @@ export function showAddPoiModal() {
     currentEditingPoiId = null;
     currentSubPoiIds = [];
     currentTourRoute = [];
+    categoryManuallySet = false;   // ★ 重置标记
 
     document.getElementById('edit-poi-id').value = '';
     document.getElementById('edit-poi-name').value = '';
@@ -191,7 +208,6 @@ export function showAddPoiModal() {
     document.getElementById('edit-poi-level').value = 'L3';
     document.getElementById('edit-poi-featured').checked = false;
 
-    // ★ 清除所有子类型复选框
     setFacilitySubtypeCheckboxes([]);
 
     const scenicSelect = document.getElementById('edit-poi-scenic');
@@ -222,6 +238,7 @@ export async function showEditPoiModal(poiId) {
         return;
     }
     currentEditingPoiId = poiId;
+    categoryManuallySet = true;   // ★ 已有数据，视为用户设置过
 
     document.getElementById('edit-poi-id').value = poiId;
     document.getElementById('edit-poi-name').value = poi.name || '';
@@ -236,7 +253,6 @@ export async function showEditPoiModal(poiId) {
     document.getElementById('edit-poi-level').value = poi.data_level || 'L3';
     document.getElementById('edit-poi-featured').checked = !!poi.is_featured;
 
-    // ★ 回填子类型复选框（兼容数组/字符串/null）
     let subtypes = [];
     if (Array.isArray(poi.facility_subtype)) subtypes = poi.facility_subtype;
     else if (poi.facility_subtype) subtypes = [poi.facility_subtype];
@@ -294,11 +310,49 @@ function setFacilitySubtypeCheckboxes(values) {
     ids.forEach(id => {
         const cb = document.getElementById(id);
         if (cb) {
-            const val = cb.value;
-            cb.checked = arr.includes(val);
+            cb.checked = arr.includes(cb.value);
         }
     });
 }
+
+// ============================================================
+// ★ 分类联动事件处理器
+// ============================================================
+
+// 用户手动改分类 → 标记
+window.onCategoryChange = function() {
+    categoryManuallySet = true;
+};
+
+// 用户切换父景区 → 若未手动改过分类，则继承父景区分类
+window.onParentChange = function() {
+    if (categoryManuallySet) return;
+
+    const parentId = document.getElementById('edit-poi-parent').value;
+    if (!parentId) return;
+
+    const parent = allPois.find(p => String(p.id) === String(parentId));
+    if (parent && parent.category) {
+        document.getElementById('edit-poi-category').value = parent.category;
+    }
+};
+
+// 用户勾选/取消设施子类型 → 若未手动改过分类，则根据子类型自动更新
+window.onFacilitySubtypeChange = function() {
+    if (categoryManuallySet) return;
+
+    const subtypes = getFacilitySubtypeCheckboxes();
+    const catSelect = document.getElementById('edit-poi-category');
+
+    // 判断优先级：餐厅/住宿 > 购物 > 服务
+    if (subtypes.includes('restaurant') || subtypes.includes('hotel')) {
+        catSelect.value = '餐饮住宿';
+    } else if (subtypes.includes('shopping')) {
+        catSelect.value = '购物消费';
+    } else if (subtypes.includes('service')) {
+        catSelect.value = '公共服务';
+    }
+};
 
 // ============================================================
 // 根据类型切换字段显示
@@ -306,7 +360,6 @@ function setFacilitySubtypeCheckboxes(values) {
 export function togglePoiTypeUI() {
     const type = document.getElementById('edit-poi-type').value;
 
-    const fieldCategory = document.getElementById('field-category');
     const fieldFacilitySubtype = document.getElementById('field-facility-subtype');
     const fieldParent = document.getElementById('field-parent');
     const fieldDuration = document.getElementById('field-duration');
@@ -315,8 +368,7 @@ export function togglePoiTypeUI() {
     const routeSection = document.getElementById('tour-route-section');
     const parentRequired = document.getElementById('parent-required');
 
-    // 全部隐藏
-    fieldCategory.classList.add('hidden');
+    // 全部隐藏（★ 注意：分类字段不再隐藏）
     fieldFacilitySubtype.classList.add('hidden');
     fieldParent.classList.add('hidden');
     fieldDuration.classList.add('hidden');
@@ -325,7 +377,6 @@ export function togglePoiTypeUI() {
     routeSection.classList.add('hidden');
 
     if (type === 'scenic') {
-        fieldCategory.classList.remove('hidden');
         subSection.classList.remove('hidden');
         routeSection.classList.remove('hidden');
     } else if (type === 'core_node') {
@@ -364,6 +415,7 @@ function renderSubPoiList() {
         return;
     }
 
+    // ★ 按类型排序：核心节点 → 景点 → 公共场所（不按分类分组）
     const order = { core_node: 1, spot: 2, facility: 3 };
     const sorted = [...subPois].sort((a, b) => (order[a.type] || 9) - (order[b.type] || 9));
 
@@ -372,8 +424,10 @@ function renderSubPoiList() {
         const subType = sub.type || 'spot';
         const subBadge = getTypeBadge(subType, sub.facility_subtype);
         const featuredTag = sub.is_featured ? ' <span class="featured-badge">⭐</span>' : '';
+        const catIcon = CATEGORY_ICONS[sub.category] || '';
+        const catBadge = sub.category ? ` <span class="category-badge">${catIcon} ${sub.category}</span>` : '';
         html += `<div class="sub-poi-item">
-            <span>${subBadge} ${sub.name}${featuredTag} <span class="text-secondary small">(${sub.visit_duration || 0}分钟)</span></span>
+            <span>${subBadge} ${sub.name}${featuredTag}${catBadge} <span class="text-secondary small">(${sub.visit_duration || 0}分钟)</span></span>
             <div>
                 <button class="btn btn-sm btn-outline-secondary me-1" onclick="window.showEditPoiModal('${sub.id}')"><i class="fas fa-edit"></i> 编辑</button>
                 <button class="btn btn-sm btn-danger" onclick="window.removeSubPoi('${sub.id}')"><i class="fas fa-unlink"></i> 移出</button>
@@ -418,9 +472,12 @@ export function showSelectSubPoiModal() {
             const subLabel = (t === 'facility' && p.facility_subtype)
                 ? ` <span class="text-secondary" style="font-size:11px;">[${subtypesToText(p.facility_subtype)}]</span>`
                 : '';
+            const catLabel = p.category
+                ? ` <span class="text-secondary" style="font-size:11px;">· ${p.category}</span>`
+                : '';
             html += `<label style="display:flex;align-items:center;padding:6px 8px;border-bottom:1px solid #f0f0f0;cursor:pointer;">
                 <input type="checkbox" value="${p.id}" style="margin-right:8px;">
-                <span>${p.name}</span>${subLabel}
+                <span>${p.name}</span>${subLabel}${catLabel}
                 <span style="color:#888;font-size:12px;margin-left:8px;">${p.visit_duration || 0}分钟</span>
             </label>`;
         });
@@ -598,6 +655,7 @@ export async function savePoiEdit() {
     const updates = {
         name: document.getElementById('edit-poi-name').value.trim(),
         type: poiType,
+        category: document.getElementById('edit-poi-category').value,   // ★ 所有类型都保存分类
         lat: parseFloat(document.getElementById('edit-poi-lat').value) || 0,
         lng: parseFloat(document.getElementById('edit-poi-lng').value) || 0,
         open_time: document.getElementById('edit-poi-open').value,
@@ -609,38 +667,16 @@ export async function savePoiEdit() {
         status: 'active'
     };
 
-    // ★ 公共场所子类型（数组）
+    // 公共场所子类型
     if (poiType === 'facility') {
         const subtypes = getFacilitySubtypeCheckboxes();
         if (subtypes.length === 0) {
             alert('公共场所至少选择一种子类型');
             return;
         }
-        updates.facility_subtype = subtypes;   // 数组
+        updates.facility_subtype = subtypes;
     } else {
         updates.facility_subtype = null;
-    }
-
-    // 分类
-    if (poiType === 'scenic') {
-        updates.category = document.getElementById('edit-poi-category').value;
-    } else if (poiType === 'facility' && !parentId) {
-        // 独立公共场所：根据子类型推断分类
-        const subtypes = updates.facility_subtype || [];
-        if (subtypes.includes('restaurant') || subtypes.includes('hotel')) {
-            updates.category = '餐饮住宿';
-        } else if (subtypes.includes('shopping')) {
-            updates.category = '购物消费';
-        } else {
-            updates.category = '公共服务';
-        }
-    } else {
-        if (parentId) {
-            const parent = allPois.find(p => String(p.id) === String(parentId));
-            updates.category = parent ? (parent.category || '自然景区') : '自然景区';
-        } else {
-            updates.category = '自然景区';
-        }
     }
 
     // 游览时长
@@ -662,6 +698,7 @@ export async function savePoiEdit() {
         updates.tour_route = null;
     }
 
+    // 校验
     if (!updates.name) { alert('请输入名称'); return; }
     if ((poiType === 'core_node' || poiType === 'spot') && !parentId) {
         alert('核心节点/景点必须选择所属景区');

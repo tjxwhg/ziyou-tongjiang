@@ -30,6 +30,7 @@
         .type-badge-service { background: #e8eaf6; color: #283593; }
         .type-badge-shopping { background: #f1f8e9; color: #558b2f; }
         .featured-badge { background: #ffeb3b; color: #f57f17; padding: 1px 6px; border-radius: 8px; font-size: 10px; font-weight: 600; }
+        .category-badge { display: inline-block; padding: 1px 8px; border-radius: 8px; font-size: 11px; background: #f5f5f5; color: #555; margin-left: 4px; }
         .poi-card { border: 1px solid #e0e0e0; border-radius: 8px; padding: 12px; margin-bottom: 10px; background: #fafafa; }
         .poi-card .poi-header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; }
         .node-list { margin-left: 20px; padding-left: 10px; border-left: 2px solid #2e7d32; }
@@ -49,6 +50,7 @@
         .subtype-checkbox-group { display: flex; flex-wrap: wrap; gap: 12px; padding: 6px 10px; border: 1px solid #ddd; border-radius: 6px; background: #fff; }
         .subtype-checkbox-group .form-check { margin: 0; }
         .subtype-checkbox-group .form-check-label { cursor: pointer; }
+        .hint-text { color: #888; font-size: 12px; margin-top: 2px; }
         @media (max-width: 768px) { .header { flex-direction: column; gap: 8px; } }
     </style>
 </head>
@@ -134,50 +136,53 @@
                             <option value="spot">📍 景点/游玩项目</option>
                             <option value="facility">🏢 公共场所</option>
                         </select>
-                    </div>
-                    
-                    <!-- 类别（景区显示） -->
-                    <div class="col-6" id="field-category">
-                        <label class="form-label">类别</label>
-                        <select id="edit-poi-category" class="form-select">
-                            <option value="自然景区">自然景区</option>
-                            <option value="红色景区">红色景区</option>
-                            <option value="文博场馆">文博场馆</option>
-                            <option value="餐饮住宿">餐饮住宿</option>
-                            <option value="交通枢纽">交通枢纽</option>
-                            <option value="游玩娱乐">游玩娱乐</option>
-                            <option value="购物消费">购物消费</option>
-                            <option value="公共服务">公共服务</option>
-                        </select>
+                        <div class="hint-text">决定该POI在行程规划中的角色</div>
                     </div>
 
-                    <!-- ★ 公共场所子类型（多选复选框） -->
-                    <div class="col-12 hidden" id="field-facility-subtype">
-                        <label class="form-label">公共场所子类型 <span class="text-danger">*</span> <span class="text-secondary" style="font-weight:400;font-size:12px;">（可多选，如民宿同时提供餐饮和住宿）</span></label>
+                    <!-- ★ 分类：所有类型都显示 -->
+                    <div class="col-6">
+                        <label class="form-label">分类 <span class="text-danger">*</span></label>
+                        <select id="edit-poi-category" class="form-select" onchange="window.onCategoryChange()">
+                            <option value="自然景区">🏔️ 自然景区</option>
+                            <option value="红色景区">🔴 红色景区</option>
+                            <option value="文博场馆">🏛️ 文博场馆</option>
+                            <option value="餐饮住宿">🍽️ 餐饮住宿</option>
+                            <option value="交通枢纽">🚌 交通枢纽</option>
+                            <option value="游玩娱乐">🎢 游玩娱乐</option>
+                            <option value="购物消费">🛍️ 购物消费</option>
+                            <option value="公共服务">🏛️ 公共服务</option>
+                        </select>
+                        <div class="hint-text">用于游客端筛选展示，可独立于类型</div>
+                    </div>
+
+                    <!-- 公共场所子类型（facility 时显示） -->
+                    <div class="col-6 hidden" id="field-facility-subtype">
+                        <label class="form-label">公共场所子类型 <span class="text-danger">*</span></label>
                         <div class="subtype-checkbox-group">
                             <div class="form-check">
-                                <input class="form-check-input" type="checkbox" id="subtype-restaurant" value="restaurant">
+                                <input class="form-check-input" type="checkbox" id="subtype-restaurant" value="restaurant" onchange="window.onFacilitySubtypeChange()">
                                 <label class="form-check-label" for="subtype-restaurant">🍽️ 餐厅</label>
                             </div>
                             <div class="form-check">
-                                <input class="form-check-input" type="checkbox" id="subtype-hotel" value="hotel">
+                                <input class="form-check-input" type="checkbox" id="subtype-hotel" value="hotel" onchange="window.onFacilitySubtypeChange()">
                                 <label class="form-check-label" for="subtype-hotel">🏨 住宿</label>
                             </div>
                             <div class="form-check">
-                                <input class="form-check-input" type="checkbox" id="subtype-shopping" value="shopping">
+                                <input class="form-check-input" type="checkbox" id="subtype-shopping" value="shopping" onchange="window.onFacilitySubtypeChange()">
                                 <label class="form-check-label" for="subtype-shopping">🛍️ 购物</label>
                             </div>
                             <div class="form-check">
-                                <input class="form-check-input" type="checkbox" id="subtype-service" value="service">
+                                <input class="form-check-input" type="checkbox" id="subtype-service" value="service" onchange="window.onFacilitySubtypeChange()">
                                 <label class="form-check-label" for="subtype-service">🚻 服务设施</label>
                             </div>
                         </div>
+                        <div class="hint-text">可多选，如民宿同时提供餐饮和住宿</div>
                     </div>
                     
                     <!-- 所属景区 -->
                     <div class="col-6 hidden" id="field-parent">
                         <label class="form-label">所属景区 <span class="text-danger" id="parent-required">*</span></label>
-                        <select id="edit-poi-parent" class="form-select">
+                        <select id="edit-poi-parent" class="form-select" onchange="window.onParentChange()">
                             <option value="">-- 不关联（独立存在）--</option>
                         </select>
                     </div>
@@ -188,13 +193,11 @@
                     <div class="col-6"><label class="form-label">开放时间</label><input type="time" id="edit-poi-open" class="form-control" value="08:00"></div>
                     <div class="col-6"><label class="form-label">闭馆时间</label><input type="time" id="edit-poi-close" class="form-control" value="18:00"></div>
                     
-                    <!-- 游览时长 -->
                     <div class="col-6" id="field-duration">
                         <label class="form-label">游览时长(分钟)</label>
                         <input type="number" id="edit-poi-visit" class="form-control" placeholder="含观赏+移动时间">
                     </div>
                     
-                    <!-- 经典景点 -->
                     <div class="col-6 hidden" id="field-featured">
                         <label class="form-label">经典景点标记</label>
                         <div class="form-check mt-2">
@@ -218,7 +221,7 @@
                     <div class="col-12"><label class="form-label">简介</label><textarea id="edit-poi-desc" class="form-control" rows="2"></textarea></div>
                 </div>
 
-                <!-- 浏览路线规划（仅景区显示） -->
+                <!-- 浏览路线规划 -->
                 <div id="tour-route-section" class="hidden">
                     <hr>
                     <div class="d-flex justify-content-between align-items-center mb-2">
@@ -234,7 +237,7 @@
                     </button>
                 </div>
 
-                <!-- 子项管理（仅景区显示） -->
+                <!-- 子项管理 -->
                 <div id="sub-poi-section" class="hidden">
                     <hr>
                     <div class="d-flex justify-content-between align-items-center">

@@ -20,13 +20,19 @@
         .quality-L1 { background: #c8e6c9; color: #1b5e20; }
         .quality-L2 { background: #fff9c4; color: #f57f17; }
         .quality-L3 { background: #ffcdd2; color: #c62828; }
-        .type-badge-scenic { background: #e3f2fd; color: #1565c0; padding: 2px 8px; border-radius: 10px; font-size: 11px; }
-        .type-badge-spot { background: #f3e5f5; color: #6a1b9a; padding: 2px 8px; border-radius: 10px; font-size: 11px; }
+        
+        /* 类型徽章 */
+        .type-badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; margin-right: 4px; }
+        .type-badge-scenic { background: #e3f2fd; color: #1565c0; }
+        .type-badge-core { background: #fff3e0; color: #e65100; }
+        .type-badge-spot { background: #f3e5f5; color: #6a1b9a; }
+        .type-badge-facility { background: #e0f2f1; color: #00695c; }
+        .featured-badge { background: #ffeb3b; color: #f57f17; padding: 1px 6px; border-radius: 8px; font-size: 10px; font-weight: 600; }
+        
         .poi-card { border: 1px solid #e0e0e0; border-radius: 8px; padding: 12px; margin-bottom: 10px; background: #fafafa; }
         .poi-card .poi-header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; }
         .node-list { margin-left: 20px; padding-left: 10px; border-left: 2px solid #2e7d32; }
         .node-item { display: flex; justify-content: space-between; align-items: center; padding: 6px 8px; border-bottom: 1px solid #f0f0f0; font-size: 13px; }
-        .node-item .badge { font-size: 10px; }
         .sub-poi-item { display: flex; justify-content: space-between; align-items: center; padding: 8px 10px; border-bottom: 1px solid #f0f0f0; font-size: 13px; }
         .sub-poi-item:last-child { border-bottom: none; }
         .transport-group { border: 1px solid #ddd; border-radius: 6px; margin-bottom: 8px; }
@@ -36,7 +42,9 @@
         .transport-item:last-child { border-bottom: none; }
         .transport-item input { width: 80px; padding: 2px 6px; border: 1px solid #ccc; border-radius: 4px; text-align: center; display: inline-block; }
         .save-status { font-size: 12px; color: #2e7d32; margin-left: 6px; }
-        .modal-lg-custom { max-width: 800px; }
+        .modal-lg-custom { max-width: 850px; }
+        .route-item { display: flex; align-items: center; gap: 8px; padding: 6px; background: #f8f9fa; border-radius: 6px; margin-bottom: 4px; }
+        .route-item .route-order { width: 30px; text-align: center; font-weight: 600; color: #1b5e20; }
         @media (max-width: 768px) { .header { flex-direction: column; gap: 8px; } }
     </style>
 </head>
@@ -94,7 +102,7 @@
             <!-- 交通耗时 -->
             <div class="tab-pane" id="tab-transport">
                 <h5><i class="fas fa-clock text-success"></i> 景点间交通耗时（分钟）</h5>
-                <p class="text-secondary">点击景点展开，修改后自动保存，反向数据自动填充。</p>
+                <p class="text-secondary">点击景点展开，修改后自动保存，反向数据自动填充。<strong>只统计景区/景点之间的交通，景区内部移动时间含在游览时长中。</strong></p>
                 <div id="transport-editor" class="mt-2"></div>
             </div>
 
@@ -116,19 +124,28 @@
 <div class="modal fade" id="poiModal" tabindex="-1">
     <div class="modal-dialog modal-lg modal-lg-custom">
         <div class="modal-content">
-            <div class="modal-header"><h5 class="modal-title" id="poiModalTitle">编辑POI</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+            <div class="modal-header">
+                <h5 class="modal-title" id="poiModalTitle">编辑POI</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
             <div class="modal-body">
                 <input type="hidden" id="edit-poi-id">
+                
+                <!-- 基础信息 -->
                 <div class="row g-2">
-                    <div class="col-6"><label class="form-label">名称</label><input id="edit-poi-name" class="form-control"></div>
-                    <div class="col-3">
-                        <label class="form-label">类型</label>
+                    <div class="col-6"><label class="form-label">名称 <span class="text-danger">*</span></label><input id="edit-poi-name" class="form-control"></div>
+                    <div class="col-6">
+                        <label class="form-label">类型 <span class="text-danger">*</span></label>
                         <select id="edit-poi-type" class="form-select" onchange="window.togglePoiTypeUI()">
-                            <option value="spot">景点（独立）</option>
-                            <option value="scenic">景区（含子景点）</option>
+                            <option value="scenic">🏞️ 景区</option>
+                            <option value="core_node">⭐ 核心节点</option>
+                            <option value="spot">📍 景点</option>
+                            <option value="facility">🏢 公共场所</option>
                         </select>
                     </div>
-                    <div class="col-3">
+                    
+                    <!-- 类别（景区显示） -->
+                    <div class="col-6" id="field-category">
                         <label class="form-label">类别</label>
                         <select id="edit-poi-category" class="form-select">
                             <option value="自然景区">自然景区</option>
@@ -141,43 +158,84 @@
                             <option value="公共服务">公共服务</option>
                         </select>
                     </div>
+                    
+                    <!-- 所属景区（非景区显示） -->
+                    <div class="col-6 hidden" id="field-parent">
+                        <label class="form-label">所属景区 <span class="text-danger">*</span></label>
+                        <select id="edit-poi-parent" class="form-select">
+                            <option value="">-- 请选择 --</option>
+                        </select>
+                    </div>
+                    
+                    <!-- 经纬度 -->
                     <div class="col-6"><label class="form-label">纬度</label><input type="number" step="any" id="edit-poi-lat" class="form-control"></div>
                     <div class="col-6"><label class="form-label">经度</label><input type="number" step="any" id="edit-poi-lng" class="form-control"></div>
-                    <div class="col-4"><label class="form-label">开放时间</label><input type="time" id="edit-poi-open" class="form-control" value="08:00"></div>
-                    <div class="col-4"><label class="form-label">闭馆时间</label><input type="time" id="edit-poi-close" class="form-control" value="18:00"></div>
-                    <div class="col-4"><label class="form-label">游览时长(分钟)</label><input type="number" id="edit-poi-visit" class="form-control"></div>
-                    <div class="col-12"><label class="form-label">简介</label><textarea id="edit-poi-desc" class="form-control" rows="2"></textarea></div>
-                    <div class="col-6"><label class="form-label">所属景区</label>
-                        <select id="edit-poi-scenic" class="form-select"><option value="">无关联景区</option></select>
+                    
+                    <!-- 开放/闭馆 -->
+                    <div class="col-6"><label class="form-label">开放时间</label><input type="time" id="edit-poi-open" class="form-control" value="08:00"></div>
+                    <div class="col-6"><label class="form-label">闭馆时间</label><input type="time" id="edit-poi-close" class="form-control" value="18:00"></div>
+                    
+                    <!-- 游览时长（核心节点/景点显示） -->
+                    <div class="col-6" id="field-duration">
+                        <label class="form-label">游览时长(分钟)</label>
+                        <input type="number" id="edit-poi-visit" class="form-control" placeholder="含观赏+移动时间">
                     </div>
+                    
+                    <!-- 经典景点（景点显示） -->
+                    <div class="col-6 hidden" id="field-featured">
+                        <label class="form-label">经典景点标记</label>
+                        <div class="form-check mt-2">
+                            <input type="checkbox" id="edit-poi-featured" class="form-check-input">
+                            <label class="form-check-label" for="edit-poi-featured">舒适型行程默认推荐</label>
+                        </div>
+                    </div>
+                    
+                    <!-- 所属景区（景区自身用 scenic_id） -->
+                    <div class="col-6"><label class="form-label">关联景区表（scenic）</label>
+                        <select id="edit-poi-scenic" class="form-select"><option value="">无关联</option></select>
+                    </div>
+                    
+                    <!-- 数据等级 -->
                     <div class="col-6"><label class="form-label">数据等级</label>
                         <select id="edit-poi-level" class="form-select">
                             <option value="L3">L3 - 基础信息</option>
                             <option value="L2">L2 - 有内部路线</option>
-                            <option value="L1">L1 - 完整数据（含子景点）</option>
+                            <option value="L1">L1 - 完整数据</option>
                         </select>
                     </div>
+                    
+                    <!-- 简介 -->
+                    <div class="col-12"><label class="form-label">简介</label><textarea id="edit-poi-desc" class="form-control" rows="2"></textarea></div>
                 </div>
 
-                <!-- ★ 子景点管理（仅当类型为"景区"时显示） -->
+                <!-- 浏览路线规划（仅景区显示） -->
+                <div id="tour-route-section" class="hidden">
+                    <hr>
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <h6 class="mb-0"><i class="fas fa-route text-success"></i> 浏览路线规划（推荐路线）</h6>
+                        <button type="button" class="btn btn-sm btn-outline-success" onclick="window.loadSubItemsForRoute()">
+                            <i class="fas fa-sync"></i> 从子项加载
+                        </button>
+                    </div>
+                    <p class="text-secondary small">为游客规划该景区的推荐游览顺序。核心节点会自动按顺序出现，景点/公共场所可选。</p>
+                    <div id="tour-route-list" class="mt-2"></div>
+                    <button type="button" class="btn btn-sm btn-success mt-2" onclick="window.addTourRouteItem()">
+                        <i class="fas fa-plus"></i> 添加路线节点
+                    </button>
+                </div>
+
+                <!-- 子项管理（仅景区显示） -->
                 <div id="sub-poi-section" class="hidden">
                     <hr>
                     <div class="d-flex justify-content-between align-items-center">
-                        <h6 class="mb-0"><i class="fas fa-layer-group text-success"></i> 子景点管理</h6>
+                        <h6 class="mb-0"><i class="fas fa-layer-group text-success"></i> 子项管理</h6>
                         <button type="button" class="btn btn-success btn-sm" onclick="window.showSelectSubPoiModal()">
-                            <i class="fas fa-plus"></i> 从现有POI添加子景点
+                            <i class="fas fa-plus"></i> 从现有POI添加
                         </button>
                     </div>
-                    <p class="text-secondary small mt-2 mb-1">子景点是已经存在的独立景点POI，勾选后自动归入当前景区，无需重复录入数据。</p>
+                    <p class="text-secondary small mt-2 mb-1">核心节点、景点、公共场所均可作为子项。核心节点会默认勾选在游客端规划中。</p>
                     <div id="sub-poi-list" class="mt-2"></div>
                 </div>
-
-                <hr>
-                <div class="d-flex justify-content-between align-items-center">
-                    <h6><i class="fas fa-sitemap text-success"></i> 内部点位（入口/休息区/洗手间等）</h6>
-                    <button class="btn btn-success btn-sm" onclick="window.addNodeField()"><i class="fas fa-plus"></i> 添加点位</button>
-                </div>
-                <div id="edit-nodes-container" class="mt-2"></div>
             </div>
             <div class="modal-footer">
                 <button class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
@@ -187,27 +245,27 @@
     </div>
 </div>
 
-<!-- ★ 模态框：选择子景点 -->
+<!-- 模态框：选择子景点 -->
 <div class="modal fade" id="selectSubPoiModal" tabindex="-1">
     <div class="modal-dialog modal-lg">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title">选择要添加的子景点</h5>
+                <h5 class="modal-title">选择要添加的子项</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
-                <p class="text-secondary small">勾选现有独立景点，点击确定后立即生效。已被其他景区使用的景点不显示。</p>
+                <p class="text-secondary small">勾选现有独立POI（核心节点/景点/公共场所），点击确定后归入当前景区。</p>
                 <div id="sub-poi-select-list" style="max-height: 400px; overflow-y: auto; border: 1px solid #eee; border-radius: 8px; padding: 8px;"></div>
             </div>
             <div class="modal-footer">
                 <button class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
-                <button class="btn btn-success" onclick="window.confirmSubPoiSelection()"><i class="fas fa-check"></i> 确定添加</button>
+                <button class="btn btn-success" onclick="window.confirmSubPoiSelection()"><i class="fas fa-check"></i> 确定</button>
             </div>
         </div>
     </div>
 </div>
 
-<!-- 模态框：编辑景区（scenic 表） -->
+<!-- 模态框：编辑景区（scenic 表，保留原逻辑） -->
 <div class="modal fade" id="scenicModal" tabindex="-1">
     <div class="modal-dialog"><div class="modal-content">
         <div class="modal-header"><h5 class="modal-title">编辑景区</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
@@ -254,10 +312,8 @@
 import { signIn, signOut, getCurrentUser, onAuthStateChange } from './js/auth.js';
 import * as admin from './js/admin.js';
 
-// 显式挂载所有 admin 导出到 window
 Object.assign(window, admin);
 
-// 登录事件
 document.getElementById('loginBtn').addEventListener('click', async () => {
     const email = document.getElementById('email').value.trim();
     const password = document.getElementById('password').value;
@@ -275,10 +331,9 @@ document.getElementById('logoutBtn').addEventListener('click', async () => {
     await signOut();
 });
 
-// Auth 事件去重
 let hasInitialized = false;
 
-onAuthStateChange((event, session) => {
+onAuthStateChange((event) => {
     if (event === 'SIGNED_IN' && !hasInitialized) {
         hasInitialized = true;
         document.getElementById('login-page').classList.add('hidden');
@@ -286,8 +341,8 @@ onAuthStateChange((event, session) => {
         admin.initAdminUI();
     } else if (event === 'SIGNED_OUT') {
         hasInitialized = false;
-        document.getElementById('login-page').classList.remove('hidden');
-        document.getElementById('main').classList.add('hidden');
+        document.getElementById('login-page').classList.add('hidden');
+        document.getElementById('main').classList.remove('hidden');
     }
 });
 

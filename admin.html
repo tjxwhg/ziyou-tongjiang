@@ -46,6 +46,9 @@
         .modal-lg-custom { max-width: 850px; }
         .route-item { display: flex; align-items: center; gap: 8px; padding: 6px; background: #f8f9fa; border-radius: 6px; margin-bottom: 4px; }
         .route-item .route-order { width: 30px; text-align: center; font-weight: 600; color: #1b5e20; }
+        .subtype-checkbox-group { display: flex; flex-wrap: wrap; gap: 12px; padding: 6px 10px; border: 1px solid #ddd; border-radius: 6px; background: #fff; }
+        .subtype-checkbox-group .form-check { margin: 0; }
+        .subtype-checkbox-group .form-check-label { cursor: pointer; }
         @media (max-width: 768px) { .header { flex-direction: column; gap: 8px; } }
     </style>
 </head>
@@ -148,18 +151,30 @@
                         </select>
                     </div>
 
-                    <!-- ★ 公共场所子类型（facility 显示） -->
-                    <div class="col-6 hidden" id="field-facility-subtype">
-                        <label class="form-label">公共场所子类型 <span class="text-danger">*</span></label>
-                        <select id="edit-poi-facility-subtype" class="form-select">
-                            <option value="restaurant">🍽️ 餐厅</option>
-                            <option value="hotel">🏨 住宿</option>
-                            <option value="shopping">🛍️ 购物</option>
-                            <option value="service">🚻 服务设施（停车场/厕所/医院等）</option>
-                        </select>
+                    <!-- ★ 公共场所子类型（多选复选框） -->
+                    <div class="col-12 hidden" id="field-facility-subtype">
+                        <label class="form-label">公共场所子类型 <span class="text-danger">*</span> <span class="text-secondary" style="font-weight:400;font-size:12px;">（可多选，如民宿同时提供餐饮和住宿）</span></label>
+                        <div class="subtype-checkbox-group">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="subtype-restaurant" value="restaurant">
+                                <label class="form-check-label" for="subtype-restaurant">🍽️ 餐厅</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="subtype-hotel" value="hotel">
+                                <label class="form-check-label" for="subtype-hotel">🏨 住宿</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="subtype-shopping" value="shopping">
+                                <label class="form-check-label" for="subtype-shopping">🛍️ 购物</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="subtype-service" value="service">
+                                <label class="form-check-label" for="subtype-service">🚻 服务设施</label>
+                            </div>
+                        </div>
                     </div>
                     
-                    <!-- 所属景区（core_node/spot 显示） -->
+                    <!-- 所属景区 -->
                     <div class="col-6 hidden" id="field-parent">
                         <label class="form-label">所属景区 <span class="text-danger" id="parent-required">*</span></label>
                         <select id="edit-poi-parent" class="form-select">
@@ -173,13 +188,13 @@
                     <div class="col-6"><label class="form-label">开放时间</label><input type="time" id="edit-poi-open" class="form-control" value="08:00"></div>
                     <div class="col-6"><label class="form-label">闭馆时间</label><input type="time" id="edit-poi-close" class="form-control" value="18:00"></div>
                     
-                    <!-- 游览时长（核心节点/景点显示） -->
+                    <!-- 游览时长 -->
                     <div class="col-6" id="field-duration">
                         <label class="form-label">游览时长(分钟)</label>
                         <input type="number" id="edit-poi-visit" class="form-control" placeholder="含观赏+移动时间">
                     </div>
                     
-                    <!-- 经典景点（景点显示） -->
+                    <!-- 经典景点 -->
                     <div class="col-6 hidden" id="field-featured">
                         <label class="form-label">经典景点标记</label>
                         <div class="form-check mt-2">

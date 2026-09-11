@@ -265,6 +265,7 @@
         .trip-node.type-weather::before { border-color: #00BCD4; background: #00BCD4; }
         .trip-node.type-reminder::before { border-color: #C62828; background: #C62828; }
         .trip-node.type-waiting::before { border-color: #FF6F00; background: #FF6F00; }
+        .trip-node.type-rest::before { border-color: #8D6E63; background: #8D6E63; }
 
         .trip-node .icon-transport { color: #1565C0; }
         .trip-node .icon-visit { color: #2E7D32; }
@@ -273,6 +274,7 @@
         .trip-node .icon-weather { color: #00BCD4; }
         .trip-node .icon-reminder { color: #C62828; }
         .trip-node .icon-waiting { color: #FF6F00; }
+        .trip-node .icon-rest { color: #8D6E63; }
         .trip-node .weather-text { color: #0D47A1; font-weight: 500; }
         .trip-node .reminder-text { color: #C62828; font-weight: 500; background: #ffebee; padding: 2px 10px; border-radius: 12px; }
 
@@ -386,19 +388,30 @@
             <div class="row g-2 mt-2">
                 <div class="col-6"><label class="form-label fw-semibold">出发日期</label><input type="date" id="planStartDate" class="form-control" /></div>
                 <div class="col-6"><label class="form-label fw-semibold">出发时间</label><select id="planStartTime" class="form-select"></select></div>
+
+                <!-- ★ 新增：出发地点 -->
+                <div class="col-12">
+                    <label class="form-label fw-semibold">出发地点 <span class="text-secondary" style="font-weight:400;font-size:13px;">（仅第1天生效）</span></label>
+                    <select id="planStartLocation" class="form-select">
+                        <option value="county">红军广场（县城）</option>
+                    </select>
+                </div>
+
+                <!-- ★ 顺序调整：住宿地点 在 行程风格 之前 -->
+                <div class="col-12">
+                    <label class="form-label fw-semibold">住宿地点</label>
+                    <select id="planLodging" class="form-select">
+                        <option value="all" selected>全部（智能决定）</option>
+                        <option value="county">县城（每天返回县城）</option>
+                    </select>
+                </div>
+
                 <div class="col-12">
                     <label class="form-label fw-semibold">行程风格</label>
                     <select id="planStyle" class="form-select">
                         <option value="compact">🚀 紧凑型</option>
                         <option value="relaxed" selected>🌿 舒适型</option>
                         <option value="indepth">🔍 深度游</option>
-                    </select>
-                </div>
-                <div class="col-12">
-                    <label class="form-label fw-semibold">住宿地点</label>
-                    <select id="planLodging" class="form-select">
-                        <option value="all" selected>全部（智能决定）</option>
-                        <option value="county">县城（每天返回县城）</option>
                     </select>
                 </div>
             </div>
@@ -507,7 +520,7 @@
 
 <script type="module">
 // =============================================================
-// 主入口 - 完整优化版
+// 主入口 - 完整优化版（新增出发地点）
 // =============================================================
 import {
     getPois, getMerchantsByPoi, getMerchantByPoi, getTransportPresets,
@@ -646,6 +659,26 @@ function setDefaultStartTime() {
     if (dateInput) dateInput.value = now.toISOString().slice(0, 10);
 }
 
+// ===== ★ 初始化出发地点下拉 =====
+function initStartLocationSelect(pois) {
+    const sel = document.getElementById('planStartLocation');
+    if (!sel) return;
+    sel.innerHTML = '<option value="county">红军广场（县城）</option>';
+
+    // 只显示：景区类型（type='scenic'）或 住宿分类的 POI
+    const candidates = pois.filter(p => {
+        if (p.parent_id) return false;
+        if (p.type === 'scenic') return true;
+        if (p.category && p.category.includes('住宿')) return true;
+        return false;
+    });
+
+    candidates.forEach(p => {
+        const icon = p.type === 'scenic' ? '🏞️' : '🏨';
+        sel.innerHTML += `<option value="${p.id}">${icon} ${p.name}</option>`;
+    });
+}
+
 // ===== 加载内部节点（并行 + 缓存） =====
 async function loadPoiNodes(poiIds) {
     const promises = poiIds.map(async (id) => {
@@ -664,7 +697,7 @@ async function loadPoiNodes(poiIds) {
     results.forEach(r => { allPoiNodesMap[r.id] = r.nodes; });
 }
 
-// ===== 渲染景点选择列表（★ 景区类默认展开，其他默认折叠） =====
+// ===== 渲染景点选择列表（景区类默认展开，其他默认折叠） =====
 function renderPoiSelection(pois) {
     const container = document.getElementById('poiSelectContainer');
     if (!container) return;
@@ -673,9 +706,12 @@ function renderPoiSelection(pois) {
         return;
     }
 
+    // 只显示顶层 POI（不显示子景点作为独立选项）
+    const topPois = pois.filter(p => !p.parent_id);
+
     const categories = {};
     const categoryOrder = ['自然景区', '红色景区', '文博场馆', '餐饮住宿', '交通枢纽', '游玩娱乐', '购物消费', '公共服务', '其他'];
-    pois.forEach(p => {
+    topPois.forEach(p => {
         const cat = p.category ? p.category.split(',')[0].trim() : '其他';
         if (!categories[cat]) categories[cat] = [];
         categories[cat].push(p);
@@ -696,7 +732,7 @@ function renderPoiSelection(pois) {
         const mainItems = items.filter(p => !p.parent_id);
         if (mainItems.length === 0) return;
 
-        // ★ 景区类默认展开，其他默认折叠
+        // 景区类默认展开，其他默认折叠
         const isScenicCategory = ['自然景区', '红色景区', '文博场馆'].includes(cat);
         const contentHiddenClass = isScenicCategory ? '' : 'hidden';
 
@@ -708,11 +744,12 @@ function renderPoiSelection(pois) {
             const hasChildren = childrenMap[p.id] && childrenMap[p.id].length > 0;
             const isChecked = selectedPoiIds.has(String(p.id));
             const dur = p.visit_duration || 0;
+            const isScenic = p.type === 'scenic' || hasChildren;
 
             html += `<div class="poi-item" data-poi-id="${p.id}">`;
             html += `<div class="poi-name" onclick="window.togglePoiChildren('${p.id}')">`;
             html += `<input type="checkbox" ${isChecked ? 'checked' : ''} onclick="event.stopPropagation(); window.togglePoiSelection('${p.id}')">`;
-            html += `<span>${p.name}</span>`;
+            html += `<span>${isScenic ? '🏞️ ' : ''}${p.name}</span>`;
             html += `<span class="poi-duration-badge">${dur}分钟</span>`;
             if (hasChildren) html += `<span class="text-secondary" style="font-size:12px;"> (${childrenMap[p.id].length}个子景点)</span>`;
             html += `</div>`;
@@ -866,6 +903,7 @@ window.generatePlans = async function() {
     const startTime = document.getElementById('planStartTime').value;
     const mode = document.getElementById('planStyle').value;
     const lodgingMode = document.getElementById('planLodging')?.value || 'all';
+    const startLocation = document.getElementById('planStartLocation')?.value || 'county';
 
     if (!startDate) { alert('请选择出发日期'); return; }
     if (selectedPoiOrder.length === 0) { alert('请至少选择一个景点'); return; }
@@ -895,7 +933,7 @@ window.generatePlans = async function() {
 
         const result = await generateTripPlan(
             selectedPois, startDate, startTime, mode,
-            travelTimes, allPoiNodesMap, accommodationPois, lodgingMode
+            travelTimes, allPoiNodesMap, accommodationPois, lodgingMode, startLocation
         );
 
         if (!result.days || result.days.length === 0) {
@@ -927,7 +965,7 @@ window.generatePlans = async function() {
 // ===== 渲染单个节点 HTML =====
 function renderTripNodeHtml(node) {
     const typeClass = node.type || 'other';
-    const iconMap = { transport: '🚗', visit: '📍', meal: '🍽️', accommodation: '🏨', weather: '🌤️', reminder: '⚠️', waiting: '⏳' };
+    const iconMap = { transport: '🚗', visit: '📍', meal: '🍽️', accommodation: '🏨', weather: '🌤️', reminder: '⚠️', waiting: '⏳', rest: '☕' };
     const icon = iconMap[typeClass] || '•';
 
     if (typeClass === 'weather' || typeClass === 'reminder' || typeClass === 'accommodation') {
@@ -957,6 +995,8 @@ function renderTripNodeHtml(node) {
         content = `${node.name || '就餐'} ${node.duration ? `<span class="node-duration">${node.duration}分钟</span>` : ''}`;
     } else if (node.type === 'waiting') {
         content = `${node.name || '等待'} ${node.duration ? `<span class="node-duration">${node.duration}分钟</span>` : ''}`;
+    } else if (node.type === 'rest') {
+        content = `${node.name || '休息调整'} ${node.duration ? `<span class="node-duration">${node.duration}分钟</span>` : ''}`;
     } else {
         content = node.name || '未知节点';
     }
@@ -1006,6 +1046,7 @@ window.regenerateTrip = async function() {
     const startTime = document.getElementById('planStartTime').value;
     const mode = document.getElementById('planStyle').value;
     const lodgingMode = document.getElementById('planLodging')?.value || 'all';
+    const startLocation = document.getElementById('planStartLocation')?.value || 'county';
 
     if (!startDate) { alert('请选择出发日期'); return; }
     if (selectedPoiOrder.length === 0) { alert('请至少选择一个景点'); return; }
@@ -1035,7 +1076,7 @@ window.regenerateTrip = async function() {
 
         const result = await generateTripPlan(
             selectedPois, startDate, startTime, mode,
-            travelTimes, allPoiNodesMap, accommodationPois, lodgingMode
+            travelTimes, allPoiNodesMap, accommodationPois, lodgingMode, startLocation
         );
 
         if (!result.days || result.days.length === 0) {
@@ -1209,7 +1250,6 @@ window.deleteReservationHandler = async function(id) {
     }
 };
 
-// 提交预约
 window.submitReservation = async function(merchantId, merchantName, category) {
     const date = document.getElementById(`res-date-${merchantId}`).value;
     const timeRange = document.getElementById(`res-time-${merchantId}`).value;
@@ -1529,6 +1569,7 @@ async function init() {
         loadPoisToMap(pois);
 
         initTimeSelectors();
+        initStartLocationSelect(pois);   // ★ 初始化出发地点
         renderPoiSelection(pois);
         renderSelectedOrder();
         loadPreferences();

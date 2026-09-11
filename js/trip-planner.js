@@ -1,12 +1,10 @@
-// js/trip-planner.js - 智能行程规划引擎（最终修复版 v7）
+// js/trip-planner.js - 智能行程规划引擎（修复：交通提醒合并）
 import { formatTime, timeToMinutes, getDistance, fetchWeatherForecast } from './utils.js';
 import {
     DAY_START, PLAN_CUTOFF, VISIT_END,
     LUNCH_START, LUNCH_END, DINNER_START, DINNER_END,
-    MEAL_DURATION, MAX_RETURN_TIME, MIN_SEGMENT
+    MEAL_DURATION, MAX_RETURN_TIME, MIN_SEGMENT, MIN_REST_DURATION
 } from './config.js';
-
-const MIN_REST_DURATION = 10;   // 休息调整节点最小显示时长
 
 export class TripPlanner {
     constructor(pois, startDate, startTime, mode, travelTimes, poiNodesMap, accommodationPois, lodgingMode = 'all', startLocation = 'county') {
@@ -53,7 +51,6 @@ export class TripPlanner {
             let processedCount = 0;
             const MAX_PER_DAY = 15;
 
-            // ============ 当天内层循环 ============
             while (queue.length > 0 && this.currentTime < VISIT_END && processedCount < MAX_PER_DAY) {
                 processedCount++;
                 const item = queue.shift();
@@ -122,10 +119,8 @@ export class TripPlanner {
 
                 dayHasContent = true;
 
-                // L4 场景
                 this.checkPreVisitRestOrMeal();
 
-                // 游览循环
                 let remaining = totalDuration;
                 while (remaining > 0 && this.currentTime < VISIT_END) {
                     let meal = null;
@@ -176,7 +171,6 @@ export class TripPlanner {
                     remaining -= maxContinuous;
                 }
 
-                // 处理剩余时间
                 if (remaining > 0) {
                     if (remaining >= 60) {
                         this.warnings.push(`⏳ ${poi.name} 剩余 ${remaining} 分钟游览时间，将顺延至明天。`);
@@ -214,7 +208,6 @@ export class TripPlanner {
                 }
             }
 
-            // ============ 当天收尾 ============
             if (!dayHasContent && this.dayNodes.length === 0) {
                 if (queue.length > 0) {
                     this.advanceToNextDay(false);
@@ -224,18 +217,15 @@ export class TripPlanner {
                 }
             }
 
-            // 跨天顺延：直接进入下一天
             if (overnightAtScenic) {
                 this.closeDay();
                 this.advanceToNextDay(true);
                 continue;
             }
 
-            // ★ 判断是否所有景点已完成
             const allPoisDone = queue.length === 0;
 
             if (allPoisDone) {
-                // 返回县城（不插餐食、不插休息）
                 if (this.lastPoiId !== 'county' && this.lastPoiId) {
                     const returnTravel = this.getTravelTime(this.lastPoiId, 'county');
                     if (returnTravel > 0 && returnTravel <= MAX_RETURN_TIME && returnTravel > 10) {
@@ -254,7 +244,6 @@ export class TripPlanner {
                     this.lastPoiId = 'county';
                 }
 
-                // 插入"整个行程规划结束"
                 this.addNode({
                     type: 'trip_end',
                     name: '整个行程规划结束',
@@ -263,10 +252,9 @@ export class TripPlanner {
                 });
 
                 this.closeDay();
-                break;   // 全部结束，退出主循环
+                break;
             }
 
-            // 未完成全部景点：正常收尾
             this.handleReturnToCounty();
             this.ensureTwoMeals();
 
@@ -300,7 +288,6 @@ export class TripPlanner {
         };
     }
 
-    // L4 场景检查
     checkPreVisitRestOrMeal() {
         let nextWindow = null;
         let windowType = null;
@@ -326,7 +313,6 @@ export class TripPlanner {
         }
     }
 
-    // 返回县城（分档处理）
     handleReturnToCounty() {
         if (this.lastPoiId === 'county' || !this.lastPoiId) return;
 
@@ -402,7 +388,6 @@ export class TripPlanner {
         }
     }
 
-    // 每天两餐保障
     ensureTwoMeals() {
         if (!this.lunchInserted && this.currentTime >= LUNCH_START && this.currentTime < LUNCH_END) {
             this.insertMeal('lunch');
@@ -480,10 +465,9 @@ export class TripPlanner {
         return null;
     }
 
-    // ★ 插入休息调整节点（<10分钟不显示）
     addRestNode(startTime, endTime) {
         const duration = endTime - startTime;
-        if (duration < MIN_REST_DURATION) return;   // ★ 少于10分钟不插入
+        if (duration < MIN_REST_DURATION) return;
         this.addNode({
             type: 'rest',
             name: '休息调整',
@@ -547,10 +531,7 @@ export class TripPlanner {
     }
 
     calculateTotalDuration(poi) {
-        const nodes = this.selectNodes(poi);
-        if (!nodes || nodes.length === 0) return poi.visit_duration || 60;
-        const total = nodes.reduce((sum, n) => sum + (n.suggested_duration_min || 0), 0);
-        return total > 0 ? total : (poi.visit_duration || 60);
+        return poi.visit_duration || 60;
     }
 
     getPoiName(id) {
@@ -581,27 +562,7 @@ export class TripPlanner {
         return t;
     }
 
-    selectNodes(poi) {
-        if (!poi || !poi.id) return null;
-        const nodes = this.poiNodesMap[poi.id] || [];
-        if (this.mode === 'compact') {
-            const core = nodes.filter(n => n.node_type === 'core_view');
-            if (core.length > 0) return core;
-            const others = nodes.filter(n => !['rest_area', 'wc'].includes(n.node_type));
-            return others.length > 0 ? others : null;
-        } else if (this.mode === 'relaxed') {
-            const core = nodes.filter(n => n.node_type === 'core_view');
-            const others = nodes.filter(n => n.node_type !== 'core_view' && !['rest_area', 'wc'].includes(n.node_type));
-            const selectedOthers = [];
-            for (let i = 0; i < Math.min(2, others.length); i++) selectedOthers.push(others[i]);
-            const result = [...core, ...selectedOthers];
-            return result.length > 0 ? result : null;
-        } else {
-            const filtered = nodes.filter(n => !['rest_area', 'wc'].includes(n.node_type));
-            return filtered.length > 0 ? filtered : null;
-        }
-    }
-
+    // ★ 交通提醒合并
     addReminders() {
         if (this.weatherData && this.weatherData.length > 0) {
             for (let i = 0; i < this.allDays.length; i++) {
@@ -622,9 +583,20 @@ export class TripPlanner {
                 }
                 if (node.type === 'visit') dailyVisit += node.duration || 0;
             }
-            if (singleLongTravel) day.nodes.push({ type: 'reminder', message: '本段交通较长（超过2小时），请准备休息' });
-            if (dailyTravel > 180) day.nodes.push({ type: 'reminder', message: '今日交通较多（累计超过3小时），建议途中适当休息' });
-            if (dailyVisit > 300) day.nodes.push({ type: 'reminder', message: '今日游览时间较长（超过5小时），注意体力' });
+
+            // ★ 合并后的交通提醒（3 种情形只输出 1 条）
+            const isTrafficLong = dailyTravel > 180;
+            if (singleLongTravel && isTrafficLong) {
+                day.nodes.push({ type: 'reminder', message: '本段交通较长（单次超过2小时，累计超过3小时），建议途中适当休息' });
+            } else if (singleLongTravel) {
+                day.nodes.push({ type: 'reminder', message: '本段交通较长（单次超过2小时），建议途中适当休息' });
+            } else if (isTrafficLong) {
+                day.nodes.push({ type: 'reminder', message: '今日交通较多（累计超过3小时），建议途中适当休息' });
+            }
+
+            if (dailyVisit > 300) {
+                day.nodes.push({ type: 'reminder', message: '今日游览时间较长（超过5小时），注意体力' });
+            }
         }
     }
 

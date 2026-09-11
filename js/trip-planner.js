@@ -1,9 +1,13 @@
-// js/trip-planner.js - 智能行程规划引擎（优化版 v5）
+// js/trip-planner.js - 智能行程规划引擎（最终修复版 v6）
 import { formatTime, timeToMinutes, getDistance, fetchWeatherForecast } from './utils.js';
-import { DAY_START, DAY_END, LUNCH_START, LUNCH_END, DINNER_START, DINNER_END, MEAL_DURATION } from './config.js';
+import {
+    DAY_START, PLAN_CUTOFF, VISIT_END,
+    LUNCH_START, LUNCH_END, DINNER_START, DINNER_END,
+    MEAL_DURATION, MAX_RETURN_TIME, MIN_SEGMENT
+} from './config.js';
 
 export class TripPlanner {
-    constructor(pois, startDate, startTime, mode, travelTimes, poiNodesMap, accommodationPois, lodgingMode = 'all') {
+    constructor(pois, startDate, startTime, mode, travelTimes, poiNodesMap, accommodationPois, lodgingMode = 'all', startLocation = 'county') {
         this.pois = pois || [];
         this.startDate = startDate || new Date().toISOString().slice(0, 10);
         this.startTime = startTime || '08:00';
@@ -12,11 +16,12 @@ export class TripPlanner {
         this.poiNodesMap = poiNodesMap || {};
         this.accommodationPois = accommodationPois || [];
         this.lodgingMode = lodgingMode;
+        this.startLocation = startLocation;
 
         this.currentDate = new Date(this.startDate);
         this.currentTime = timeToMinutes(this.startTime);
         this.currentDay = 1;
-        this.lastPoiId = 'county';
+        this.lastPoiId = this.startLocation;
         this.dayNodes = [];
         this.allDays = [];
         this.warnings = [];
@@ -25,14 +30,15 @@ export class TripPlanner {
         this.totalVisitMinutes = 0;
         this.totalWaitingMinutes = 0;
         this.maxDays = 8;
+
         this.accommodationPoiMap = {};
         this.accommodationPois.forEach(p => { if (p && p.id) this.accommodationPoiMap[p.id] = p; });
         this.poiMap = {};
         this.pois.forEach(p => { if (p && p.id) this.poiMap[p.id] = p; });
         this.poiMap['county'] = { id: 'county', name: '红军广场', lat: 31.911705, lng: 107.245033 };
+
         this.lunchInserted = false;
         this.dinnerInserted = false;
-        this.MIN_SEGMENT = 30;
     }
 
     async plan() {
@@ -45,40 +51,38 @@ export class TripPlanner {
             let processedCount = 0;
             const MAX_PER_DAY = 15;
 
-            while (queue.length > 0 && this.currentTime < DAY_END && processedCount < MAX_PER_DAY) {
+            // ============ 当天内层循环（可连续游览多个景点） ============
+            while (queue.length > 0 && this.currentTime < VISIT_END && processedCount < MAX_PER_DAY) {
                 processedCount++;
                 const item = queue.shift();
                 const poi = item.poi;
                 if (!poi || !poi.id) continue;
 
+                // 计算交通耗时
                 const travel = this.getTravelTime(this.lastPoiId, poi.id);
                 if (travel === 0 && this.lastPoiId !== poi.id) {
                     this.warnings.push(`⚠️ 从 ${this.getPoiName(this.lastPoiId)} 到 ${poi.name} 交通耗时数据缺失，跳过该景点。`);
                     continue;
                 }
-                if (travel > 180) {
-                    this.warnings.push(`❌ 从 ${this.getPoiName(this.lastPoiId)} 到 ${poi.name} 交通耗时 ${travel} 分钟，超过 180 分钟限制。`);
+                if (travel > MAX_RETURN_TIME) {
+                    this.warnings.push(`❌ 从 ${this.getPoiName(this.lastPoiId)} 到 ${poi.name} 交通耗时 ${travel} 分钟，超过 ${MAX_RETURN_TIME} 分钟限制。`);
                     continue;
                 }
 
                 const arrivalTime = this.currentTime + travel;
 
-                // 规则4：17:00 后不规划新景点
-                if (arrivalTime >= 1020) {
+                // 规则：规划截止 17:00
+                if (arrivalTime >= PLAN_CUTOFF) {
                     this.warnings.push(`⏰ 到达 ${poi.name} 时间 ${formatTime(arrivalTime)} 已超过17:00，该景点移到明天。`);
                     queue.unshift(item);
                     break;
                 }
 
-                // 规则10：到达时间 >= 18:00
-                if (arrivalTime >= DAY_END) {
+                // 规则：游览截止 18:00
+                if (arrivalTime >= VISIT_END) {
                     queue.unshift(item);
                     break;
                 }
-
-                // 规则9：到达早于 08:00 —— 记录等待标记，不单独插入节点
-                const needWaitOpen = arrivalTime < DAY_START;
-                const waitMinutes = needWaitOpen ? (DAY_START - arrivalTime) : 0;
 
                 // 计算总游览时长
                 let totalDuration;
@@ -88,11 +92,10 @@ export class TripPlanner {
                     totalDuration = this.calculateTotalDuration(poi);
                 }
 
-                // 县城模式预检查
+                // 县城模式预检查（到达时间 + 游览时长 > 18:00 → 移至次日）
                 if (this.lodgingMode === 'county') {
-                    const arrival = this.currentTime + travel;
-                    const estimatedEnd = arrival + totalDuration;
-                    if (estimatedEnd > DAY_END) {
+                    const estimatedEnd = arrivalTime + totalDuration;
+                    if (estimatedEnd > VISIT_END) {
                         queue.unshift(item);
                         this.warnings.push(`📌 因选择县城住宿，${poi.name} 今日时间不足，已移至次日。`);
                         this.addNode({
@@ -103,40 +106,34 @@ export class TripPlanner {
                     }
                 }
 
-                // 插入交通节点（规则9：追加"等待景区开放"）
+                // 插入交通节点
                 if (travel > 0) {
-                    const fromName = this.getPoiName(this.lastPoiId);
                     const travelStart = this.currentTime;
-                    let transportName = `前往 ${poi.name}`;
-                    if (needWaitOpen) {
-                        transportName += `，等待景区开放`;
-                    }
                     this.addNode({
                         type: 'transport',
-                        name: transportName,
+                        name: `前往 ${poi.name}`,
                         startTime: this.currentTime,
                         endTime: this.currentTime + travel,
                         duration: travel,
-                        from: fromName,
+                        from: this.getPoiName(this.lastPoiId),
                         to: poi.name
                     });
                     this.totalTravelMinutes += travel;
                     this.currentTime += travel;
                     this.lastPoiId = poi.id;
+                    // 交通后立即检查餐食（L1/L2/L3、D1/D2/D3）
                     this.checkAndInsertMealAfterTransport(travelStart, this.currentTime);
-                }
-
-                // 规则9：等待景区开放，将当前时间拨到 08:00，中间时间不显示
-                if (needWaitOpen && this.currentTime < DAY_START) {
-                    this.addWaiting(this.DAY_START - this.currentTime);
-                    this.currentTime = DAY_START;
                 }
 
                 dayHasContent = true;
 
-                // 游览循环
+                // 检查"到达景区距下一个未触发餐食窗口 <45 分钟"（L4 场景）
+                this.checkPreVisitRestOrMeal();
+
+                // ============ 游览循环 ============
                 let remaining = totalDuration;
-                while (remaining > 0 && this.currentTime < DAY_END) {
+                while (remaining > 0 && this.currentTime < VISIT_END) {
+                    // 判断当前是否在餐食窗口内
                     let meal = null;
                     if (!this.lunchInserted && this.currentTime >= LUNCH_START && this.currentTime < LUNCH_END) {
                         meal = 'lunch';
@@ -145,23 +142,27 @@ export class TripPlanner {
                     }
 
                     if (meal) {
-                        if (remaining < this.MIN_SEGMENT) {
+                        if (remaining < MIN_SEGMENT) {
+                            // L7：剩余<45，直接游览完（选项A）
+                            const visitEndTime = this.currentTime + remaining;
                             this.addVisitNode(poi, this.currentTime, remaining, totalDuration, 0);
-                            this.currentTime += remaining;
+                            this.currentTime = visitEndTime;
                             remaining = 0;
+                            // 检查游览完后是否仍在窗口内
+                            if (meal === 'lunch' && this.currentTime < LUNCH_END && this.currentTime >= LUNCH_START) {
+                                this.insertMeal('lunch');
+                            } else if (meal === 'dinner' && this.currentTime < DINNER_END && this.currentTime >= DINNER_START) {
+                                this.insertMeal('dinner');
+                            }
                             break;
                         } else {
-                            const mealNode = this.createMealNode(meal, this.currentTime);
-                            if (mealNode) {
-                                this.addNode(mealNode);
-                                this.currentTime = mealNode.endTime;
-                                if (meal === 'lunch') this.lunchInserted = true;
-                                if (meal === 'dinner') this.dinnerInserted = true;
-                            }
+                            // 正常插餐
+                            this.insertMeal(meal);
                             continue;
                         }
                     }
 
+                    // 计算可连续游览时长
                     let nextMealStart = Infinity;
                     if (!this.lunchInserted && this.currentTime < LUNCH_START) {
                         nextMealStart = LUNCH_START;
@@ -175,20 +176,33 @@ export class TripPlanner {
                         const gap = nextMealStart - this.currentTime;
                         if (gap < maxContinuous) maxContinuous = gap;
                     }
-                    if (this.currentTime + maxContinuous > DAY_END) {
-                        maxContinuous = DAY_END - this.currentTime;
+                    // 不超过 VISIT_END (18:00)
+                    if (this.currentTime + maxContinuous > VISIT_END) {
+                        maxContinuous = VISIT_END - this.currentTime;
                     }
                     if (maxContinuous <= 0) break;
-                    if (remaining < this.MIN_SEGMENT) maxContinuous = remaining;
 
                     this.addVisitNode(poi, this.currentTime, maxContinuous, totalDuration, remaining - maxContinuous);
                     this.currentTime += maxContinuous;
                     remaining -= maxContinuous;
                 }
 
+                // ============ 处理剩余时间 ============
                 if (remaining > 0) {
                     if (remaining >= 60) {
+                        // 跨天顺延
                         this.warnings.push(`⏳ ${poi.name} 剩余 ${remaining} 分钟游览时间，将顺延至明天。`);
+
+                        // 先插入晚餐（18:00-19:00）
+                        if (!this.dinnerInserted) {
+                            if (this.currentTime < DINNER_START) {
+                                this.addRestNode(this.currentTime, DINNER_START);
+                                this.currentTime = DINNER_START;
+                            }
+                            this.insertMeal('dinner');
+                        }
+
+                        // 住宿景区附近
                         this.addNode({
                             type: 'accommodation',
                             name: `今天行程结束，建议在 ${poi.name} 附近住宿`,
@@ -201,19 +215,23 @@ export class TripPlanner {
                         overnightAtScenic = true;
                         break;
                     } else {
+                        // 剩余<60，丢弃
                         this.warnings.push(`⏳ ${poi.name} 剩余 ${remaining} 分钟游览时间（<60），自动丢弃。`);
                         remaining = 0;
                     }
                 }
 
+                // 游览完成
                 if (remaining === 0) {
                     this.lastPoiId = poi.id;
+                    // 队列非空时，先检查餐食（若在窗口内）
                     if (queue.length > 0) {
                         this.checkAndInsertMealAfterVisit();
                     }
                 }
             }
 
+            // ============ 当天收尾 ============
             if (!dayHasContent && this.dayNodes.length === 0) {
                 if (queue.length > 0) {
                     this.advanceToNextDay(false);
@@ -223,46 +241,24 @@ export class TripPlanner {
                 }
             }
 
+            // 跨天顺延：直接进入下一天
             if (overnightAtScenic) {
                 this.closeDay();
                 this.advanceToNextDay(true);
                 continue;
             }
 
-            // 先返回县城，再检查餐食
-            if (this.lastPoiId !== 'county') {
-                const returnTravel = this.getTravelTime(this.lastPoiId, 'county');
-                if (returnTravel > 0 && returnTravel <= 180) {
-                    const travelStart = this.currentTime;
-                    this.addNode({
-                        type: 'transport',
-                        name: '返回县城',
-                        startTime: this.currentTime,
-                        endTime: this.currentTime + returnTravel,
-                        duration: returnTravel,
-                        from: this.getPoiName(this.lastPoiId),
-                        to: '红军广场'
-                    });
-                    this.totalTravelMinutes += returnTravel;
-                    this.currentTime += returnTravel;
-                    this.lastPoiId = 'county';
-                    this.checkAndInsertMealAfterTransport(travelStart, this.currentTime);
-                } else if (returnTravel > 180) {
-                    this.warnings.push(`返回县城交通耗时 ${returnTravel} 分钟超过限制。`);
-                }
-            }
+            // 返回县城（分档处理）
+            this.handleReturnToCounty();
 
-            this.checkAndInsertMealAfterVisit();
+            // 每天两餐保障（行程提前结束的场景）
+            this.ensureTwoMeals();
 
-            const isLate = this.currentTime > 1080;
-            let accName = isLate ? '今天行程结束，住宿休息' : '今天行程结束';
-            if (this.lastPoiId !== 'county') {
-                const nearestAcc = this.findNearestAccommodation(this.lastPoiId);
-                if (nearestAcc) accName += `（${nearestAcc.name}）`;
-            }
+            // 住宿节点
+            const isLate = this.currentTime > VISIT_END;
             this.addNode({
                 type: 'accommodation',
-                name: accName,
+                name: isLate ? '今天行程结束，住宿休息' : '今天行程结束',
                 startTime: this.currentTime,
                 endTime: this.currentTime + 1,
                 location: ''
@@ -289,11 +285,248 @@ export class TripPlanner {
         };
     }
 
-    calculateTotalDuration(poi) {
-        const nodes = this.selectNodes(poi);
-        if (!nodes || nodes.length === 0) return poi.visit_duration || 60;
-        const total = nodes.reduce((sum, n) => sum + (n.suggested_duration_min || 0), 0);
-        return total > 0 ? total : (poi.visit_duration || 60);
+    // ============================================================
+    // 核心辅助：L4 场景检查（到达景区距下一个餐食窗口 <45 分钟）
+    // ============================================================
+    checkPreVisitRestOrMeal() {
+        // 找出下一个未触发的餐食窗口
+        let nextWindow = null;
+        let windowType = null;
+
+        if (!this.lunchInserted && this.currentTime < LUNCH_START) {
+            nextWindow = LUNCH_START;
+            windowType = 'lunch';
+        }
+        if (!this.dinnerInserted && this.currentTime < DINNER_START) {
+            if (nextWindow === null || DINNER_START < nextWindow) {
+                nextWindow = DINNER_START;
+                windowType = 'dinner';
+            }
+        }
+
+        if (nextWindow === null) return;
+
+        const timeToWindow = nextWindow - this.currentTime;
+        if (timeToWindow > 0 && timeToWindow < MIN_SEGMENT) {
+            // 插入"休息调整"节点
+            this.addRestNode(this.currentTime, nextWindow);
+            this.currentTime = nextWindow;
+            // 插入餐食
+            this.insertMeal(windowType);
+        }
+    }
+
+    // ============================================================
+    // 返回县城（分档处理）
+    // ============================================================
+    handleReturnToCounty() {
+        if (this.lastPoiId === 'county' || !this.lastPoiId) return;
+
+        const returnTravel = this.getTravelTime(this.lastPoiId, 'county');
+        if (returnTravel <= 0 || returnTravel > MAX_RETURN_TIME) {
+            if (returnTravel > MAX_RETURN_TIME) {
+                this.warnings.push(`返回县城交通耗时 ${returnTravel} 分钟超过限制。`);
+            }
+            this.lastPoiId = 'county';
+            return;
+        }
+
+        // 0-10 分钟：不插交通，仅插餐食（默认游客自行返回）
+        if (returnTravel <= 10) {
+            this.lastPoiId = 'county';
+            this.checkAndInsertMealAfterVisit();
+            return;
+        }
+
+        // 10-60 分钟：先交通，后餐食
+        if (returnTravel <= 60) {
+            const travelStart = this.currentTime;
+            this.addNode({
+                type: 'transport',
+                name: '返回县城',
+                startTime: this.currentTime,
+                endTime: this.currentTime + returnTravel,
+                duration: returnTravel,
+                from: this.getPoiName(this.lastPoiId),
+                to: '红军广场'
+            });
+            this.totalTravelMinutes += returnTravel;
+            this.currentTime += returnTravel;
+            this.lastPoiId = 'county';
+            this.checkAndInsertMealAfterTransport(travelStart, this.currentTime);
+            return;
+        }
+
+        // >60 分钟：判断边界
+        const estimatedArrival = this.currentTime + returnTravel;
+        if (estimatedArrival < DINNER_END) {
+            // 结束+交通 < 19:00，先交通后餐食
+            const travelStart = this.currentTime;
+            this.addNode({
+                type: 'transport',
+                name: '返回县城',
+                startTime: this.currentTime,
+                endTime: this.currentTime + returnTravel,
+                duration: returnTravel,
+                from: this.getPoiName(this.lastPoiId),
+                to: '红军广场'
+            });
+            this.totalTravelMinutes += returnTravel;
+            this.currentTime += returnTravel;
+            this.lastPoiId = 'county';
+            this.checkAndInsertMealAfterTransport(travelStart, this.currentTime);
+        } else {
+            // 结束+交通 >= 19:00，先餐食后交通
+            if (!this.dinnerInserted) {
+                if (this.currentTime < DINNER_START) {
+                    this.addRestNode(this.currentTime, DINNER_START);
+                    this.currentTime = DINNER_START;
+                }
+                if (this.currentTime < DINNER_END) {
+                    this.insertMeal('dinner');
+                } else {
+                    this.insertMeal('dinner'); // 已过窗口，顺延插餐
+                }
+            }
+            // 再插交通
+            this.addNode({
+                type: 'transport',
+                name: '返回县城',
+                startTime: this.currentTime,
+                endTime: this.currentTime + returnTravel,
+                duration: returnTravel,
+                from: this.getPoiName(this.lastPoiId),
+                to: '红军广场'
+            });
+            this.totalTravelMinutes += returnTravel;
+            this.currentTime += returnTravel;
+            this.lastPoiId = 'county';
+        }
+    }
+
+    // ============================================================
+    // 每天两餐保障（行程提前结束的场景）
+    // ============================================================
+    ensureTwoMeals() {
+        // 午餐
+        if (!this.lunchInserted && this.currentTime >= LUNCH_START && this.currentTime < LUNCH_END) {
+            this.insertMeal('lunch');
+        }
+
+        // 晚餐
+        if (!this.dinnerInserted) {
+            if (this.currentTime < DINNER_START) {
+                // 未到晚餐窗口：插"休息调整"节点等待
+                this.addRestNode(this.currentTime, DINNER_START);
+                this.currentTime = DINNER_START;
+            }
+            this.insertMeal('dinner');
+        }
+    }
+
+    // ============================================================
+    // 交通后检查餐食
+    // ============================================================
+    checkAndInsertMealAfterTransport(travelStart, travelEnd) {
+        let meal = null;
+
+        if (!this.lunchInserted) {
+            // 交通时间段与午餐窗口有交集
+            if (travelStart < LUNCH_END && travelEnd >= LUNCH_START) {
+                meal = 'lunch';
+            }
+        }
+        if (!this.dinnerInserted && !meal) {
+            if (travelStart < DINNER_END && travelEnd >= DINNER_START) {
+                meal = 'dinner';
+            }
+        }
+
+        if (meal) {
+            const mealNode = this.createMealNode(meal, travelEnd);
+            if (mealNode) {
+                this.addNode(mealNode);
+                this.currentTime = mealNode.endTime;
+                if (meal === 'lunch') this.lunchInserted = true;
+                if (meal === 'dinner') this.dinnerInserted = true;
+            }
+        }
+    }
+
+    // ============================================================
+    // 游览后检查餐食
+    // ============================================================
+    checkAndInsertMealAfterVisit() {
+        let meal = null;
+        if (!this.lunchInserted && this.currentTime >= LUNCH_START && this.currentTime < LUNCH_END) {
+            meal = 'lunch';
+        } else if (!this.dinnerInserted && this.currentTime >= DINNER_START && this.currentTime < DINNER_END) {
+            meal = 'dinner';
+        }
+        if (meal) {
+            this.insertMeal(meal);
+        }
+    }
+
+    // ============================================================
+    // 插入餐食节点
+    // ============================================================
+    insertMeal(type) {
+        const mealNode = this.createMealNode(type, this.currentTime);
+        if (mealNode) {
+            this.addNode(mealNode);
+            this.currentTime = mealNode.endTime;
+            if (type === 'lunch') this.lunchInserted = true;
+            if (type === 'dinner') this.dinnerInserted = true;
+        }
+    }
+
+    createMealNode(type, startTime) {
+        let start = startTime;
+        let duration = MEAL_DURATION;
+        if (type === 'lunch') {
+            if (start < LUNCH_START) start = LUNCH_START;
+            if (start + duration > VISIT_END + 120) duration = MEAL_DURATION;
+            if (duration <= 0) return null;
+            return { type: 'meal', name: '午餐时间', startTime: start, endTime: start + duration, duration };
+        } else if (type === 'dinner') {
+            if (start < DINNER_START) start = DINNER_START;
+            if (duration <= 0) return null;
+            return { type: 'meal', name: '晚餐时间', startTime: start, endTime: start + duration, duration };
+        }
+        return null;
+    }
+
+    // ============================================================
+    // 插入"休息调整"节点
+    // ============================================================
+    addRestNode(startTime, endTime) {
+        if (endTime <= startTime) return;
+        this.addNode({
+            type: 'rest',
+            name: '休息调整',
+            startTime: startTime,
+            endTime: endTime,
+            duration: endTime - startTime
+        });
+        this.totalWaitingMinutes += (endTime - startTime);
+    }
+
+    // ============================================================
+    // 添加节点（同景点连续游览自动合并）
+    // ============================================================
+    addNode(node) {
+        if (!node) return;
+        if (node.type === 'visit') {
+            const last = this.dayNodes[this.dayNodes.length - 1];
+            if (last && last.type === 'visit' && last.poiId === node.poiId) {
+                last.endTime = node.endTime;
+                last.duration += node.duration;
+                last.remainingAfter = node.remainingAfter;
+                return;
+            }
+        }
+        this.dayNodes.push(node);
     }
 
     addVisitNode(poi, startTime, duration, totalDuration, remainingAfter = 0) {
@@ -313,58 +546,9 @@ export class TripPlanner {
         this.totalVisitMinutes += duration;
     }
 
-    checkAndInsertMealAfterTransport(travelStart, travelEnd) {
-        let meal = null;
-        if (!this.lunchInserted) {
-            if ((travelEnd >= LUNCH_START && travelEnd < LUNCH_END) ||
-                (travelStart < LUNCH_START && travelEnd >= LUNCH_START)) meal = 'lunch';
-        }
-        if (!this.dinnerInserted && !meal) {
-            if ((travelEnd >= DINNER_START && travelEnd < DINNER_END) ||
-                (travelStart < DINNER_START && travelEnd >= DINNER_START)) meal = 'dinner';
-        }
-        if (!this.lunchInserted && !meal && travelEnd >= LUNCH_START && travelEnd < LUNCH_END) meal = 'lunch';
-        if (!this.dinnerInserted && !meal && travelEnd >= DINNER_START && travelEnd < DINNER_END) meal = 'dinner';
-        if (meal) {
-            const mealNode = this.createMealNode(meal, travelEnd);
-            if (mealNode) {
-                this.addNode(mealNode);
-                this.currentTime = mealNode.endTime;
-                if (meal === 'lunch') this.lunchInserted = true;
-                if (meal === 'dinner') this.dinnerInserted = true;
-            }
-        }
-    }
-
-    checkAndInsertMealAfterVisit() {
-        let meal = null;
-        if (!this.lunchInserted && this.currentTime >= LUNCH_START && this.currentTime < LUNCH_END) meal = 'lunch';
-        else if (!this.dinnerInserted && this.currentTime >= DINNER_START && this.currentTime < DINNER_END) meal = 'dinner';
-        if (meal) {
-            const mealNode = this.createMealNode(meal, this.currentTime);
-            if (mealNode) {
-                this.addNode(mealNode);
-                this.currentTime = mealNode.endTime;
-                if (meal === 'lunch') this.lunchInserted = true;
-                if (meal === 'dinner') this.dinnerInserted = true;
-            }
-        }
-    }
-
-    addNode(node) {
-        if (!node) return;
-        if (node.type === 'visit') {
-            const last = this.dayNodes[this.dayNodes.length - 1];
-            if (last && last.type === 'visit' && last.poiId === node.poiId) {
-                last.endTime = node.endTime;
-                last.duration += node.duration;
-                last.remainingAfter = node.remainingAfter;
-                return;
-            }
-        }
-        this.dayNodes.push(node);
-    }
-
+    // ============================================================
+    // 天数管理
+    // ============================================================
     closeDay() {
         if (this.dayNodes.length === 0) return;
         this.allDays.push({
@@ -384,6 +568,16 @@ export class TripPlanner {
         this.lunchInserted = false;
         this.dinnerInserted = false;
         this.currentDay++;
+    }
+
+    // ============================================================
+    // 基础工具方法
+    // ============================================================
+    calculateTotalDuration(poi) {
+        const nodes = this.selectNodes(poi);
+        if (!nodes || nodes.length === 0) return poi.visit_duration || 60;
+        const total = nodes.reduce((sum, n) => sum + (n.suggested_duration_min || 0), 0);
+        return total > 0 ? total : (poi.visit_duration || 60);
     }
 
     getPoiName(id) {
@@ -435,42 +629,9 @@ export class TripPlanner {
         }
     }
 
-    createMealNode(type, startTime) {
-        let start = startTime;
-        let duration = MEAL_DURATION;
-        if (type === 'lunch') {
-            if (start < LUNCH_START) start = LUNCH_START;
-            if (start + duration > DAY_END) duration = DAY_END - start;
-            if (duration <= 0) return null;
-            return { type: 'meal', name: '午餐时间', startTime: start, endTime: start + duration, duration };
-        } else if (type === 'dinner') {
-            if (start < DINNER_START) start = DINNER_START;
-            if (start + duration > DAY_END + 60) duration = 60;
-            if (duration <= 0) return null;
-            return { type: 'meal', name: '晚餐时间', startTime: start, endTime: start + duration, duration };
-        }
-        return null;
-    }
-
-    addWaiting(minutes) { this.totalWaitingMinutes += minutes; }
-
-    findNearestAccommodation(poiId) {
-        const poi = this.getPoiById(poiId);
-        if (!poi) return null;
-        let nearest = null, minDist = Infinity;
-        for (let id in this.accommodationPoiMap) {
-            const acc = this.accommodationPoiMap[id];
-            if (!acc.lat || !acc.lng) continue;
-            const dist = getDistance(poi.lat, poi.lng, acc.lat, acc.lng);
-            if (dist < minDist) {
-                minDist = dist;
-                nearest = acc;
-            }
-        }
-        if (nearest && minDist <= 5000) return nearest;
-        return null;
-    }
-
+    // ============================================================
+    // 提醒与天气
+    // ============================================================
     addReminders() {
         if (this.weatherData && this.weatherData.length > 0) {
             for (let i = 0; i < this.allDays.length; i++) {
@@ -519,10 +680,17 @@ export class TripPlanner {
     }
 }
 
-export async function generateTripPlan(pois, startDate, startTime, mode, travelTimes, poiNodesMap, accommodationPois, lodgingMode = 'all') {
+// ============================================================
+// 工厂函数
+// ============================================================
+export async function generateTripPlan(pois, startDate, startTime, mode, travelTimes, poiNodesMap, accommodationPois, lodgingMode = 'all', startLocation = 'county') {
     if (!pois || pois.length === 0) {
         return { days: [], warnings: ['没有选择景点'], totalTravel: 0, totalVisit: 0, totalWaiting: 0 };
     }
-    const planner = new TripPlanner(pois, startDate, startTime, mode, travelTimes, poiNodesMap, accommodationPois, lodgingMode);
+    const planner = new TripPlanner(
+        pois, startDate, startTime, mode,
+        travelTimes, poiNodesMap, accommodationPois,
+        lodgingMode, startLocation
+    );
     return await planner.plan();
 }

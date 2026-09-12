@@ -1,4 +1,4 @@
-// js/admin.js - 管理后台完整逻辑（4类型 + 路线规划重写 + UUID兼容）
+// js/admin.js - 管理后台完整逻辑（4类型 + 路线规划 + 交通耗时全POI + UUID兼容）
 import {
     getPois, getPoi, insertPoi, updatePoi, deletePoi as apiDeletePoi,
     getRoutes, getRoute, insertRoute, updateRoute, deleteRoute as apiDeleteRoute,
@@ -16,9 +16,9 @@ let currentSubPoiIds = [];
 let currentTourRoute = [];
 let categoryManuallySet = false;
 
-// ★ 路线节点数据（内存中维护）
+// 路线节点数据（内存中维护）
 let routeNodesData = [];
-let editingNodeIndex = -1;   // 当前编辑的节点索引，-1 表示新增
+let editingNodeIndex = -1;
 
 // ============================================================
 // 类型标签与徽章
@@ -62,7 +62,6 @@ const CATEGORY_ICONS = {
     '公共服务': '🏛️'
 };
 
-// 路线类型标签
 const ROUTE_TYPE_LABELS = {
     scenic_internal: '🏞️ 景区内部',
     city_day: '🏙️ 城市一日游',
@@ -70,7 +69,6 @@ const ROUTE_TYPE_LABELS = {
     custom: '✨ 自定义'
 };
 
-// 节点类型标签
 const NODE_TYPE_LABELS = {
     entrance: '🚪 入口',
     parking: '🅿️ 停车场',
@@ -534,7 +532,7 @@ export async function removeSubPoi(subPoiId) {
 }
 
 // ============================================================
-// 简易游览顺序（景区编辑内）
+// 简易游览顺序
 // ============================================================
 function renderTourRoute() {
     const container = document.getElementById('tour-route-list');
@@ -733,11 +731,8 @@ export async function deletePoi(id) {
 }
 
 // ============================================================
+// 路线规划
 // ============================================================
-// 路线规划（重写）
-// ============================================================
-// ============================================================
-
 export function renderRouteList(routes) {
     const container = document.getElementById('route-list');
     if (!container) return;
@@ -752,11 +747,10 @@ export function renderRouteList(routes) {
         const routeType = r.route_type || 'custom';
         const typeLabel = ROUTE_TYPE_LABELS[routeType] || routeType;
 
-        // 关联景区名
         let scenicName = '';
         if (r.scenic_poi_id) {
             const sp = allPois.find(p => String(p.id) === String(r.scenic_poi_id));
-            if (sp) scenicName = ` · ${sp.name}`;
+            if (sp) scenicName = sp.name;
         }
 
         const defaultBadge = r.is_default ? '<span class="default-badge">默认推荐</span>' : '';
@@ -774,7 +768,7 @@ export function renderRouteList(routes) {
                 </div>
             </div>
             <div class="route-meta">
-                ${scenicName ? `关联景区：${scenicName.replace(' · ', '')} · ` : ''}
+                ${scenicName ? `关联景区：${scenicName} · ` : ''}
                 总时长：${durationText}
                 ${r.description ? ` · ${r.description}` : ''}
             </div>
@@ -790,7 +784,6 @@ export async function showAddRouteModal() {
     document.getElementById('edit-route-desc').value = '';
     document.getElementById('edit-route-default').checked = false;
 
-    // 填充关联景区下拉
     const scenicSelect = document.getElementById('edit-route-scenic');
     scenicSelect.innerHTML = '<option value="">-- 不关联 --</option>';
     allPois.filter(p => p.type === 'scenic').forEach(p => {
@@ -820,7 +813,6 @@ export async function showEditRouteModal(id) {
     document.getElementById('edit-route-desc').value = r.description || '';
     document.getElementById('edit-route-default').checked = !!r.is_default;
 
-    // 填充关联景区
     const scenicSelect = document.getElementById('edit-route-scenic');
     scenicSelect.innerHTML = '<option value="">-- 不关联 --</option>';
     allPois.filter(p => p.type === 'scenic').forEach(p => {
@@ -828,7 +820,6 @@ export async function showEditRouteModal(id) {
         scenicSelect.innerHTML += `<option value="${p.id}" ${selected}>${p.name}</option>`;
     });
 
-    // 加载节点
     routeNodesData = [];
     try {
         const nodes = await getRouteNodes(id);
@@ -852,21 +843,16 @@ export async function showEditRouteModal(id) {
     modal.show();
 }
 
-// 路线类型切换
 window.onRouteTypeChange = function() {
     const type = document.getElementById('edit-route-type').value;
     const scenicField = document.getElementById('field-route-scenic');
-
-    // 景区内部路线需要关联景区；其他类型可选
     if (type === 'scenic_internal') {
         scenicField.classList.remove('hidden');
     } else {
-        // 其他类型也允许关联（城市游可能关联一个主景区）
         scenicField.classList.remove('hidden');
     }
 };
 
-// 渲染节点列表
 function renderRouteNodes() {
     const container = document.getElementById('route-nodes-container');
     if (!container) return;
@@ -917,7 +903,6 @@ function renderRouteNodes() {
     document.getElementById('route-total-info').textContent = `（总时长：${totalMin}分钟）`;
 }
 
-// 显示新增节点模态框
 window.showAddRouteNodeModal = function() {
     editingNodeIndex = -1;
     document.getElementById('edit-node-index').value = '';
@@ -927,7 +912,6 @@ window.showAddRouteNodeModal = function() {
     document.getElementById('edit-node-desc').value = '';
     document.getElementById('edit-node-tips').value = '';
 
-    // 填充关联POI下拉（当前路线的景区下的子项）
     const routeScenicId = document.getElementById('edit-route-scenic').value;
     const poiSelect = document.getElementById('edit-node-poi');
     poiSelect.innerHTML = '<option value="">-- 不关联（自定义）--</option>';
@@ -947,7 +931,6 @@ window.showAddRouteNodeModal = function() {
     new bootstrap.Modal(document.getElementById('routeNodeModal')).show();
 };
 
-// 编辑节点
 window.editRouteNode = function(idx) {
     const node = routeNodesData[idx];
     if (!node) return;
@@ -960,7 +943,6 @@ window.editRouteNode = function(idx) {
     document.getElementById('edit-node-desc').value = node.description || '';
     document.getElementById('edit-node-tips').value = node.tips || '';
 
-    // 填充关联POI
     const routeScenicId = document.getElementById('edit-route-scenic').value;
     const poiSelect = document.getElementById('edit-node-poi');
     poiSelect.innerHTML = '<option value="">-- 不关联（自定义）--</option>';
@@ -981,7 +963,6 @@ window.editRouteNode = function(idx) {
     new bootstrap.Modal(document.getElementById('routeNodeModal')).show();
 };
 
-// 保存节点（从模态框到内存）
 window.saveRouteNode = function() {
     const name = document.getElementById('edit-node-name').value.trim();
     if (!name) { alert('请输入节点名称'); return; }
@@ -1005,7 +986,6 @@ window.saveRouteNode = function() {
     renderRouteNodes();
 };
 
-// 移动节点
 window.moveRouteNode = function(idx, dir) {
     const newIdx = idx + dir;
     if (newIdx < 0 || newIdx >= routeNodesData.length) return;
@@ -1013,14 +993,12 @@ window.moveRouteNode = function(idx, dir) {
     renderRouteNodes();
 };
 
-// 删除节点
 window.removeRouteNode = function(idx) {
     if (!confirm('确认删除此节点？')) return;
     routeNodesData.splice(idx, 1);
     renderRouteNodes();
 };
 
-// 保存路线
 export async function saveRouteEdit() {
     const id = document.getElementById('edit-route-id').value;
     const name = document.getElementById('edit-route-name').value.trim();
@@ -1028,9 +1006,7 @@ export async function saveRouteEdit() {
     if (!name) { alert('请输入路线名称'); return; }
     if (routeNodesData.length === 0) { alert('请至少添加一个节点'); return; }
 
-    // 计算总时长
     const totalMin = routeNodesData.reduce((sum, n) => sum + (n.duration_min || 0), 0);
-
     const scenicIdRaw = document.getElementById('edit-route-scenic').value;
     const scenicPoiId = scenicIdRaw || null;
 
@@ -1041,7 +1017,6 @@ export async function saveRouteEdit() {
         description: document.getElementById('edit-route-desc').value.trim(),
         is_default: document.getElementById('edit-route-default').checked,
         duration_min: totalMin,
-        // 保留旧字段兼容
         start_time: '08:00',
         transport: '',
         days: 1,
@@ -1057,10 +1032,8 @@ export async function saveRouteEdit() {
             routeId = r.id;
         }
 
-        // 删除旧节点
         await deleteRouteNodes(routeId);
 
-        // 插入新节点
         const nodes = routeNodesData.map((n, i) => ({
             route_id: routeId,
             order_num: i + 1,
@@ -1070,7 +1043,6 @@ export async function saveRouteEdit() {
             duration_min: n.duration_min || 10,
             description: n.description,
             tips: n.tips,
-            // 兼容旧字段
             transport_mode: '步行',
             transport_time: 0
         }));
@@ -1097,13 +1069,15 @@ export async function deleteRoute(id) {
 }
 
 // ============================================================
-// 交通耗时（只显示景区）
+// 交通耗时（★ 恢复：显示所有顶层 POI）
 // ============================================================
 export function renderTransportEditor(presets) {
     const container = document.getElementById('transport-editor');
     if (!container) return;
-    const poiList = allPois.filter(p => p.type === 'scenic');
-    if (poiList.length === 0) { container.innerHTML = '<p>暂无景区数据</p>'; return; }
+
+    // ★ 显示所有顶层 POI（景区/景点/公共场所），排除核心节点和景区内部节点
+    const poiList = allPois.filter(p => !p.parent_id);
+    if (poiList.length === 0) { container.innerHTML = '<p>暂无POI数据</p>'; return; }
 
     let html = '';
     poiList.forEach(fromPoi => {

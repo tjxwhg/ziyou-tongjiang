@@ -98,13 +98,26 @@
         .biz-image-box { width: 100%; aspect-ratio: 16/9; border-radius: 8px; overflow: hidden; background: #f0f0f0; display: flex; align-items: center; justify-content: center; margin-top: 8px; }
         .biz-image-box img { width: 100%; height: 100%; object-fit: cover; }
 
-        /* ★ 推荐路线板块 */
-        .route-section { border: 1px solid #e0e0e0; border-radius: 12px; padding: 14px; margin-top: 12px; background: #f8fff8; }
-        .route-section-title { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
-        .route-section-title h6 { margin: 0; color: #1b5e20; font-weight: 700; }
-        .route-card-inner { border: 1px solid #d4e8d4; border-radius: 8px; padding: 10px; margin-bottom: 10px; background: #fff; }
-        .route-card-inner .route-title { font-weight: 600; color: #1b5e20; font-size: 15px; }
-        .route-card-inner .route-meta { color: #888; font-size: 12px; margin-top: 4px; margin-bottom: 8px; }
+        /* ===== 推荐路线面板 ===== */
+        .route-filter-bar { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+        .route-filter-btn { padding: 6px 14px; border-radius: 20px; border: 1px solid #e0e0e0; background: white; font-size: 13px; cursor: pointer; transition: all 0.2s; color: #555; }
+        .route-filter-btn:hover { background: #e8f5e9; }
+        .route-filter-btn.active { background: #1b5e20; color: white; border-color: #1b5e20; }
+
+        .route-list-card { border: 1px solid #e0e0e0; border-radius: 12px; padding: 14px; margin-bottom: 12px; background: white; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+        .route-list-card .route-type-badge { display: inline-block; padding: 2px 10px; border-radius: 10px; font-size: 11px; font-weight: 600; }
+        .route-type-scenic_internal { background: #e3f2fd; color: #1565c0; }
+        .route-type-city_day { background: #fff3e0; color: #e65100; }
+        .route-type-area_multi { background: #f3e5f5; color: #6a1b9a; }
+        .route-type-custom { background: #e8eaf6; color: #283593; }
+
+        .route-list-card .route-name { font-weight: 700; color: #1b5e20; font-size: 16px; margin: 4px 0 6px; }
+        .route-list-card .route-meta { color: #888; font-size: 13px; margin-bottom: 8px; }
+        .route-list-card .route-actions { display: flex; gap: 8px; margin-top: 8px; }
+        .route-list-card .btn-detail { background: transparent; color: #1b5e20; border: 1px solid #1b5e20; padding: 6px 14px; border-radius: 6px; font-size: 13px; cursor: pointer; flex: 1; }
+        .route-list-card .btn-adopt { background: #1b5e20; color: white; border: none; padding: 6px 14px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; flex: 1; }
+        .route-list-card .btn-adopt:hover { background: #2e7d32; }
+
         .route-node-row { display: flex; align-items: flex-start; gap: 8px; padding: 6px 0; border-bottom: 1px dashed #e8f5e9; font-size: 13px; }
         .route-node-row:last-child { border-bottom: none; }
         .route-node-num { width: 22px; height: 22px; line-height: 22px; text-align: center; border-radius: 50%; background: #1b5e20; color: white; font-weight: 600; font-size: 11px; flex-shrink: 0; margin-top: 1px; }
@@ -124,21 +137,17 @@
         .route-node-duration { color: #888; font-size: 11px; }
         .route-node-desc { color: #555; font-size: 12px; margin-top: 2px; }
         .route-node-tips { color: #f57f17; font-size: 11px; margin-top: 2px; }
-        .adopt-btn { background: #1b5e20; color: white; border: none; padding: 4px 12px; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; transition: 0.2s; }
-        .adopt-btn:hover { background: #2e7d32; }
-        .adopt-btn:disabled { background: #ccc; cursor: not-allowed; }
 
         @media (max-width: 640px) {
             .top-bar { top: max(8px, env(safe-area-inset-top, 8px)); padding: 4px 12px; height: 38px; }
             .top-bar .brand { font-size: 15px; }
-            .bottom-nav { padding: 6px 12px; gap: 4px; }
-            .bottom-nav .nav-btn { font-size: 12px; padding: 6px 12px; }
+            .bottom-nav { padding: 6px 10px; gap: 2px; }
+            .bottom-nav .nav-btn { font-size: 11px; padding: 6px 10px; }
             .float-btn { width: 40px; height: 40px; font-size: 16px; }
             .locate-btn { bottom: 100px; right: 12px; }
             .voice-btn { bottom: 155px; right: 12px; }
             .panel-body { padding: 12px 14px; }
             .category-bar { padding-top: calc(54px + env(safe-area-inset-top, 8px)); }
-            .category-bar .cat-btn { font-size: 12px; padding: 4px 10px; }
             .trip-node .node-time { min-width: 80px; font-size: 12px; }
             .trip-timeline { padding-left: 16px; }
             .trip-node { padding: 4px 0 4px 12px; gap: 8px; }
@@ -174,8 +183,10 @@
     <button class="cat-btn" onclick="window.clearFilter()">✕ 清除筛选</button>
 </div>
 
+<!-- ★ 底部导航：智能规划 / 推荐路线 / 我的 -->
 <div class="bottom-nav" id="bottomNav">
     <button class="nav-btn primary" onclick="window.openPanel('planPanel')"><i class="fas fa-wand-magic-sparkles"></i> 智能规划</button>
+    <button class="nav-btn" onclick="window.openPanel('routePanel')"><i class="fas fa-route"></i> 推荐路线</button>
     <button class="nav-btn" onclick="window.openPanel('myPanel')"><i class="fas fa-user"></i> 我的</button>
 </div>
 
@@ -258,6 +269,33 @@
     </div>
 </div>
 
+<!-- ★ 面板：推荐路线 -->
+<div class="panel" id="routePanel">
+    <div class="panel-header">
+        <h2><i class="fas fa-route text-green"></i> 推荐路线</h2>
+        <button class="close-btn" onclick="window.closePanel('routePanel')">&times;</button>
+    </div>
+    <div class="panel-body">
+        <p class="text-secondary small mb-2">为不熟悉通江的游客，精选最优旅游路线。点击"查看详情"了解每个节点的安排，点击"一键采用"直接生成行程。</p>
+
+        <!-- 类型筛选 -->
+        <div class="route-filter-bar" id="routeFilterBar">
+            <button class="route-filter-btn active" data-filter="all" onclick="window.filterRoutes('all')">全部</button>
+            <button class="route-filter-btn" data-filter="scenic_internal" onclick="window.filterRoutes('scenic_internal')">🏞️ 景区内部</button>
+            <button class="route-filter-btn" data-filter="city_day" onclick="window.filterRoutes('city_day')">🏙️ 城市一日游</button>
+            <button class="route-filter-btn" data-filter="area_multi" onclick="window.filterRoutes('area_multi')">🗺️ 区域联合</button>
+            <button class="route-filter-btn" data-filter="custom" onclick="window.filterRoutes('custom')">✨ 自定义</button>
+        </div>
+
+        <div id="routeListContainer">
+            <div class="text-secondary text-center py-4">
+                <div class="spinner-border text-success" role="status"></div>
+                <p class="mt-2">加载推荐路线中...</p>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- 面板：我的 -->
 <div class="panel" id="myPanel">
     <div class="panel-header"><h2><i class="fas fa-user text-green"></i> 我的</h2><button class="close-btn" onclick="window.closePanel('myPanel')">&times;</button></div>
@@ -312,7 +350,6 @@ import {
     insertReservation, insertFeedback,
     getReservationsByDevice, getFeedbacksByDevice,
     deleteReservation, deleteFeedback,
-    getPoiInternal,
     getRoutes, getRouteNodes
 } from './js/api.js';
 import { initMap, loadPoisToMap, locateUser, setVoiceEnabled, clearFilter, applyFilter } from './js/map.js';
@@ -369,17 +406,12 @@ async function getTransportPresetsCached() {
 const STATUS_MAP = { pending: '待确认', confirmed: '已确认', rejected: '已拒绝', cancelled: '已取消' };
 function translateStatus(s) { return STATUS_MAP[s] || s || '未知'; }
 
-// ===== 节点类型标签 =====
-const NODE_TYPE_LABELS = {
-    entrance: '🚪 入口',
-    parking: '🅿️ 停车场',
-    rest: '☕ 休息区',
-    core_view: '⭐ 核心景点',
-    spot: '📍 景点参观',
-    entertainment: '🎢 游玩项目',
-    wc: '🚻 卫生间',
-    exit: '🚪 出口',
-    other: '📌 其他'
+// ===== 路线/节点标签 =====
+const ROUTE_TYPE_LABELS = {
+    scenic_internal: '🏞️ 景区内部',
+    city_day: '🏙️ 城市一日游',
+    area_multi: '🗺️ 区域联合',
+    custom: '✨ 自定义'
 };
 const NODE_TYPE_SHORT = {
     entrance: '入口', parking: '停车', rest: '休息',
@@ -394,7 +426,8 @@ let selectedPoiIds = new Set();
 let selectedSubItems = {};
 let selectedPoiOrder = [];
 let accommodationPois = [];
-let currentScenicRoutes = [];   // 当前详情页展示的路线
+let allRoutesCache = [];      // 所有路线缓存
+let currentRouteFilter = 'all';
 
 // ===== 工具 =====
 function fmtTime(minutes) {
@@ -403,19 +436,16 @@ function fmtTime(minutes) {
     return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
 }
 
-// ===== 行程风格自动勾选 =====
+// ===== 风格自动勾选 =====
 function getStyleAutoSelection(style, subItems) {
     const coreNodes = subItems.filter(s => s.type === 'core_node');
     const spots = subItems.filter(s => s.type === 'spot');
-
-    if (style === 'compact') {
-        return { coreNodes: coreNodes.map(s => s.id), spots: [] };
-    } else if (style === 'relaxed') {
+    if (style === 'compact') return { coreNodes: coreNodes.map(s => s.id), spots: [] };
+    if (style === 'relaxed') {
         const featured = spots.filter(s => s.is_featured).slice(0, 2);
         return { coreNodes: coreNodes.map(s => s.id), spots: featured.map(s => s.id) };
-    } else if (style === 'indepth') {
-        return { coreNodes: coreNodes.map(s => s.id), spots: spots.map(s => s.id) };
     }
+    if (style === 'indepth') return { coreNodes: coreNodes.map(s => s.id), spots: spots.map(s => s.id) };
     return { coreNodes: coreNodes.map(s => s.id), spots: [] };
 }
 
@@ -468,7 +498,6 @@ function setDefaultStartTime() {
     if (dateInput) dateInput.value = now.toISOString().slice(0, 10);
 }
 
-// ===== 出发地点下拉 =====
 function initStartLocationSelect(pois) {
     const sel = document.getElementById('planStartLocation');
     if (!sel) return;
@@ -515,7 +544,6 @@ function renderPoiSelection(pois) {
     categoryOrder.forEach(cat => {
         const items = categories[cat] || [];
         if (items.length === 0) return;
-
         const isScenicCategory = ['自然景区', '红色景区', '文博场馆'].includes(cat);
         const contentHiddenClass = isScenicCategory ? '' : 'hidden';
 
@@ -570,9 +598,7 @@ function getPoiTotalDuration(poi, subItems) {
     if (poi.type === 'scenic' && subItems.length > 0) {
         const selectedSet = selectedSubItems[poi.id] || new Set();
         let total = 0;
-        subItems.forEach(s => {
-            if (selectedSet.has(s.id)) total += (s.visit_duration || 0);
-        });
+        subItems.forEach(s => { if (selectedSet.has(s.id)) total += (s.visit_duration || 0); });
         return total;
     }
     return poi.visit_duration || 0;
@@ -599,13 +625,11 @@ window.togglePoiSelection = function(poiId) {
             selectedSubItems[idStr] = newSet;
         }
     }
-
     if (selectedPoiIds.has(idStr)) {
         if (!selectedPoiOrder.includes(idStr)) selectedPoiOrder.push(idStr);
     } else {
         selectedPoiOrder = selectedPoiOrder.filter(x => x !== idStr);
     }
-
     renderPoiSelection(allPoisData);
     renderSelectedOrder();
     updateSelectedInfo();
@@ -615,14 +639,9 @@ window.toggleSubItem = function(poiId, subId) {
     const idStr = String(poiId);
     const subIdStr = String(subId);
     if (!selectedSubItems[idStr]) selectedSubItems[idStr] = new Set();
-
     const set = selectedSubItems[idStr];
-    if (set.has(subIdStr)) {
-        set.delete(subIdStr);
-    } else {
-        set.add(subIdStr);
-    }
-
+    if (set.has(subIdStr)) set.delete(subIdStr);
+    else set.add(subIdStr);
     if (!selectedPoiIds.has(idStr) && set.size > 0) {
         selectedPoiIds.add(idStr);
         if (!selectedPoiOrder.includes(idStr)) selectedPoiOrder.push(idStr);
@@ -631,19 +650,15 @@ window.toggleSubItem = function(poiId, subId) {
         selectedPoiIds.delete(idStr);
         selectedPoiOrder = selectedPoiOrder.filter(x => x !== idStr);
     }
-
     const durBadge = document.querySelector(`.poi-item[data-poi-id="${poiId}"] .poi-duration-badge`);
     if (durBadge) {
         const allPoisData = window.__allPois || [];
         const poi = allPoisData.find(p => String(p.id) === idStr);
         const subItems = allPoisData.filter(p => String(p.parent_id) === idStr);
-        const total = getPoiTotalDuration(poi, subItems);
-        durBadge.textContent = `${total}分钟`;
+        durBadge.textContent = `${getPoiTotalDuration(poi, subItems)}分钟`;
     }
-
     const mainCheckbox = document.querySelector(`.poi-item[data-poi-id="${poiId}"] .poi-name input[type="checkbox"]`);
     if (mainCheckbox) mainCheckbox.checked = selectedPoiIds.has(idStr);
-
     renderSelectedOrder();
     updateSelectedInfo();
 };
@@ -656,7 +671,6 @@ window.togglePoiChildren = function(poiId) {
 window.selectAllPois = function(select) {
     const allPoisData = window.__allPois || [];
     const topPois = allPoisData.filter(p => !p.parent_id && p.type !== 'facility');
-
     if (select) {
         const style = document.getElementById('planStyle').value;
         topPois.forEach(poi => {
@@ -676,7 +690,6 @@ window.selectAllPois = function(select) {
         selectedSubItems = {};
         selectedPoiOrder = [];
     }
-
     renderPoiSelection(allPoisData);
     renderSelectedOrder();
     updateSelectedInfo();
@@ -722,7 +735,6 @@ window.renderSelectedOrder = function() {
     });
     container.innerHTML = html;
 };
-
 window.movePoiUp = function(id) {
     const idx = selectedPoiOrder.indexOf(id);
     if (idx > 0) {
@@ -762,9 +774,7 @@ window.generatePlans = async function() {
             const subItems = allPoisData.filter(p => String(p.parent_id) === id);
             const selectedSet = selectedSubItems[id] || new Set();
             let total = 0;
-            subItems.forEach(s => {
-                if (selectedSet.has(s.id)) total += (s.visit_duration || 0);
-            });
+            subItems.forEach(s => { if (selectedSet.has(s.id)) total += (s.visit_duration || 0); });
             return { ...poi, visit_duration: total };
         }
         return { ...poi };
@@ -780,7 +790,6 @@ window.generatePlans = async function() {
         const presets = await getTransportPresetsCached();
         const travelTimes = {};
         presets.forEach(p => { travelTimes[`${p.from_poi_id}_${p.to_poi_id}`] = p.time_min; });
-
         accommodationPois = allPoisData.filter(p => p.category && p.category.includes('住宿'));
 
         const result = await generateTripPlan(
@@ -810,7 +819,6 @@ window.generatePlans = async function() {
     }
 };
 
-// ===== 节点渲染 =====
 function renderTripNodeHtml(node) {
     const typeClass = node.type || 'other';
     const iconMap = { transport: '🚗', visit: '📍', meal: '🍽️', accommodation: '🏨', weather: '🌤️', reminder: '⚠️', waiting: '⏳', rest: '☕', trip_end: '🏁' };
@@ -822,14 +830,8 @@ function renderTripNodeHtml(node) {
                    : (node.message || '');
         const textClass = typeClass === 'weather' ? 'weather-text'
                         : typeClass === 'reminder' ? 'reminder-text'
-                        : typeClass === 'trip_end' ? 'trip-end-text'
-                        : '';
-        return `
-            <div class="trip-node type-${typeClass}">
-                <span class="node-icon icon-${typeClass}">${icon}</span>
-                <span class="node-content"><span class="${textClass}">${text}</span></span>
-            </div>
-        `;
+                        : typeClass === 'trip_end' ? 'trip-end-text' : '';
+        return `<div class="trip-node type-${typeClass}"><span class="node-icon icon-${typeClass}">${icon}</span><span class="node-content"><span class="${textClass}">${text}</span></span></div>`;
     }
 
     let timeDisplay = '';
@@ -847,13 +849,7 @@ function renderTripNodeHtml(node) {
     else if (node.type === 'rest') content = `${node.name || '休息调整'} ${node.duration ? `<span class="node-duration">${node.duration}分钟</span>` : ''}`;
     else content = node.name || '未知节点';
 
-    return `
-        <div class="trip-node type-${typeClass}">
-            <span class="node-time">${timeDisplay}</span>
-            <span class="node-icon icon-${typeClass}">${icon}</span>
-            <span class="node-content">${content}</span>
-        </div>
-    `;
+    return `<div class="trip-node type-${typeClass}"><span class="node-time">${timeDisplay}</span><span class="node-icon icon-${typeClass}">${icon}</span><span class="node-content">${content}</span></div>`;
 }
 
 function showTripDetail(data) {
@@ -878,7 +874,6 @@ window.regenerateTrip = async function() {
     alert('行程已重新生成！');
 };
 
-// ===== 保存行程 =====
 window.saveTripSolution = function() {
     if (!currentTripData) { alert('没有可保存的行程'); return; }
     const defaultName = `行程_${new Date().toISOString().slice(0, 10)}`;
@@ -911,7 +906,6 @@ window.renderMyTrips = function() {
     });
     container.innerHTML = html;
 };
-
 window.toggleTripDetail = function(tripId) {
     const container = document.getElementById(`trip-detail-${tripId}`);
     if (!container) return;
@@ -922,7 +916,6 @@ window.toggleTripDetail = function(tripId) {
     renderTripDetailInline(container, trip.data);
     container.classList.remove('hidden');
 };
-
 function renderTripDetailInline(container, data) {
     let html = '';
     if (data && data.days) {
@@ -936,7 +929,6 @@ function renderTripDetailInline(container, data) {
     }
     container.innerHTML = html || '<p class="text-secondary">暂无详情</p>';
 }
-
 window.deleteTripSolution = function(id) {
     if (!confirm('确认删除此行程？')) return;
     let trips = getLocalData('trips');
@@ -989,7 +981,6 @@ window.deleteReservationHandler = async function(id) {
     try { await deleteReservation(id); alert('已删除'); window.renderMyReservations(); }
     catch (e) { alert('删除失败：' + e.message); }
 };
-
 window.submitReservation = async function(merchantId, merchantName, category) {
     const date = document.getElementById(`res-date-${merchantId}`).value;
     const timeRange = document.getElementById(`res-time-${merchantId}`).value;
@@ -1022,12 +1013,10 @@ window.submitReservation = async function(merchantId, merchantName, category) {
         window.renderMyReservations();
     } catch (e) { alert('预约提交失败：' + e.message); }
 };
-
 window.toggleReservationForm = function(merchantId) {
     const form = document.getElementById(`reservation-form-${merchantId}`);
     if (form) form.classList.toggle('hidden');
 };
-
 window.updateResContent = function(merchantId) {
     const catSel = document.getElementById(`res-cat-${merchantId}`);
     const contentSel = document.getElementById(`res-content-${merchantId}`);
@@ -1077,8 +1066,206 @@ window.deleteFeedbackHandler = async function(id) {
 };
 
 // ============================================================
-// ★ 景区详情（含推荐路线）
+// ★ 推荐路线面板
 // ============================================================
+window.filterRoutes = function(type) {
+    currentRouteFilter = type;
+    // 更新按钮状态
+    document.querySelectorAll('#routeFilterBar .route-filter-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.filter === type);
+    });
+    renderRouteListPanel();
+};
+
+async function renderRouteListPanel() {
+    const container = document.getElementById('routeListContainer');
+    if (!container) return;
+
+    // 首次加载或缓存过期时重新拉取
+    if (allRoutesCache.length === 0) {
+        container.innerHTML = '<div class="text-secondary text-center py-4"><div class="spinner-border text-success"></div><p class="mt-2">加载推荐路线中...</p></div>';
+        try {
+            const routes = await getRoutes();
+            allRoutesCache = routes || [];
+        } catch (e) {
+            console.error('加载路线失败:', e);
+            container.innerHTML = '<p class="text-danger text-center">加载失败，请刷新重试</p>';
+            return;
+        }
+    }
+
+    // 筛选
+    let filtered = allRoutesCache;
+    if (currentRouteFilter !== 'all') {
+        filtered = allRoutesCache.filter(r => r.route_type === currentRouteFilter);
+    }
+
+    if (filtered.length === 0) {
+        container.innerHTML = '<p class="text-secondary text-center py-4">暂无此类型的推荐路线</p>';
+        return;
+    }
+
+    // 按默认推荐优先排序
+    filtered.sort((a, b) => (b.is_default ? 1 : 0) - (a.is_default ? 1 : 0));
+
+    // 渲染卡片列表
+    let html = '';
+    for (const r of filtered) {
+        const routeType = r.route_type || 'custom';
+        const typeLabel = ROUTE_TYPE_LABELS[routeType] || routeType;
+        const defaultBadge = r.is_default ? ' <span style="background:#ffeb3b;color:#f57f17;padding:1px 8px;border-radius:8px;font-size:10px;font-weight:600;margin-left:6px;">默认推荐</span>' : '';
+
+        let scenicName = '';
+        if (r.scenic_poi_id) {
+            const sp = allPois.find(p => String(p.id) === String(r.scenic_poi_id));
+            if (sp) scenicName = sp.name;
+        }
+
+        const totalMin = r.duration_min || 0;
+
+        html += `<div class="route-list-card">
+            <span class="route-type-badge route-type-${routeType}">${typeLabel}</span>${defaultBadge}
+            <div class="route-name">${r.name || '未命名路线'}</div>
+            <div class="route-meta">
+                ${scenicName ? `📍 ${scenicName} · ` : ''}
+                ⏱️ 总时长：${totalMin}分钟
+            </div>
+            ${r.description ? `<p style="color:#666;font-size:13px;margin:0 0 4px;">${r.description}</p>` : ''}
+            <div id="route-nodes-${r.id}" class="hidden mt-2"></div>
+            <div class="route-actions">
+                <button class="btn-detail" onclick="window.toggleRouteDetail('${r.id}')">
+                    <i class="fas fa-eye"></i> 查看详情
+                </button>
+                <button class="btn-adopt" onclick="window.adoptRoute('${r.id}')">
+                    <i class="fas fa-check"></i> 一键采用
+                </button>
+            </div>
+        </div>`;
+    }
+    container.innerHTML = html;
+}
+
+window.toggleRouteDetail = async function(routeId) {
+    const container = document.getElementById(`route-nodes-${routeId}`);
+    if (!container) return;
+
+    if (!container.classList.contains('hidden')) {
+        container.classList.add('hidden');
+        container.innerHTML = '';
+        return;
+    }
+
+    container.innerHTML = '<div class="text-secondary small">加载节点中...</div>';
+    container.classList.remove('hidden');
+
+    try {
+        const nodes = await getRouteNodes(routeId);
+        if (!nodes || nodes.length === 0) {
+            container.innerHTML = '<p class="text-secondary small">该路线暂无节点</p>';
+            return;
+        }
+
+        let html = '';
+        nodes.forEach((n, i) => {
+            const typeLabel = NODE_TYPE_SHORT[n.node_type] || '其他';
+            const typeCls = `node-type-${n.node_type || 'other'}`;
+            html += `<div class="route-node-row">
+                <span class="route-node-num">${i + 1}</span>
+                <div class="route-node-detail">
+                    <div class="route-node-name-row">
+                        <span class="route-node-name">${n.node_name || '未命名'}</span>
+                        <span class="route-node-type-badge ${typeCls}">${typeLabel}</span>
+                        <span class="route-node-duration"><i class="fas fa-clock"></i> ${n.duration_min || 0}分钟</span>
+                    </div>
+                    ${n.description ? `<div class="route-node-desc">${n.description}</div>` : ''}
+                    ${n.tips ? `<div class="route-node-tips"><i class="fas fa-lightbulb"></i> ${n.tips}</div>` : ''}
+                </div>
+            </div>`;
+        });
+        container.innerHTML = html;
+    } catch (e) {
+        console.error('加载节点失败:', e);
+        container.innerHTML = '<p class="text-danger small">加载失败</p>';
+    }
+};
+
+// 一键采用路线
+window.adoptRoute = async function(routeId) {
+    try {
+        const route = allRoutesCache.find(r => String(r.id) === String(routeId));
+        if (!route) { alert('路线不存在'); return; }
+
+        const nodes = await getRouteNodes(routeId);
+        if (!nodes || nodes.length === 0) { alert('该路线暂无节点'); return; }
+
+        const today = new Date().toISOString().slice(0, 10);
+        let currentTime = 8 * 60;
+        const dayNodes = [];
+
+        // 提示信息
+        dayNodes.push({
+            type: 'reminder',
+            message: `采用路线：${route.name}`
+        });
+
+        nodes.forEach(n => {
+            const dur = n.duration_min || 10;
+            let nodeName = n.node_name || '游览';
+            const typeLabel = NODE_TYPE_SHORT[n.node_type] ? `[${NODE_TYPE_SHORT[n.node_type]}] ` : '';
+            dayNodes.push({
+                type: 'visit',
+                name: `${typeLabel}${nodeName}`,
+                startTime: currentTime,
+                endTime: currentTime + dur,
+                duration: dur,
+                nodeType: 'poi'
+            });
+            currentTime += dur;
+        });
+
+        dayNodes.push({
+            type: 'trip_end',
+            name: '本次路线游览结束',
+            startTime: currentTime,
+            endTime: currentTime + 1
+        });
+
+        // 判断是否已有行程
+        if (!currentTripData || !currentTripData.days || currentTripData.days.length === 0) {
+            currentTripData = {
+                days: [{ day: 1, date: today, nodes: dayNodes }],
+                warnings: [],
+                totalTravel: 0,
+                totalVisit: nodes.reduce((s, n) => s + (n.duration_min || 0), 0),
+                totalWaiting: 0
+            };
+            window.closePanel('routePanel');
+            document.getElementById('stepPreferences').classList.add('hidden');
+            document.getElementById('stepDetail').classList.remove('hidden');
+            showTripDetail(currentTripData);
+            window.openPanel('planPanel');
+            alert('已采用路线并创建新行程');
+        } else {
+            const newDayNum = currentTripData.days.length + 1;
+            const lastDay = currentTripData.days[currentTripData.days.length - 1];
+            let baseDate = new Date(lastDay.date);
+            baseDate.setDate(baseDate.getDate() + 1);
+            const newDate = baseDate.toISOString().slice(0, 10);
+
+            currentTripData.days.push({ day: newDayNum, date: newDate, nodes: dayNodes });
+
+            window.closePanel('routePanel');
+            showTripDetail(currentTripData);
+            window.openPanel('planPanel');
+            alert(`已采用路线并添加到第 ${newDayNum} 天`);
+        }
+    } catch (e) {
+        alert('采用路线失败：' + e.message);
+        console.error(e);
+    }
+};
+
+// ===== 商户详情（不再内嵌路线） =====
 window.showPoiDetail = async function(poi) {
     try {
         const merchants = await getMerchantsByPoi(poi.id);
@@ -1125,12 +1312,6 @@ window.showPoiDetail = async function(poi) {
 
         html += `<p>${poi.description || ''}</p>`;
 
-        // ★ 推荐路线（如果是景区类型）
-        if (poi.type === 'scenic') {
-            html += `<div id="route-section-container"></div>`;
-        }
-
-        // 商户预约按钮
         if (merchant) {
             const categoryOptions = categories.map(c => `<option value="${c}">${c}</option>`).join('');
             html += `
@@ -1171,190 +1352,9 @@ window.showPoiDetail = async function(poi) {
 
         document.getElementById('merchantDetailContent').innerHTML = html;
         window.openPanel('merchantDetailPanel');
-
-        // 异步加载推荐路线
-        if (poi.type === 'scenic') {
-            loadScenicRoutes(poi);
-        }
     } catch (e) {
         console.error('加载商户详情失败:', e);
         alert('加载失败：' + e.message);
-    }
-};
-
-// 加载景区的推荐路线
-async function loadScenicRoutes(poi) {
-    const container = document.getElementById('route-section-container');
-    if (!container) return;
-    container.innerHTML = '<div class="text-secondary small">加载推荐路线中...</div>';
-
-    try {
-        const routes = await getRoutes();
-        const scenicRoutes = (routes || []).filter(r => String(r.scenic_poi_id) === String(poi.id));
-
-        if (scenicRoutes.length === 0) {
-            container.innerHTML = '';
-            return;
-        }
-
-        // 按是否默认排序
-        scenicRoutes.sort((a, b) => (b.is_default ? 1 : 0) - (a.is_default ? 1 : 0));
-
-        let html = `<div class="route-section">
-            <div class="route-section-title">
-                <h6><i class="fas fa-route"></i> 推荐游览路线</h6>
-            </div>`;
-
-        for (const r of scenicRoutes) {
-            let nodes = [];
-            try {
-                nodes = await getRouteNodes(r.id);
-            } catch (e) {
-                console.warn('加载路线节点失败:', e);
-            }
-
-            const defaultBadge = r.is_default ? '<span style="background:#ffeb3b;color:#f57f17;padding:1px 8px;border-radius:8px;font-size:10px;font-weight:600;margin-left:6px;">默认推荐</span>' : '';
-            const totalMin = r.duration_min || nodes.reduce((s, n) => s + (n.duration_min || 0), 0);
-
-            html += `<div class="route-card-inner">
-                <div class="d-flex justify-content-between align-items-start">
-                    <div style="flex:1;">
-                        <div class="route-title">${r.name || '未命名路线'}${defaultBadge}</div>
-                        <div class="route-meta">总时长：${totalMin}分钟 · ${nodes.length}个节点</div>
-                    </div>
-                    <button class="adopt-btn" onclick="window.adoptRoute('${r.id}')">
-                        <i class="fas fa-check"></i> 一键采用
-                    </button>
-                </div>`;
-
-            if (r.description) {
-                html += `<p style="color:#666;font-size:12px;margin:6px 0;">${r.description}</p>`;
-            }
-
-            if (nodes.length > 0) {
-                html += `<div style="margin-top:8px;">`;
-                nodes.forEach((n, i) => {
-                    const typeLabel = NODE_TYPE_SHORT[n.node_type] || '其他';
-                    const typeCls = `node-type-${n.node_type || 'other'}`;
-                    html += `<div class="route-node-row">
-                        <span class="route-node-num">${i + 1}</span>
-                        <div class="route-node-detail">
-                            <div class="route-node-name-row">
-                                <span class="route-node-name">${n.node_name || '未命名'}</span>
-                                <span class="route-node-type-badge ${typeCls}">${typeLabel}</span>
-                                <span class="route-node-duration"><i class="fas fa-clock"></i> ${n.duration_min || 0}分钟</span>
-                            </div>
-                            ${n.description ? `<div class="route-node-desc">${n.description}</div>` : ''}
-                            ${n.tips ? `<div class="route-node-tips"><i class="fas fa-lightbulb"></i> ${n.tips}</div>` : ''}
-                        </div>
-                    </div>`;
-                });
-                html += `</div>`;
-            }
-
-            html += `</div>`;
-        }
-
-        html += `</div>`;
-        container.innerHTML = html;
-    } catch (e) {
-        console.error('加载推荐路线失败:', e);
-        container.innerHTML = '';
-    }
-}
-
-// ★ 一键采用路线
-window.adoptRoute = async function(routeId) {
-    try {
-        const routes = await getRoutes();
-        const route = routes.find(r => String(r.id) === String(routeId));
-        if (!route) { alert('路线不存在'); return; }
-
-        const nodes = await getRouteNodes(routeId);
-        if (!nodes || nodes.length === 0) { alert('该路线暂无节点'); return; }
-
-        // 构造行程节点
-        const today = new Date().toISOString().slice(0, 10);
-        let currentTime = 8 * 60;   // 08:00
-        const dayNodes = [];
-
-        // 起点
-        if (route.scenic_poi_id) {
-            const scenic = allPois.find(p => String(p.id) === String(route.scenic_poi_id));
-            if (scenic) {
-                // 提示信息
-                dayNodes.push({
-                    type: 'reminder',
-                    message: `采用路线：${route.name}`
-                });
-            }
-        }
-
-        nodes.forEach(n => {
-            const dur = n.duration_min || 10;
-            dayNodes.push({
-                type: 'visit',
-                name: n.node_name || '游览',
-                startTime: currentTime,
-                endTime: currentTime + dur,
-                duration: dur,
-                nodeType: 'poi'
-            });
-            currentTime += dur;
-        });
-
-        // 结束
-        dayNodes.push({
-            type: 'trip_end',
-            name: '本次路线游览结束',
-            startTime: currentTime,
-            endTime: currentTime + 1
-        });
-
-        // 判断是否已有行程
-        if (!currentTripData || !currentTripData.days) {
-            // 创建新行程
-            currentTripData = {
-                days: [{
-                    day: 1,
-                    date: today,
-                    nodes: dayNodes
-                }],
-                warnings: [],
-                totalTravel: 0,
-                totalVisit: nodes.reduce((s, n) => s + (n.duration_min || 0), 0),
-                totalWaiting: 0
-            };
-            // 展示到行程面板
-            window.closePanel('merchantDetailPanel');
-            document.getElementById('stepPreferences').classList.add('hidden');
-            document.getElementById('stepDetail').classList.remove('hidden');
-            showTripDetail(currentTripData);
-            window.openPanel('planPanel');
-            alert('已采用路线并创建新行程');
-        } else {
-            // 追加到现有行程（新的一天）
-            const newDayNum = currentTripData.days.length + 1;
-            // 日期递增
-            const lastDay = currentTripData.days[currentTripData.days.length - 1];
-            let baseDate = new Date(lastDay.date);
-            baseDate.setDate(baseDate.getDate() + 1);
-            const newDate = baseDate.toISOString().slice(0, 10);
-
-            currentTripData.days.push({
-                day: newDayNum,
-                date: newDate,
-                nodes: dayNodes
-            });
-
-            window.closePanel('merchantDetailPanel');
-            showTripDetail(currentTripData);
-            window.openPanel('planPanel');
-            alert(`已采用路线并添加到第 ${newDayNum} 天`);
-        }
-    } catch (e) {
-        alert('采用路线失败：' + e.message);
-        console.error(e);
     }
 };
 
@@ -1378,7 +1378,6 @@ window.backToPreferences = function() {
 window.startNavigation = startNavigation;
 window.endNavigation = endNavigation;
 
-// ===== 分类栏 =====
 const brandToggle = document.getElementById('brandToggle');
 const categoryBar = document.getElementById('categoryBar');
 let hideTimer = null;
@@ -1420,10 +1419,21 @@ async function init() {
             Promise.resolve(window.renderFeedbackHistory())
         ]);
 
+        // 预加载路线到缓存
+        try {
+            const routes = await getRoutes();
+            allRoutesCache = routes || [];
+        } catch (e) { console.warn('预加载路线失败:', e); }
+
+        // 首次打开推荐路线面板时渲染
+        document.querySelector('button[onclick*="routePanel"]').addEventListener('click', () => {
+            setTimeout(() => renderRouteListPanel(), 100);
+        });
+
         locateUser();
         document.getElementById('generatePlanBtn').addEventListener('click', window.generatePlans);
 
-        console.log('[系统] 初始化完成, POI数量:', pois.length);
+        console.log('[系统] 初始化完成, POI数量:', pois.length, '路线数:', allRoutesCache.length);
     } catch (e) {
         console.error('[系统] 初始化失败:', e);
         alert('初始化失败：' + e.message);

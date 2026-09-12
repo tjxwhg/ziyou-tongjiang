@@ -1,7 +1,6 @@
-// js/admin.js - 管理后台完整逻辑（分类与类型解耦 + 柔性关联 + UUID兼容）
+// js/admin.js - 管理后台完整逻辑（4类型 + 路线规划重写 + UUID兼容）
 import {
     getPois, getPoi, insertPoi, updatePoi, deletePoi as apiDeletePoi,
-    getScenicList, insertScenic, updateScenic, deleteScenic as apiDeleteScenic,
     getRoutes, getRoute, insertRoute, updateRoute, deleteRoute as apiDeleteRoute,
     getRouteNodes, insertRouteNodes, deleteRouteNodes,
     getTransportPresets, upsertTransportPreset,
@@ -11,13 +10,15 @@ import {
     uploadFile
 } from './api.js';
 
-let allPois = [], allScenic = [], allRoutes = [], allPresets = [], allMerchants = [], allFeedbacks = [];
+let allPois = [], allRoutes = [], allPresets = [], allMerchants = [], allFeedbacks = [];
 let currentEditingPoiId = null;
 let currentSubPoiIds = [];
 let currentTourRoute = [];
-
-// ★ 追踪用户是否手动修改过分类
 let categoryManuallySet = false;
+
+// ★ 路线节点数据（内存中维护）
+let routeNodesData = [];
+let editingNodeIndex = -1;   // 当前编辑的节点索引，-1 表示新增
 
 // ============================================================
 // 类型标签与徽章
@@ -61,6 +62,27 @@ const CATEGORY_ICONS = {
     '公共服务': '🏛️'
 };
 
+// 路线类型标签
+const ROUTE_TYPE_LABELS = {
+    scenic_internal: '🏞️ 景区内部',
+    city_day: '🏙️ 城市一日游',
+    area_multi: '🗺️ 区域联合',
+    custom: '✨ 自定义'
+};
+
+// 节点类型标签
+const NODE_TYPE_LABELS = {
+    entrance: '🚪 入口',
+    parking: '🅿️ 停车场',
+    rest: '☕ 休息区',
+    core_view: '⭐ 核心景点',
+    spot: '📍 景点参观',
+    entertainment: '🎢 游玩项目',
+    wc: '🚻 卫生间',
+    exit: '🚪 出口',
+    other: '📌 其他'
+};
+
 function getTypeBadge(type, facilitySubtype) {
     const t = type || 'spot';
 
@@ -96,22 +118,19 @@ function subtypesToText(subtypes) {
 // ============================================================
 export async function initAdminUI() {
     try {
-        const [pois, scenic, routes, presets, merchants, feedbacks] = await Promise.all([
+        const [pois, routes, presets, merchants, feedbacks] = await Promise.all([
             getPois(),
-            getScenicList(),
             getRoutes(),
             getTransportPresets(),
             getMerchantsByPoi(null),
             getFeedbacks(null)
         ]);
         allPois = pois;
-        allScenic = scenic;
         allRoutes = routes;
         allPresets = presets;
         allMerchants = merchants;
         allFeedbacks = feedbacks;
         renderPoiList(allPois);
-        renderScenicList(allScenic);
         renderRouteList(allRoutes);
         renderTransportEditor(allPresets);
         renderMerchantList(allMerchants);
@@ -135,8 +154,6 @@ export function renderPoiList(pois) {
     let html = '';
     for (let p of topLevelPois) {
         const level = p.data_level || 'L3';
-        const scenic = allScenic.find(s => String(s.id) === String(p.scenic_id));
-        const scenicName = scenic ? `[${scenic.name}]` : '';
         const poiType = p.type || 'spot';
         const typeBadge = getTypeBadge(poiType, p.facility_subtype);
 
@@ -157,7 +174,7 @@ export function renderPoiList(pois) {
 
         html += `<div class="poi-card" id="poi-card-${p.id}">
             <div class="poi-header">
-                <span>${typeBadge} <b>${p.name}</b>${featuredTag} ${scenicName} ${catBadge} <span class="data-quality-badge quality-${level}">${level}</span>${subInfo}</span>
+                <span>${typeBadge} <b>${p.name}</b>${featuredTag} ${catBadge} <span class="data-quality-badge quality-${level}">${level}</span>${subInfo}</span>
                 <div>
                     <button class="btn btn-sm btn-secondary" onclick="window.showEditPoiModal('${p.id}')"><i class="fas fa-edit"></i> 编辑</button>
                     <button class="btn btn-sm btn-danger" onclick="window.deletePoi('${p.id}')"><i class="fas fa-trash"></i> 删除</button>
@@ -210,9 +227,6 @@ export function showAddPoiModal() {
 
     const scenicSelect = document.getElementById('edit-poi-scenic');
     scenicSelect.innerHTML = '<option value="">无关联</option>';
-    allScenic.forEach(s => {
-        scenicSelect.innerHTML += `<option value="${s.id}">${s.name}</option>`;
-    });
 
     const parentSelect = document.getElementById('edit-poi-parent');
     parentSelect.innerHTML = '<option value="">-- 不关联（独立存在）--</option>';
@@ -258,10 +272,6 @@ export async function showEditPoiModal(poiId) {
 
     const scenicSelect = document.getElementById('edit-poi-scenic');
     scenicSelect.innerHTML = '<option value="">无关联</option>';
-    allScenic.forEach(s => {
-        const selected = String(s.id) === String(poi.scenic_id) ? 'selected' : '';
-        scenicSelect.innerHTML += `<option value="${s.id}" ${selected}>${s.name}</option>`;
-    });
 
     const parentSelect = document.getElementById('edit-poi-parent');
     parentSelect.innerHTML = '<option value="">-- 不关联（独立存在）--</option>';
@@ -290,7 +300,7 @@ export async function showEditPoiModal(poiId) {
 }
 
 // ============================================================
-// 子类型复选框：读取 / 回填
+// 子类型复选框
 // ============================================================
 function getFacilitySubtypeCheckboxes() {
     const ids = ['subtype-restaurant', 'subtype-hotel', 'subtype-shopping', 'subtype-service'];
@@ -307,14 +317,12 @@ function setFacilitySubtypeCheckboxes(values) {
     const ids = ['subtype-restaurant', 'subtype-hotel', 'subtype-shopping', 'subtype-service'];
     ids.forEach(id => {
         const cb = document.getElementById(id);
-        if (cb) {
-            cb.checked = arr.includes(cb.value);
-        }
+        if (cb) cb.checked = arr.includes(cb.value);
     });
 }
 
 // ============================================================
-// 分类联动事件处理器
+// 分类联动
 // ============================================================
 window.onCategoryChange = function() {
     categoryManuallySet = true;
@@ -322,10 +330,8 @@ window.onCategoryChange = function() {
 
 window.onParentChange = function() {
     if (categoryManuallySet) return;
-
     const parentId = document.getElementById('edit-poi-parent').value;
     if (!parentId) return;
-
     const parent = allPois.find(p => String(p.id) === String(parentId));
     if (parent && parent.category) {
         document.getElementById('edit-poi-category').value = parent.category;
@@ -334,7 +340,6 @@ window.onParentChange = function() {
 
 window.onFacilitySubtypeChange = function() {
     if (categoryManuallySet) return;
-
     const subtypes = getFacilitySubtypeCheckboxes();
     const catSelect = document.getElementById('edit-poi-category');
 
@@ -348,7 +353,7 @@ window.onFacilitySubtypeChange = function() {
 };
 
 // ============================================================
-// 根据类型切换字段显示
+// 类型切换
 // ============================================================
 export function togglePoiTypeUI() {
     const type = document.getElementById('edit-poi-type').value;
@@ -372,18 +377,15 @@ export function togglePoiTypeUI() {
         subSection.classList.remove('hidden');
         routeSection.classList.remove('hidden');
     } else if (type === 'core_node') {
-        // ★ 核心节点：强制关联景区
         fieldParent.classList.remove('hidden');
         fieldDuration.classList.remove('hidden');
         if (parentRequired) parentRequired.textContent = '*';
     } else if (type === 'spot') {
-        // ★ 景点：可选关联景区
         fieldParent.classList.remove('hidden');
         fieldDuration.classList.remove('hidden');
         fieldFeatured.classList.remove('hidden');
         if (parentRequired) parentRequired.textContent = '（可选）';
     } else if (type === 'facility') {
-        // ★ 公共场所：可选关联景区
         fieldFacilitySubtype.classList.remove('hidden');
         fieldParent.classList.remove('hidden');
         if (parentRequired) parentRequired.textContent = '（可选）';
@@ -501,7 +503,6 @@ export async function confirmSubPoiSelection() {
         await Promise.all(selectedIds.map(id =>
             updatePoi(id, { parent_id: currentEditingPoiId })
         ));
-
         selectedIds.forEach(id => {
             const p = allPois.find(x => String(x.id) === String(id));
             if (p) p.parent_id = currentEditingPoiId;
@@ -523,10 +524,8 @@ export async function removeSubPoi(subPoiId) {
         await updatePoi(subPoiId, { parent_id: null });
         const poi = allPois.find(p => String(p.id) === String(subPoiId));
         if (poi) poi.parent_id = null;
-
         currentTourRoute = currentTourRoute.filter(x => String(x.id) !== String(subPoiId));
         renderTourRoute();
-
         renderSubPoiList();
         renderPoiList(allPois);
     } catch (e) {
@@ -535,14 +534,14 @@ export async function removeSubPoi(subPoiId) {
 }
 
 // ============================================================
-// 浏览路线规划
+// 简易游览顺序（景区编辑内）
 // ============================================================
 function renderTourRoute() {
     const container = document.getElementById('tour-route-list');
     if (!container) return;
 
     if (currentTourRoute.length === 0) {
-        container.innerHTML = '<p class="text-secondary small mb-0">暂无路线节点，点击"从子项加载"或手动添加。</p>';
+        container.innerHTML = '<p class="text-secondary small mb-0">暂无顺序，点击"从子项加载"或手动添加。</p>';
         return;
     }
 
@@ -554,8 +553,8 @@ function renderTourRoute() {
         } else {
             typeLabel = (TYPE_LABELS[item.type] || item.type || '').replace(/^[^\s]+\s/, '');
         }
-        html += `<div class="route-item">
-            <span class="route-order">${idx + 1}</span>
+        html += `<div style="display:flex;align-items:center;gap:8px;padding:6px;background:#f8f9fa;border-radius:6px;margin-bottom:4px;">
+            <span style="width:30px;text-align:center;font-weight:600;color:#1b5e20;">${idx + 1}</span>
             <span style="flex:1;">${item.name} <span class="text-secondary small">[${typeLabel}]</span></span>
             <button class="btn btn-sm btn-outline-secondary" onclick="window.moveTourRouteItem(${idx}, -1)" ${idx === 0 ? 'disabled' : ''}>↑</button>
             <button class="btn btn-sm btn-outline-secondary" onclick="window.moveTourRouteItem(${idx}, 1)" ${idx === currentTourRoute.length - 1 ? 'disabled' : ''}>↓</button>
@@ -661,7 +660,6 @@ export async function savePoiEdit() {
         status: 'active'
     };
 
-    // 公共场所子类型
     if (poiType === 'facility') {
         const subtypes = getFacilitySubtypeCheckboxes();
         if (subtypes.length === 0) {
@@ -673,26 +671,22 @@ export async function savePoiEdit() {
         updates.facility_subtype = null;
     }
 
-    // 游览时长
     if (poiType === 'core_node' || poiType === 'spot') {
         updates.visit_duration = parseInt(document.getElementById('edit-poi-visit').value) || 0;
     } else {
         updates.visit_duration = 0;
     }
 
-    // 经典标记
     updates.is_featured = (poiType === 'spot')
         ? document.getElementById('edit-poi-featured').checked
         : false;
 
-    // 浏览路线
     if (poiType === 'scenic') {
         updates.tour_route = currentTourRoute.map(x => x.id);
     } else {
         updates.tour_route = null;
     }
 
-    // ★ 校验：只有核心节点强制要求所属景区
     if (!updates.name) { alert('请输入名称'); return; }
     if (poiType === 'core_node' && !parentId) {
         alert('核心节点必须选择所属景区');
@@ -705,7 +699,6 @@ export async function savePoiEdit() {
         } else {
             await updatePoi(poiId, updates);
         }
-
         alert(isNew ? '新增成功' : '保存成功');
         bootstrap.Modal.getInstance(document.getElementById('poiModal')).hide();
         await initAdminUI();
@@ -740,191 +733,367 @@ export async function deletePoi(id) {
 }
 
 // ============================================================
-// 景区管理（ztj_scenic 表）
 // ============================================================
-export function renderScenicList(scenics) {
-    const container = document.getElementById('scenic-list');
-    if (!container) return;
-    let html = '';
-    for (let s of scenics) {
-        const relatedPois = allPois.filter(p => String(p.scenic_id) === String(s.id));
-        html += `<div class="poi-card">
-            <div class="poi-header">
-                <span><b>${s.name}</b> [${s.area || '未分区'}] <span class="text-secondary">(${relatedPois.length}个关联POI)</span></span>
-                <div>
-                    <button class="btn btn-sm btn-secondary" onclick="window.showEditScenicModal('${s.id}')"><i class="fas fa-edit"></i> 编辑</button>
-                    <button class="btn btn-sm btn-danger" onclick="window.deleteScenic('${s.id}')"><i class="fas fa-trash"></i> 删除</button>
-                </div>
-            </div>
-        </div>`;
-    }
-    container.innerHTML = html || '<p>暂无景区</p>';
-}
-
-export function toggleScenicPois(scenicId) {
-    const container = document.getElementById(`scenic-pois-${scenicId}`);
-    if (container) container.classList.toggle('hidden');
-}
-
-export async function showEditScenicModal(id) {
-    const s = allScenic.find(x => String(x.id) === String(id));
-    if (!s) return;
-    document.getElementById('edit-scenic-id').value = id;
-    document.getElementById('edit-scenic-name').value = s.name || '';
-    document.getElementById('edit-scenic-area').value = s.area || '';
-    document.getElementById('edit-scenic-lat').value = s.lat || '';
-    document.getElementById('edit-scenic-lng').value = s.lng || '';
-    document.getElementById('edit-scenic-desc').value = s.description || '';
-    new bootstrap.Modal(document.getElementById('scenicModal')).show();
-}
-export function showAddScenicModal() {
-    document.getElementById('edit-scenic-id').value = '';
-    document.getElementById('edit-scenic-name').value = '';
-    document.getElementById('edit-scenic-area').value = '';
-    document.getElementById('edit-scenic-lat').value = '';
-    document.getElementById('edit-scenic-lng').value = '';
-    document.getElementById('edit-scenic-desc').value = '';
-    new bootstrap.Modal(document.getElementById('scenicModal')).show();
-}
-export async function saveScenicEdit() {
-    const id = document.getElementById('edit-scenic-id').value;
-    const data = {
-        name: document.getElementById('edit-scenic-name').value.trim(),
-        area: document.getElementById('edit-scenic-area').value.trim(),
-        lat: parseFloat(document.getElementById('edit-scenic-lat').value) || 0,
-        lng: parseFloat(document.getElementById('edit-scenic-lng').value) || 0,
-        description: document.getElementById('edit-scenic-desc').value
-    };
-    try {
-        if (id) await updateScenic(id, data);
-        else await insertScenic(data);
-        alert('保存成功');
-        bootstrap.Modal.getInstance(document.getElementById('scenicModal')).hide();
-        await initAdminUI();
-    } catch (e) { alert('保存失败：' + e.message); }
-}
-export async function deleteScenic(id) {
-    if (!confirm('确认删除此景区？')) return;
-    try {
-        const related = allPois.filter(p => String(p.scenic_id) === String(id));
-        for (let p of related) {
-            await updatePoi(p.id, { scenic_id: null });
-        }
-        await apiDeleteScenic(id);
-        await initAdminUI();
-    } catch (e) { alert('删除失败：' + e.message); }
-}
-
+// 路线规划（重写）
 // ============================================================
-// 路线管理
 // ============================================================
+
 export function renderRouteList(routes) {
     const container = document.getElementById('route-list');
     if (!container) return;
-    container.innerHTML = routes.map(r => `
-        <div class="poi-card">
-            <div class="poi-header">
-                <span><b>${r.name}</b> (${r.start_time || '未设'}) ${r.transport || ''}</span>
+
+    if (!routes || routes.length === 0) {
+        container.innerHTML = '<p class="text-secondary">暂无路线，点击右上角"新增路线"创建。</p>';
+        return;
+    }
+
+    let html = '';
+    routes.forEach(r => {
+        const routeType = r.route_type || 'custom';
+        const typeLabel = ROUTE_TYPE_LABELS[routeType] || routeType;
+
+        // 关联景区名
+        let scenicName = '';
+        if (r.scenic_poi_id) {
+            const sp = allPois.find(p => String(p.id) === String(r.scenic_poi_id));
+            if (sp) scenicName = ` · ${sp.name}`;
+        }
+
+        const defaultBadge = r.is_default ? '<span class="default-badge">默认推荐</span>' : '';
+        const durationText = r.duration_min ? `${r.duration_min}分钟` : '—';
+
+        html += `<div class="route-card">
+            <div class="route-header">
+                <div>
+                    <span class="route-type-badge route-type-${routeType}">${typeLabel}</span>
+                    <b class="ms-1">${r.name || '未命名'}</b>${defaultBadge}
+                </div>
                 <div>
                     <button class="btn btn-sm btn-secondary" onclick="window.showEditRouteModal('${r.id}')"><i class="fas fa-edit"></i> 编辑</button>
                     <button class="btn btn-sm btn-danger" onclick="window.deleteRoute('${r.id}')"><i class="fas fa-trash"></i> 删除</button>
                 </div>
             </div>
-        </div>
-    `).join('') || '<p>暂无路线</p>';
+            <div class="route-meta">
+                ${scenicName ? `关联景区：${scenicName.replace(' · ', '')} · ` : ''}
+                总时长：${durationText}
+                ${r.description ? ` · ${r.description}` : ''}
+            </div>
+        </div>`;
+    });
+    container.innerHTML = html;
 }
 
-let routeNodesData = [];
+export async function showAddRouteModal() {
+    document.getElementById('edit-route-id').value = '';
+    document.getElementById('edit-route-name').value = '';
+    document.getElementById('edit-route-type').value = 'scenic_internal';
+    document.getElementById('edit-route-desc').value = '';
+    document.getElementById('edit-route-default').checked = false;
+
+    // 填充关联景区下拉
+    const scenicSelect = document.getElementById('edit-route-scenic');
+    scenicSelect.innerHTML = '<option value="">-- 不关联 --</option>';
+    allPois.filter(p => p.type === 'scenic').forEach(p => {
+        scenicSelect.innerHTML += `<option value="${p.id}">${p.name}</option>`;
+    });
+
+    routeNodesData = [];
+    renderRouteNodes();
+
+    document.getElementById('routeModalTitle').textContent = '新增路线';
+    window.onRouteTypeChange();
+
+    const modal = new bootstrap.Modal(document.getElementById('routeModal'));
+    modal.show();
+}
 
 export async function showEditRouteModal(id) {
     const r = allRoutes.find(x => String(x.id) === String(id));
-    if (!r) return;
+    if (!r) {
+        console.warn('路线未找到:', id);
+        return;
+    }
+
     document.getElementById('edit-route-id').value = id;
     document.getElementById('edit-route-name').value = r.name || '';
-    document.getElementById('edit-route-time').value = r.start_time || '08:30';
-    document.getElementById('edit-route-transport').value = r.transport || '';
-    document.getElementById('edit-route-days').value = r.days || 1;
+    document.getElementById('edit-route-type').value = r.route_type || 'scenic_internal';
+    document.getElementById('edit-route-desc').value = r.description || '';
+    document.getElementById('edit-route-default').checked = !!r.is_default;
 
-    document.getElementById('edit-route-nodes-container').innerHTML = '<p class="text-secondary">加载中...</p>';
-    const modal = new bootstrap.Modal(document.getElementById('routeModal'));
-    modal.show();
+    // 填充关联景区
+    const scenicSelect = document.getElementById('edit-route-scenic');
+    scenicSelect.innerHTML = '<option value="">-- 不关联 --</option>';
+    allPois.filter(p => p.type === 'scenic').forEach(p => {
+        const selected = String(p.id) === String(r.scenic_poi_id) ? 'selected' : '';
+        scenicSelect.innerHTML += `<option value="${p.id}" ${selected}>${p.name}</option>`;
+    });
 
+    // 加载节点
+    routeNodesData = [];
     try {
         const nodes = await getRouteNodes(id);
-        routeNodesData = nodes.map(n => ({ poi_id: n.poi_id, duration_min: n.duration_min || 60 }));
-        renderRouteNodesFields();
+        routeNodesData = nodes.map(n => ({
+            node_name: n.node_name || '',
+            node_type: n.node_type || 'other',
+            poi_id: n.poi_id || '',
+            duration_min: n.duration_min || 10,
+            description: n.description || '',
+            tips: n.tips || ''
+        }));
     } catch (e) {
-        document.getElementById('edit-route-nodes-container').innerHTML = '<p class="text-danger">加载失败</p>';
+        console.warn('加载路线节点失败:', e);
     }
+    renderRouteNodes();
+
+    document.getElementById('routeModalTitle').textContent = `编辑路线 - ${r.name}`;
+    window.onRouteTypeChange();
+
+    const modal = new bootstrap.Modal(document.getElementById('routeModal'));
+    modal.show();
 }
-export function showAddRouteModal() {
-    document.getElementById('edit-route-id').value = '';
-    document.getElementById('edit-route-name').value = '';
-    document.getElementById('edit-route-time').value = '08:30';
-    document.getElementById('edit-route-transport').value = '';
-    document.getElementById('edit-route-days').value = '1';
-    routeNodesData = [];
-    renderRouteNodesFields();
-    new bootstrap.Modal(document.getElementById('routeModal')).show();
-}
-function renderRouteNodesFields() {
-    const container = document.getElementById('edit-route-nodes-container');
-    const opts = allPois.filter(p => p.type === 'scenic').map(p => `<option value="${p.id}">${p.name}</option>`).join('');
+
+// 路线类型切换
+window.onRouteTypeChange = function() {
+    const type = document.getElementById('edit-route-type').value;
+    const scenicField = document.getElementById('field-route-scenic');
+
+    // 景区内部路线需要关联景区；其他类型可选
+    if (type === 'scenic_internal') {
+        scenicField.classList.remove('hidden');
+    } else {
+        // 其他类型也允许关联（城市游可能关联一个主景区）
+        scenicField.classList.remove('hidden');
+    }
+};
+
+// 渲染节点列表
+function renderRouteNodes() {
+    const container = document.getElementById('route-nodes-container');
+    if (!container) return;
+
+    if (routeNodesData.length === 0) {
+        container.innerHTML = '<p class="text-secondary text-center py-3">暂无节点，点击"添加节点"开始规划</p>';
+        document.getElementById('route-total-info').textContent = '（总时长：0分钟）';
+        return;
+    }
+
+    let totalMin = 0;
     let html = '';
     routeNodesData.forEach((n, idx) => {
-        html += `<div class="row g-1 align-items-center mb-1">
-            <div class="col-5"><select class="form-select form-select-sm" onchange="window.updateRouteNode(${idx}, 'poi_id', this.value)">${opts}</select></div>
-            <div class="col-3"><input type="number" class="form-control form-control-sm" placeholder="分钟" value="${n.duration_min||60}" onchange="window.updateRouteNode(${idx}, 'duration_min', this.value)"></div>
-            <div class="col-2"><button class="btn btn-sm btn-danger" onclick="window.removeRouteNodeField(${idx})"><i class="fas fa-times"></i></button></div>
+        totalMin += n.duration_min || 0;
+
+        const typeLabel = NODE_TYPE_LABELS[n.node_type] || '📌 其他';
+        let poiName = '';
+        if (n.poi_id) {
+            const poi = allPois.find(p => String(p.id) === String(n.poi_id));
+            if (poi) poiName = ` <span class="text-secondary" style="font-size:11px;">· ${poi.name}</span>`;
+        }
+
+        html += `<div class="route-node-card">
+            <div class="route-node-header">
+                <span class="route-node-order">${idx + 1}</span>
+                <div class="route-node-info">
+                    <div class="route-node-name">
+                        ${n.node_name || '未命名节点'}
+                        <span class="route-node-type-badge node-type-${n.node_type}">${typeLabel}</span>
+                        ${poiName}
+                    </div>
+                    <div class="route-node-desc">
+                        <i class="fas fa-clock"></i> ${n.duration_min || 0}分钟
+                        ${n.description ? ` · ${n.description}` : ''}
+                        ${n.tips ? ` · 💡 ${n.tips}` : ''}
+                    </div>
+                </div>
+                <div class="route-node-actions">
+                    <button class="btn btn-sm btn-outline-secondary" onclick="window.moveRouteNode(${idx}, -1)" ${idx === 0 ? 'disabled' : ''}>↑</button>
+                    <button class="btn btn-sm btn-outline-secondary" onclick="window.moveRouteNode(${idx}, 1)" ${idx === routeNodesData.length - 1 ? 'disabled' : ''}>↓</button>
+                    <button class="btn btn-sm btn-outline-primary" onclick="window.editRouteNode(${idx})"><i class="fas fa-edit"></i></button>
+                    <button class="btn btn-sm btn-outline-danger" onclick="window.removeRouteNode(${idx})"><i class="fas fa-times"></i></button>
+                </div>
+            </div>
         </div>`;
     });
-    container.innerHTML = html || '<p class="text-secondary">暂无节点</p>';
-    document.querySelectorAll('#edit-route-nodes-container select').forEach((sel, i) => {
-        if (routeNodesData[i] && routeNodesData[i].poi_id) sel.value = routeNodesData[i].poi_id;
+    container.innerHTML = html;
+    document.getElementById('route-total-info').textContent = `（总时长：${totalMin}分钟）`;
+}
+
+// 显示新增节点模态框
+window.showAddRouteNodeModal = function() {
+    editingNodeIndex = -1;
+    document.getElementById('edit-node-index').value = '';
+    document.getElementById('edit-node-name').value = '';
+    document.getElementById('edit-node-type').value = 'other';
+    document.getElementById('edit-node-duration').value = 10;
+    document.getElementById('edit-node-desc').value = '';
+    document.getElementById('edit-node-tips').value = '';
+
+    // 填充关联POI下拉（当前路线的景区下的子项）
+    const routeScenicId = document.getElementById('edit-route-scenic').value;
+    const poiSelect = document.getElementById('edit-node-poi');
+    poiSelect.innerHTML = '<option value="">-- 不关联（自定义）--</option>';
+
+    let candidates = [];
+    if (routeScenicId) {
+        candidates = allPois.filter(p => String(p.parent_id) === String(routeScenicId));
+    } else {
+        candidates = allPois.filter(p => !p.parent_id && p.type !== 'scenic');
+    }
+
+    candidates.forEach(p => {
+        poiSelect.innerHTML += `<option value="${p.id}">${p.name}</option>`;
     });
-}
-window.updateRouteNode = function(idx, field, val) {
-    if (field === 'poi_id') routeNodesData[idx].poi_id = val;
-    else routeNodesData[idx].duration_min = parseInt(val) || 60;
+
+    document.getElementById('routeNodeModalTitle').textContent = '添加节点';
+    new bootstrap.Modal(document.getElementById('routeNodeModal')).show();
 };
-window.removeRouteNodeField = function(idx) {
+
+// 编辑节点
+window.editRouteNode = function(idx) {
+    const node = routeNodesData[idx];
+    if (!node) return;
+    editingNodeIndex = idx;
+
+    document.getElementById('edit-node-index').value = idx;
+    document.getElementById('edit-node-name').value = node.node_name || '';
+    document.getElementById('edit-node-type').value = node.node_type || 'other';
+    document.getElementById('edit-node-duration').value = node.duration_min || 10;
+    document.getElementById('edit-node-desc').value = node.description || '';
+    document.getElementById('edit-node-tips').value = node.tips || '';
+
+    // 填充关联POI
+    const routeScenicId = document.getElementById('edit-route-scenic').value;
+    const poiSelect = document.getElementById('edit-node-poi');
+    poiSelect.innerHTML = '<option value="">-- 不关联（自定义）--</option>';
+
+    let candidates = [];
+    if (routeScenicId) {
+        candidates = allPois.filter(p => String(p.parent_id) === String(routeScenicId));
+    } else {
+        candidates = allPois.filter(p => !p.parent_id && p.type !== 'scenic');
+    }
+
+    candidates.forEach(p => {
+        const selected = String(p.id) === String(node.poi_id) ? 'selected' : '';
+        poiSelect.innerHTML += `<option value="${p.id}" ${selected}>${p.name}</option>`;
+    });
+
+    document.getElementById('routeNodeModalTitle').textContent = '编辑节点';
+    new bootstrap.Modal(document.getElementById('routeNodeModal')).show();
+};
+
+// 保存节点（从模态框到内存）
+window.saveRouteNode = function() {
+    const name = document.getElementById('edit-node-name').value.trim();
+    if (!name) { alert('请输入节点名称'); return; }
+
+    const nodeData = {
+        node_name: name,
+        node_type: document.getElementById('edit-node-type').value,
+        poi_id: document.getElementById('edit-node-poi').value || null,
+        duration_min: parseInt(document.getElementById('edit-node-duration').value) || 10,
+        description: document.getElementById('edit-node-desc').value.trim(),
+        tips: document.getElementById('edit-node-tips').value.trim()
+    };
+
+    if (editingNodeIndex >= 0 && editingNodeIndex < routeNodesData.length) {
+        routeNodesData[editingNodeIndex] = nodeData;
+    } else {
+        routeNodesData.push(nodeData);
+    }
+
+    bootstrap.Modal.getInstance(document.getElementById('routeNodeModal')).hide();
+    renderRouteNodes();
+};
+
+// 移动节点
+window.moveRouteNode = function(idx, dir) {
+    const newIdx = idx + dir;
+    if (newIdx < 0 || newIdx >= routeNodesData.length) return;
+    [routeNodesData[idx], routeNodesData[newIdx]] = [routeNodesData[newIdx], routeNodesData[idx]];
+    renderRouteNodes();
+};
+
+// 删除节点
+window.removeRouteNode = function(idx) {
+    if (!confirm('确认删除此节点？')) return;
     routeNodesData.splice(idx, 1);
-    renderRouteNodesFields();
+    renderRouteNodes();
 };
-export function addRouteNodeField() {
-    routeNodesData.push({ poi_id: '', duration_min: 60 });
-    renderRouteNodesFields();
-}
+
+// 保存路线
 export async function saveRouteEdit() {
     const id = document.getElementById('edit-route-id').value;
+    const name = document.getElementById('edit-route-name').value.trim();
+
+    if (!name) { alert('请输入路线名称'); return; }
+    if (routeNodesData.length === 0) { alert('请至少添加一个节点'); return; }
+
+    // 计算总时长
+    const totalMin = routeNodesData.reduce((sum, n) => sum + (n.duration_min || 0), 0);
+
+    const scenicIdRaw = document.getElementById('edit-route-scenic').value;
+    const scenicPoiId = scenicIdRaw || null;
+
     const data = {
-        name: document.getElementById('edit-route-name').value.trim(),
-        start_time: document.getElementById('edit-route-time').value,
-        transport: document.getElementById('edit-route-transport').value,
-        days: parseInt(document.getElementById('edit-route-days').value) || 1,
+        name: name,
+        route_type: document.getElementById('edit-route-type').value,
+        scenic_poi_id: scenicPoiId,
+        description: document.getElementById('edit-route-desc').value.trim(),
+        is_default: document.getElementById('edit-route-default').checked,
+        duration_min: totalMin,
+        // 保留旧字段兼容
+        start_time: '08:00',
+        transport: '',
+        days: 1,
         group_type: 'default'
     };
+
     try {
         let routeId = id;
-        if (id) { await updateRoute(id, data); } else { const r = await insertRoute(data); routeId = r.id; }
+        if (id) {
+            await updateRoute(id, data);
+        } else {
+            const r = await insertRoute(data);
+            routeId = r.id;
+        }
+
+        // 删除旧节点
         await deleteRouteNodes(routeId);
-        const nodes = routeNodesData.filter(n => n.poi_id).map((n, i) => ({
+
+        // 插入新节点
+        const nodes = routeNodesData.map((n, i) => ({
             route_id: routeId,
-            poi_id: n.poi_id,
             order_num: i + 1,
-            duration_min: n.duration_min || 60,
+            node_name: n.node_name,
+            node_type: n.node_type,
+            poi_id: n.poi_id || null,
+            duration_min: n.duration_min || 10,
+            description: n.description,
+            tips: n.tips,
+            // 兼容旧字段
             transport_mode: '步行',
             transport_time: 0
         }));
         if (nodes.length > 0) await insertRouteNodes(nodes);
+
         alert('保存成功');
         bootstrap.Modal.getInstance(document.getElementById('routeModal')).hide();
         await initAdminUI();
-    } catch (e) { alert('保存失败：' + e.message); }
+    } catch (e) {
+        alert('保存失败：' + e.message);
+        console.error(e);
+    }
 }
+
 export async function deleteRoute(id) {
-    if (!confirm('确认删除？')) return;
-    try { await apiDeleteRoute(id); await initAdminUI(); } catch (e) { alert('删除失败：' + e.message); }
+    if (!confirm('确认删除此路线？')) return;
+    try {
+        await deleteRouteNodes(id);
+        await apiDeleteRoute(id);
+        await initAdminUI();
+    } catch (e) {
+        alert('删除失败：' + e.message);
+    }
 }
 
 // ============================================================

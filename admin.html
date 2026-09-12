@@ -45,12 +45,42 @@
         .transport-item input { width: 80px; padding: 2px 6px; border: 1px solid #ccc; border-radius: 4px; text-align: center; display: inline-block; }
         .save-status { font-size: 12px; color: #2e7d32; margin-left: 6px; }
         .modal-lg-custom { max-width: 850px; }
-        .route-item { display: flex; align-items: center; gap: 8px; padding: 6px; background: #f8f9fa; border-radius: 6px; margin-bottom: 4px; }
-        .route-item .route-order { width: 30px; text-align: center; font-weight: 600; color: #1b5e20; }
+        .modal-xl-custom { max-width: 1000px; }
         .subtype-checkbox-group { display: flex; flex-wrap: wrap; gap: 12px; padding: 6px 10px; border: 1px solid #ddd; border-radius: 6px; background: #fff; }
         .subtype-checkbox-group .form-check { margin: 0; }
         .subtype-checkbox-group .form-check-label { cursor: pointer; }
         .hint-text { color: #888; font-size: 12px; margin-top: 2px; }
+
+        /* 路线节点相关 */
+        .route-node-card { border: 1px solid #e0e0e0; border-radius: 8px; padding: 10px; margin-bottom: 8px; background: #fafafa; position: relative; }
+        .route-node-card .route-node-header { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+        .route-node-card .route-node-order { display: inline-block; background: #1b5e20; color: white; width: 26px; height: 26px; line-height: 26px; text-align: center; border-radius: 50%; font-weight: 600; font-size: 13px; flex-shrink: 0; }
+        .route-node-card .route-node-info { flex: 1; margin-left: 8px; }
+        .route-node-card .route-node-name { font-weight: 600; color: #333; }
+        .route-node-card .route-node-desc { color: #888; font-size: 12px; margin-top: 2px; }
+        .route-node-card .route-node-actions { display: flex; gap: 4px; flex-shrink: 0; }
+        .route-node-type-badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; margin-left: 6px; }
+        .node-type-entrance { background: #c8e6c9; color: #1b5e20; }
+        .node-type-parking { background: #bbdefb; color: #0d47a1; }
+        .node-type-rest { background: #ffe0b2; color: #e65100; }
+        .node-type-core_view { background: #f8bbd0; color: #880e4f; }
+        .node-type-spot { background: #d1c4e9; color: #4527a0; }
+        .node-type-entertainment { background: #ffccbc; color: #bf360c; }
+        .node-type-wc { background: #b2dfdb; color: #004d40; }
+        .node-type-exit { background: #d7ccc8; color: #3e2723; }
+        .node-type-other { background: #e0e0e0; color: #424242; }
+
+        /* 路线卡片 */
+        .route-card { border: 1px solid #e0e0e0; border-radius: 8px; padding: 12px; margin-bottom: 10px; background: #fafafa; }
+        .route-card .route-header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; }
+        .route-card .route-meta { color: #888; font-size: 12px; margin-top: 4px; }
+        .route-type-badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; }
+        .route-type-scenic_internal { background: #e3f2fd; color: #1565c0; }
+        .route-type-city_day { background: #fff3e0; color: #e65100; }
+        .route-type-area_multi { background: #f3e5f5; color: #6a1b9a; }
+        .route-type-custom { background: #e8eaf6; color: #283593; }
+        .default-badge { background: #ffeb3b; color: #f57f17; padding: 1px 8px; border-radius: 8px; font-size: 10px; font-weight: 600; margin-left: 6px; }
+
         @media (max-width: 768px) { .header { flex-direction: column; gap: 8px; } }
     </style>
 </head>
@@ -80,8 +110,7 @@
     <div class="container-custom">
         <ul class="nav nav-tabs" id="adminTabs">
             <li class="nav-item"><a class="nav-link active" data-bs-toggle="tab" href="#tab-poi">📍 景点POI</a></li>
-            <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-scenic">🏞️ 景区管理</a></li>
-            <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-routes">🗺️ 路线</a></li>
+            <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-routes">🗺️ 路线规划</a></li>
             <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-transport">🚗 交通耗时</a></li>
             <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-merchants">🏪 商户</a></li>
             <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-feedbacks">💬 留言</a></li>
@@ -91,12 +120,14 @@
                 <button class="btn btn-success mb-2" onclick="window.showAddPoiModal()"><i class="fas fa-plus"></i> 新增POI</button>
                 <div id="poi-list"></div>
             </div>
-            <div class="tab-pane" id="tab-scenic">
-                <button class="btn btn-success mb-2" onclick="window.showAddScenicModal()"><i class="fas fa-plus"></i> 新增景区</button>
-                <div id="scenic-list"></div>
-            </div>
             <div class="tab-pane" id="tab-routes">
-                <button class="btn btn-success mb-2" onclick="window.showAddRouteModal()"><i class="fas fa-plus"></i> 新增路线</button>
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <div>
+                        <h5 class="mb-0"><i class="fas fa-route text-success"></i> 路线规划管理</h5>
+                        <p class="text-secondary small mb-0">支持景区内部游览路线、城市一日游、区域联合路线等</p>
+                    </div>
+                    <button class="btn btn-success" onclick="window.showAddRouteModal()"><i class="fas fa-plus"></i> 新增路线</button>
+                </div>
                 <div id="route-list"></div>
             </div>
             <div class="tab-pane" id="tab-transport">
@@ -139,7 +170,6 @@
                         <div class="hint-text">决定该POI在行程规划中的角色</div>
                     </div>
 
-                    <!-- ★ 分类：所有类型都显示 -->
                     <div class="col-6">
                         <label class="form-label">分类 <span class="text-danger">*</span></label>
                         <select id="edit-poi-category" class="form-select" onchange="window.onCategoryChange()">
@@ -155,7 +185,6 @@
                         <div class="hint-text">用于游客端筛选展示，可独立于类型</div>
                     </div>
 
-                    <!-- 公共场所子类型（facility 时显示） -->
                     <div class="col-6 hidden" id="field-facility-subtype">
                         <label class="form-label">公共场所子类型 <span class="text-danger">*</span></label>
                         <div class="subtype-checkbox-group">
@@ -179,12 +208,12 @@
                         <div class="hint-text">可多选，如民宿同时提供餐饮和住宿</div>
                     </div>
                     
-                    <!-- 所属景区 -->
                     <div class="col-6 hidden" id="field-parent">
-                        <label class="form-label">所属景区 <span class="text-danger" id="parent-required">*</span></label>
+                        <label class="form-label">所属景区 <span class="text-danger" id="parent-required">（可选）</span></label>
                         <select id="edit-poi-parent" class="form-select" onchange="window.onParentChange()">
                             <option value="">-- 不关联（独立存在）--</option>
                         </select>
+                        <div class="hint-text">核心节点必选；景点/公共场所可选</div>
                     </div>
                     
                     <div class="col-6"><label class="form-label">纬度</label><input type="number" step="any" id="edit-poi-lat" class="form-control"></div>
@@ -221,23 +250,21 @@
                     <div class="col-12"><label class="form-label">简介</label><textarea id="edit-poi-desc" class="form-control" rows="2"></textarea></div>
                 </div>
 
-                <!-- 浏览路线规划 -->
                 <div id="tour-route-section" class="hidden">
                     <hr>
                     <div class="d-flex justify-content-between align-items-center mb-2">
-                        <h6 class="mb-0"><i class="fas fa-route text-success"></i> 浏览路线规划（推荐路线）</h6>
+                        <h6 class="mb-0"><i class="fas fa-route text-success"></i> 内部推荐游览顺序（简易）</h6>
                         <button type="button" class="btn btn-sm btn-outline-success" onclick="window.loadSubItemsForRoute()">
                             <i class="fas fa-sync"></i> 从子项加载
                         </button>
                     </div>
-                    <p class="text-secondary small">为游客规划该景区的推荐游览顺序。核心节点会自动按顺序出现，景点/公共场所可选。</p>
+                    <p class="text-secondary small">如需详细路线（含时长、内容推荐、小贴士），请前往"路线规划"tab创建。</p>
                     <div id="tour-route-list" class="mt-2"></div>
                     <button type="button" class="btn btn-sm btn-success mt-2" onclick="window.addTourRouteItem()">
-                        <i class="fas fa-plus"></i> 添加路线节点
+                        <i class="fas fa-plus"></i> 添加顺序
                     </button>
                 </div>
 
-                <!-- 子项管理 -->
                 <div id="sub-poi-section" class="hidden">
                     <hr>
                     <div class="d-flex justify-content-between align-items-center">
@@ -278,40 +305,125 @@
     </div>
 </div>
 
-<!-- 模态框：编辑景区（scenic 表） -->
-<div class="modal fade" id="scenicModal" tabindex="-1">
-    <div class="modal-dialog"><div class="modal-content">
-        <div class="modal-header"><h5 class="modal-title">编辑景区</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
-        <div class="modal-body">
-            <input type="hidden" id="edit-scenic-id">
-            <div class="form-group"><label>名称</label><input id="edit-scenic-name" class="form-control"></div>
-            <div class="form-group"><label>区域</label><input id="edit-scenic-area" class="form-control"></div>
-            <div class="form-group"><label>纬度</label><input type="number" step="any" id="edit-scenic-lat" class="form-control"></div>
-            <div class="form-group"><label>经度</label><input type="number" step="any" id="edit-scenic-lng" class="form-control"></div>
-            <div class="form-group"><label>简介</label><textarea id="edit-scenic-desc" class="form-control" rows="2"></textarea></div>
+<!-- 模态框：路线编辑（重写） -->
+<div class="modal fade" id="routeModal" tabindex="-1">
+    <div class="modal-dialog modal-xl modal-xl-custom">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="routeModalTitle">编辑路线</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="edit-route-id">
+
+                <!-- 基本信息 -->
+                <h6 class="mb-2"><i class="fas fa-info-circle text-success"></i> 基本信息</h6>
+                <div class="row g-2 mb-3">
+                    <div class="col-md-6">
+                        <label class="form-label">路线名称 <span class="text-danger">*</span></label>
+                        <input id="edit-route-name" class="form-control" placeholder="如：通江花月夜标准游览">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">路线类型 <span class="text-danger">*</span></label>
+                        <select id="edit-route-type" class="form-select" onchange="window.onRouteTypeChange()">
+                            <option value="scenic_internal">🏞️ 景区内部游览路线</option>
+                            <option value="city_day">🏙️ 城市一日游</option>
+                            <option value="area_multi">🗺️ 区域联合路线</option>
+                            <option value="custom">✨ 自定义路线</option>
+                        </select>
+                    </div>
+                    <div class="col-md-6" id="field-route-scenic">
+                        <label class="form-label">关联景区</label>
+                        <select id="edit-route-scenic" class="form-select">
+                            <option value="">-- 不关联 --</option>
+                        </select>
+                        <div class="hint-text">景区内部游览时选择对应景区</div>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">是否默认推荐</label>
+                        <div class="form-check mt-2">
+                            <input type="checkbox" id="edit-route-default" class="form-check-input">
+                            <label class="form-check-label" for="edit-route-default">作为该景区的默认推荐路线</label>
+                        </div>
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label">路线简介</label>
+                        <textarea id="edit-route-desc" class="form-control" rows="2" placeholder="简要介绍这条路线适合什么人群、什么时段等"></textarea>
+                    </div>
+                </div>
+
+                <!-- 节点列表 -->
+                <hr>
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <h6 class="mb-0"><i class="fas fa-list-ol text-success"></i> 游览节点 <span class="text-secondary" style="font-size:13px;" id="route-total-info">（总时长：0分钟）</span></h6>
+                    <button type="button" class="btn btn-success btn-sm" onclick="window.showAddRouteNodeModal()">
+                        <i class="fas fa-plus"></i> 添加节点
+                    </button>
+                </div>
+                <div id="route-nodes-container"></div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button class="btn btn-success" onclick="window.saveRouteEdit()"><i class="fas fa-save"></i> 保存路线</button>
+            </div>
         </div>
-        <div class="modal-footer"><button class="btn btn-secondary" data-bs-dismiss="modal">取消</button><button class="btn btn-success" onclick="window.saveScenicEdit()">保存</button></div>
-    </div></div>
+    </div>
 </div>
 
-<!-- 模态框：编辑路线 -->
-<div class="modal fade" id="routeModal" tabindex="-1">
-    <div class="modal-dialog modal-lg"><div class="modal-content">
-        <div class="modal-header"><h5 class="modal-title">编辑路线</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
-        <div class="modal-body">
-            <input type="hidden" id="edit-route-id">
-            <div class="row g-2">
-                <div class="col-6"><label class="form-label">名称</label><input id="edit-route-name" class="form-control"></div>
-                <div class="col-6"><label class="form-label">出发时间</label><input type="time" id="edit-route-time" class="form-control" value="08:30"></div>
-                <div class="col-6"><label class="form-label">交通方式</label><input id="edit-route-transport" class="form-control" placeholder="自驾/大巴"></div>
-                <div class="col-6"><label class="form-label">天数</label><input type="number" id="edit-route-days" class="form-control" value="1"></div>
+<!-- 模态框：节点编辑 -->
+<div class="modal fade" id="routeNodeModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="routeNodeModalTitle">编辑节点</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
-            <hr>
-            <h6>路线节点 <button class="btn btn-success btn-sm" onclick="window.addRouteNodeField()"><i class="fas fa-plus"></i></button></h6>
-            <div id="edit-route-nodes-container" class="mt-2"></div>
+            <div class="modal-body">
+                <input type="hidden" id="edit-node-index">
+                <div class="mb-2">
+                    <label class="form-label">节点名称 <span class="text-danger">*</span></label>
+                    <input id="edit-node-name" class="form-control" placeholder="如：入口检票处 / 灯展区A">
+                </div>
+                <div class="mb-2">
+                    <label class="form-label">节点类型 <span class="text-danger">*</span></label>
+                    <select id="edit-node-type" class="form-select">
+                        <option value="entrance">🚪 入口</option>
+                        <option value="parking">🅿️ 停车场</option>
+                        <option value="rest">☕ 休息区</option>
+                        <option value="core_view">⭐ 核心景点</option>
+                        <option value="spot">📍 景点参观</option>
+                        <option value="entertainment">🎢 游玩项目</option>
+                        <option value="wc">🚻 卫生间</option>
+                        <option value="exit">🚪 出口</option>
+                        <option value="other">📌 其他</option>
+                    </select>
+                </div>
+                <div class="mb-2">
+                    <label class="form-label">关联POI（可选）</label>
+                    <select id="edit-node-poi" class="form-select">
+                        <option value="">-- 不关联（自定义）--</option>
+                    </select>
+                    <div class="hint-text">如节点对应系统中的某个POI，可选择关联；否则自由填写名称即可</div>
+                </div>
+                <div class="mb-2">
+                    <label class="form-label">停留时长（分钟）</label>
+                    <input type="number" id="edit-node-duration" class="form-control" value="10" min="1">
+                </div>
+                <div class="mb-2">
+                    <label class="form-label">内容推荐</label>
+                    <textarea id="edit-node-desc" class="form-control" rows="2" placeholder="如：拍照打卡，领取导览图"></textarea>
+                </div>
+                <div class="mb-2">
+                    <label class="form-label">小贴士</label>
+                    <textarea id="edit-node-tips" class="form-control" rows="2" placeholder="如：8:00-9:00 人最少"></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button class="btn btn-success" onclick="window.saveRouteNode()"><i class="fas fa-check"></i> 确定</button>
+            </div>
         </div>
-        <div class="modal-footer"><button class="btn btn-secondary" data-bs-dismiss="modal">取消</button><button class="btn btn-success" onclick="window.saveRouteEdit()">保存</button></div>
-    </div></div>
+    </div>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>

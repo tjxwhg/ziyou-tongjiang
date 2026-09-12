@@ -183,7 +183,6 @@
     <button class="cat-btn" onclick="window.clearFilter()">✕ 清除筛选</button>
 </div>
 
-<!-- ★ 底部导航：智能规划 / 推荐路线 / 我的 -->
 <div class="bottom-nav" id="bottomNav">
     <button class="nav-btn primary" onclick="window.openPanel('planPanel')"><i class="fas fa-wand-magic-sparkles"></i> 智能规划</button>
     <button class="nav-btn" onclick="window.openPanel('routePanel')"><i class="fas fa-route"></i> 推荐路线</button>
@@ -269,7 +268,7 @@
     </div>
 </div>
 
-<!-- ★ 面板：推荐路线 -->
+<!-- 面板：推荐路线 -->
 <div class="panel" id="routePanel">
     <div class="panel-header">
         <h2><i class="fas fa-route text-green"></i> 推荐路线</h2>
@@ -278,7 +277,6 @@
     <div class="panel-body">
         <p class="text-secondary small mb-2">为不熟悉通江的游客，精选最优旅游路线。点击"查看详情"了解每个节点的安排，点击"一键采用"直接生成行程。</p>
 
-        <!-- 类型筛选 -->
         <div class="route-filter-bar" id="routeFilterBar">
             <button class="route-filter-btn active" data-filter="all" onclick="window.filterRoutes('all')">全部</button>
             <button class="route-filter-btn" data-filter="scenic_internal" onclick="window.filterRoutes('scenic_internal')">🏞️ 景区内部</button>
@@ -423,10 +421,10 @@ const NODE_TYPE_SHORT = {
 let allPois = [];
 let currentTripData = null;
 let selectedPoiIds = new Set();
-let selectedSubItems = {};
+let selectedSubItems = {};      // { poiId(string): Set of subItemId(string) }
 let selectedPoiOrder = [];
 let accommodationPois = [];
-let allRoutesCache = [];      // 所有路线缓存
+let allRoutesCache = [];
 let currentRouteFilter = 'all';
 
 // ===== 工具 =====
@@ -436,17 +434,20 @@ function fmtTime(minutes) {
     return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
 }
 
-// ===== 风格自动勾选 =====
+// ★★★ 风格自动勾选（返回 String ID）★★★
 function getStyleAutoSelection(style, subItems) {
     const coreNodes = subItems.filter(s => s.type === 'core_node');
     const spots = subItems.filter(s => s.type === 'spot');
-    if (style === 'compact') return { coreNodes: coreNodes.map(s => s.id), spots: [] };
-    if (style === 'relaxed') {
+
+    if (style === 'compact') {
+        return { coreNodes: coreNodes.map(s => String(s.id)), spots: [] };
+    } else if (style === 'relaxed') {
         const featured = spots.filter(s => s.is_featured).slice(0, 2);
-        return { coreNodes: coreNodes.map(s => s.id), spots: featured.map(s => s.id) };
+        return { coreNodes: coreNodes.map(s => String(s.id)), spots: featured.map(s => String(s.id)) };
+    } else if (style === 'indepth') {
+        return { coreNodes: coreNodes.map(s => String(s.id)), spots: spots.map(s => String(s.id)) };
     }
-    if (style === 'indepth') return { coreNodes: coreNodes.map(s => s.id), spots: spots.map(s => s.id) };
-    return { coreNodes: coreNodes.map(s => s.id), spots: [] };
+    return { coreNodes: coreNodes.map(s => String(s.id)), spots: [] };
 }
 
 window.onStyleChange = function() {
@@ -456,9 +457,9 @@ window.onStyleChange = function() {
         const subItems = allPoisData.filter(p => String(p.parent_id) === String(poiId));
         const auto = getStyleAutoSelection(style, subItems);
         const newSet = new Set();
-        auto.coreNodes.forEach(id => newSet.add(id));
-        auto.spots.forEach(id => newSet.add(id));
-        selectedSubItems[poiId] = newSet;
+        auto.coreNodes.forEach(id => newSet.add(String(id)));
+        auto.spots.forEach(id => newSet.add(String(id)));
+        selectedSubItems[String(poiId)] = newSet;
     });
     renderPoiSelection(allPoisData);
     updateSelectedInfo();
@@ -514,7 +515,7 @@ function initStartLocationSelect(pois) {
     });
 }
 
-// ===== 渲染景点选择列表 =====
+// ★★★ 渲染景点选择列表 ★★★
 function renderPoiSelection(pois) {
     const container = document.getElementById('poiSelectContainer');
     if (!container) return;
@@ -527,8 +528,9 @@ function renderPoiSelection(pois) {
     const childrenMap = {};
     pois.forEach(p => {
         if (p.parent_id) {
-            if (!childrenMap[p.parent_id]) childrenMap[p.parent_id] = [];
-            childrenMap[p.parent_id].push(p);
+            const pid = String(p.parent_id);
+            if (!childrenMap[pid]) childrenMap[pid] = [];
+            childrenMap[pid].push(p);
         }
     });
 
@@ -552,9 +554,10 @@ function renderPoiSelection(pois) {
         html += `<div class="poi-category-content ${contentHiddenClass}">`;
 
         items.forEach(p => {
-            const subItems = childrenMap[p.id] || [];
+            const pidStr = String(p.id);
+            const subItems = childrenMap[pidStr] || [];
             const hasChildren = subItems.length > 0;
-            const isChecked = selectedPoiIds.has(String(p.id));
+            const isChecked = selectedPoiIds.has(pidStr);
             const isScenic = p.type === 'scenic';
             const totalDur = getPoiTotalDuration(p, subItems);
 
@@ -568,10 +571,12 @@ function renderPoiSelection(pois) {
 
             if (hasChildren) {
                 const visibleSubs = subItems.filter(s => s.type === 'core_node' || s.type === 'spot');
-                const selectedSet = selectedSubItems[p.id] || new Set();
+                // ★ 兼容 String 与原始类型 key
+                const selectedSet = selectedSubItems[pidStr] || selectedSubItems[p.id] || new Set();
                 html += `<div class="poi-sub-list hidden" id="sub-${p.id}">`;
                 visibleSubs.forEach(sub => {
-                    const isSubChecked = selectedSet.has(sub.id);
+                    const sidStr = String(sub.id);
+                    const isSubChecked = selectedSet.has(sidStr) || selectedSet.has(sub.id);
                     const typeBadge = sub.type === 'core_node'
                         ? '<span class="sub-type-badge sub-type-core">⭐核心</span>'
                         : '<span class="sub-type-badge sub-type-spot">📍景点</span>';
@@ -594,16 +599,24 @@ function renderPoiSelection(pois) {
     updateSelectedInfo();
 }
 
+// ★★★ 计算 POI 总时长（兼容 String/原始类型）★★★
 function getPoiTotalDuration(poi, subItems) {
     if (poi.type === 'scenic' && subItems.length > 0) {
-        const selectedSet = selectedSubItems[poi.id] || new Set();
+        const pidStr = String(poi.id);
+        const selectedSet = selectedSubItems[pidStr] || selectedSubItems[poi.id] || new Set();
         let total = 0;
-        subItems.forEach(s => { if (selectedSet.has(s.id)) total += (s.visit_duration || 0); });
+        subItems.forEach(s => {
+            const sidStr = String(s.id);
+            if (selectedSet.has(sidStr) || selectedSet.has(s.id)) {
+                total += (s.visit_duration || 0);
+            }
+        });
         return total;
     }
     return poi.visit_duration || 0;
 }
 
+// ★★★ 勾选/取消顶层 POI ★★★
 window.togglePoiSelection = function(poiId) {
     const idStr = String(poiId);
     const allPoisData = window.__allPois || [];
@@ -620,28 +633,36 @@ window.togglePoiSelection = function(poiId) {
             const subItems = allPoisData.filter(p => String(p.parent_id) === idStr);
             const auto = getStyleAutoSelection(style, subItems);
             const newSet = new Set();
-            auto.coreNodes.forEach(id => newSet.add(id));
-            auto.spots.forEach(id => newSet.add(id));
+            auto.coreNodes.forEach(id => newSet.add(String(id)));
+            auto.spots.forEach(id => newSet.add(String(id)));
             selectedSubItems[idStr] = newSet;
         }
     }
+
     if (selectedPoiIds.has(idStr)) {
         if (!selectedPoiOrder.includes(idStr)) selectedPoiOrder.push(idStr);
     } else {
         selectedPoiOrder = selectedPoiOrder.filter(x => x !== idStr);
     }
+
     renderPoiSelection(allPoisData);
     renderSelectedOrder();
     updateSelectedInfo();
 };
 
+// ★★★ 勾选/取消子项 ★★★
 window.toggleSubItem = function(poiId, subId) {
     const idStr = String(poiId);
     const subIdStr = String(subId);
     if (!selectedSubItems[idStr]) selectedSubItems[idStr] = new Set();
+
     const set = selectedSubItems[idStr];
-    if (set.has(subIdStr)) set.delete(subIdStr);
-    else set.add(subIdStr);
+    if (set.has(subIdStr)) {
+        set.delete(subIdStr);
+    } else {
+        set.add(subIdStr);
+    }
+
     if (!selectedPoiIds.has(idStr) && set.size > 0) {
         selectedPoiIds.add(idStr);
         if (!selectedPoiOrder.includes(idStr)) selectedPoiOrder.push(idStr);
@@ -650,15 +671,20 @@ window.toggleSubItem = function(poiId, subId) {
         selectedPoiIds.delete(idStr);
         selectedPoiOrder = selectedPoiOrder.filter(x => x !== idStr);
     }
+
+    // 只更新该 POI 的时长显示
     const durBadge = document.querySelector(`.poi-item[data-poi-id="${poiId}"] .poi-duration-badge`);
     if (durBadge) {
         const allPoisData = window.__allPois || [];
         const poi = allPoisData.find(p => String(p.id) === idStr);
         const subItems = allPoisData.filter(p => String(p.parent_id) === idStr);
-        durBadge.textContent = `${getPoiTotalDuration(poi, subItems)}分钟`;
+        const total = getPoiTotalDuration(poi, subItems);
+        durBadge.textContent = `${total}分钟`;
     }
+
     const mainCheckbox = document.querySelector(`.poi-item[data-poi-id="${poiId}"] .poi-name input[type="checkbox"]`);
     if (mainCheckbox) mainCheckbox.checked = selectedPoiIds.has(idStr);
+
     renderSelectedOrder();
     updateSelectedInfo();
 };
@@ -668,21 +694,24 @@ window.togglePoiChildren = function(poiId) {
     if (subEl) subEl.classList.toggle('hidden');
 };
 
+// ★★★ 全选/取消全选 ★★★
 window.selectAllPois = function(select) {
     const allPoisData = window.__allPois || [];
     const topPois = allPoisData.filter(p => !p.parent_id && p.type !== 'facility');
+
     if (select) {
         const style = document.getElementById('planStyle').value;
         topPois.forEach(poi => {
-            selectedPoiIds.add(String(poi.id));
-            if (!selectedPoiOrder.includes(String(poi.id))) selectedPoiOrder.push(String(poi.id));
+            const pidStr = String(poi.id);
+            selectedPoiIds.add(pidStr);
+            if (!selectedPoiOrder.includes(pidStr)) selectedPoiOrder.push(pidStr);
             if (poi.type === 'scenic') {
-                const subItems = allPoisData.filter(p => String(p.parent_id) === String(poi.id));
+                const subItems = allPoisData.filter(p => String(p.parent_id) === pidStr);
                 const auto = getStyleAutoSelection(style, subItems);
                 const newSet = new Set();
-                auto.coreNodes.forEach(id => newSet.add(id));
-                auto.spots.forEach(id => newSet.add(id));
-                selectedSubItems[String(poi.id)] = newSet;
+                auto.coreNodes.forEach(id => newSet.add(String(id)));
+                auto.spots.forEach(id => newSet.add(String(id)));
+                selectedSubItems[pidStr] = newSet;
             }
         });
     } else {
@@ -690,21 +719,23 @@ window.selectAllPois = function(select) {
         selectedSubItems = {};
         selectedPoiOrder = [];
     }
+
     renderPoiSelection(allPoisData);
     renderSelectedOrder();
     updateSelectedInfo();
 };
 
+// ★★★ 更新总时长显示 ★★★
 function updateSelectedInfo() {
     const total = selectedPoiIds.size;
     document.getElementById('selectedPoiCount').textContent = `已选 ${total} 个`;
     const allPoisData = window.__allPois || [];
     let totalDuration = 0;
     selectedPoiIds.forEach(id => {
-        const poi = allPoisData.find(p => String(p.id) === id);
+        const poi = allPoisData.find(p => String(p.id) === String(id));
         if (!poi) return;
         if (poi.type === 'scenic') {
-            const subItems = allPoisData.filter(p => String(p.parent_id) === id);
+            const subItems = allPoisData.filter(p => String(p.parent_id) === String(id));
             totalDuration += getPoiTotalDuration(poi, subItems);
         } else {
             totalDuration += poi.visit_duration || 0;
@@ -713,6 +744,7 @@ function updateSelectedInfo() {
     document.getElementById('selectedDurationDisplay').textContent = `已选景点总游览时长：${totalDuration} 分钟`;
 }
 
+// ===== 景点顺序 =====
 window.renderSelectedOrder = function() {
     const container = document.getElementById('selectedOrderContainer');
     if (!container) return;
@@ -723,7 +755,7 @@ window.renderSelectedOrder = function() {
     const allPoisData = window.__allPois || [];
     let html = '';
     selectedPoiOrder.forEach((id, idx) => {
-        const poi = allPoisData.find(p => String(p.id) === id);
+        const poi = allPoisData.find(p => String(p.id) === String(id));
         if (!poi) return;
         html += `<div class="order-item">
             <span class="order-name"><b>${idx + 1}.</b> ${poi.name}</span>
@@ -750,7 +782,7 @@ window.movePoiDown = function(id) {
     }
 };
 
-// ===== 生成行程 =====
+// ===== 生成行程 ★★★ 修复：传子项信息到 trip-planner ★★★
 window.generatePlans = async function() {
     const loadingEl = document.getElementById('planLoading');
     const stepPrefs = document.getElementById('stepPreferences');
@@ -768,13 +800,16 @@ window.generatePlans = async function() {
 
     const allPoisData = window.__allPois || [];
     const selectedPois = selectedPoiOrder.map(id => {
-        const poi = allPoisData.find(p => String(p.id) === id);
+        const poi = allPoisData.find(p => String(p.id) === String(id));
         if (!poi) return null;
         if (poi.type === 'scenic') {
-            const subItems = allPoisData.filter(p => String(p.parent_id) === id);
-            const selectedSet = selectedSubItems[id] || new Set();
+            const subItems = allPoisData.filter(p => String(p.parent_id) === String(id));
+            const selectedSet = selectedSubItems[String(id)] || new Set();
             let total = 0;
-            subItems.forEach(s => { if (selectedSet.has(s.id)) total += (s.visit_duration || 0); });
+            subItems.forEach(s => {
+                const sidStr = String(s.id);
+                if (selectedSet.has(sidStr) || selectedSet.has(s.id)) total += (s.visit_duration || 0);
+            });
             return { ...poi, visit_duration: total };
         }
         return { ...poi };
@@ -1065,12 +1100,9 @@ window.deleteFeedbackHandler = async function(id) {
     catch (e) { alert('删除失败：' + e.message); }
 };
 
-// ============================================================
-// ★ 推荐路线面板
-// ============================================================
+// ===== 推荐路线面板 =====
 window.filterRoutes = function(type) {
     currentRouteFilter = type;
-    // 更新按钮状态
     document.querySelectorAll('#routeFilterBar .route-filter-btn').forEach(btn => {
         btn.classList.toggle('active', btn.dataset.filter === type);
     });
@@ -1081,7 +1113,6 @@ async function renderRouteListPanel() {
     const container = document.getElementById('routeListContainer');
     if (!container) return;
 
-    // 首次加载或缓存过期时重新拉取
     if (allRoutesCache.length === 0) {
         container.innerHTML = '<div class="text-secondary text-center py-4"><div class="spinner-border text-success"></div><p class="mt-2">加载推荐路线中...</p></div>';
         try {
@@ -1094,7 +1125,6 @@ async function renderRouteListPanel() {
         }
     }
 
-    // 筛选
     let filtered = allRoutesCache;
     if (currentRouteFilter !== 'all') {
         filtered = allRoutesCache.filter(r => r.route_type === currentRouteFilter);
@@ -1105,10 +1135,8 @@ async function renderRouteListPanel() {
         return;
     }
 
-    // 按默认推荐优先排序
     filtered.sort((a, b) => (b.is_default ? 1 : 0) - (a.is_default ? 1 : 0));
 
-    // 渲染卡片列表
     let html = '';
     for (const r of filtered) {
         const routeType = r.route_type || 'custom';
@@ -1189,7 +1217,6 @@ window.toggleRouteDetail = async function(routeId) {
     }
 };
 
-// 一键采用路线
 window.adoptRoute = async function(routeId) {
     try {
         const route = allRoutesCache.find(r => String(r.id) === String(routeId));
@@ -1202,19 +1229,14 @@ window.adoptRoute = async function(routeId) {
         let currentTime = 8 * 60;
         const dayNodes = [];
 
-        // 提示信息
-        dayNodes.push({
-            type: 'reminder',
-            message: `采用路线：${route.name}`
-        });
+        dayNodes.push({ type: 'reminder', message: `采用路线：${route.name}` });
 
         nodes.forEach(n => {
             const dur = n.duration_min || 10;
-            let nodeName = n.node_name || '游览';
             const typeLabel = NODE_TYPE_SHORT[n.node_type] ? `[${NODE_TYPE_SHORT[n.node_type]}] ` : '';
             dayNodes.push({
                 type: 'visit',
-                name: `${typeLabel}${nodeName}`,
+                name: `${typeLabel}${n.node_name || '游览'}`,
                 startTime: currentTime,
                 endTime: currentTime + dur,
                 duration: dur,
@@ -1223,14 +1245,8 @@ window.adoptRoute = async function(routeId) {
             currentTime += dur;
         });
 
-        dayNodes.push({
-            type: 'trip_end',
-            name: '本次路线游览结束',
-            startTime: currentTime,
-            endTime: currentTime + 1
-        });
+        dayNodes.push({ type: 'trip_end', name: '本次路线游览结束', startTime: currentTime, endTime: currentTime + 1 });
 
-        // 判断是否已有行程
         if (!currentTripData || !currentTripData.days || currentTripData.days.length === 0) {
             currentTripData = {
                 days: [{ day: 1, date: today, nodes: dayNodes }],
@@ -1253,7 +1269,6 @@ window.adoptRoute = async function(routeId) {
             const newDate = baseDate.toISOString().slice(0, 10);
 
             currentTripData.days.push({ day: newDayNum, date: newDate, nodes: dayNodes });
-
             window.closePanel('routePanel');
             showTripDetail(currentTripData);
             window.openPanel('planPanel');
@@ -1265,7 +1280,7 @@ window.adoptRoute = async function(routeId) {
     }
 };
 
-// ===== 商户详情（不再内嵌路线） =====
+// ===== 商户详情 =====
 window.showPoiDetail = async function(poi) {
     try {
         const merchants = await getMerchantsByPoi(poi.id);
@@ -1419,13 +1434,11 @@ async function init() {
             Promise.resolve(window.renderFeedbackHistory())
         ]);
 
-        // 预加载路线到缓存
         try {
             const routes = await getRoutes();
             allRoutesCache = routes || [];
         } catch (e) { console.warn('预加载路线失败:', e); }
 
-        // 首次打开推荐路线面板时渲染
         document.querySelector('button[onclick*="routePanel"]').addEventListener('click', () => {
             setTimeout(() => renderRouteListPanel(), 100);
         });

@@ -13,7 +13,7 @@
         .hidden { display: none !important; }
         #map { height: 100vh; width: 100vw; z-index: 1; }
         .top-bar { position: fixed; top: max(12px, env(safe-area-inset-top, 12px)); left: 50%; transform: translateX(-50%); z-index: 1700; display: flex; align-items: center; justify-content: center; background: rgba(255,255,255,0.92); padding: 6px 16px; border-radius: 30px; box-shadow: 0 4px 20px rgba(0,0,0,0.12); backdrop-filter: blur(8px); height: 44px; cursor: pointer; white-space: nowrap; }
-        .top-bar .brand { font-weight: 700; color: #1b5e20; font-size: 18px; display: flex; align-items: center; gap: 6px; user-select: none; }
+        .top-bar .brand { font-weight: 700; color: #1b5e20; font-size: 18px; display: flex; align-items: center; gap: 6px; }
         .category-bar { position: fixed; top: 0; left: 0; right: 0; z-index: 1600; background: rgba(255,255,255,0.98); box-shadow: 0 4px 20px rgba(0,0,0,0.1); transform: translateY(-100%); transition: transform 0.4s; display: flex; flex-wrap: wrap; padding: 12px 16px; gap: 8px; border-bottom: 1px solid #e8f5e9; pointer-events: none; max-height: 70vh; overflow-y: auto; padding-top: calc(60px + env(safe-area-inset-top, 12px)); }
         .category-bar.show { transform: translateY(0); pointer-events: auto; }
         .category-bar .cat-btn { padding: 6px 14px; border-radius: 20px; border: 1px solid #e0e0e0; background: white; font-size: 13px; cursor: pointer; color: #333; }
@@ -311,7 +311,7 @@
                 <span>总时长：<b id="totalDuration">0</b> 分钟</span>
             </div>
             <div class="status-row">
-                <span>预计结束：<b id="estimatedEnd">--:--</b></span>
+                <span>游览结束：<b id="visitEndTime">--:--</b></span>
                 <span>费用：<b id="estimatedCost">—</b></span>
             </div>
             <div class="status-actions">
@@ -473,28 +473,20 @@ function timeStrToMinutes(str) {
     return h * 60 + m;
 }
 
-// ★ 计算两节点间的交通耗时（同一景区内视为0）
 function calcTravelBetween(prevPoiId, curPoiId) {
     if (!prevPoiId || !curPoiId) return 0;
     if (String(prevPoiId) === String(curPoiId)) return 0;
-
-    // 从县城出发
     if (String(prevPoiId) === 'county' || prevPoiId === COUNTY_ID) {
-        return transportPresetsCache[`${COUNTY_ID}_${curPoiId}`] ||
-               transportPresetsCache[`county_${curPoiId}`] || 0;
+        return transportPresetsCache[`${COUNTY_ID}_${curPoiId}`] || transportPresetsCache[`county_${curPoiId}`] || 0;
     }
-    // 返回县城
     if (String(curPoiId) === 'county' || curPoiId === COUNTY_ID) {
-        return transportPresetsCache[`${prevPoiId}_${COUNTY_ID}`] ||
-               transportPresetsCache[`${prevPoiId}_county`] || 0;
+        return transportPresetsCache[`${prevPoiId}_${COUNTY_ID}`] || transportPresetsCache[`${prevPoiId}_county`] || 0;
     }
-
     const prevPoi = allPois.find(p => String(p.id) === String(prevPoiId));
     const curPoi = allPois.find(p => String(p.id) === String(curPoiId));
     const prevParent = prevPoi?.parent_id ? String(prevPoi.parent_id) : null;
     const curParent = curPoi?.parent_id ? String(curPoi.parent_id) : null;
     if (prevParent && curParent && prevParent === curParent) return 0;
-
     return transportPresetsCache[`${prevPoiId}_${curPoiId}`] || 0;
 }
 
@@ -1176,9 +1168,7 @@ window.openRouteDetail = async function(routeId) {
     currentDetailNodes = nodes.map((n, i) => {
         const poiName = n.poi_id ? (allPois.find(p => String(p.id) === String(n.poi_id))?.name || '') : '';
         return {
-            ...n,
-            _idx: i,
-            _poi_name: poiName,
+            ...n, _idx: i, _poi_name: poiName,
             _duration: n.duration_min || 10,
             _priority: n.priority_level || 2,
             _is_skippable: !!n.is_skippable
@@ -1189,13 +1179,7 @@ window.openRouteDetail = async function(routeId) {
 };
 
 // ============================================================
-// ★★ 构建时间线（核心逻辑）
-// 规则：
-// 1. 初始从县城出发（只插一次交通）
-// 2. 午餐：11:30-12:30 触发
-// 3. 晚餐：节点结束时间 >= 17:30 触发；或最后返回县城后 >= 17:00 兜底插入
-// 4. 最后返回县城（>10分钟才显示）
-// 5. 18:00 后不新安排景点（推荐阶段）；手动添加的节点保留
+// ★★ 构建时间线（核心修复：返回 lastVisitEndTime）
 // ============================================================
 function buildRenderedTimeline(selectedIndices, arrivalTime) {
     const selected = currentDetailNodes
@@ -1204,18 +1188,15 @@ function buildRenderedTimeline(selectedIndices, arrivalTime) {
 
     const timeline = [];
     let currentTime = arrivalTime;
-    let lastPoiId = 'county';  // ★ 关键修正：初始为县城
+    let lastPoiId = 'county';
     let lunchInserted = false;
     let dinnerInserted = false;
+    let lastVisitEndTime = null;   // ★ 记录最后一个游览节点的结束时间
 
     for (const n of selected) {
-        // 计算交通
-        let travel = 0;
-        if (n.poi_id) {
-            travel = calcTravelBetween(lastPoiId, n.poi_id);
-        }
+        let travel = n.poi_id ? calcTravelBetween(lastPoiId, n.poi_id) : 0;
 
-        // ★ 午餐检查
+        // 午餐检查
         if (!lunchInserted && currentTime < LUNCH_END && currentTime + travel + n._duration > LUNCH_START) {
             if (travel > 0) {
                 timeline.push({ type: 'transport', name: '前往 ' + (n.node_name || '下一站'), duration: travel, startTime: currentTime, endTime: currentTime + travel });
@@ -1228,7 +1209,7 @@ function buildRenderedTimeline(selectedIndices, arrivalTime) {
             lunchInserted = true;
         }
 
-        // ★ 晚餐检查：节点游览结束时间 >= 17:30
+        // 晚餐检查
         const willCrossDinner = !dinnerInserted && (currentTime + travel + n._duration >= DINNER_START);
         if (willCrossDinner) {
             if (travel > 0) {
@@ -1236,14 +1217,13 @@ function buildRenderedTimeline(selectedIndices, arrivalTime) {
                 currentTime += travel;
                 travel = 0;
             }
-            // 先游览完该节点
             timeline.push({
                 type: 'visit', name: n.node_name || '游览', duration: n._duration,
                 startTime: currentTime, endTime: currentTime + n._duration,
                 nodeType: n.node_type, description: n.description, tips: n.tips, _idx: n._idx
             });
             currentTime += n._duration;
-            // 插入晚餐
+            lastVisitEndTime = currentTime;  // ★ 记录
             if (currentTime < DINNER_START) currentTime = DINNER_START;
             timeline.push({ type: 'meal', name: n.nearby_restaurant ? `晚餐（推荐：${n.nearby_restaurant}）` : '晚餐时间', duration: MEAL_DURATION, startTime: currentTime, endTime: currentTime + MEAL_DURATION });
             currentTime += MEAL_DURATION;
@@ -1252,23 +1232,21 @@ function buildRenderedTimeline(selectedIndices, arrivalTime) {
             continue;
         }
 
-        // 常规交通
         if (travel > 0) {
             timeline.push({ type: 'transport', name: '前往 ' + (n.node_name || '下一站'), duration: travel, startTime: currentTime, endTime: currentTime + travel });
             currentTime += travel;
         }
-
-        // 常规游览
         timeline.push({
             type: 'visit', name: n.node_name || '游览', duration: n._duration,
             startTime: currentTime, endTime: currentTime + n._duration,
             nodeType: n.node_type, description: n.description, tips: n.tips, _idx: n._idx
         });
         currentTime += n._duration;
+        lastVisitEndTime = currentTime;  // ★ 记录
         lastPoiId = n.poi_id || lastPoiId;
     }
 
-    // ★ 返回县城（城内10分钟内不显示）
+    // 返回县城
     if (lastPoiId && String(lastPoiId) !== 'county') {
         const returnTravel = calcTravelBetween(lastPoiId, 'county');
         if (returnTravel > 10) {
@@ -1277,7 +1255,7 @@ function buildRenderedTimeline(selectedIndices, arrivalTime) {
         }
     }
 
-    // ★ 晚餐兜底：如果未插晚餐，且当前时间 >= 17:00 且 < 19:00
+    // 晚餐兜底
     if (!dinnerInserted && currentTime >= 17 * 60 && currentTime < DINNER_END) {
         if (currentTime < DINNER_START) currentTime = DINNER_START;
         timeline.push({ type: 'meal', name: '晚餐时间', duration: MEAL_DURATION, startTime: currentTime, endTime: currentTime + MEAL_DURATION });
@@ -1285,14 +1263,13 @@ function buildRenderedTimeline(selectedIndices, arrivalTime) {
         dinnerInserted = true;
     }
 
-    // ★ 今天行程结束
     timeline.push({ type: 'trip_end', name: '今天行程结束', startTime: currentTime, endTime: currentTime + 1 });
 
-    return { timeline, endTime: currentTime };
+    return { timeline, endTime: currentTime, lastVisitEndTime: lastVisitEndTime || arrivalTime };
 }
 
 // ============================================================
-// ★ 智能推荐算法（从县城出发、返回县城）
+// ★ 智能推荐算法
 // ============================================================
 function calculateRecommendedNodes() {
     const arrival = currentArrivalTime;
@@ -1313,6 +1290,7 @@ function calculateRecommendedNodes() {
         let travel = node.poi_id ? calcTravelBetween(lastPoiId, node.poi_id) : 0;
         let testTime = currentTime;
 
+        // 午餐检查
         if (!lunchInserted && testTime < LUNCH_END && testTime + travel + node._duration > LUNCH_START) {
             testTime = Math.max(testTime, LUNCH_START) + MEAL_DURATION;
             lunchInserted = true;
@@ -1322,13 +1300,14 @@ function calculateRecommendedNodes() {
             break;
         }
 
-        const endTime = testTime + travel + node._duration;
-        if (endTime > availableEnd) {
+        // ★ 关键判断：只判断"游览结束时间"是否超过 18:00
+        const visitEndTime = testTime + travel + node._duration;
+        if (visitEndTime > availableEnd) {
             continue;
         }
 
         selectedIndices.add(node._idx);
-        currentTime = endTime;
+        currentTime = visitEndTime;
         lastPoiId = node.poi_id || lastPoiId;
     }
 
@@ -1489,6 +1468,9 @@ window.resetRouteToRecommended = function() {
     calculateRecommendedNodes();
 };
 
+// ============================================================
+// ★★ 状态栏（修复：只判断"游览结束时间"是否超过18:00）
+// ============================================================
 function updateStatusBar() {
     const statusBar = document.getElementById('statusBar');
     const statusMsg = document.getElementById('statusMsg');
@@ -1498,7 +1480,7 @@ function updateStatusBar() {
     if (selected.length === 0) {
         document.getElementById('selectedNodeCount').textContent = 0;
         document.getElementById('totalDuration').textContent = 0;
-        document.getElementById('estimatedEnd').textContent = '--:--';
+        document.getElementById('visitEndTime').textContent = '--:--';
         document.getElementById('estimatedCost').textContent = '—';
         statusBar.className = 'status-bar';
         statusMsg.textContent = '未选择任何节点';
@@ -1506,7 +1488,7 @@ function updateStatusBar() {
         return;
     }
 
-    const { timeline, endTime } = buildRenderedTimeline(currentSelectedNodeIndices, currentArrivalTime);
+    const { timeline, endTime, lastVisitEndTime } = buildRenderedTimeline(currentSelectedNodeIndices, currentArrivalTime);
 
     let totalMin = 0;
     timeline.forEach(t => { totalMin += (t.duration || 0); });
@@ -1516,28 +1498,28 @@ function updateStatusBar() {
 
     document.getElementById('selectedNodeCount').textContent = selected.length;
     document.getElementById('totalDuration').textContent = totalMin;
-    document.getElementById('estimatedEnd').textContent = fmtTime(endTime);
+    document.getElementById('visitEndTime').textContent = fmtTime(lastVisitEndTime);
     document.getElementById('estimatedCost').textContent = estimatedCost > 0 ? `约${estimatedCost}元` : '—';
 
-    const isOvertime = endTime > VISIT_END;
-    const overMinutes = endTime - VISIT_END;
+    // ★ 关键：只用 lastVisitEndTime 判断超时
+    const isOvertime = lastVisitEndTime > VISIT_END;
+    const overMinutes = lastVisitEndTime - VISIT_END;
 
     if (isOvertime) {
         statusBar.className = 'status-bar danger';
-        statusMsg.textContent = `⚠️ 预计结束 ${fmtTime(endTime)}，超出闭园 ${overMinutes} 分钟，请取消部分节点`;
+        statusMsg.textContent = `⚠️ 游览结束 ${fmtTime(lastVisitEndTime)}，超出闭园 ${overMinutes} 分钟，请取消部分景点`;
         document.getElementById('btnAdoptFinal').disabled = true;
-    } else if (endTime > VISIT_END - 60) {
+    } else if (lastVisitEndTime > VISIT_END - 60) {
         statusBar.className = 'status-bar warning';
-        statusMsg.textContent = `⏰ 时间紧张，行程将于 ${fmtTime(endTime)} 结束`;
+        statusMsg.textContent = `⏰ 游览将于 ${fmtTime(lastVisitEndTime)} 结束，时间较紧`;
         document.getElementById('btnAdoptFinal').disabled = false;
     } else {
         statusBar.className = 'status-bar ok';
-        statusMsg.textContent = `✅ 时间充足，行程将于 ${fmtTime(endTime)} 结束`;
+        statusMsg.textContent = `✅ 游览将于 ${fmtTime(lastVisitEndTime)} 结束（全天活动 ${fmtTime(endTime)} 结束）`;
         document.getElementById('btnAdoptFinal').disabled = false;
     }
 }
 
-// ★ 一键采用（修正：清空后覆盖）
 window.adoptRouteFinal = function() {
     if (!currentDetailRoute) { alert('路线不存在'); return; }
     const selected = currentDetailNodes.filter(n => currentSelectedNodeIndices.has(n._idx));
@@ -1561,7 +1543,6 @@ window.adoptRouteFinal = function() {
         }
     });
 
-    // ★ 用新行程覆盖（避免重复规划）
     currentTripData = {
         days: [{ day: 1, date: today, nodes: dayNodes }],
         warnings: [],

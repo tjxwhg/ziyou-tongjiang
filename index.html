@@ -119,11 +119,7 @@
         .route-list-card .btn-adopt { background: #1b5e20; color: white; border: none; padding: 6px 14px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; flex: 1; }
 
         /* ===== 路线详情页 ===== */
-        .route-detail-header { background: #1b5e20; color: white; padding: 16px; }
-        .route-detail-header .route-title { font-size: 20px; font-weight: 700; margin-bottom: 4px; }
-        .route-detail-header .route-summary { font-size: 14px; opacity: 0.9; }
-
-        .arrival-time-bar { background: #f0f8f0; border-bottom: 1px solid #e0e0e0; padding: 12px 16px; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 64px; z-index: 9; }
+        .arrival-time-bar { background: #f0f8f0; border-bottom: 1px solid #e0e0e0; padding: 12px 16px; display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
         .arrival-time-bar label { font-weight: 600; color: #1b5e20; font-size: 14px; margin: 0; }
         .arrival-time-bar select { padding: 6px 12px; border: 1px solid #1b5e20; border-radius: 6px; font-size: 14px; background: white; cursor: pointer; }
 
@@ -141,12 +137,11 @@
         .selectable-node .node-desc { color: #555; font-size: 12px; margin-top: 2px; }
         .selectable-node .node-tips { color: #f57f17; font-size: 12px; margin-top: 2px; }
         .selectable-node .node-time { color: #1b5e20; font-weight: 600; font-size: 13px; flex-shrink: 0; }
-        .selectable-node.disabled { opacity: 0.5; cursor: not-allowed; }
 
         .auto-inserted-node { display: flex; align-items: center; gap: 10px; padding: 10px; background: #fff8e1; border-bottom: 1px solid #f0f0f0; font-size: 13px; color: #e65100; }
         .auto-inserted-node .icon { font-size: 16px; }
 
-        .status-bar { background: #f8f9fa; border-top: 2px solid #e0e0e0; padding: 12px 16px; position: sticky; bottom: 0; z-index: 9; }
+        .status-bar { background: #f8f9fa; border-top: 2px solid #e0e0e0; padding: 12px 16px; flex-shrink: 0; }
         .status-bar.ok { border-top-color: #4caf50; background: #f0f8f0; }
         .status-bar.warning { border-top-color: #ff9800; background: #fff8e1; }
         .status-bar.danger { border-top-color: #f44336; background: #ffebee; }
@@ -317,11 +312,11 @@
 
 <!-- 面板：路线详情（交互式选择） -->
 <div class="panel" id="routeDetailPanel">
-    <div class="panel-header" style="background:#1b5e20; color:white; border-bottom:none;">
+    <div class="panel-header" style="background:#1b5e20; color:white; border-bottom:none; flex-shrink:0;">
         <h2 style="color:white;"><i class="fas fa-route"></i> <span id="routeDetailTitle">路线详情</span></h2>
         <button class="close-btn" style="color:white;" onclick="window.closePanel('routeDetailPanel')">&times;</button>
     </div>
-    <div class="panel-body" style="padding:0; display:flex; flex-direction:column;">
+    <div class="panel-body" style="padding:0; display:flex; flex-direction:column; overflow:hidden;">
         <!-- 到达时间选择 -->
         <div class="arrival-time-bar">
             <label><i class="fas fa-clock"></i> 到达时间</label>
@@ -340,8 +335,8 @@
             </select>
         </div>
 
-        <!-- 节点列表 -->
-        <div style="flex:1; overflow-y:auto; padding-bottom:100px;">
+        <!-- 节点列表（可滚动区域） -->
+        <div style="flex:1; overflow-y:auto; padding-bottom:20px;">
             <div class="node-section">
                 <div class="node-section-title">
                     <span>📌 推荐节点</span>
@@ -525,12 +520,12 @@ let selectedSubItems = {};
 let selectedPoiOrder = [];
 let accommodationPois = [];
 let allRoutesCache = [];
-let allRouteNodesCache = {};   // { routeId: [nodes] }
+let allRouteNodesCache = {};
 let currentRouteFilter = 'all';
 let currentDetailRoute = null;
-let currentDetailNodes = [];       // 全部节点（含自动插入餐食标记）
-let currentSelectedNodeIndices = new Set();  // 用户选中节点的索引
-let currentArrivalTime = 10 * 60;  // 默认 10:00（分钟）
+let currentDetailNodes = [];
+let currentSelectedNodeIndices = new Set();
+let currentArrivalTime = 10 * 60;
 let transportPresetsCache = {};
 
 // ===== 工具 =====
@@ -623,7 +618,7 @@ function initStartLocationSelect(pois) {
     });
 }
 
-// ===== 渲染景点选择列表（智能规划面板） =====
+// ===== 渲染景点选择列表 =====
 function renderPoiSelection(pois) {
     const container = document.getElementById('poiSelectContainer');
     if (!container) return;
@@ -871,7 +866,7 @@ window.movePoiDown = function(id) {
     }
 };
 
-// ===== 生成行程（智能规划面板） =====
+// ===== 生成行程 =====
 window.generatePlans = async function() {
     const loadingEl = document.getElementById('planLoading');
     const stepPrefs = document.getElementById('stepPreferences');
@@ -1190,7 +1185,7 @@ window.deleteFeedbackHandler = async function(id) {
 };
 
 // ============================================================
-// ★ 推荐路线列表
+// 推荐路线列表
 // ============================================================
 window.filterRoutes = function(type) {
     currentRouteFilter = type;
@@ -1226,7 +1221,6 @@ async function renderRouteListPanel() {
         return;
     }
 
-    // 按 sort_order 排序
     filtered.sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
 
     let html = '';
@@ -1267,19 +1261,18 @@ async function renderRouteListPanel() {
 }
 
 // ============================================================
-// ★ 打开路线详情（交互式选择）
+// 打开路线详情（交互式选择）
 // ============================================================
 window.openRouteDetail = async function(routeId) {
     const route = allRoutesCache.find(r => String(r.id) === String(routeId));
     if (!route) { alert('路线不存在'); return; }
 
     currentDetailRoute = route;
-    currentArrivalTime = 10 * 60;  // 默认 10:00
+    currentArrivalTime = 10 * 60;
 
     document.getElementById('routeDetailTitle').textContent = route.name;
     document.getElementById('arrivalTimeSelect').value = '10:00';
 
-    // 加载节点
     let nodes = [];
     try {
         if (!allRouteNodesCache[routeId]) {
@@ -1294,7 +1287,6 @@ window.openRouteDetail = async function(routeId) {
         return;
     }
 
-    // 缓存交通耗时
     transportPresetsCache = {};
     const presets = await getTransportPresetsCached();
     presets.forEach(p => {
@@ -1302,12 +1294,10 @@ window.openRouteDetail = async function(routeId) {
         transportPresetsCache[`${p.to_poi_id}_${p.from_poi_id}`] = p.time_min;
     });
 
-    // 预处理节点：附加 poi_name、交通耗时等
     currentDetailNodes = nodes.map((n, i) => {
         const prevNode = i > 0 ? nodes[i - 1] : null;
         let travelMin = 0;
         if (prevNode && prevNode.poi_id && n.poi_id && String(prevNode.poi_id) !== String(n.poi_id)) {
-            // 判断是否跨景区
             const prevPoi = allPois.find(p => String(p.id) === String(prevNode.poi_id));
             const curPoi = allPois.find(p => String(p.id) === String(n.poi_id));
             if (prevPoi && curPoi && String(prevPoi.parent_id) !== String(curPoi.parent_id)) {
@@ -1326,53 +1316,43 @@ window.openRouteDetail = async function(routeId) {
         };
     });
 
-    // 智能推荐
     calculateRecommendedNodes();
 
     window.openPanel('routeDetailPanel');
 };
 
 // ============================================================
-// ★ 智能推荐算法（按到达时间 + 层级）
+// 智能推荐算法
 // ============================================================
 function calculateRecommendedNodes() {
     const arrival = currentArrivalTime;
-    const availableEnd = VISIT_END;  // 18:00
+    const availableEnd = VISIT_END;
     const available = availableEnd - arrival;
 
-    // 按优先级排序（1 最高，3 最低），同级按原顺序
     const sorted = [...currentDetailNodes].sort((a, b) => {
         if (a._priority !== b._priority) return a._priority - b._priority;
         return a._idx - b._idx;
     });
 
-    // 模拟执行
     let currentTime = arrival;
     let lunchInserted = false;
     let dinnerInserted = false;
     const selectedIndices = new Set();
 
     for (const node of sorted) {
-        // 检查餐食窗口
         if (!lunchInserted && currentTime < LUNCH_END && currentTime + node._travel_min + node._duration > LUNCH_START) {
-            // 需要插入午餐
             if (currentTime + node._travel_min + node._duration + MEAL_DURATION > availableEnd) {
-                // 剩余时间不够，跳过
                 continue;
             }
             currentTime = Math.max(currentTime, LUNCH_START) + MEAL_DURATION;
             lunchInserted = true;
         }
         if (!dinnerInserted && currentTime < DINNER_END && currentTime + node._travel_min + node._duration > DINNER_START) {
-            // 晚餐会导致今日结束
             break;
         }
 
         const endTime = currentTime + node._travel_min + node._duration;
-        if (endTime > availableEnd) {
-            // 超过闭园时间，跳过
-            continue;
-        }
+        if (endTime > availableEnd) continue;
 
         selectedIndices.add(node._idx);
         currentTime = endTime;
@@ -1390,7 +1370,6 @@ window.onArrivalTimeChange = function() {
         const input = prompt('请输入到达时间（HH:MM）：', '10:00');
         if (input && /^\d{1,2}:\d{2}$/.test(input)) {
             currentArrivalTime = timeStrToMinutes(input);
-            // 添加临时选项
             let exists = false;
             for (let opt of sel.options) {
                 if (opt.value === input) { exists = true; sel.value = input; break; }
@@ -1416,26 +1395,21 @@ window.onArrivalTimeChange = function() {
 };
 
 // ============================================================
-// ★ 渲染详情页节点列表
+// 渲染详情页节点列表
 // ============================================================
 function renderRouteDetailNodes() {
     const recContainer = document.getElementById('recommendedNodesContainer');
     const skipContainer = document.getElementById('skippedNodesContainer');
     const skipSection = document.getElementById('skippedSection');
 
-    // 已选节点（按原顺序）
     const selected = currentDetailNodes.filter(n => currentSelectedNodeIndices.has(n._idx));
-    // 未选节点
     const skipped = currentDetailNodes.filter(n => !currentSelectedNodeIndices.has(n._idx));
 
     document.getElementById('recommendedCount').textContent = selected.length + ' 个';
     document.getElementById('skippedCount').textContent = skipped.length + ' 个';
 
-    // 渲染已选节点
     let html = '';
-    let lastPoiId = null;
     selected.forEach((n) => {
-        // 交通提示
         if (n._travel_min > 0) {
             html += `<div class="auto-inserted-node">
                 <span class="icon">🚗</span>
@@ -1451,11 +1425,9 @@ function renderRouteDetailNodes() {
             </div>
             <div class="node-time">${n._duration}分钟</div>
         </div>`;
-        if (n.poi_id) lastPoiId = n.poi_id;
     });
     recContainer.innerHTML = html || '<p class="text-secondary text-center py-2">无推荐节点</p>';
 
-    // 渲染未选节点
     if (skipped.length === 0) {
         skipSection.classList.add('hidden');
     } else {
@@ -1491,27 +1463,23 @@ window.resetRouteToRecommended = function() {
 };
 
 // ============================================================
-// ★ 实时计算状态
+// 实时计算状态
 // ============================================================
 function updateStatusBar() {
     const statusBar = document.getElementById('statusBar');
     const statusMsg = document.getElementById('statusMsg');
 
-    // 计算总时长和结束时间
     let currentTime = currentArrivalTime;
     let totalNodeTime = 0;
     let lunchInserted = false;
     let dinnerInserted = false;
-    let estimatedCost = 0;
 
-    // 按原顺序取已选节点
     const selected = currentDetailNodes
         .filter(n => currentSelectedNodeIndices.has(n._idx))
         .sort((a, b) => a._idx - b._idx);
 
     let lastPoiId = null;
     for (const n of selected) {
-        // 交通耗时
         let travel = 0;
         if (lastPoiId && n.poi_id && String(lastPoiId) !== String(n.poi_id)) {
             const prevPoi = allPois.find(p => String(p.id) === String(lastPoiId));
@@ -1522,14 +1490,12 @@ function updateStatusBar() {
         }
         totalNodeTime += travel;
 
-        // 午餐
         if (!lunchInserted && currentTime < LUNCH_END && currentTime + travel + n._duration > LUNCH_START) {
             currentTime = Math.max(currentTime, LUNCH_START);
             totalNodeTime += MEAL_DURATION;
             currentTime += MEAL_DURATION;
             lunchInserted = true;
         }
-        // 晚餐
         if (!dinnerInserted && currentTime < DINNER_END && currentTime + travel + n._duration > DINNER_START) {
             currentTime = Math.max(currentTime, DINNER_START);
             totalNodeTime += MEAL_DURATION;
@@ -1547,16 +1513,11 @@ function updateStatusBar() {
     const isOvertime = estimatedEnd > VISIT_END;
     const overMinutes = estimatedEnd - VISIT_END;
 
-    // 费用估算（简化：按关联POI的预估费用）
-    estimatedCost = selected.length * 10;  // 简化估算
-
-    // 更新 DOM
     document.getElementById('selectedNodeCount').textContent = selected.length;
     document.getElementById('totalDuration').textContent = totalNodeTime;
     document.getElementById('estimatedEnd').textContent = fmtTime(estimatedEnd);
-    document.getElementById('estimatedCost').textContent = estimatedCost > 0 ? `约${estimatedCost}元` : '—';
+    document.getElementById('estimatedCost').textContent = selected.length > 0 ? `约${selected.length * 10}元` : '—';
 
-    // 状态判断
     if (isOvertime) {
         statusBar.className = 'status-bar danger';
         statusMsg.textContent = `⚠️ 预计结束 ${fmtTime(estimatedEnd)}，超出闭园 ${overMinutes} 分钟，请取消部分节点`;
@@ -1573,7 +1534,7 @@ function updateStatusBar() {
 }
 
 // ============================================================
-// ★ 采用路线
+// 采用路线
 // ============================================================
 window.adoptRouteFinal = function() {
     if (!currentDetailRoute) { alert('路线不存在'); return; }
@@ -1584,7 +1545,6 @@ window.adoptRouteFinal = function() {
 
     if (selected.length === 0) { alert('请至少选择一个节点'); return; }
 
-    // 构造行程节点
     const today = new Date().toISOString().slice(0, 10);
     let currentTime = currentArrivalTime;
     const dayNodes = [];
@@ -1596,7 +1556,6 @@ window.adoptRouteFinal = function() {
     let dinnerInserted = false;
 
     for (const n of selected) {
-        // 交通
         let travel = 0;
         if (lastPoiId && n.poi_id && String(lastPoiId) !== String(n.poi_id)) {
             const prevPoi = allPois.find(p => String(p.id) === String(lastPoiId));
@@ -1616,7 +1575,6 @@ window.adoptRouteFinal = function() {
             currentTime += travel;
         }
 
-        // 午餐
         if (!lunchInserted && currentTime < LUNCH_END && currentTime + n._duration > LUNCH_START) {
             if (currentTime < LUNCH_START) currentTime = LUNCH_START;
             dayNodes.push({
@@ -1629,7 +1587,6 @@ window.adoptRouteFinal = function() {
             currentTime += MEAL_DURATION;
             lunchInserted = true;
         }
-        // 晚餐
         if (!dinnerInserted && currentTime < DINNER_END && currentTime + n._duration > DINNER_START) {
             if (currentTime < DINNER_START) currentTime = DINNER_START;
             dayNodes.push({
@@ -1643,7 +1600,6 @@ window.adoptRouteFinal = function() {
             dinnerInserted = true;
         }
 
-        // 节点
         dayNodes.push({
             type: 'visit',
             name: `${NODE_TYPE_ICONS[n.node_type] || '📌'} ${n.node_name || '游览'}`,
@@ -1659,7 +1615,6 @@ window.adoptRouteFinal = function() {
 
     dayNodes.push({ type: 'trip_end', name: '本次路线游览结束', startTime: currentTime, endTime: currentTime + 1 });
 
-    // 生成行程
     if (!currentTripData || !currentTripData.days || currentTripData.days.length === 0) {
         currentTripData = {
             days: [{ day: 1, date: today, nodes: dayNodes }],
@@ -1677,7 +1632,6 @@ window.adoptRouteFinal = function() {
         currentTripData.days.push({ day: newDayNum, date: newDate, nodes: dayNodes });
     }
 
-    // 切换到智能规划面板
     window.closePanel('routeDetailPanel');
     window.closePanel('routePanel');
     document.getElementById('stepPreferences').classList.add('hidden');

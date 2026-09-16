@@ -14,20 +14,16 @@
         #map { height: 100vh; width: 100vw; z-index: 1; }
         .top-bar { position: fixed; top: max(12px, env(safe-area-inset-top, 12px)); left: 50%; transform: translateX(-50%); z-index: 1700; display: flex; align-items: center; justify-content: center; background: rgba(255,255,255,0.92); padding: 6px 16px; border-radius: 30px; box-shadow: 0 4px 20px rgba(0,0,0,0.12); backdrop-filter: blur(8px); height: 44px; cursor: pointer; white-space: nowrap; }
         .top-bar .brand { font-weight: 700; color: #1b5e20; font-size: 18px; display: flex; align-items: center; gap: 6px; user-select: none; }
-        .top-bar .brand i { font-size: 20px; }
-        .category-bar { position: fixed; top: 0; left: 0; right: 0; z-index: 1600; background: rgba(255,255,255,0.98); box-shadow: 0 4px 20px rgba(0,0,0,0.1); transform: translateY(-100%); transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1); display: flex; flex-wrap: wrap; padding: 12px 16px; gap: 8px; border-bottom: 1px solid #e8f5e9; backdrop-filter: blur(8px); pointer-events: none; max-height: 70vh; overflow-y: auto; padding-top: calc(60px + env(safe-area-inset-top, 12px)); }
+        .category-bar { position: fixed; top: 0; left: 0; right: 0; z-index: 1600; background: rgba(255,255,255,0.98); box-shadow: 0 4px 20px rgba(0,0,0,0.1); transform: translateY(-100%); transition: transform 0.4s; display: flex; flex-wrap: wrap; padding: 12px 16px; gap: 8px; border-bottom: 1px solid #e8f5e9; pointer-events: none; max-height: 70vh; overflow-y: auto; padding-top: calc(60px + env(safe-area-inset-top, 12px)); }
         .category-bar.show { transform: translateY(0); pointer-events: auto; }
-        .category-bar .cat-btn { padding: 6px 14px; border-radius: 20px; border: 1px solid #e0e0e0; background: white; font-size: 13px; cursor: pointer; transition: all 0.2s; white-space: nowrap; color: #333; }
-        .category-bar .cat-btn:hover { background: #e8f5e9; border-color: #2e7d32; }
-        .bottom-nav { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); z-index: 1500; display: flex; gap: 6px; background: rgba(255,255,255,0.95); padding: 8px 16px; border-radius: 40px; box-shadow: 0 4px 24px rgba(0,0,0,0.18); backdrop-filter: blur(8px); align-items: center; max-width: 95%; }
-        .bottom-nav .nav-btn { padding: 8px 16px; border: none; border-radius: 24px; font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.2s; display: flex; align-items: center; gap: 6px; background: transparent; color: #555; white-space: nowrap; }
-        .bottom-nav .nav-btn:hover { background: #e8f5e9; color: #1b5e20; }
+        .category-bar .cat-btn { padding: 6px 14px; border-radius: 20px; border: 1px solid #e0e0e0; background: white; font-size: 13px; cursor: pointer; color: #333; }
+        .bottom-nav { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); z-index: 1500; display: flex; gap: 6px; background: rgba(255,255,255,0.95); padding: 8px 16px; border-radius: 40px; box-shadow: 0 4px 24px rgba(0,0,0,0.18); align-items: center; max-width: 95%; }
+        .bottom-nav .nav-btn { padding: 8px 16px; border: none; border-radius: 24px; font-size: 14px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 6px; background: transparent; color: #555; white-space: nowrap; }
         .bottom-nav .nav-btn.primary { background: #1b5e20; color: white; }
-        .float-btn { position: fixed; z-index: 1500; background: white; border-radius: 50%; width: 48px; height: 48px; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 16px rgba(0,0,0,0.25); cursor: pointer; font-size: 20px; border: none; transition: all 0.2s; }
-        .float-btn:hover { transform: scale(1.08); }
+        .float-btn { position: fixed; z-index: 1500; background: white; border-radius: 50%; width: 48px; height: 48px; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 16px rgba(0,0,0,0.25); cursor: pointer; font-size: 20px; border: none; }
         .locate-btn { bottom: 110px; right: 20px; }
         .voice-btn { bottom: 170px; right: 20px; }
-        .panel { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: white; z-index: 2000; transform: translateY(100%); transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1); overflow-y: auto; display: flex; flex-direction: column; }
+        .panel { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: white; z-index: 2000; transform: translateY(100%); transition: transform 0.35s; overflow-y: auto; display: flex; flex-direction: column; }
         .panel.active { transform: translateY(0); }
         .panel-header { padding: 16px 20px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; background: white; position: sticky; top: 0; z-index: 10; min-height: 64px; padding-top: calc(16px + env(safe-area-inset-top, 0px)); }
         .panel-header h2 { font-size: 18px; font-weight: 700; margin: 0; color: #1b5e20; }
@@ -37,37 +33,31 @@
         .card-modern .card-title { font-weight: 600; font-size: 16px; margin-bottom: 6px; color: #1b5e20; }
         .card-modern .card-sub { font-size: 13px; color: #888; }
         .trip-day-container { background: white; border-radius: 16px; padding: 16px 20px; margin-bottom: 16px; border-left: 5px solid #1b5e20; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
-        .trip-day-title { font-weight: 700; font-size: 17px; color: #1b5e20; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #e8f5e9; padding-bottom: 8px; }
+        .trip-day-title { font-weight: 700; font-size: 17px; color: #1b5e20; margin-bottom: 12px; border-bottom: 2px solid #e8f5e9; padding-bottom: 8px; }
         .trip-timeline { position: relative; padding-left: 24px; }
         .trip-timeline::before { content: ''; position: absolute; left: 6px; top: 4px; bottom: 4px; width: 3px; background: #e0e0e0; border-radius: 2px; }
-        .trip-node { position: relative; padding: 6px 0 6px 16px; margin-bottom: 2px; display: flex; align-items: flex-start; gap: 12px; border-radius: 6px; }
+        .trip-node { position: relative; padding: 6px 0 6px 16px; margin-bottom: 2px; display: flex; align-items: flex-start; gap: 12px; }
         .trip-node::before { content: ''; position: absolute; left: -18px; top: 12px; width: 12px; height: 12px; border-radius: 50%; border: 3px solid #1b5e20; background: white; }
         .trip-node .node-time { min-width: 110px; font-weight: 500; color: #333; font-size: 14px; font-family: monospace; flex-shrink: 0; }
         .trip-node .node-icon { width: 28px; text-align: center; flex-shrink: 0; font-size: 16px; }
         .trip-node .node-content { flex: 1; font-size: 14px; color: #333; padding: 2px 0; line-height: 1.5; }
-        .trip-node .node-content .node-duration { color: #666; font-size: 12px; background: #f0f0f0; padding: 1px 8px; border-radius: 12px; margin-left: 6px; white-space: nowrap; }
+        .trip-node .node-content .node-duration { color: #666; font-size: 12px; background: #f0f0f0; padding: 1px 8px; border-radius: 12px; margin-left: 6px; }
         .trip-node.type-transport::before { border-color: #1565C0; background: #1565C0; }
         .trip-node.type-visit::before { border-color: #2E7D32; background: #2E7D32; }
         .trip-node.type-meal::before { border-color: #E65100; background: #E65100; }
         .trip-node.type-accommodation::before { border-color: #6A1B9A; background: #6A1B9A; }
         .trip-node.type-weather::before { border-color: #00BCD4; background: #00BCD4; }
         .trip-node.type-reminder::before { border-color: #C62828; background: #C62828; }
-        .trip-node.type-waiting::before { border-color: #FF6F00; background: #FF6F00; }
-        .trip-node.type-rest::before { border-color: #8D6E63; background: #8D6E63; }
         .trip-node.type-trip_end::before { border-color: #2E7D32; background: #2E7D32; }
         .trip-node .icon-transport { color: #1565C0; }
         .trip-node .icon-visit { color: #2E7D32; }
         .trip-node .icon-meal { color: #E65100; }
-        .trip-node .icon-accommodation { color: #6A1B9A; }
-        .trip-node .icon-weather { color: #00BCD4; }
-        .trip-node .icon-reminder { color: #C62828; }
-        .trip-node .icon-rest { color: #8D6E63; }
         .trip-node .icon-trip_end { color: #2E7D32; }
         .trip-node .weather-text { color: #0D47A1; font-weight: 500; }
         .trip-node .reminder-text { color: #C62828; font-weight: 500; background: #ffebee; padding: 2px 10px; border-radius: 12px; }
         .trip-node .trip-end-text { color: #2E7D32; font-weight: 700; font-size: 15px; }
         .poi-category-group { margin-bottom: 12px; }
-        .poi-category-title { font-weight: 600; color: #1b5e20; background: #e8f5e9; padding: 6px 12px; border-radius: 6px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; }
+        .poi-category-title { font-weight: 600; color: #1b5e20; background: #e8f5e9; padding: 6px 12px; border-radius: 6px; cursor: pointer; display: flex; justify-content: space-between; }
         .poi-category-content { padding-left: 12px; margin-top: 4px; }
         .poi-item { padding: 4px 0; border-bottom: 1px solid #f5f5f5; }
         .poi-item .poi-name { display: flex; align-items: center; gap: 8px; cursor: pointer; }
@@ -81,14 +71,13 @@
         .poi-select-list { max-height: 400px; overflow-y: auto; border: 1px solid #e0e0e0; border-radius: 8px; padding: 8px; }
         .reservation-form { background: #f8f9fa; border-radius: 8px; padding: 12px; margin-top: 10px; }
         .reservation-form .form-group { margin-bottom: 8px; }
-        .reservation-form label { font-weight: 500; font-size: 14px; }
-        .reservation-form input, .reservation-form select, .reservation-form textarea { width: 100%; padding: 6px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; }
-        .biz-image-box { width: 100%; aspect-ratio: 16/9; border-radius: 8px; overflow: hidden; background: #f0f0f0; display: flex; align-items: center; justify-content: center; margin-top: 8px; }
+        .reservation-form input, .reservation-form select, .reservation-form textarea { width: 100%; padding: 6px; border: 1px solid #ccc; border-radius: 4px; }
+        .biz-image-box { width: 100%; aspect-ratio: 16/9; border-radius: 8px; overflow: hidden; background: #f0f0f0; margin-top: 8px; }
         .biz-image-box img { width: 100%; height: 100%; object-fit: cover; }
         .route-filter-bar { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
-        .route-filter-btn { padding: 6px 14px; border-radius: 20px; border: 1px solid #e0e0e0; background: white; font-size: 13px; cursor: pointer; transition: all 0.2s; color: #555; }
+        .route-filter-btn { padding: 6px 14px; border-radius: 20px; border: 1px solid #e0e0e0; background: white; font-size: 13px; cursor: pointer; color: #555; }
         .route-filter-btn.active { background: #1b5e20; color: white; border-color: #1b5e20; }
-        .route-list-card { border: 1px solid #e0e0e0; border-radius: 12px; padding: 14px; margin-bottom: 12px; background: white; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+        .route-list-card { border: 1px solid #e0e0e0; border-radius: 12px; padding: 14px; margin-bottom: 12px; background: white; }
         .route-list-card .route-type-badge { display: inline-block; padding: 2px 10px; border-radius: 10px; font-size: 11px; font-weight: 600; }
         .route-type-scenic_internal { background: #e3f2fd; color: #1565c0; }
         .route-type-city_day { background: #fff3e0; color: #e65100; }
@@ -100,22 +89,21 @@
         .route-list-card .route-pois { color: #666; font-size: 12px; margin: 4px 0; }
         .route-list-card .route-meta { color: #888; font-size: 13px; margin-bottom: 8px; }
         .route-list-card .route-actions { display: flex; gap: 8px; margin-top: 8px; }
-        .route-list-card .btn-detail { background: transparent; color: #1b5e20; border: 1px solid #1b5e20; padding: 6px 14px; border-radius: 6px; font-size: 13px; cursor: pointer; flex: 1; }
-        .route-list-card .btn-adopt { background: #1b5e20; color: white; border: none; padding: 6px 14px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; flex: 1; }
+        .route-list-card .btn-detail { background: transparent; color: #1b5e20; border: 1px solid #1b5e20; padding: 6px 14px; border-radius: 6px; cursor: pointer; flex: 1; }
+        .route-list-card .btn-adopt { background: #1b5e20; color: white; border: none; padding: 6px 14px; border-radius: 6px; font-weight: 600; cursor: pointer; flex: 1; }
         .arrival-time-bar { background: #f0f8f0; border-bottom: 1px solid #e0e0e0; padding: 12px 16px; display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
         .arrival-time-bar label { font-weight: 600; color: #1b5e20; font-size: 14px; margin: 0; }
-        .arrival-time-bar select { padding: 6px 12px; border: 1px solid #1b5e20; border-radius: 6px; font-size: 14px; background: white; cursor: pointer; }
+        .arrival-time-bar select { padding: 6px 12px; border: 1px solid #1b5e20; border-radius: 6px; background: white; }
         .node-section { padding: 12px 16px; }
         .node-section-title { font-weight: 600; color: #1b5e20; font-size: 14px; margin-bottom: 8px; display: flex; justify-content: space-between; }
         .node-section-title .count { color: #888; font-weight: 400; font-size: 12px; }
-        .timeline-node { display: flex; align-items: flex-start; gap: 10px; padding: 8px 10px; border-bottom: 1px solid #f0f0f0; position: relative; }
+        .timeline-node { display: flex; align-items: flex-start; gap: 10px; padding: 8px 10px; border-bottom: 1px solid #f0f0f0; }
         .timeline-node.type-visit { background: #f0f8f0; }
         .timeline-node.type-transport { background: #f0f7ff; font-size: 13px; color: #1565C0; }
         .timeline-node.type-meal { background: #fff8e1; font-size: 13px; color: #e65100; }
         .timeline-node .node-icon { font-size: 16px; width: 22px; text-align: center; flex-shrink: 0; }
         .timeline-node .node-main { flex: 1; }
-        .timeline-node .node-main .node-titlerow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-        .timeline-node .node-main .node-titlerow .node-name { font-weight: 500; color: #333; font-size: 14px; }
+        .timeline-node .node-main .node-name { font-weight: 500; color: #333; font-size: 14px; }
         .timeline-node.type-transport .node-main .node-name,
         .timeline-node.type-meal .node-main .node-name { color: inherit; font-weight: 400; font-size: 13px; }
         .timeline-node .node-time { color: #1b5e20; font-weight: 600; font-size: 12px; flex-shrink: 0; font-family: monospace; }
@@ -124,9 +112,7 @@
         .timeline-node .node-desc { color: #555; font-size: 12px; margin-top: 2px; }
         .timeline-node .node-tips { color: #f57f17; font-size: 12px; margin-top: 2px; }
         .timeline-node .node-remove { color: #c62828; cursor: pointer; font-size: 14px; flex-shrink: 0; padding: 2px 6px; }
-        .timeline-node .node-remove:hover { background: #ffebee; border-radius: 50%; }
-        .selectable-node { display: flex; align-items: flex-start; gap: 10px; padding: 10px; border-bottom: 1px solid #f0f0f0; cursor: pointer; transition: 0.2s; }
-        .selectable-node:hover { background: #f8fdf8; }
+        .selectable-node { display: flex; align-items: flex-start; gap: 10px; padding: 10px; border-bottom: 1px solid #f0f0f0; cursor: pointer; }
         .selectable-node input[type="checkbox"] { margin-top: 3px; cursor: pointer; width: 18px; height: 18px; flex-shrink: 0; }
         .selectable-node .node-info { flex: 1; }
         .selectable-node .node-title { font-weight: 500; color: #333; font-size: 14px; }
@@ -137,44 +123,26 @@
         .status-bar.warning { border-top-color: #ff9800; background: #fff8e1; }
         .status-bar.danger { border-top-color: #f44336; background: #ffebee; }
         .status-bar .status-row { display: flex; justify-content: space-between; font-size: 13px; color: #555; margin-bottom: 4px; }
-        .status-bar .status-row b { color: #333; }
         .status-bar .status-msg { font-weight: 600; font-size: 14px; margin-bottom: 6px; }
         .status-bar.ok .status-msg { color: #2e7d32; }
         .status-bar.warning .status-msg { color: #e65100; }
         .status-bar.danger .status-msg { color: #c62828; }
         .status-bar .status-actions { display: flex; gap: 8px; margin-top: 8px; }
-        .status-bar .btn-reset { flex: 1; background: white; color: #555; border: 1px solid #ccc; padding: 10px; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
-        .status-bar .btn-adopt-final { flex: 2; background: #1b5e20; color: white; border: none; padding: 10px; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
+        .status-bar .btn-reset { flex: 1; background: white; color: #555; border: 1px solid #ccc; padding: 10px; border-radius: 8px; font-weight: 600; cursor: pointer; }
+        .status-bar .btn-adopt-final { flex: 2; background: #1b5e20; color: white; border: none; padding: 10px; border-radius: 8px; font-weight: 600; cursor: pointer; }
         .status-bar .btn-adopt-final:disabled { background: #ccc; cursor: not-allowed; }
         .alert-modal-mask { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 3000; display: flex; align-items: center; justify-content: center; }
-        .alert-modal { background: white; border-radius: 14px; padding: 20px; max-width: 340px; width: 88%; box-shadow: 0 8px 32px rgba(0,0,0,0.2); }
-        .alert-modal h6 { color: #c62828; font-weight: 700; margin-bottom: 10px; font-size: 16px; }
+        .alert-modal { background: white; border-radius: 14px; padding: 20px; max-width: 340px; width: 88%; }
+        .alert-modal h6 { color: #c62828; font-weight: 700; margin-bottom: 10px; }
         .alert-modal p { color: #555; font-size: 14px; line-height: 1.6; margin-bottom: 12px; }
         .alert-modal .btn-row { display: flex; gap: 8px; }
-        .alert-modal .btn-row button { flex: 1; padding: 10px; border-radius: 8px; font-weight: 600; font-size: 14px; cursor: pointer; border: none; }
-        .alert-modal .btn-row .btn-cancel { background: white; color: #555; border: 1px solid #ccc; }
+        .alert-modal .btn-row button { flex: 1; padding: 10px; border-radius: 8px; font-weight: 600; cursor: pointer; border: none; }
         .alert-modal .btn-row .btn-ok { background: #1b5e20; color: white; }
-        @media (max-width: 640px) {
-            .top-bar { top: max(8px, env(safe-area-inset-top, 8px)); padding: 4px 12px; height: 38px; }
-            .top-bar .brand { font-size: 15px; }
-            .bottom-nav { padding: 6px 10px; gap: 2px; }
-            .bottom-nav .nav-btn { font-size: 11px; padding: 6px 10px; }
-            .float-btn { width: 40px; height: 40px; font-size: 16px; }
-            .locate-btn { bottom: 100px; right: 12px; }
-            .voice-btn { bottom: 155px; right: 12px; }
-            .panel-body { padding: 12px 14px; }
-            .trip-node .node-time { min-width: 80px; font-size: 12px; }
-            .trip-timeline { padding-left: 16px; }
-            .trip-node { padding: 4px 0 4px 12px; gap: 8px; }
-            .trip-node::before { left: -14px; top: 10px; width: 10px; height: 10px; }
-        }
         .text-green { color: #1b5e20; }
-        .btn-primary-custom { background: #1b5e20; color: white; border: none; padding: 8px 16px; border-radius: 8px; font-weight: 600; transition: 0.2s; cursor: pointer; }
-        .btn-primary-custom:hover { background: #2e7d32; }
-        .btn-outline-custom { background: transparent; color: #1b5e20; border: 2px solid #1b5e20; padding: 8px 16px; border-radius: 8px; font-weight: 600; transition: 0.2s; cursor: pointer; }
-        .btn-warning-custom { background: #ff9800; color: white; border: none; padding: 8px 16px; border-radius: 8px; font-weight: 600; transition: 0.2s; cursor: pointer; }
+        .btn-primary-custom { background: #1b5e20; color: white; border: none; padding: 8px 16px; border-radius: 8px; font-weight: 600; cursor: pointer; }
+        .btn-outline-custom { background: transparent; color: #1b5e20; border: 2px solid #1b5e20; padding: 8px 16px; border-radius: 8px; font-weight: 600; cursor: pointer; }
+        .btn-warning-custom { background: #ff9800; color: white; border: none; padding: 8px 16px; border-radius: 8px; font-weight: 600; cursor: pointer; }
         .order-item { display: flex; align-items: center; justify-content: space-between; padding: 6px 8px; border-bottom: 1px solid #f0f0f0; }
-        .order-item .order-name { font-size: 14px; color: #333; }
         .order-item .order-actions button { padding: 2px 8px; font-size: 12px; margin-left: 4px; }
     </style>
 </head>
@@ -207,7 +175,6 @@
 <button class="float-btn locate-btn" onclick="window.locateUser()"><i class="fas fa-crosshairs"></i></button>
 <button class="float-btn voice-btn" id="voiceToggleBtn" onclick="window.toggleVoice()"><i class="fas fa-volume-high"></i></button>
 
-<!-- 面板：智能规划 -->
 <div class="panel" id="planPanel">
     <div class="panel-header">
         <h2><i class="fas fa-route text-green"></i> 智能行程规划</h2>
@@ -232,13 +199,12 @@
                 <div class="col-12">
                     <label class="form-label fw-semibold">行程风格</label>
                     <select id="planStyle" class="form-select" onchange="window.onStyleChange()">
-                        <option value="compact">🚀 紧凑型（仅核心节点）</option>
-                        <option value="relaxed" selected>🌿 舒适型（核心节点+经典景点）</option>
-                        <option value="indepth">🔍 深度游（核心节点+全部景点）</option>
+                        <option value="compact">🚀 紧凑型</option>
+                        <option value="relaxed" selected>🌿 舒适型</option>
+                        <option value="indepth">🔍 深度游</option>
                     </select>
                 </div>
             </div>
-
             <div class="mt-2">
                 <label class="form-label fw-semibold">选择景点</label>
                 <div id="poiSelectContainer" class="poi-select-list">
@@ -251,27 +217,22 @@
                     <span class="ms-2 text-secondary" id="selectedPoiCount">已选 0 个</span>
                 </div>
             </div>
-
             <div class="mt-2">
-                <label class="form-label fw-semibold">景点顺序（可上下调整）</label>
+                <label class="form-label fw-semibold">景点顺序</label>
                 <div id="selectedOrderContainer" class="border rounded p-2" style="min-height:40px;background:#fafafa;">
                     <span class="text-secondary">尚未选择景点</span>
                 </div>
             </div>
-
             <button class="btn btn-primary-custom w-100 mt-3" id="generatePlanBtn"><i class="fas fa-wand-magic-sparkles"></i> 生成行程方案</button>
             <div id="planLoading" class="text-center mt-3 hidden">
-                <div class="spinner-border text-success" role="status"></div>
-                <p class="mt-2 text-secondary">正在为您规划最优行程，请稍候...</p>
+                <div class="spinner-border text-success"></div>
+                <p class="mt-2 text-secondary">正在为您规划最优行程...</p>
             </div>
         </div>
-
         <div id="stepDetail" class="hidden">
             <div class="d-flex justify-content-between align-items-center mb-3">
                 <h5><i class="fas fa-map text-green"></i> 我的行程</h5>
-                <div>
-                    <button class="btn btn-secondary btn-sm me-1" onclick="window.backToPreferences()"><i class="fas fa-arrow-left"></i> 重新选择</button>
-                </div>
+                <button class="btn btn-secondary btn-sm" onclick="window.backToPreferences()"><i class="fas fa-arrow-left"></i> 重新选择</button>
             </div>
             <div id="tripDetailContainer"></div>
             <div class="mt-3 d-flex gap-2">
@@ -283,14 +244,13 @@
     </div>
 </div>
 
-<!-- 面板：推荐路线列表 -->
 <div class="panel" id="routePanel">
     <div class="panel-header">
         <h2><i class="fas fa-route text-green"></i> 推荐路线</h2>
         <button class="close-btn" onclick="window.closePanel('routePanel')">&times;</button>
     </div>
     <div class="panel-body">
-        <p class="text-secondary small mb-2">为不熟悉通江的游客精选游玩方案。点击"查看详情"了解路线，或直接"一键采用"输入到达时间生成行程。</p>
+        <p class="text-secondary small mb-2">精选游玩方案，输入到达时间即可生成行程。</p>
         <div class="route-filter-bar" id="routeFilterBar">
             <button class="route-filter-btn active" data-filter="all" onclick="window.filterRoutes('all')">全部</button>
             <button class="route-filter-btn" data-filter="half_day" onclick="window.filterRoutes('half_day')">🌤️ 半日游</button>
@@ -299,14 +259,13 @@
         </div>
         <div id="routeListContainer">
             <div class="text-secondary text-center py-4">
-                <div class="spinner-border text-success" role="status"></div>
+                <div class="spinner-border text-success"></div>
                 <p class="mt-2">加载推荐路线中...</p>
             </div>
         </div>
     </div>
 </div>
 
-<!-- 面板：路线详情 -->
 <div class="panel" id="routeDetailPanel">
     <div class="panel-header" style="background:#1b5e20; color:white; border-bottom:none; flex-shrink:0;">
         <h2 style="color:white;"><i class="fas fa-route"></i> <span id="routeDetailTitle">路线详情</span></h2>
@@ -367,7 +326,6 @@
     </div>
 </div>
 
-<!-- 面板：我的 -->
 <div class="panel" id="myPanel">
     <div class="panel-header"><h2><i class="fas fa-user text-green"></i> 我的</h2><button class="close-btn" onclick="window.closePanel('myPanel')">&times;</button></div>
     <div class="panel-body">
@@ -473,16 +431,10 @@ const STATUS_MAP = { pending: '待确认', confirmed: '已确认', rejected: '�
 function translateStatus(s) { return STATUS_MAP[s] || s || '未知'; }
 
 const ROUTE_TYPE_LABELS = {
-    scenic_internal: '🏞️ 景区内部',
-    city_day: '🏙️ 城市一日游',
-    area_multi: '🗺️ 区域联合',
-    custom: '✨ 自定义'
+    scenic_internal: '🏞️ 景区内部', city_day: '🏙️ 城市一日游',
+    area_multi: '🗺️ 区域联合', custom: '✨ 自定义'
 };
-const DAY_CATEGORY_LABELS = {
-    half_day: '🌤️ 半日游',
-    one_day: '☀️ 一日游',
-    multi_day: '📅 多日游'
-};
+const DAY_CATEGORY_LABELS = { half_day: '🌤️ 半日游', one_day: '☀️ 一日游', multi_day: '📅 多日游' };
 const NODE_TYPE_ICONS = {
     entrance: '🚪', parking: '🅿️', rest: '☕', core_view: '⭐',
     spot: '📍', entertainment: '🎢', wc: '🚻', exit: '🚪', other: '📌'
@@ -490,11 +442,11 @@ const NODE_TYPE_ICONS = {
 
 const LUNCH_START = 11 * 60 + 30;
 const LUNCH_END = 12 * 60 + 30;
-const DINNER_START = 18 * 60;
-const DINNER_END = 19 * 60;
+const DINNER_START = 17 * 60 + 30;
+const DINNER_END = 18 * 60 + 30;
 const VISIT_END = 18 * 60;
 const MEAL_DURATION = 60;
-const COUNTY_ID = 0;  // 县城红军广场的虚拟 ID
+const COUNTY_ID = 0;
 
 let allPois = [];
 let currentTripData = null;
@@ -521,29 +473,29 @@ function timeStrToMinutes(str) {
     return h * 60 + m;
 }
 
-// ★ 核心：计算两节点间的交通耗时（修正 bug）
-function calcTravelBetween(prevNode, curNode) {
-    if (!curNode || !curNode.poi_id) return 0;
-    // 第一个节点：从县城出发
-    if (!prevNode) {
-        return transportPresetsCache[`${COUNTY_ID}_${curNode.poi_id}`] ||
-               transportPresetsCache[`county_${curNode.poi_id}`] || 0;
+// ★ 计算两节点间的交通耗时（同一景区内视为0）
+function calcTravelBetween(prevPoiId, curPoiId) {
+    if (!prevPoiId || !curPoiId) return 0;
+    if (String(prevPoiId) === String(curPoiId)) return 0;
+
+    // 从县城出发
+    if (String(prevPoiId) === 'county' || prevPoiId === COUNTY_ID) {
+        return transportPresetsCache[`${COUNTY_ID}_${curPoiId}`] ||
+               transportPresetsCache[`county_${curPoiId}`] || 0;
     }
-    if (!prevNode.poi_id) return 0;
-    if (String(prevNode.poi_id) === String(curNode.poi_id)) return 0;
-
-    const prevPoi = allPois.find(p => String(p.id) === String(prevNode.poi_id));
-    const curPoi = allPois.find(p => String(p.id) === String(curNode.poi_id));
-    if (!prevPoi || !curPoi) return 0;
-
-    // ★ 只有在两者都有 parent_id 且相同时才视为同景区，不单独算交通
-    const prevParent = prevPoi.parent_id ? String(prevPoi.parent_id) : null;
-    const curParent = curPoi.parent_id ? String(curPoi.parent_id) : null;
-    if (prevParent && curParent && prevParent === curParent) {
-        return 0;
+    // 返回县城
+    if (String(curPoiId) === 'county' || curPoiId === COUNTY_ID) {
+        return transportPresetsCache[`${prevPoiId}_${COUNTY_ID}`] ||
+               transportPresetsCache[`${prevPoiId}_county`] || 0;
     }
 
-    return transportPresetsCache[`${prevNode.poi_id}_${curNode.poi_id}`] || 0;
+    const prevPoi = allPois.find(p => String(p.id) === String(prevPoiId));
+    const curPoi = allPois.find(p => String(p.id) === String(curPoiId));
+    const prevParent = prevPoi?.parent_id ? String(prevPoi.parent_id) : null;
+    const curParent = curPoi?.parent_id ? String(curPoi.parent_id) : null;
+    if (prevParent && curParent && prevParent === curParent) return 0;
+
+    return transportPresetsCache[`${prevPoiId}_${curPoiId}`] || 0;
 }
 
 function getStyleAutoSelection(style, subItems) {
@@ -605,17 +557,11 @@ function setDefaultStartTime() {
     const dateInput = document.getElementById('planStartDate');
     if (dateInput) dateInput.value = now.toISOString().slice(0, 10);
 }
-
 function initStartLocationSelect(pois) {
     const sel = document.getElementById('planStartLocation');
     if (!sel) return;
     sel.innerHTML = '<option value="county">红军广场（县城）</option>';
-    const candidates = pois.filter(p => {
-        if (p.parent_id) return false;
-        if (p.type === 'scenic') return true;
-        if (p.category && p.category.includes('住宿')) return true;
-        return false;
-    });
+    const candidates = pois.filter(p => !p.parent_id && (p.type === 'scenic' || (p.category && p.category.includes('住宿'))));
     candidates.forEach(p => {
         const icon = p.type === 'scenic' ? '🏞️' : '🏨';
         sel.innerHTML += `<option value="${p.id}">${icon} ${p.name}</option>`;
@@ -702,9 +648,7 @@ function getPoiTotalDuration(poi, subItems) {
         let total = 0;
         subItems.forEach(s => {
             const sidStr = String(s.id);
-            if (selectedSet.has(sidStr) || selectedSet.has(s.id)) {
-                total += (s.visit_duration || 0);
-            }
+            if (selectedSet.has(sidStr) || selectedSet.has(s.id)) total += (s.visit_duration || 0);
         });
         return total;
     }
@@ -1049,23 +993,17 @@ window.renderMyReservations = async function() {
                     <div class="card-sub">状态：${translateStatus(r.status)}</div>
                 </div>
                 <div id="res-detail-${idx}" class="hidden mt-2">
-                    <p><b>单位：</b>${r.unit || ''}</p>
                     <p><b>联系人：</b>${r.name || ''}</p>
                     <p><b>电话：</b>${r.phone || ''}</p>
                     <p><b>人数：</b>${r.visitor_count || 1}</p>
-                    <p><b>时段：</b>${r.time_slot_start || ''} - ${r.time_slot_end || ''}</p>
                     <p><b>预约内容：</b>${r.reservation_content || '未选择'}</p>
-                    <p><b>备注：</b>${r.remark || ''}</p>
                     <p><b>状态：</b>${translateStatus(r.status)}</p>
                     <button class="btn btn-sm btn-danger" onclick="window.deleteReservationHandler('${r.id}')">删除</button>
                 </div>
             </div>`;
         });
         container.innerHTML = html;
-    } catch (e) {
-        console.error('加载预约失败:', e);
-        container.innerHTML = '<p class="text-danger">加载失败</p>';
-    }
+    } catch (e) { container.innerHTML = '<p class="text-danger">加载失败</p>'; }
 };
 window.toggleReservationDetail = function(idx) {
     const el = document.getElementById(`res-detail-${idx}`);
@@ -1095,11 +1033,8 @@ window.submitReservation = async function(merchantId, merchantName, category) {
             remark, category: category || '', status: 'pending'
         });
         alert('预约提交成功！');
-        document.getElementById(`res-date-${merchantId}`).value = '';
-        document.getElementById(`res-name-${merchantId}`).value = '';
-        document.getElementById(`res-phone-${merchantId}`).value = '';
+        ['res-date', 'res-name', 'res-phone', 'res-remark'].forEach(p => { const el = document.getElementById(`${p}-${merchantId}`); if (el) el.value = ''; });
         document.getElementById(`res-count-${merchantId}`).value = '1';
-        document.getElementById(`res-remark-${merchantId}`).value = '';
         const contentSel = document.getElementById(`res-content-${merchantId}`);
         if (contentSel) contentSel.value = '';
         window.toggleReservationForm(merchantId);
@@ -1174,15 +1109,12 @@ async function renderRouteListPanel() {
             const routes = await getRoutes();
             allRoutesCache = routes || [];
         } catch (e) {
-            console.error('加载路线失败:', e);
-            container.innerHTML = '<p class="text-danger text-center">加载失败，请刷新重试</p>';
+            container.innerHTML = '<p class="text-danger text-center">加载失败</p>';
             return;
         }
     }
     let filtered = allRoutesCache;
-    if (currentRouteFilter !== 'all') {
-        filtered = allRoutesCache.filter(r => r.day_category === currentRouteFilter);
-    }
+    if (currentRouteFilter !== 'all') filtered = allRoutesCache.filter(r => r.day_category === currentRouteFilter);
     if (filtered.length === 0) {
         container.innerHTML = '<p class="text-secondary text-center py-4">暂无此类型的推荐路线</p>';
         return;
@@ -1206,16 +1138,10 @@ async function renderRouteListPanel() {
             <div class="route-name">${r.name || '未命名路线'}</div>
             ${r.summary ? `<div class="route-summary">${r.summary}</div>` : ''}
             ${r.summary_pois ? `<div class="route-pois">📍 ${r.summary_pois}</div>` : ''}
-            <div class="route-meta">
-                ⏱️ 约 ${totalMin} 分钟${costText ? ` · 💰 ${costText}` : ''}
-            </div>
+            <div class="route-meta">⏱️ 约 ${totalMin} 分钟${costText ? ` · 💰 ${costText}` : ''}</div>
             <div class="route-actions">
-                <button class="btn-detail" onclick="window.openRouteDetail('${r.id}')">
-                    <i class="fas fa-eye"></i> 查看详情
-                </button>
-                <button class="btn-adopt" onclick="window.openRouteDetail('${r.id}')">
-                    <i class="fas fa-check"></i> 一键采用
-                </button>
+                <button class="btn-detail" onclick="window.openRouteDetail('${r.id}')"><i class="fas fa-eye"></i> 查看详情</button>
+                <button class="btn-adopt" onclick="window.openRouteDetail('${r.id}')"><i class="fas fa-check"></i> 一键采用</button>
             </div>
         </div>`;
     }
@@ -1238,7 +1164,6 @@ window.openRouteDetail = async function(routeId) {
             nodes = allRouteNodesCache[routeId];
         }
     } catch (e) {
-        console.error('加载节点失败:', e);
         alert('加载路线节点失败');
         return;
     }
@@ -1264,7 +1189,13 @@ window.openRouteDetail = async function(routeId) {
 };
 
 // ============================================================
-// ★ 构建时间线（含交通 + 从县城出发 + 餐食）
+// ★★ 构建时间线（核心逻辑）
+// 规则：
+// 1. 初始从县城出发（只插一次交通）
+// 2. 午餐：11:30-12:30 触发
+// 3. 晚餐：节点结束时间 >= 17:30 触发；或最后返回县城后 >= 17:00 兜底插入
+// 4. 最后返回县城（>10分钟才显示）
+// 5. 18:00 后不新安排景点（推荐阶段）；手动添加的节点保留
 // ============================================================
 function buildRenderedTimeline(selectedIndices, arrivalTime) {
     const selected = currentDetailNodes
@@ -1273,116 +1204,95 @@ function buildRenderedTimeline(selectedIndices, arrivalTime) {
 
     const timeline = [];
     let currentTime = arrivalTime;
-    let lastNode = null;
+    let lastPoiId = 'county';  // ★ 关键修正：初始为县城
     let lunchInserted = false;
     let dinnerInserted = false;
 
-    // ★ 从县城出发的交通
-    if (selected.length > 0 && selected[0].poi_id) {
-        const countyTravel = transportPresetsCache[`${COUNTY_ID}_${selected[0].poi_id}`] ||
-                            transportPresetsCache[`county_${selected[0].poi_id}`] || 0;
-        if (countyTravel > 0) {
-            timeline.push({
-                type: 'transport',
-                name: `从红军广场前往 ${selected[0].node_name || '首站'}`,
-                duration: countyTravel,
-                startTime: currentTime,
-                endTime: currentTime + countyTravel
-            });
-            currentTime += countyTravel;
-        }
-    }
-
     for (const n of selected) {
-        // 计算交通耗时
-        let travel = calcTravelBetween(lastNode, n);
+        // 计算交通
+        let travel = 0;
+        if (n.poi_id) {
+            travel = calcTravelBetween(lastPoiId, n.poi_id);
+        }
 
-        // 检查午餐
-        const willCrossLunch = !lunchInserted && currentTime < LUNCH_END && currentTime + travel + n._duration > LUNCH_START;
-        // ★ 检查晚餐：endTime >= 18:00 也算触发
-        const willCrossDinner = !dinnerInserted && currentTime + travel + n._duration >= DINNER_START;
-
-        if (willCrossLunch) {
+        // ★ 午餐检查
+        if (!lunchInserted && currentTime < LUNCH_END && currentTime + travel + n._duration > LUNCH_START) {
             if (travel > 0) {
-                timeline.push({
-                    type: 'transport',
-                    name: '前往 ' + (n.node_name || '下一站'),
-                    duration: travel,
-                    startTime: currentTime,
-                    endTime: currentTime + travel
-                });
+                timeline.push({ type: 'transport', name: '前往 ' + (n.node_name || '下一站'), duration: travel, startTime: currentTime, endTime: currentTime + travel });
                 currentTime += travel;
                 travel = 0;
             }
             if (currentTime < LUNCH_START) currentTime = LUNCH_START;
-            timeline.push({
-                type: 'meal',
-                name: n.nearby_restaurant ? `午餐（推荐：${n.nearby_restaurant}）` : '午餐时间',
-                duration: MEAL_DURATION,
-                startTime: currentTime,
-                endTime: currentTime + MEAL_DURATION
-            });
+            timeline.push({ type: 'meal', name: n.nearby_restaurant ? `午餐（推荐：${n.nearby_restaurant}）` : '午餐时间', duration: MEAL_DURATION, startTime: currentTime, endTime: currentTime + MEAL_DURATION });
             currentTime += MEAL_DURATION;
             lunchInserted = true;
         }
 
+        // ★ 晚餐检查：节点游览结束时间 >= 17:30
+        const willCrossDinner = !dinnerInserted && (currentTime + travel + n._duration >= DINNER_START);
         if (willCrossDinner) {
             if (travel > 0) {
-                timeline.push({
-                    type: 'transport',
-                    name: '前往 ' + (n.node_name || '下一站'),
-                    duration: travel,
-                    startTime: currentTime,
-                    endTime: currentTime + travel
-                });
+                timeline.push({ type: 'transport', name: '前往 ' + (n.node_name || '下一站'), duration: travel, startTime: currentTime, endTime: currentTime + travel });
                 currentTime += travel;
                 travel = 0;
             }
+            // 先游览完该节点
+            timeline.push({
+                type: 'visit', name: n.node_name || '游览', duration: n._duration,
+                startTime: currentTime, endTime: currentTime + n._duration,
+                nodeType: n.node_type, description: n.description, tips: n.tips, _idx: n._idx
+            });
+            currentTime += n._duration;
             // 插入晚餐
             if (currentTime < DINNER_START) currentTime = DINNER_START;
-            timeline.push({
-                type: 'meal',
-                name: n.nearby_restaurant ? `晚餐（推荐：${n.nearby_restaurant}）` : '晚餐时间',
-                duration: MEAL_DURATION,
-                startTime: currentTime,
-                endTime: currentTime + MEAL_DURATION
-            });
+            timeline.push({ type: 'meal', name: n.nearby_restaurant ? `晚餐（推荐：${n.nearby_restaurant}）` : '晚餐时间', duration: MEAL_DURATION, startTime: currentTime, endTime: currentTime + MEAL_DURATION });
             currentTime += MEAL_DURATION;
             dinnerInserted = true;
+            lastPoiId = n.poi_id || lastPoiId;
+            continue;
         }
 
+        // 常规交通
         if (travel > 0) {
-            timeline.push({
-                type: 'transport',
-                name: '前往 ' + (n.node_name || '下一站'),
-                duration: travel,
-                startTime: currentTime,
-                endTime: currentTime + travel
-            });
+            timeline.push({ type: 'transport', name: '前往 ' + (n.node_name || '下一站'), duration: travel, startTime: currentTime, endTime: currentTime + travel });
             currentTime += travel;
         }
 
+        // 常规游览
         timeline.push({
-            type: 'visit',
-            name: n.node_name || '游览',
-            duration: n._duration,
-            startTime: currentTime,
-            endTime: currentTime + n._duration,
-            nodeType: n.node_type,
-            description: n.description,
-            tips: n.tips,
-            _idx: n._idx
+            type: 'visit', name: n.node_name || '游览', duration: n._duration,
+            startTime: currentTime, endTime: currentTime + n._duration,
+            nodeType: n.node_type, description: n.description, tips: n.tips, _idx: n._idx
         });
         currentTime += n._duration;
-
-        lastNode = n;
+        lastPoiId = n.poi_id || lastPoiId;
     }
+
+    // ★ 返回县城（城内10分钟内不显示）
+    if (lastPoiId && String(lastPoiId) !== 'county') {
+        const returnTravel = calcTravelBetween(lastPoiId, 'county');
+        if (returnTravel > 10) {
+            timeline.push({ type: 'transport', name: '返回县城', duration: returnTravel, startTime: currentTime, endTime: currentTime + returnTravel });
+            currentTime += returnTravel;
+        }
+    }
+
+    // ★ 晚餐兜底：如果未插晚餐，且当前时间 >= 17:00 且 < 19:00
+    if (!dinnerInserted && currentTime >= 17 * 60 && currentTime < DINNER_END) {
+        if (currentTime < DINNER_START) currentTime = DINNER_START;
+        timeline.push({ type: 'meal', name: '晚餐时间', duration: MEAL_DURATION, startTime: currentTime, endTime: currentTime + MEAL_DURATION });
+        currentTime += MEAL_DURATION;
+        dinnerInserted = true;
+    }
+
+    // ★ 今天行程结束
+    timeline.push({ type: 'trip_end', name: '今天行程结束', startTime: currentTime, endTime: currentTime + 1 });
 
     return { timeline, endTime: currentTime };
 }
 
 // ============================================================
-// ★ 智能推荐算法
+// ★ 智能推荐算法（从县城出发、返回县城）
 // ============================================================
 function calculateRecommendedNodes() {
     const arrival = currentArrivalTime;
@@ -1397,25 +1307,17 @@ function calculateRecommendedNodes() {
     let lunchInserted = false;
     let dinnerInserted = false;
     const selectedIndices = new Set();
-    let lastNode = null;
-
-    // ★ 从县城出发的交通
-    if (sorted.length > 0 && sorted[0].poi_id) {
-        const countyTravel = transportPresetsCache[`${COUNTY_ID}_${sorted[0].poi_id}`] ||
-                            transportPresetsCache[`county_${sorted[0].poi_id}`] || 0;
-        currentTime += countyTravel;
-    }
+    let lastPoiId = 'county';
 
     for (const node of sorted) {
-        let travel = calcTravelBetween(lastNode, node);
+        let travel = node.poi_id ? calcTravelBetween(lastPoiId, node.poi_id) : 0;
         let testTime = currentTime;
 
-        // 午餐
         if (!lunchInserted && testTime < LUNCH_END && testTime + travel + node._duration > LUNCH_START) {
             testTime = Math.max(testTime, LUNCH_START) + MEAL_DURATION;
             lunchInserted = true;
         }
-        // 晚餐：结束时间 >= 18:00 就视为触发（会导致今日结束）
+        // 晚餐：节点结束时间 >= 17:30 视为触发
         if (!dinnerInserted && testTime + travel + node._duration >= DINNER_START) {
             break;
         }
@@ -1427,31 +1329,25 @@ function calculateRecommendedNodes() {
 
         selectedIndices.add(node._idx);
         currentTime = endTime;
-        lastNode = node;
+        lastPoiId = node.poi_id || lastPoiId;
     }
 
     currentSelectedNodeIndices = selectedIndices;
 
-    // 检查一级景点时间是否足够
+    // 检查一级景点
     const priority1Nodes = currentDetailNodes.filter(n => n._priority === 1);
     if (priority1Nodes.length > 0) {
         let p1TotalTime = 0;
-        let prev = null;
-        // 加从县城的交通
-        if (priority1Nodes[0] && priority1Nodes[0].poi_id) {
-            p1TotalTime += transportPresetsCache[`${COUNTY_ID}_${priority1Nodes[0].poi_id}`] || 0;
-        }
+        let prevId = 'county';
         for (const n of priority1Nodes) {
-            p1TotalTime += calcTravelBetween(prev, n) + n._duration;
-            prev = n;
+            p1TotalTime += (n.poi_id ? calcTravelBetween(prevId, n.poi_id) : 0) + n._duration;
+            prevId = n.poi_id || prevId;
         }
         const available = availableEnd - currentArrivalTime;
         if (p1TotalTime > available) {
             const p1Names = priority1Nodes.map(n => n.node_name).join('、');
-            const availH = Math.floor(available / 60);
-            const availM = available % 60;
-            const needH = Math.floor(p1TotalTime / 60);
-            const needM = p1TotalTime % 60;
+            const availH = Math.floor(available / 60), availM = available % 60;
+            const needH = Math.floor(p1TotalTime / 60), needM = p1TotalTime % 60;
             const availStr = availM > 0 ? `${availH} 小时 ${availM} 分钟` : `${availH} 小时`;
             const needStr = needM > 0 ? `${needH} 小时 ${needM} 分钟` : `${needH} 小时`;
             showTimeInsufficientAlert(p1Names, availStr, needStr);
@@ -1493,8 +1389,7 @@ window.onArrivalTimeChange = function() {
             }
             if (!exists) {
                 const opt = document.createElement('option');
-                opt.value = input;
-                opt.textContent = input;
+                opt.value = input; opt.textContent = input;
                 sel.appendChild(opt);
                 sel.value = input;
             }
@@ -1505,9 +1400,7 @@ window.onArrivalTimeChange = function() {
     } else {
         currentArrivalTime = timeStrToMinutes(val);
     }
-    if (currentDetailRoute) {
-        calculateRecommendedNodes();
-    }
+    if (currentDetailRoute) calculateRecommendedNodes();
 };
 
 function renderRouteDetailNodes() {
@@ -1528,17 +1421,13 @@ function renderRouteDetailNodes() {
             if (item.type === 'transport') {
                 html += `<div class="timeline-node type-transport">
                     <span class="node-icon">🚗</span>
-                    <div class="node-main">
-                        <div class="node-titlerow"><span class="node-name">${item.name}</span></div>
-                    </div>
+                    <div class="node-main"><span class="node-name">${item.name}</span></div>
                     <div class="node-time">${fmtTime(item.startTime)}-${fmtTime(item.endTime)} ${item.duration}分钟</div>
                 </div>`;
             } else if (item.type === 'meal') {
                 html += `<div class="timeline-node type-meal">
                     <span class="node-icon">🍽️</span>
-                    <div class="node-main">
-                        <div class="node-titlerow"><span class="node-name">${item.name}</span></div>
-                    </div>
+                    <div class="node-main"><span class="node-name">${item.name}</span></div>
                     <div class="node-time">${fmtTime(item.startTime)}-${fmtTime(item.endTime)} ${item.duration}分钟</div>
                 </div>`;
             } else if (item.type === 'visit') {
@@ -1546,14 +1435,17 @@ function renderRouteDetailNodes() {
                 html += `<div class="timeline-node type-visit">
                     <span class="node-icon">${icon}</span>
                     <div class="node-main">
-                        <div class="node-titlerow">
-                            <span class="node-name">${item.name}</span>
-                        </div>
+                        <div class="node-titlerow"><span class="node-name">${item.name}</span></div>
                         ${item.description ? `<div class="node-desc">${item.description}</div>` : ''}
                         ${item.tips ? `<div class="node-tips">💡 ${item.tips}</div>` : ''}
                     </div>
                     <div class="node-time">${fmtTime(item.startTime)}-${fmtTime(item.endTime)} ${item.duration}分钟</div>
                     <span class="node-remove" onclick="window.toggleDetailNode(${item._idx})" title="移除">✕</span>
+                </div>`;
+            } else if (item.type === 'trip_end') {
+                html += `<div class="timeline-node" style="background:#f0f8f0; color:#2E7D32; font-weight:600;">
+                    <span class="node-icon">🏁</span>
+                    <div class="node-main"><span class="node-name">${item.name}</span></div>
                 </div>`;
             }
         });
@@ -1645,52 +1537,31 @@ function updateStatusBar() {
     }
 }
 
-// ★ 一键采用（修正：采用后清空 currentTripData）
+// ★ 一键采用（修正：清空后覆盖）
 window.adoptRouteFinal = function() {
     if (!currentDetailRoute) { alert('路线不存在'); return; }
-
     const selected = currentDetailNodes.filter(n => currentSelectedNodeIndices.has(n._idx));
     if (selected.length === 0) { alert('请至少选择一个节点'); return; }
 
     const { timeline, endTime } = buildRenderedTimeline(currentSelectedNodeIndices, currentArrivalTime);
-
     const today = new Date().toISOString().slice(0, 10);
     const dayNodes = [];
     dayNodes.push({ type: 'reminder', message: `采用路线：${currentDetailRoute.name}` });
 
     timeline.forEach(item => {
         if (item.type === 'transport') {
-            dayNodes.push({
-                type: 'transport',
-                name: item.name,
-                startTime: item.startTime,
-                endTime: item.endTime,
-                duration: item.duration
-            });
+            dayNodes.push({ type: 'transport', name: item.name, startTime: item.startTime, endTime: item.endTime, duration: item.duration });
         } else if (item.type === 'meal') {
-            dayNodes.push({
-                type: 'meal',
-                name: item.name,
-                startTime: item.startTime,
-                endTime: item.endTime,
-                duration: item.duration
-            });
+            dayNodes.push({ type: 'meal', name: item.name, startTime: item.startTime, endTime: item.endTime, duration: item.duration });
         } else if (item.type === 'visit') {
             const icon = NODE_TYPE_ICONS[item.nodeType] || '📍';
-            dayNodes.push({
-                type: 'visit',
-                name: `${icon} ${item.name}`,
-                startTime: item.startTime,
-                endTime: item.endTime,
-                duration: item.duration,
-                nodeType: 'poi'
-            });
+            dayNodes.push({ type: 'visit', name: `${icon} ${item.name}`, startTime: item.startTime, endTime: item.endTime, duration: item.duration, nodeType: 'poi' });
+        } else if (item.type === 'trip_end') {
+            dayNodes.push({ type: 'trip_end', name: item.name, startTime: item.startTime, endTime: item.endTime });
         }
     });
 
-    dayNodes.push({ type: 'trip_end', name: '本次路线游览结束', startTime: endTime, endTime: endTime + 1 });
-
-    // ★ 采用后：无论之前有无行程，都用新行程覆盖（避免重复规划）
+    // ★ 用新行程覆盖（避免重复规划）
     currentTripData = {
         days: [{ day: 1, date: today, nodes: dayNodes }],
         warnings: [],
@@ -1714,13 +1585,11 @@ window.showPoiDetail = async function(poi) {
         const merchant = merchants && merchants.length > 0 ? merchants[0] : null;
         document.getElementById('merchantDetailTitle').textContent = poi.name;
         let html = '';
-        let categories = [];
-        let items = [];
+        let categories = [], items = [];
         if (merchant) {
             const sd = merchant.service_data || {};
             categories = sd.businessCategories || [];
             items = sd.businessItems || [];
-            window.__currentMerchantCategories = categories;
             window.__currentMerchantItems = items;
             if (categories.length > 0 && items.length > 0) {
                 categories.forEach(cat => {
@@ -1736,64 +1605,46 @@ window.showPoiDetail = async function(poi) {
                     });
                     html += `</div></div>`;
                 });
-            } else {
-                const flatItems = sd.items || [];
-                flatItems.filter(item => item.name).forEach((item, idx) => {
-                    let priceStr = item.price ? ` ${item.price}` : '';
-                    let descStr = item.description ? `<p>${item.description}</p>` : '';
-                    let imgHtml = item.image ? `<div class="biz-image-box"><img src="${item.image}"></div>` : '';
-                    html += `<div class="card-modern"><div><b>${idx+1}. ${item.name}</b>${priceStr}${descStr}</div>${imgHtml}</div>`;
-                });
             }
-            let phone = merchant.phone || '未提供';
-            let status = merchant.status === 'open' ? '营业中' : (merchant.status === 'closed' ? '休息' : '繁忙');
-            let parking = merchant.parking_spots ?? 0;
-            html += `<hr><p><i class="fas fa-phone"></i> ${phone} | ${status} | ${parking} 个车位</p>`;
+            html += `<hr><p><i class="fas fa-phone"></i> ${merchant.phone || '未提供'} | ${merchant.status === 'open' ? '营业中' : '休息'} | ${merchant.parking_spots ?? 0} 个车位</p>`;
+            const categoryOptions = categories.map(c => `<option value="${c}">${c}</option>`).join('');
+            html += `<div class="mt-3">
+                <button class="btn btn-primary-custom" onclick="window.toggleReservationForm('${merchant.id}')"><i class="fas fa-calendar-plus"></i> 预约</button>
+                <div id="reservation-form-${merchant.id}" class="reservation-form hidden mt-2">
+                    <h6>预约信息</h6>
+                    <div class="form-group"><label>预约日期</label><input type="date" id="res-date-${merchant.id}" class="form-control" /></div>
+                    <div class="form-group"><label>时段</label>
+                        <select id="res-time-${merchant.id}" class="form-select">
+                            <option value="08:00-09:00">08:00-09:00</option>
+                            <option value="09:00-10:00">09:00-10:00</option>
+                            <option value="10:00-11:00">10:00-11:00</option>
+                            <option value="11:00-12:00">11:00-12:00</option>
+                            <option value="13:00-14:00">13:00-14:00</option>
+                            <option value="14:00-15:00">14:00-15:00</option>
+                            <option value="15:00-16:00">15:00-16:00</option>
+                            <option value="16:00-17:00">16:00-17:00</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>预约内容</label>
+                        <select id="res-cat-${merchant.id}" class="form-select mb-1" onchange="window.updateResContent('${merchant.id}')">
+                            <option value="">请选择大类</option>${categoryOptions}
+                        </select>
+                        <select id="res-content-${merchant.id}" class="form-select"><option value="">请选择具体项目</option></select>
+                    </div>
+                    <div class="form-group"><label>联系人</label><input type="text" id="res-name-${merchant.id}" class="form-control"></div>
+                    <div class="form-group"><label>电话</label><input type="tel" id="res-phone-${merchant.id}" class="form-control"></div>
+                    <div class="form-group"><label>人数</label><input type="number" id="res-count-${merchant.id}" class="form-control" min="1" value="1"></div>
+                    <div class="form-group"><label>备注</label><textarea id="res-remark-${merchant.id}" class="form-control" rows="2"></textarea></div>
+                    <button class="btn btn-primary-custom btn-sm" onclick="window.submitReservation('${merchant.id}', '${merchant.display_name || poi.name}', '${merchant.business_type || ''}')">提交预约</button>
+                    <button class="btn btn-secondary btn-sm" onclick="window.toggleReservationForm('${merchant.id}')">取消</button>
+                </div>
+            </div>`;
         }
         html += `<p>${poi.description || ''}</p>`;
-        if (merchant) {
-            const categoryOptions = categories.map(c => `<option value="${c}">${c}</option>`).join('');
-            html += `
-                <div class="mt-3">
-                    <button class="btn btn-primary-custom" onclick="window.toggleReservationForm('${merchant.id}')"><i class="fas fa-calendar-plus"></i> 预约</button>
-                    <div id="reservation-form-${merchant.id}" class="reservation-form hidden mt-2">
-                        <h6>预约信息</h6>
-                        <div class="form-group"><label>预约日期</label><input type="date" id="res-date-${merchant.id}" class="form-control" /></div>
-                        <div class="form-group"><label>时段</label>
-                            <select id="res-time-${merchant.id}" class="form-select">
-                                <option value="08:00-09:00">08:00-09:00</option>
-                                <option value="09:00-10:00">09:00-10:00</option>
-                                <option value="10:00-11:00">10:00-11:00</option>
-                                <option value="11:00-12:00">11:00-12:00</option>
-                                <option value="13:00-14:00">13:00-14:00</option>
-                                <option value="14:00-15:00">14:00-15:00</option>
-                                <option value="15:00-16:00">15:00-16:00</option>
-                                <option value="16:00-17:00">16:00-17:00</option>
-                            </select>
-                        </div>
-                        <div class="form-group">
-                            <label>预约内容</label>
-                            <select id="res-cat-${merchant.id}" class="form-select mb-1" onchange="window.updateResContent('${merchant.id}')">
-                                <option value="">请选择大类</option>${categoryOptions}
-                            </select>
-                            <select id="res-content-${merchant.id}" class="form-select"><option value="">请选择具体项目</option></select>
-                        </div>
-                        <div class="form-group"><label>联系人</label><input type="text" id="res-name-${merchant.id}" class="form-control"></div>
-                        <div class="form-group"><label>电话</label><input type="tel" id="res-phone-${merchant.id}" class="form-control"></div>
-                        <div class="form-group"><label>人数</label><input type="number" id="res-count-${merchant.id}" class="form-control" min="1" value="1"></div>
-                        <div class="form-group"><label>备注</label><textarea id="res-remark-${merchant.id}" class="form-control" rows="2"></textarea></div>
-                        <button class="btn btn-primary-custom btn-sm" onclick="window.submitReservation('${merchant.id}', '${merchant.display_name || poi.name}', '${merchant.business_type || ''}')">提交预约</button>
-                        <button class="btn btn-secondary btn-sm" onclick="window.toggleReservationForm('${merchant.id}')">取消</button>
-                    </div>
-                </div>
-            `;
-        }
         document.getElementById('merchantDetailContent').innerHTML = html;
         window.openPanel('merchantDetailPanel');
-    } catch (e) {
-        console.error('加载商户详情失败:', e);
-        alert('加载失败：' + e.message);
-    }
+    } catch (e) { alert('加载失败：' + e.message); }
 };
 
 window.locateUser = locateUser;

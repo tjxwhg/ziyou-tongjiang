@@ -29,6 +29,26 @@
         .panel-header h2 { font-size: 18px; font-weight: 700; margin: 0; color: #1b5e20; }
         .panel-header .close-btn { background: none; border: none; font-size: 24px; cursor: pointer; color: #666; padding: 4px 8px; border-radius: 8px; }
         .panel-body { flex: 1; padding: 16px 20px; overflow-y: auto; padding-bottom: 30px; }
+
+        /* ★ 新增：商户详情页导航按钮 */
+        .nav-to-poi-btn {
+            background: #1b5e20;
+            color: white;
+            border: none;
+            padding: 5px 14px;
+            border-radius: 16px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            transition: 0.2s;
+            margin-left: 8px;
+        }
+        .nav-to-poi-btn:hover { background: #2e7d32; }
+        .nav-to-poi-btn i { font-size: 12px; }
+
         .card-modern { background: white; border-radius: 12px; padding: 16px; margin-bottom: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); border: 1px solid #f0f0f0; }
         .card-modern .card-title { font-weight: 600; font-size: 16px; margin-bottom: 6px; color: #1b5e20; }
         .card-modern .card-sub { font-size: 13px; color: #888; }
@@ -342,8 +362,17 @@
     </div>
 </div>
 
+<!-- ★ 修改：商户详情页 header 加入导航按钮 -->
 <div class="panel" id="merchantDetailPanel">
-    <div class="panel-header"><h2 id="merchantDetailTitle">商户详情</h2><button class="close-btn" onclick="window.closePanel('merchantDetailPanel')">&times;</button></div>
+    <div class="panel-header">
+        <div style="display:flex; align-items:center; flex-wrap:wrap; flex:1;">
+            <h2 id="merchantDetailTitle" style="margin:0;">商户详情</h2>
+            <button class="nav-to-poi-btn hidden" id="merchantNavBtn" onclick="window.navigateToCurrentPoi()">
+                <i class="fas fa-location-arrow"></i> 导航
+            </button>
+        </div>
+        <button class="close-btn" onclick="window.closePanel('merchantDetailPanel')">&times;</button>
+    </div>
     <div class="panel-body" id="merchantDetailContent"></div>
 </div>
 
@@ -462,6 +491,9 @@ let currentDetailNodes = [];
 let currentSelectedNodeIndices = new Set();
 let currentArrivalTime = 10 * 60;
 let transportPresetsCache = {};
+
+// ★ 新增：保存当前查看的 POI（用于导航）
+let currentDetailPoi = null;
 
 function fmtTime(minutes) {
     const h = Math.floor(minutes / 60);
@@ -1178,9 +1210,6 @@ window.openRouteDetail = async function(routeId) {
     window.openPanel('routeDetailPanel');
 };
 
-// ============================================================
-// ★★ 构建时间线（核心修复：返回 lastVisitEndTime）
-// ============================================================
 function buildRenderedTimeline(selectedIndices, arrivalTime) {
     const selected = currentDetailNodes
         .filter(n => selectedIndices.has(n._idx))
@@ -1191,12 +1220,11 @@ function buildRenderedTimeline(selectedIndices, arrivalTime) {
     let lastPoiId = 'county';
     let lunchInserted = false;
     let dinnerInserted = false;
-    let lastVisitEndTime = null;   // ★ 记录最后一个游览节点的结束时间
+    let lastVisitEndTime = null;
 
     for (const n of selected) {
         let travel = n.poi_id ? calcTravelBetween(lastPoiId, n.poi_id) : 0;
 
-        // 午餐检查
         if (!lunchInserted && currentTime < LUNCH_END && currentTime + travel + n._duration > LUNCH_START) {
             if (travel > 0) {
                 timeline.push({ type: 'transport', name: '前往 ' + (n.node_name || '下一站'), duration: travel, startTime: currentTime, endTime: currentTime + travel });
@@ -1209,7 +1237,6 @@ function buildRenderedTimeline(selectedIndices, arrivalTime) {
             lunchInserted = true;
         }
 
-        // 晚餐检查
         const willCrossDinner = !dinnerInserted && (currentTime + travel + n._duration >= DINNER_START);
         if (willCrossDinner) {
             if (travel > 0) {
@@ -1223,7 +1250,7 @@ function buildRenderedTimeline(selectedIndices, arrivalTime) {
                 nodeType: n.node_type, description: n.description, tips: n.tips, _idx: n._idx
             });
             currentTime += n._duration;
-            lastVisitEndTime = currentTime;  // ★ 记录
+            lastVisitEndTime = currentTime;
             if (currentTime < DINNER_START) currentTime = DINNER_START;
             timeline.push({ type: 'meal', name: n.nearby_restaurant ? `晚餐（推荐：${n.nearby_restaurant}）` : '晚餐时间', duration: MEAL_DURATION, startTime: currentTime, endTime: currentTime + MEAL_DURATION });
             currentTime += MEAL_DURATION;
@@ -1242,11 +1269,10 @@ function buildRenderedTimeline(selectedIndices, arrivalTime) {
             nodeType: n.node_type, description: n.description, tips: n.tips, _idx: n._idx
         });
         currentTime += n._duration;
-        lastVisitEndTime = currentTime;  // ★ 记录
+        lastVisitEndTime = currentTime;
         lastPoiId = n.poi_id || lastPoiId;
     }
 
-    // 返回县城
     if (lastPoiId && String(lastPoiId) !== 'county') {
         const returnTravel = calcTravelBetween(lastPoiId, 'county');
         if (returnTravel > 10) {
@@ -1255,7 +1281,6 @@ function buildRenderedTimeline(selectedIndices, arrivalTime) {
         }
     }
 
-    // 晚餐兜底
     if (!dinnerInserted && currentTime >= 17 * 60 && currentTime < DINNER_END) {
         if (currentTime < DINNER_START) currentTime = DINNER_START;
         timeline.push({ type: 'meal', name: '晚餐时间', duration: MEAL_DURATION, startTime: currentTime, endTime: currentTime + MEAL_DURATION });
@@ -1268,9 +1293,6 @@ function buildRenderedTimeline(selectedIndices, arrivalTime) {
     return { timeline, endTime: currentTime, lastVisitEndTime: lastVisitEndTime || arrivalTime };
 }
 
-// ============================================================
-// ★ 智能推荐算法
-// ============================================================
 function calculateRecommendedNodes() {
     const arrival = currentArrivalTime;
     const availableEnd = VISIT_END;
@@ -1290,17 +1312,14 @@ function calculateRecommendedNodes() {
         let travel = node.poi_id ? calcTravelBetween(lastPoiId, node.poi_id) : 0;
         let testTime = currentTime;
 
-        // 午餐检查
         if (!lunchInserted && testTime < LUNCH_END && testTime + travel + node._duration > LUNCH_START) {
             testTime = Math.max(testTime, LUNCH_START) + MEAL_DURATION;
             lunchInserted = true;
         }
-        // 晚餐：节点结束时间 >= 17:30 视为触发
         if (!dinnerInserted && testTime + travel + node._duration >= DINNER_START) {
             break;
         }
 
-        // ★ 关键判断：只判断"游览结束时间"是否超过 18:00
         const visitEndTime = testTime + travel + node._duration;
         if (visitEndTime > availableEnd) {
             continue;
@@ -1313,7 +1332,6 @@ function calculateRecommendedNodes() {
 
     currentSelectedNodeIndices = selectedIndices;
 
-    // 检查一级景点
     const priority1Nodes = currentDetailNodes.filter(n => n._priority === 1);
     if (priority1Nodes.length > 0) {
         let p1TotalTime = 0;
@@ -1468,9 +1486,6 @@ window.resetRouteToRecommended = function() {
     calculateRecommendedNodes();
 };
 
-// ============================================================
-// ★★ 状态栏（修复：只判断"游览结束时间"是否超过18:00）
-// ============================================================
 function updateStatusBar() {
     const statusBar = document.getElementById('statusBar');
     const statusMsg = document.getElementById('statusMsg');
@@ -1501,7 +1516,6 @@ function updateStatusBar() {
     document.getElementById('visitEndTime').textContent = fmtTime(lastVisitEndTime);
     document.getElementById('estimatedCost').textContent = estimatedCost > 0 ? `约${estimatedCost}元` : '—';
 
-    // ★ 关键：只用 lastVisitEndTime 判断超时
     const isOvertime = lastVisitEndTime > VISIT_END;
     const overMinutes = lastVisitEndTime - VISIT_END;
 
@@ -1560,7 +1574,42 @@ window.adoptRouteFinal = function() {
     alert('已采用路线并生成行程');
 };
 
+// ============================================================
+// ★★★ 新增：商户详情页导航按钮逻辑
+// ============================================================
+window.navigateToCurrentPoi = function() {
+    if (!currentDetailPoi) {
+        alert('未获取到位置信息');
+        return;
+    }
+    const lat = parseFloat(currentDetailPoi.lat);
+    const lng = parseFloat(currentDetailPoi.lng);
+    if (!lat || !lng || isNaN(lat) || isNaN(lng)) {
+        alert('该点位暂无坐标信息，无法导航');
+        return;
+    }
+    const name = encodeURIComponent(currentDetailPoi.name || '目的地');
+    // 高德地图 URI API：callnative=1 优先唤起 App，App 未装时打开网页版
+    // 坐标使用 GCJ-02（与游客端地图瓦片一致）
+    const url = `https://uri.amap.com/marker?position=${lng},${lat}&name=${name}&coordinate=gaode&callnative=1`;
+    window.open(url, '_blank');
+};
+
 window.showPoiDetail = async function(poi) {
+    // ★ 保存当前 POI 用于导航
+    currentDetailPoi = poi;
+
+    // ★ 显示或隐藏导航按钮
+    const navBtn = document.getElementById('merchantNavBtn');
+    if (navBtn) {
+        const hasCoord = poi.lat && poi.lng && !isNaN(parseFloat(poi.lat)) && !isNaN(parseFloat(poi.lng));
+        if (hasCoord) {
+            navBtn.classList.remove('hidden');
+        } else {
+            navBtn.classList.add('hidden');
+        }
+    }
+
     try {
         const merchants = await getMerchantsByPoi(poi.id);
         const merchant = merchants && merchants.length > 0 ? merchants[0] : null;

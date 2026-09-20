@@ -14,13 +14,20 @@ export const MEAL_DURATION = 60;
 export const MAX_RETURN_TIME = 180;
 export const MIN_SEGMENT = 45;
 export const MIN_REST_DURATION = 10;
+export const NIGHT_END = 1320;         // 22:00 24h POI 夜间游览上限
+
+// ★ 核心行程就餐判定阈值（就餐窗口结束 + 120 分钟）
+export const LUNCH_THRESHOLD = LUNCH_END + 120;    // 14:30
+export const DINNER_THRESHOLD = DINNER_END + 120;  // 21:00
 
 // ========== POI 类型 ==========
 export const POI_TYPES = {
     scenic: { label: '🏞️ 景区', key: 'scenic' },
+    core_route: { label: '⭐ 核心行程', key: 'core_route' },
     core_node: { label: '⭐ 核心节点', key: 'core_node' },
     spot: { label: '📍 景点', key: 'spot' },
-    facility: { label: '🏢 公共场所', key: 'facility' }
+    service_place: { label: '🏛️ 服务场所', key: 'service_place' },
+    facility: { label: '🚻 公共设施', key: 'facility' }
 };
 
 // ========== 行程风格配置 ==========
@@ -28,15 +35,15 @@ export const STYLE_CONFIG = {
     compact: {
         name: '紧凑型',
         icon: '🚀',
-        includeCoreNodes: true,       // 包含核心节点
-        featuredSpotCount: 0,          // 经典景点数量
-        includeAllSpots: false         // 是否包含所有景点
+        includeCoreNodes: true,
+        featuredSpotCount: 0,
+        includeAllSpots: false
     },
     relaxed: {
         name: '舒适型',
         icon: '🌿',
         includeCoreNodes: true,
-        featuredSpotCount: 2,          // 最多2个经典景点
+        featuredSpotCount: 2,
         includeAllSpots: false
     },
     indepth: {
@@ -44,7 +51,7 @@ export const STYLE_CONFIG = {
         icon: '🔍',
         includeCoreNodes: true,
         featuredSpotCount: 999,
-        includeAllSpots: true          // 所有景点
+        includeAllSpots: true
     }
 };
 

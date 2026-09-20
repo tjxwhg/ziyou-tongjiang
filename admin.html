@@ -22,21 +22,18 @@
         .quality-L3 { background: #ffcdd2; color: #c62828; }
         .type-badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; margin-right: 4px; }
         .type-badge-scenic { background: #e3f2fd; color: #1565c0; }
+        .type-badge-core-route { background: #ffeb3b; color: #f57f17; }
         .type-badge-core { background: #fff3e0; color: #e65100; }
         .type-badge-spot { background: #f3e5f5; color: #6a1b9a; }
         .type-badge-facility { background: #e0f2f1; color: #00695c; }
         .type-badge-service { background: #fff8e1; color: #ef6c00; }
-        .type-badge-restaurant { background: #fff8e1; color: #ef6c00; }
-        .type-badge-hotel { background: #fce4ec; color: #ad1457; }
         .type-badge-serviceplace { background: #e8eaf6; color: #283593; }
-        .type-badge-shopping { background: #f1f8e9; color: #558b2f; }
         .featured-badge { background: #ffeb3b; color: #f57f17; padding: 1px 6px; border-radius: 8px; font-size: 10px; font-weight: 600; }
         .category-badge { display: inline-block; padding: 1px 8px; border-radius: 8px; font-size: 11px; background: #f5f5f5; color: #555; margin-left: 4px; }
         .voice-badge { display: inline-block; padding: 1px 6px; border-radius: 8px; font-size: 10px; background: #e3f2fd; color: #1565c0; margin-left: 4px; }
         .poi-card { border: 1px solid #e0e0e0; border-radius: 8px; padding: 12px; margin-bottom: 10px; background: #fafafa; }
         .poi-card .poi-header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; }
         .node-list { margin-left: 20px; padding-left: 10px; border-left: 2px solid #2e7d32; }
-        .node-item { display: flex; justify-content: space-between; align-items: center; padding: 6px 8px; border-bottom: 1px solid #f0f0f0; font-size: 13px; }
         .sub-poi-item { display: flex; justify-content: space-between; align-items: center; padding: 8px 10px; border-bottom: 1px solid #f0f0f0; font-size: 13px; }
         .sub-poi-item:last-child { border-bottom: none; }
         .transport-group { border: 1px solid #ddd; border-radius: 6px; margin-bottom: 8px; }
@@ -88,6 +85,7 @@
         .poi-picker-search { margin-bottom: 8px; }
         .theme-checkbox-group { display: flex; flex-wrap: wrap; gap: 10px; padding: 6px 10px; border: 1px solid #ddd; border-radius: 6px; background: #fff; }
         .theme-checkbox-group .form-check { margin: 0; }
+        .migrate-box { background: #fff3e0; border: 1px solid #ffcc80; border-radius: 8px; padding: 12px; margin-bottom: 16px; }
         @media (max-width: 768px) { .header { flex-direction: column; gap: 8px; } }
     </style>
 </head>
@@ -128,6 +126,14 @@
                 <div id="poi-list"></div>
             </div>
             <div class="tab-pane" id="tab-routes">
+                <!-- ★ 数据迁移入口 -->
+                <div class="migrate-box">
+                    <h6 class="mb-2"><i class="fas fa-database text-warning"></i> 数据迁移工具</h6>
+                    <p class="small text-secondary mb-2">将景区下现有的所有"核心节点"归集为一个"默认核心行程"，用于启用核心行程的"不打断"规划规则。已迁移的景区会自动跳过。</p>
+                    <button class="btn btn-warning btn-sm" onclick="window.migrateCoreNodesToRoutes()">
+                        <i class="fas fa-arrow-right"></i> 一键迁移所有景区的核心节点 → 核心行程
+                    </button>
+                </div>
                 <div class="d-flex justify-content-between align-items-center mb-3">
                     <div>
                         <h5 class="mb-0"><i class="fas fa-route text-success"></i> 路线规划管理</h5>
@@ -169,12 +175,13 @@
                         <label class="form-label">类型 <span class="text-danger">*</span></label>
                         <select id="edit-poi-type" class="form-select" onchange="window.togglePoiTypeUI()">
                             <option value="scenic">🏞️ 景区</option>
-                            <option value="core_node">⭐ 核心节点</option>
+                            <option value="core_route">⭐ 核心行程（多个核心节点串联）</option>
+                            <option value="core_node">⭐ 核心节点（属于核心行程）</option>
                             <option value="spot">📍 景点/游玩项目</option>
                             <option value="service_place">🏛️ 服务场所（文博/食宿/购物等）</option>
                             <option value="facility">🚻 公共设施（卫生间/休息区/车站码头）</option>
                         </select>
-                        <div class="hint-text">服务场所参与智能规划；公共设施仅作提示</div>
+                        <div class="hint-text">核心行程为"不打断"的整体游览；服务场所参与智能规划；公共设施仅作提示</div>
                     </div>
                     <div class="col-6">
                         <label class="form-label">分类 <span class="text-danger">*</span></label>
@@ -189,6 +196,20 @@
                             <option value="公共服务">🏛️ 公共服务</option>
                         </select>
                         <div class="hint-text">用于游客端筛选展示</div>
+                    </div>
+                    <!-- ★ 开放时段（合并项） -->
+                    <div class="col-6">
+                        <label class="form-label">开放时段 <span class="text-danger">*</span></label>
+                        <select id="edit-poi-hours-type" class="form-select mb-1" onchange="window.toggleHoursTypeUI()">
+                            <option value="custom">自定义时段</option>
+                            <option value="24h">24 小时开放</option>
+                        </select>
+                        <div class="d-flex gap-1 align-items-center">
+                            <select id="edit-poi-open" class="form-select form-select-sm"></select>
+                            <span class="text-secondary small">至</span>
+                            <select id="edit-poi-close" class="form-select form-select-sm"></select>
+                        </div>
+                        <div class="hint-text">30 分钟一档；24h 显示为 00:00 - 23:59</div>
                     </div>
                     <div class="col-6 hidden" id="field-facility-subtype">
                         <label class="form-label">公共设施子类型 <span class="text-danger">*</span></label>
@@ -213,17 +234,15 @@
                         <div class="hint-text">可多选</div>
                     </div>
                     <div class="col-6 hidden" id="field-parent">
-                        <label class="form-label">所属景区 <span class="text-danger" id="parent-required">（可选）</span></label>
+                        <label class="form-label">所属景区/核心行程 <span class="text-danger" id="parent-required">（可选）</span></label>
                         <select id="edit-poi-parent" class="form-select" onchange="window.onParentChange()">
                             <option value="">-- 不关联（独立存在）--</option>
                         </select>
                     </div>
                     <div class="col-6"><label class="form-label">纬度</label><input type="number" step="any" id="edit-poi-lat" class="form-control"></div>
                     <div class="col-6"><label class="form-label">经度</label><input type="number" step="any" id="edit-poi-lng" class="form-control"></div>
-                    <div class="col-6"><label class="form-label">开放时间</label><input type="time" id="edit-poi-open" class="form-control" value="08:00"></div>
-                    <div class="col-6"><label class="form-label">闭馆时间</label><input type="time" id="edit-poi-close" class="form-control" value="18:00"></div>
                     <div class="col-6" id="field-duration">
-                        <label class="form-label">游览时长(分钟)</label>
+                        <label class="form-label">游览时长(分钟) <span class="text-secondary small" id="duration-readonly-hint"></span></label>
                         <input type="number" id="edit-poi-visit" class="form-control">
                     </div>
                     <div class="col-6 hidden" id="field-featured">
@@ -241,7 +260,6 @@
                         </select>
                     </div>
                     <div class="col-12"><label class="form-label">简介</label><textarea id="edit-poi-desc" class="form-control" rows="2"></textarea></div>
-                    <!-- ★ 新增：语音MP3上传 -->
                     <div class="col-12">
                         <label class="form-label"><i class="fas fa-volume-high text-success"></i> 简介语音（MP3）</label>
                         <div class="d-flex align-items-center gap-2">
@@ -250,7 +268,7 @@
                         </div>
                         <input type="hidden" id="edit-poi-voice-mp3">
                         <div id="edit-poi-voice-preview" class="mt-2"></div>
-                        <div class="hint-text">上传后会自动保存到 merchant-images/poi-voices/ 目录</div>
+                        <div class="hint-text">上传后会自动保存到 merchant-images/poi-voices/ 目录；游客端通过电子围栏触发播放</div>
                     </div>
                 </div>
                 <div id="tour-route-section" class="hidden">
@@ -275,7 +293,7 @@
                             <i class="fas fa-plus"></i> 从现有POI添加
                         </button>
                     </div>
-                    <p class="text-secondary small mt-2 mb-1">核心节点、景点、服务场所、公共设施均可作为子项。</p>
+                    <p class="text-secondary small mt-2 mb-1">核心行程的子项仅允许"核心节点"；景区的子项可为 核心行程/核心节点/景点/服务场所/公共设施。</p>
                     <div id="sub-poi-list" class="mt-2"></div>
                 </div>
             </div>
@@ -296,7 +314,7 @@
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
-                <p class="text-secondary small">勾选现有独立POI，点击确定后归入当前景区。</p>
+                <p class="text-secondary small">勾选现有独立POI，点击确定后归入当前景区/核心行程。</p>
                 <div id="sub-poi-select-list" style="max-height: 400px; overflow-y: auto; border: 1px solid #eee; border-radius: 8px; padding: 8px;"></div>
             </div>
             <div class="modal-footer">
@@ -406,7 +424,7 @@
                         <div id="edit-node-poi-display" class="form-control" style="cursor:pointer; background:#fff;" onclick="window.openPoiPicker()">
                             <span class="text-secondary">点击选择 POI...</span>
                         </div>
-                        <div class="hint-text">可选择任意 POI：景区、景点、服务场所、公共设施等；也可不关联</div>
+                        <div class="hint-text">可选择任意 POI：景区、核心行程、核心节点、景点、服务场所、公共设施等；也可不关联</div>
                     </div>
                     <div class="col-md-4">
                         <label class="form-label">优先级 <span class="text-danger">*</span></label>

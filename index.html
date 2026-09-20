@@ -140,13 +140,9 @@
         .alert-modal .btn-row { display: flex; gap: 8px; }
         .alert-modal .btn-row button { flex: 1; padding: 10px; border-radius: 8px; font-weight: 600; cursor: pointer; border: none; }
         .alert-modal .btn-row .btn-ok { background: #1b5e20; color: white; }
-        /* ★ 新增：商户详情页导航按钮 */
+        /* 商户详情页导航按钮 */
         .nav-to-poi-btn { background: #1b5e20; color: white; border: none; padding: 5px 14px; border-radius: 16px; font-size: 13px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; margin-left: 8px; }
         .nav-to-poi-btn:hover { background: #2e7d32; }
-        /* ★ 新增：语音播放按钮 */
-        .voice-play-btn { background: #e3f2fd; color: #1565c0; border: 1px solid #90caf9; padding: 4px 10px; border-radius: 14px; font-size: 12px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; margin-left: 6px; }
-        .voice-play-btn:hover { background: #bbdefb; }
-        .voice-play-btn.playing { background: #c62828; color: white; border-color: #c62828; }
         .text-green { color: #1b5e20; }
         .btn-primary-custom { background: #1b5e20; color: white; border: none; padding: 8px 16px; border-radius: 8px; font-weight: 600; cursor: pointer; }
         .btn-outline-custom { background: transparent; color: #1b5e20; border: 2px solid #1b5e20; padding: 8px 16px; border-radius: 8px; font-weight: 600; cursor: pointer; }
@@ -483,10 +479,6 @@ let currentArrivalTime = 10 * 60;
 let transportPresetsCache = {};
 let currentDetailPoi = null;
 
-// ★ 新增：语音播放状态
-let currentPlayingAudio = null;
-let currentPlayingBtn = null;
-
 function fmtTime(minutes) {
     const h = Math.floor(minutes / 60);
     const m = minutes % 60;
@@ -585,7 +577,7 @@ function initStartLocationSelect(pois) {
 }
 
 // ============================================================
-// ★ 智能规划 POI 列表：显示 景区/景点/服务场所，隐藏 公共设施
+// 智能规划 POI 列表：显示 景区/景点/服务场所，隐藏 公共设施
 // ============================================================
 function renderPoiSelection(pois) {
     const container = document.getElementById('poiSelectContainer');
@@ -594,7 +586,6 @@ function renderPoiSelection(pois) {
         container.innerHTML = '<div class="text-secondary text-center py-2">暂无景点数据</div>';
         return;
     }
-    // ★ 排除 facility（公共设施不纳入智能规划）
     const topPois = pois.filter(p => !p.parent_id && p.type !== 'facility');
     const childrenMap = {};
     pois.forEach(p => {
@@ -635,7 +626,6 @@ function renderPoiSelection(pois) {
             if (hasChildren) html += `<span class="text-secondary" style="font-size:12px;"> (${subItems.length}个子项)</span>`;
             html += `</div>`;
             if (hasChildren) {
-                // ★ 子项显示：core_node / spot / service_place，隐藏 facility
                 const visibleSubs = subItems.filter(s => s.type === 'core_node' || s.type === 'spot' || s.type === 'service_place');
                 const selectedSet = selectedSubItems[pidStr] || selectedSubItems[p.id] || new Set();
                 html += `<div class="poi-sub-list hidden" id="sub-${p.id}">`;
@@ -1056,7 +1046,6 @@ window.submitReservation = async function(merchantId, merchantName, category) {
     const remark = document.getElementById(`res-remark-${merchantId}`).value.trim();
     const content = document.getElementById(`res-content-${merchantId}`)?.value || '';
 
-    // ★ 必填校验
     if (!date) { alert('请填写预约日期'); return; }
     if (!timeRange) { alert('请选择预约时段'); return; }
     if (!content) { alert('请选择预约内容'); return; }
@@ -1493,7 +1482,7 @@ window.adoptRouteFinal = function() {
 };
 
 // ============================================================
-// ★ 商户详情页导航按钮
+// 商户详情页导航按钮
 // ============================================================
 window.navigateToCurrentPoi = function() {
     if (!currentDetailPoi) { alert('未获取到位置信息'); return; }
@@ -1506,64 +1495,8 @@ window.navigateToCurrentPoi = function() {
 };
 
 // ============================================================
-// ★ 语音播放控制
-// ============================================================
-window.playVoice = function(url, btnEl) {
-    // 停止当前播放
-    if (currentPlayingAudio) {
-        currentPlayingAudio.pause();
-        currentPlayingAudio.currentTime = 0;
-        if (currentPlayingBtn) {
-            currentPlayingBtn.classList.remove('playing');
-            const i = currentPlayingBtn.querySelector('i');
-            if (i) i.className = 'fas fa-volume-high';
-        }
-        currentPlayingAudio = null;
-        currentPlayingBtn = null;
-    }
-
-    // 若点击的是同一个按钮且正在播放，视为停止
-    if (btnEl && btnEl.classList.contains('playing')) {
-        return;
-    }
-
-    if (!url) { alert('暂无语音'); return; }
-
-    const audio = new Audio(url);
-    currentPlayingAudio = audio;
-    currentPlayingBtn = btnEl;
-
-    if (btnEl) {
-        btnEl.classList.add('playing');
-        const i = btnEl.querySelector('i');
-        if (i) i.className = 'fas fa-stop';
-    }
-
-    audio.play().catch(err => {
-        console.warn('语音播放失败:', err);
-        alert('语音播放失败');
-        if (btnEl) {
-            btnEl.classList.remove('playing');
-            const i = btnEl.querySelector('i');
-            if (i) i.className = 'fas fa-volume-high';
-        }
-        currentPlayingAudio = null;
-        currentPlayingBtn = null;
-    });
-
-    audio.onended = function() {
-        if (btnEl) {
-            btnEl.classList.remove('playing');
-            const i = btnEl.querySelector('i');
-            if (i) i.className = 'fas fa-volume-high';
-        }
-        currentPlayingAudio = null;
-        currentPlayingBtn = null;
-    };
-};
-
-// ============================================================
-// ★ 商户详情页（含导航按钮、语音、预约表单）
+// 商户详情页（含导航按钮、预约表单）
+// ★ MP3 语音介绍按钮已移除，语音仅由电子围栏自动触发（map.js）
 // ============================================================
 window.showPoiDetail = async function(poi) {
     currentDetailPoi = poi;
@@ -1579,18 +1512,6 @@ window.showPoiDetail = async function(poi) {
         const merchant = merchants && merchants.length > 0 ? merchants[0] : null;
         document.getElementById('merchantDetailTitle').textContent = poi.name;
         let html = '';
-
-        // ★ 语音播放按钮
-        if (poi.voice_mp3) {
-            html += `<div class="card-modern" style="background:#f0f8f0;">
-                <div class="d-flex justify-content-between align-items-center">
-                    <span><i class="fas fa-volume-high text-success"></i> <b>景点语音介绍</b></span>
-                    <button class="voice-play-btn" onclick="window.playVoice('${poi.voice_mp3}', this)">
-                        <i class="fas fa-volume-high"></i> 播放
-                    </button>
-                </div>
-            </div>`;
-        }
 
         let categories = [], items = [];
         if (merchant) {

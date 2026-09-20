@@ -1,5 +1,8 @@
 // js/merchant.js - 商户端核心逻辑
-import { getMerchant, updateMerchant, getReservations, insertReservation, updateReservation, getFeedbacks, updateFeedback, uploadFile, getPois } from './api.js';
+import {
+    getMerchant, updateMerchant, getReservations, insertReservation,
+    updateReservation, getFeedbacks, updateFeedback, uploadFile, getPois
+} from './api.js';
 import { getCurrentUser } from './auth.js';
 
 let merchant = null;
@@ -21,7 +24,10 @@ export async function initMerchant() {
 export function getMerchantData() { return merchant; }
 
 export function loadBusinessData() {
-    return { businessCategories: [...businessCategories], businessItems: JSON.parse(JSON.stringify(businessItems)) };
+    return {
+        businessCategories: [...businessCategories],
+        businessItems: JSON.parse(JSON.stringify(businessItems))
+    };
 }
 
 export async function saveBusinessData(categories, items) {
@@ -30,7 +36,10 @@ export async function saveBusinessData(categories, items) {
     const sd = merchant.service_data || {};
     sd.businessCategories = categories;
     sd.businessItems = items;
-    sd.items = items.map(item => ({ name: item.name, price: item.price, duration: item.duration, description: item.description, image: item.image }));
+    sd.items = items.map(item => ({
+        name: item.name, price: item.price, duration: item.duration,
+        description: item.description, image: item.image
+    }));
     await updateMerchant(merchant.id, { service_data: sd });
     merchant.service_data = sd;
 }

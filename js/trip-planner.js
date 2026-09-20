@@ -1,9 +1,10 @@
-// js/trip-planner.js - 智能行程规划引擎（修复：交通提醒合并）
+// js/trip-planner.js - 智能行程规划引擎（core_route 不打断 + 24h POI）
 import { formatTime, timeToMinutes, getDistance, fetchWeatherForecast } from './utils.js';
 import {
     DAY_START, PLAN_CUTOFF, VISIT_END,
     LUNCH_START, LUNCH_END, DINNER_START, DINNER_END,
-    MEAL_DURATION, MAX_RETURN_TIME, MIN_SEGMENT, MIN_REST_DURATION
+    MEAL_DURATION, MAX_RETURN_TIME, MIN_SEGMENT, MIN_REST_DURATION,
+    NIGHT_END, LUNCH_THRESHOLD, DINNER_THRESHOLD
 } from './config.js';
 
 export class TripPlanner {
@@ -41,6 +42,12 @@ export class TripPlanner {
         this.dinnerInserted = false;
     }
 
+    // 判断当天活动的时间上限（18:00 或 22:00 for 24h POI）
+    getDayLimit(poi) {
+        if (poi && poi.hours_type === '24h') return NIGHT_END;
+        return VISIT_END;
+    }
+
     async plan() {
         this.weatherData = await fetchWeatherForecast();
         const queue = this.pois.map(p => ({ poi: p, remaining: null }));
@@ -57,6 +64,18 @@ export class TripPlanner {
                 const poi = item.poi;
                 if (!poi || !poi.id) continue;
 
+                // ============================================
+                // ★ 核心行程：不打断的特殊处理
+                // ============================================
+                if (poi.type === 'core_route') {
+                    await this.handleCoreRoute(poi, queue, item);
+                    if (this.shouldBreakCoreRoute) { this.shouldBreakCoreRoute = false; break; }
+                    continue;
+                }
+
+                // ============================================
+                // 普通 POI 处理
+                // ============================================
                 const travel = this.getTravelTime(this.lastPoiId, poi.id);
                 if (travel === 0 && this.lastPoiId !== poi.id) {
                     this.warnings.push(`⚠️ 从 ${this.getPoiName(this.lastPoiId)} 到 ${poi.name} 交通耗时数据缺失，跳过该景点。`);
@@ -288,6 +307,78 @@ export class TripPlanner {
         };
     }
 
+    // ============================================================
+    // ★ 核心行程处理（不打断 + 就餐判定）
+    // ============================================================
+    async handleCoreRoute(poi, queue, originalItem) {
+        const totalDuration = poi.visit_duration || 0;
+        const dayLimit = this.getDayLimit(poi);
+
+        // 1. 交通（前后交通按普通规则）
+        const travel = this.getTravelTime(this.lastPoiId, poi.id);
+        if (travel > 0 && travel <= MAX_RETURN_TIME) {
+            const travelStart = this.currentTime;
+            this.addNode({
+                type: 'transport',
+                name: `前往 ${poi.name}`,
+                startTime: this.currentTime,
+                endTime: this.currentTime + travel,
+                duration: travel,
+                from: this.getPoiName(this.lastPoiId),
+                to: poi.name
+            });
+            this.totalTravelMinutes += travel;
+            this.currentTime += travel;
+            this.checkAndInsertMealAfterTransport(travelStart, this.currentTime);
+        }
+
+        // 2. 当日剩余时间检查
+        const endTime = this.currentTime + totalDuration;
+        if (endTime > dayLimit) {
+            // 整体移至次日
+            this.warnings.push(`⚠️ 核心行程"${poi.name}"需 ${totalDuration} 分钟，今日剩余不足，移至次日`);
+            this.addNode({
+                type: 'reminder',
+                message: `核心行程"${poi.name}"需 ${totalDuration} 分钟，今日剩余时间不足，已移至次日`
+            });
+            queue.unshift(originalItem);
+            this.shouldBreakCoreRoute = true;
+            return;
+        }
+
+        // 3. 连续游览（不打断）
+        this.addVisitNode(poi, this.currentTime, totalDuration, totalDuration, 0);
+        this.currentTime = endTime;
+        this.lastPoiId = poi.id;
+
+        // 4. 就餐判定（按阈值决定正常插入 or 提醒错过）
+        if (!this.dinnerInserted && endTime > DINNER_START) {
+            if (endTime <= DINNER_THRESHOLD) {
+                // 正常插入晚餐
+                this.insertMeal('dinner');
+            } else {
+                // 已错过晚餐（同时意味着午餐也错过）
+                this.addNode({
+                    type: 'reminder',
+                    message: '已错过晚餐（18:00-19:00），请自行安排就餐'
+                });
+                this.dinnerInserted = true;
+                this.lunchInserted = true;
+            }
+        } else if (!this.lunchInserted && endTime > LUNCH_START) {
+            if (endTime <= LUNCH_THRESHOLD) {
+                // 正常插入午餐
+                this.insertMeal('lunch');
+            } else {
+                this.addNode({
+                    type: 'reminder',
+                    message: '已错过午餐（11:30-12:30），请自行安排就餐'
+                });
+                this.lunchInserted = true;
+            }
+        }
+    }
+
     checkPreVisitRestOrMeal() {
         let nextWindow = null;
         let windowType = null;
@@ -495,8 +586,10 @@ export class TripPlanner {
     addVisitNode(poi, startTime, duration, totalDuration, remainingAfter = 0) {
         const visitNode = {
             type: 'visit',
-            name: `浏览 ${poi.name}`,
-            nodeType: 'poi',
+            name: poi.type === 'core_route'
+                ? `⭐ 核心行程 · ${poi.name}`
+                : `浏览 ${poi.name}`,
+            nodeType: poi.type === 'core_route' ? 'core_route' : 'poi',
             startTime: startTime,
             endTime: startTime + duration,
             duration: duration,
@@ -584,7 +677,6 @@ export class TripPlanner {
                 if (node.type === 'visit') dailyVisit += node.duration || 0;
             }
 
-            // ★ 合并后的交通提醒（3 种情形只输出 1 条）
             const isTrafficLong = dailyTravel > 180;
             if (singleLongTravel && isTrafficLong) {
                 day.nodes.push({ type: 'reminder', message: '本段交通较长（单次超过2小时，累计超过3小时），建议途中适当休息' });

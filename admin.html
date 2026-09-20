@@ -25,12 +25,14 @@
         .type-badge-core { background: #fff3e0; color: #e65100; }
         .type-badge-spot { background: #f3e5f5; color: #6a1b9a; }
         .type-badge-facility { background: #e0f2f1; color: #00695c; }
+        .type-badge-service { background: #fff8e1; color: #ef6c00; }
         .type-badge-restaurant { background: #fff8e1; color: #ef6c00; }
         .type-badge-hotel { background: #fce4ec; color: #ad1457; }
-        .type-badge-service { background: #e8eaf6; color: #283593; }
+        .type-badge-serviceplace { background: #e8eaf6; color: #283593; }
         .type-badge-shopping { background: #f1f8e9; color: #558b2f; }
         .featured-badge { background: #ffeb3b; color: #f57f17; padding: 1px 6px; border-radius: 8px; font-size: 10px; font-weight: 600; }
         .category-badge { display: inline-block; padding: 1px 8px; border-radius: 8px; font-size: 11px; background: #f5f5f5; color: #555; margin-left: 4px; }
+        .voice-badge { display: inline-block; padding: 1px 6px; border-radius: 8px; font-size: 10px; background: #e3f2fd; color: #1565c0; margin-left: 4px; }
         .poi-card { border: 1px solid #e0e0e0; border-radius: 8px; padding: 12px; margin-bottom: 10px; background: #fafafa; }
         .poi-card .poi-header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; }
         .node-list { margin-left: 20px; padding-left: 10px; border-left: 2px solid #2e7d32; }
@@ -50,8 +52,6 @@
         .subtype-checkbox-group .form-check { margin: 0; }
         .subtype-checkbox-group .form-check-label { cursor: pointer; }
         .hint-text { color: #888; font-size: 12px; margin-top: 2px; }
-
-        /* 路线节点卡片 */
         .route-node-card { border: 1px solid #e0e0e0; border-radius: 8px; padding: 10px; margin-bottom: 8px; background: #fafafa; }
         .route-node-card .route-node-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
         .route-node-card .route-node-order { display: inline-block; background: #1b5e20; color: white; width: 26px; height: 26px; line-height: 26px; text-align: center; border-radius: 50%; font-weight: 600; font-size: 13px; flex-shrink: 0; }
@@ -69,7 +69,6 @@
         .node-type-wc { background: #b2dfdb; color: #004d40; }
         .node-type-exit { background: #d7ccc8; color: #3e2723; }
         .node-type-other { background: #e0e0e0; color: #424242; }
-
         .route-card { border: 1px solid #e0e0e0; border-radius: 8px; padding: 12px; margin-bottom: 10px; background: #fafafa; }
         .route-card .route-header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; }
         .route-card .route-meta { color: #888; font-size: 12px; margin-top: 4px; }
@@ -80,8 +79,6 @@
         .route-type-custom { background: #e8eaf6; color: #283593; }
         .default-badge { background: #ffeb3b; color: #f57f17; padding: 1px 8px; border-radius: 8px; font-size: 10px; font-weight: 600; margin-left: 6px; }
         .theme-tag-badge { display: inline-block; padding: 1px 6px; border-radius: 8px; font-size: 10px; background: #e8f5e9; color: #1b5e20; margin-right: 2px; }
-
-        /* POI 选择器 */
         .poi-picker { max-height: 350px; overflow-y: auto; border: 1px solid #ddd; border-radius: 6px; padding: 8px; background: white; }
         .poi-picker .poi-group { margin-bottom: 8px; }
         .poi-picker .poi-group-title { font-weight: 600; color: #1b5e20; font-size: 13px; padding: 4px 6px; background: #f0f8f0; border-radius: 4px; cursor: pointer; }
@@ -89,11 +86,8 @@
         .poi-picker .poi-picker-item:hover { background: #e8f5e9; }
         .poi-picker .poi-picker-item.selected { background: #1b5e20; color: white; }
         .poi-picker-search { margin-bottom: 8px; }
-
-        /* 主题标签复选框 */
         .theme-checkbox-group { display: flex; flex-wrap: wrap; gap: 10px; padding: 6px 10px; border: 1px solid #ddd; border-radius: 6px; background: #fff; }
         .theme-checkbox-group .form-check { margin: 0; }
-
         @media (max-width: 768px) { .header { flex-direction: column; gap: 8px; } }
     </style>
 </head>
@@ -159,7 +153,7 @@
     </div>
 </div>
 
-<!-- 模态框：编辑POI（保留原有） -->
+<!-- 模态框：编辑POI -->
 <div class="modal fade" id="poiModal" tabindex="-1">
     <div class="modal-dialog modal-lg modal-lg-custom">
         <div class="modal-content">
@@ -167,7 +161,7 @@
                 <h5 class="modal-title" id="poiModalTitle">编辑POI</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
-            <div class="modal-body">
+            <div class="modal-body" style="max-height:75vh; overflow-y:auto;">
                 <input type="hidden" id="edit-poi-id">
                 <div class="row g-2">
                     <div class="col-6"><label class="form-label">名称 <span class="text-danger">*</span></label><input id="edit-poi-name" class="form-control"></div>
@@ -177,9 +171,10 @@
                             <option value="scenic">🏞️ 景区</option>
                             <option value="core_node">⭐ 核心节点</option>
                             <option value="spot">📍 景点/游玩项目</option>
-                            <option value="facility">🏢 公共场所</option>
+                            <option value="service_place">🏛️ 服务场所（文博/食宿/购物等）</option>
+                            <option value="facility">🚻 公共设施（卫生间/休息区/车站码头）</option>
                         </select>
-                        <div class="hint-text">决定该POI在行程规划中的角色</div>
+                        <div class="hint-text">服务场所参与智能规划；公共设施仅作提示</div>
                     </div>
                     <div class="col-6">
                         <label class="form-label">分类 <span class="text-danger">*</span></label>
@@ -193,10 +188,10 @@
                             <option value="购物消费">🛍️ 购物消费</option>
                             <option value="公共服务">🏛️ 公共服务</option>
                         </select>
-                        <div class="hint-text">用于游客端筛选展示，可独立于类型</div>
+                        <div class="hint-text">用于游客端筛选展示</div>
                     </div>
                     <div class="col-6 hidden" id="field-facility-subtype">
-                        <label class="form-label">公共场所子类型 <span class="text-danger">*</span></label>
+                        <label class="form-label">公共设施子类型 <span class="text-danger">*</span></label>
                         <div class="subtype-checkbox-group">
                             <div class="form-check">
                                 <input class="form-check-input" type="checkbox" id="subtype-restaurant" value="restaurant" onchange="window.onFacilitySubtypeChange()">
@@ -215,14 +210,13 @@
                                 <label class="form-check-label" for="subtype-service">🚻 服务设施</label>
                             </div>
                         </div>
-                        <div class="hint-text">可多选，如民宿同时提供餐饮和住宿</div>
+                        <div class="hint-text">可多选</div>
                     </div>
                     <div class="col-6 hidden" id="field-parent">
                         <label class="form-label">所属景区 <span class="text-danger" id="parent-required">（可选）</span></label>
                         <select id="edit-poi-parent" class="form-select" onchange="window.onParentChange()">
                             <option value="">-- 不关联（独立存在）--</option>
                         </select>
-                        <div class="hint-text">核心节点必选；景点/公共场所可选</div>
                     </div>
                     <div class="col-6"><label class="form-label">纬度</label><input type="number" step="any" id="edit-poi-lat" class="form-control"></div>
                     <div class="col-6"><label class="form-label">经度</label><input type="number" step="any" id="edit-poi-lng" class="form-control"></div>
@@ -239,9 +233,6 @@
                             <label class="form-check-label" for="edit-poi-featured">舒适型行程默认推荐</label>
                         </div>
                     </div>
-                    <div class="col-6"><label class="form-label">关联景区表（scenic）</label>
-                        <select id="edit-poi-scenic" class="form-select"><option value="">无关联</option></select>
-                    </div>
                     <div class="col-6"><label class="form-label">数据等级</label>
                         <select id="edit-poi-level" class="form-select">
                             <option value="L3">L3 - 基础信息</option>
@@ -250,6 +241,17 @@
                         </select>
                     </div>
                     <div class="col-12"><label class="form-label">简介</label><textarea id="edit-poi-desc" class="form-control" rows="2"></textarea></div>
+                    <!-- ★ 新增：语音MP3上传 -->
+                    <div class="col-12">
+                        <label class="form-label"><i class="fas fa-volume-high text-success"></i> 简介语音（MP3）</label>
+                        <div class="d-flex align-items-center gap-2">
+                            <input type="file" id="edit-poi-voice-file" class="form-control form-control-sm" accept="audio/mpeg,audio/mp3" onchange="window.onPoiVoiceSelected(event)" style="flex:1;">
+                            <span id="edit-poi-voice-status" class="text-secondary small"></span>
+                        </div>
+                        <input type="hidden" id="edit-poi-voice-mp3">
+                        <div id="edit-poi-voice-preview" class="mt-2"></div>
+                        <div class="hint-text">上传后会自动保存到 merchant-images/poi-voices/ 目录</div>
+                    </div>
                 </div>
                 <div id="tour-route-section" class="hidden">
                     <hr>
@@ -259,7 +261,7 @@
                             <i class="fas fa-sync"></i> 从子项加载
                         </button>
                     </div>
-                    <p class="text-secondary small">如需详细路线（含时长、内容推荐、小贴士），请前往"路线规划"tab创建。</p>
+                    <p class="text-secondary small">如需详细路线，请前往"路线规划"tab创建。</p>
                     <div id="tour-route-list" class="mt-2"></div>
                     <button type="button" class="btn btn-sm btn-success mt-2" onclick="window.addTourRouteItem()">
                         <i class="fas fa-plus"></i> 添加顺序
@@ -273,7 +275,7 @@
                             <i class="fas fa-plus"></i> 从现有POI添加
                         </button>
                     </div>
-                    <p class="text-secondary small mt-2 mb-1">核心节点、景点、公共场所均可作为子项。</p>
+                    <p class="text-secondary small mt-2 mb-1">核心节点、景点、服务场所、公共设施均可作为子项。</p>
                     <div id="sub-poi-list" class="mt-2"></div>
                 </div>
             </div>
@@ -285,7 +287,7 @@
     </div>
 </div>
 
-<!-- 模态框：选择子景点（保留） -->
+<!-- 模态框：选择子景点 -->
 <div class="modal fade" id="selectSubPoiModal" tabindex="-1">
     <div class="modal-dialog modal-lg">
         <div class="modal-content">
@@ -305,7 +307,7 @@
     </div>
 </div>
 
-<!-- 模态框：路线编辑（重写） -->
+<!-- 模态框：路线编辑 -->
 <div class="modal fade" id="routeModal" tabindex="-1">
     <div class="modal-dialog modal-xl modal-xl-custom">
         <div class="modal-content">
@@ -315,14 +317,9 @@
             </div>
             <div class="modal-body" style="max-height: 75vh; overflow-y: auto;">
                 <input type="hidden" id="edit-route-id">
-
-                <!-- 基本信息 -->
                 <h6 class="mb-2"><i class="fas fa-info-circle text-success"></i> 基本信息</h6>
                 <div class="row g-2 mb-3">
-                    <div class="col-md-6">
-                        <label class="form-label">路线名称 <span class="text-danger">*</span></label>
-                        <input id="edit-route-name" class="form-control" placeholder="如：通江经典一日游">
-                    </div>
+                    <div class="col-md-6"><label class="form-label">路线名称 <span class="text-danger">*</span></label><input id="edit-route-name" class="form-control" placeholder="如：通江经典一日游"></div>
                     <div class="col-md-6">
                         <label class="form-label">路线类型 <span class="text-danger">*</span></label>
                         <select id="edit-route-type" class="form-select">
@@ -340,32 +337,14 @@
                             <option value="multi_day">📅 多日游</option>
                         </select>
                     </div>
-                    <div class="col-md-6">
-                        <label class="form-label">排序序号</label>
-                        <input type="number" id="edit-route-sort" class="form-control" value="0" placeholder="越小越靠前">
-                    </div>
-                    <div class="col-md-6">
-                        <label class="form-label">标准总时长（分钟）</label>
-                        <input type="number" id="edit-route-duration" class="form-control" placeholder="含交通" readonly>
-                    </div>
-                    <div class="col-md-6">
-                        <label class="form-label">预估人均费用（元）</label>
-                        <input type="number" id="edit-route-cost" class="form-control" placeholder="如 100">
-                    </div>
+                    <div class="col-md-6"><label class="form-label">排序序号</label><input type="number" id="edit-route-sort" class="form-control" value="0" placeholder="越小越靠前"></div>
+                    <div class="col-md-6"><label class="form-label">标准总时长（分钟）</label><input type="number" id="edit-route-duration" class="form-control" placeholder="含交通" readonly></div>
+                    <div class="col-md-6"><label class="form-label">预估人均费用（元）</label><input type="number" id="edit-route-cost" class="form-control" placeholder="如 100"></div>
+                    <div class="col-12"><label class="form-label">一句话简介</label><input id="edit-route-summary" class="form-control" placeholder="如：红色旅游 + 自然风光的完美结合" maxlength="60"></div>
+                    <div class="col-12"><label class="form-label">关键景点（用 · 分隔）</label><input id="edit-route-summary-pois" class="form-control" placeholder="如：王坪烈士陵园 · 通江花月夜 · 银耳博物馆"></div>
+                    <div class="col-12"><label class="form-label">详细简介</label><textarea id="edit-route-desc" class="form-control" rows="2"></textarea></div>
                     <div class="col-12">
-                        <label class="form-label">一句话简介</label>
-                        <input id="edit-route-summary" class="form-control" placeholder="如：红色旅游 + 自然风光的完美结合" maxlength="60">
-                    </div>
-                    <div class="col-12">
-                        <label class="form-label">关键景点（用 · 分隔）</label>
-                        <input id="edit-route-summary-pois" class="form-control" placeholder="如：王坪烈士陵园 · 通江花月夜 · 银耳博物馆">
-                    </div>
-                    <div class="col-12">
-                        <label class="form-label">详细简介</label>
-                        <textarea id="edit-route-desc" class="form-control" rows="2" placeholder="详细介绍路线的游玩内容"></textarea>
-                    </div>
-                    <div class="col-12">
-                        <label class="form-label">主题标签（装饰用）</label>
+                        <label class="form-label">主题标签</label>
                         <div class="theme-checkbox-group" id="route-theme-tags">
                             <div class="form-check"><input class="form-check-input" type="checkbox" value="红色" id="tag-red"><label class="form-check-label" for="tag-red">🔴 红色</label></div>
                             <div class="form-check"><input class="form-check-input" type="checkbox" value="美食" id="tag-food"><label class="form-check-label" for="tag-food">🍽️ 美食</label></div>
@@ -378,8 +357,6 @@
                         </div>
                     </div>
                 </div>
-
-                <!-- 节点列表 -->
                 <hr>
                 <div class="d-flex justify-content-between align-items-center mb-2">
                     <h6 class="mb-0"><i class="fas fa-list-ol text-success"></i> 游览节点 <span class="text-secondary" style="font-size:13px;" id="route-total-info">（总时长：0分钟）</span></h6>
@@ -408,10 +385,7 @@
             <div class="modal-body" style="max-height: 70vh; overflow-y: auto;">
                 <input type="hidden" id="edit-node-index">
                 <div class="row g-2">
-                    <div class="col-md-8">
-                        <label class="form-label">节点名称 <span class="text-danger">*</span></label>
-                        <input id="edit-node-name" class="form-control" placeholder="如：入口检票处 / 核心墓区">
-                    </div>
+                    <div class="col-md-8"><label class="form-label">节点名称 <span class="text-danger">*</span></label><input id="edit-node-name" class="form-control" placeholder="如：入口检票处 / 核心墓区"></div>
                     <div class="col-md-4">
                         <label class="form-label">节点类型 <span class="text-danger">*</span></label>
                         <select id="edit-node-type" class="form-select">
@@ -426,17 +400,14 @@
                             <option value="other">📌 其他</option>
                         </select>
                     </div>
-
-                    <!-- POI 关联选择 -->
                     <div class="col-12">
                         <label class="form-label">关联POI（可选）</label>
                         <input type="hidden" id="edit-node-poi">
                         <div id="edit-node-poi-display" class="form-control" style="cursor:pointer; background:#fff;" onclick="window.openPoiPicker()">
                             <span class="text-secondary">点击选择 POI...</span>
                         </div>
-                        <div class="hint-text">可选择任意 POI：景区、景点、公共场所、交通枢纽等；也可不关联（自定义节点）</div>
+                        <div class="hint-text">可选择任意 POI：景区、景点、服务场所、公共设施等；也可不关联</div>
                     </div>
-
                     <div class="col-md-4">
                         <label class="form-label">优先级 <span class="text-danger">*</span></label>
                         <select id="edit-node-priority" class="form-select">
@@ -444,26 +415,13 @@
                             <option value="2" selected>⭐⭐ 二级（重要）</option>
                             <option value="3">⭐⭐⭐ 三级（可选）</option>
                         </select>
-                        <div class="hint-text">影响时间不足时的智能推荐</div>
                     </div>
-                    <div class="col-md-4">
-                        <label class="form-label">标准时长（分钟）</label>
-                        <input type="number" id="edit-node-duration" class="form-control" value="10" min="1">
-                    </div>
-                    <div class="col-md-4">
-                        <label class="form-label">最短时长（可选）</label>
-                        <input type="number" id="edit-node-short" class="form-control" placeholder="如 5">
-                    </div>
-                    <div class="col-md-4">
-                        <label class="form-label">最长时长（可选）</label>
-                        <input type="number" id="edit-node-long" class="form-control" placeholder="如 20">
-                    </div>
+                    <div class="col-md-4"><label class="form-label">标准时长（分钟）</label><input type="number" id="edit-node-duration" class="form-control" value="10" min="1"></div>
+                    <div class="col-md-4"><label class="form-label">最短时长（可选）</label><input type="number" id="edit-node-short" class="form-control"></div>
+                    <div class="col-md-4"><label class="form-label">最长时长（可选）</label><input type="number" id="edit-node-long" class="form-control"></div>
                     <div class="col-md-4">
                         <label class="form-label">是否可跳过</label>
-                        <div class="form-check mt-2">
-                            <input type="checkbox" id="edit-node-skippable" class="form-check-input">
-                            <label class="form-check-label" for="edit-node-skippable">时间不足时可跳过</label>
-                        </div>
+                        <div class="form-check mt-2"><input type="checkbox" id="edit-node-skippable" class="form-check-input"><label class="form-check-label" for="edit-node-skippable">时间不足时可跳过</label></div>
                     </div>
                     <div class="col-md-4">
                         <label class="form-label">适合用餐</label>
@@ -474,18 +432,9 @@
                             <option value="both">🍽️ 均可</option>
                         </select>
                     </div>
-                    <div class="col-12">
-                        <label class="form-label">附近餐厅提示</label>
-                        <input id="edit-node-nearby-restaurant" class="form-control" placeholder="如：园区西侧红军食堂">
-                    </div>
-                    <div class="col-12">
-                        <label class="form-label">内容推荐</label>
-                        <textarea id="edit-node-desc" class="form-control" rows="2" placeholder="如：拍照打卡，领取导览图"></textarea>
-                    </div>
-                    <div class="col-12">
-                        <label class="form-label">小贴士</label>
-                        <textarea id="edit-node-tips" class="form-control" rows="2" placeholder="如：8:00-9:00 人最少"></textarea>
-                    </div>
+                    <div class="col-12"><label class="form-label">附近餐厅提示</label><input id="edit-node-nearby-restaurant" class="form-control" placeholder="如：园区西侧红军食堂"></div>
+                    <div class="col-12"><label class="form-label">内容推荐</label><textarea id="edit-node-desc" class="form-control" rows="2"></textarea></div>
+                    <div class="col-12"><label class="form-label">小贴士</label><textarea id="edit-node-tips" class="form-control" rows="2"></textarea></div>
                 </div>
             </div>
             <div class="modal-footer">
@@ -516,22 +465,6 @@
     </div>
 </div>
 
-<!-- 模态框：编辑景区表（保留兼容） -->
-<div class="modal fade" id="scenicModal" tabindex="-1">
-    <div class="modal-dialog"><div class="modal-content">
-        <div class="modal-header"><h5 class="modal-title">编辑景区</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
-        <div class="modal-body">
-            <input type="hidden" id="edit-scenic-id">
-            <div class="form-group"><label>名称</label><input id="edit-scenic-name" class="form-control"></div>
-            <div class="form-group"><label>区域</label><input id="edit-scenic-area" class="form-control"></div>
-            <div class="form-group"><label>纬度</label><input type="number" step="any" id="edit-scenic-lat" class="form-control"></div>
-            <div class="form-group"><label>经度</label><input type="number" step="any" id="edit-scenic-lng" class="form-control"></div>
-            <div class="form-group"><label>简介</label><textarea id="edit-scenic-desc" class="form-control" rows="2"></textarea></div>
-        </div>
-        <div class="modal-footer"><button class="btn btn-secondary" data-bs-dismiss="modal">取消</button><button class="btn btn-success" onclick="window.saveScenicEdit()">保存</button></div>
-    </div></div>
-</div>
-
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
@@ -554,16 +487,12 @@ document.getElementById('loginBtn').addEventListener('click', async () => {
         document.getElementById('login-msg').textContent = '';
     } catch (e) {
         document.getElementById('login-msg').textContent = '登录失败：' + e.message;
-        console.error(e);
     }
 });
 
-document.getElementById('logoutBtn').addEventListener('click', async () => {
-    await signOut();
-});
+document.getElementById('logoutBtn').addEventListener('click', async () => { await signOut(); });
 
 let hasInitialized = false;
-
 onAuthStateChange((event) => {
     if (event === 'SIGNED_IN' && !hasInitialized) {
         hasInitialized = true;

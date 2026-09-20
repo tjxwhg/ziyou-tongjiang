@@ -1,4 +1,4 @@
-// js/admin.js - 管理后台完整逻辑（4类型 + 路线规划 + POI选择器 + UUID兼容）
+// js/admin.js - 管理后台完整逻辑（service_place 类型 + MP3上传 + UUID兼容）
 import {
     getPois, getPoi, insertPoi, updatePoi, deletePoi as apiDeletePoi,
     getRoutes, getRoute, insertRoute, updateRoute, deleteRoute as apiDeleteRoute,
@@ -31,7 +31,8 @@ const TYPE_LABELS = {
     scenic: '🏞️ 景区',
     core_node: '⭐ 核心节点',
     spot: '📍 景点',
-    facility: '🏢 公共场所'
+    service_place: '🏛️ 服务场所',
+    facility: '🚻 公共设施'
 };
 
 const FACILITY_SUBTYPE_LABELS = {
@@ -45,6 +46,7 @@ const TYPE_CLASSES = {
     scenic: 'type-badge-scenic',
     core_node: 'type-badge-core',
     spot: 'type-badge-spot',
+    service_place: 'type-badge-serviceplace',
     facility: 'type-badge-facility'
 };
 
@@ -107,7 +109,7 @@ function getTypeBadge(type, facilitySubtype) {
             subtypes = [facilitySubtype];
         }
         if (subtypes.length === 0) {
-            return `<span class="type-badge type-badge-facility">🏢 公共场所</span>`;
+            return `<span class="type-badge type-badge-facility">🚻 公共设施</span>`;
         }
         return subtypes.map(sub => {
             const cls = FACILITY_SUBTYPE_CLASSES[sub] || 'type-badge-facility';
@@ -169,22 +171,24 @@ export function renderPoiList(pois) {
 
         const catIcon = CATEGORY_ICONS[p.category] || '';
         const catBadge = p.category ? `<span class="category-badge">${catIcon} ${p.category}</span>` : '';
+        const voiceBadge = p.voice_mp3 ? `<span class="voice-badge">🔊 语音</span>` : '';
 
         const subItems = pois.filter(x => String(x.parent_id) === String(p.id));
         const coreCount = subItems.filter(x => x.type === 'core_node').length;
         const spotCount = subItems.filter(x => x.type === 'spot').length;
+        const servCount = subItems.filter(x => x.type === 'service_place').length;
         const facCount = subItems.filter(x => x.type === 'facility').length;
 
         let subInfo = '';
         if (subItems.length > 0) {
-            subInfo = ` <span class="text-secondary" style="font-size:12px;">(${coreCount}核心 ${spotCount}景点 ${facCount}场所)</span>`;
+            subInfo = ` <span class="text-secondary" style="font-size:12px;">(${coreCount}核心 ${spotCount}景点 ${servCount}场所 ${facCount}设施)</span>`;
         }
 
         const featuredTag = p.is_featured ? ` <span class="featured-badge">⭐经典</span>` : '';
 
         html += `<div class="poi-card" id="poi-card-${p.id}">
             <div class="poi-header">
-                <span>${typeBadge} <b>${p.name}</b>${featuredTag} ${catBadge} <span class="data-quality-badge quality-${level}">${level}</span>${subInfo}</span>
+                <span>${typeBadge} <b>${p.name}</b>${featuredTag} ${catBadge}${voiceBadge} <span class="data-quality-badge quality-${level}">${level}</span>${subInfo}</span>
                 <div>
                     <button class="btn btn-sm btn-secondary" onclick="window.showEditPoiModal('${p.id}')"><i class="fas fa-edit"></i> 编辑</button>
                     <button class="btn btn-sm btn-danger" onclick="window.deletePoi('${p.id}')"><i class="fas fa-trash"></i> 删除</button>
@@ -212,7 +216,7 @@ export function renderPoiList(pois) {
 }
 
 // ============================================================
-// 新增 / 编辑 POI（保持原有逻辑）
+// 新增 / 编辑 POI
 // ============================================================
 export function showAddPoiModal() {
     currentEditingPoiId = null;
@@ -233,10 +237,13 @@ export function showAddPoiModal() {
     document.getElementById('edit-poi-level').value = 'L3';
     document.getElementById('edit-poi-featured').checked = false;
 
-    setFacilitySubtypeCheckboxes([]);
+    // 重置语音上传
+    document.getElementById('edit-poi-voice-file').value = '';
+    document.getElementById('edit-poi-voice-mp3').value = '';
+    document.getElementById('edit-poi-voice-status').textContent = '';
+    document.getElementById('edit-poi-voice-preview').innerHTML = '';
 
-    const scenicSelect = document.getElementById('edit-poi-scenic');
-    scenicSelect.innerHTML = '<option value="">无关联</option>';
+    setFacilitySubtypeCheckboxes([]);
 
     const parentSelect = document.getElementById('edit-poi-parent');
     parentSelect.innerHTML = '<option value="">-- 不关联（独立存在）--</option>';
@@ -272,13 +279,21 @@ export async function showEditPoiModal(poiId) {
     document.getElementById('edit-poi-level').value = poi.data_level || 'L3';
     document.getElementById('edit-poi-featured').checked = !!poi.is_featured;
 
+    // 语音回填
+    document.getElementById('edit-poi-voice-file').value = '';
+    document.getElementById('edit-poi-voice-mp3').value = poi.voice_mp3 || '';
+    document.getElementById('edit-poi-voice-status').textContent = poi.voice_mp3 ? '已有语音' : '';
+    if (poi.voice_mp3) {
+        document.getElementById('edit-poi-voice-preview').innerHTML =
+            `<audio controls src="${poi.voice_mp3}" style="width:100%;max-width:400px;"></audio>`;
+    } else {
+        document.getElementById('edit-poi-voice-preview').innerHTML = '';
+    }
+
     let subtypes = [];
     if (Array.isArray(poi.facility_subtype)) subtypes = poi.facility_subtype;
     else if (poi.facility_subtype) subtypes = [poi.facility_subtype];
     setFacilitySubtypeCheckboxes(subtypes);
-
-    const scenicSelect = document.getElementById('edit-poi-scenic');
-    scenicSelect.innerHTML = '<option value="">无关联</option>';
 
     const parentSelect = document.getElementById('edit-poi-parent');
     parentSelect.innerHTML = '<option value="">-- 不关联（独立存在）--</option>';
@@ -305,6 +320,47 @@ export async function showEditPoiModal(poiId) {
     const modal = new bootstrap.Modal(document.getElementById('poiModal'));
     modal.show();
 }
+
+// ============================================================
+// ★ 新增：POI 语音上传
+// ============================================================
+window.onPoiVoiceSelected = async function(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    // 简单校验
+    if (!file.type.startsWith('audio/')) {
+        alert('请选择音频文件（MP3）');
+        event.target.value = '';
+        return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+        alert('音频文件不得超过 10MB');
+        event.target.value = '';
+        return;
+    }
+
+    const statusEl = document.getElementById('edit-poi-voice-status');
+    statusEl.textContent = '上传中...';
+    statusEl.className = 'text-warning small';
+
+    try {
+        const poiId = document.getElementById('edit-poi-id').value || 'new_' + Date.now();
+        const ext = file.name.split('.').pop() || 'mp3';
+        const path = `poi-voices/${poiId}_${Date.now()}.${ext}`;
+        const publicUrl = await uploadFile('merchant-images', path, file);
+
+        document.getElementById('edit-poi-voice-mp3').value = publicUrl;
+        statusEl.textContent = '✓ 上传成功';
+        statusEl.className = 'text-success small';
+        document.getElementById('edit-poi-voice-preview').innerHTML =
+            `<audio controls src="${publicUrl}" style="width:100%;max-width:400px;"></audio>`;
+    } catch (e) {
+        statusEl.textContent = '上传失败：' + e.message;
+        statusEl.className = 'text-danger small';
+        console.error(e);
+    }
+};
 
 // ============================================================
 // 子类型复选框
@@ -390,7 +446,13 @@ export function togglePoiTypeUI() {
         fieldDuration.classList.remove('hidden');
         fieldFeatured.classList.remove('hidden');
         if (parentRequired) parentRequired.textContent = '（可选）';
+    } else if (type === 'service_place') {
+        // 服务场所：需要填时长、可选父级
+        fieldParent.classList.remove('hidden');
+        fieldDuration.classList.remove('hidden');
+        if (parentRequired) parentRequired.textContent = '（可选）';
     } else if (type === 'facility') {
+        // 公共设施：不填时长，不可作为父级
         fieldFacilitySubtype.classList.remove('hidden');
         fieldParent.classList.remove('hidden');
         if (parentRequired) parentRequired.textContent = '（可选）';
@@ -398,7 +460,7 @@ export function togglePoiTypeUI() {
 }
 
 // ============================================================
-// 子项管理（保持原有）
+// 子项管理
 // ============================================================
 function renderSubPoiList() {
     const container = document.getElementById('sub-poi-list');
@@ -413,7 +475,7 @@ function renderSubPoiList() {
         container.innerHTML = '<p class="text-secondary small mb-0">暂无子项。</p>';
         return;
     }
-    const order = { core_node: 1, spot: 2, facility: 3 };
+    const order = { core_node: 1, spot: 2, service_place: 3, facility: 4 };
     const sorted = [...subPois].sort((a, b) => (order[a.type] || 9) - (order[b.type] || 9));
 
     let html = '';
@@ -444,7 +506,7 @@ export function showSelectSubPoiModal() {
         list.innerHTML = '<p class="text-secondary">没有可添加的独立 POI</p>';
         return;
     }
-    const grouped = { core_node: [], spot: [], facility: [] };
+    const grouped = { core_node: [], spot: [], service_place: [], facility: [] };
     candidates.forEach(p => {
         const t = p.type || 'spot';
         if (!grouped[t]) grouped[t] = [];
@@ -507,7 +569,7 @@ export async function removeSubPoi(subPoiId) {
 }
 
 // ============================================================
-// 简易游览顺序（保持原有）
+// 简易游览顺序
 // ============================================================
 function renderTourRoute() {
     const container = document.getElementById('tour-route-list');
@@ -539,7 +601,7 @@ export function loadSubItemsForRoute() {
     if (!currentEditingPoiId) { alert('请先保存景区'); return; }
     const subPois = allPois.filter(p => String(p.parent_id) === String(currentEditingPoiId));
     if (subPois.length === 0) { alert('该景区暂无子项'); return; }
-    const order = { core_node: 1, spot: 2, facility: 3 };
+    const order = { core_node: 1, spot: 2, service_place: 3, facility: 4 };
     const sorted = [...subPois].sort((a, b) => (order[a.type] || 9) - (order[b.type] || 9));
     currentTourRoute = sorted.map(p => ({
         id: p.id, name: p.name, type: p.type, facility_subtype: p.facility_subtype
@@ -580,14 +642,19 @@ export function removeTourRouteItem(idx) {
 }
 
 // ============================================================
-// 保存 POI（保持原有）
+// 保存 POI（★ 删除 scenic_id 的处理，保留兼容）
 // ============================================================
 export async function savePoiEdit() {
     const poiId = document.getElementById('edit-poi-id').value;
     const isNew = !poiId;
     const poiType = document.getElementById('edit-poi-type').value;
-    const scenicIdRaw = document.getElementById('edit-poi-scenic').value;
-    const scenicId = scenicIdRaw || null;
+
+    // 保留原 scenic_id（不再编辑，仅兼容旧数据）
+    let scenicId = null;
+    if (!isNew) {
+        const oldPoi = allPois.find(p => String(p.id) === String(poiId));
+        if (oldPoi) scenicId = oldPoi.scenic_id || null;
+    }
 
     let parentId = null;
     if (poiType !== 'scenic') {
@@ -605,20 +672,22 @@ export async function savePoiEdit() {
         close_time: document.getElementById('edit-poi-close').value,
         description: document.getElementById('edit-poi-desc').value,
         data_level: document.getElementById('edit-poi-level').value,
-        scenic_id: scenicId,
+        scenic_id: scenicId,      // 保留兼容
         parent_id: parentId,
+        voice_mp3: document.getElementById('edit-poi-voice-mp3').value || null,
         status: 'active'
     };
 
     if (poiType === 'facility') {
         const subtypes = getFacilitySubtypeCheckboxes();
-        if (subtypes.length === 0) { alert('公共场所至少选择一种子类型'); return; }
+        if (subtypes.length === 0) { alert('公共设施至少选择一种子类型'); return; }
         updates.facility_subtype = subtypes;
     } else {
         updates.facility_subtype = null;
     }
 
-    if (poiType === 'core_node' || poiType === 'spot') {
+    // 游览时长：核心节点/景点/服务场所
+    if (poiType === 'core_node' || poiType === 'spot' || poiType === 'service_place') {
         updates.visit_duration = parseInt(document.getElementById('edit-poi-visit').value) || 0;
     } else {
         updates.visit_duration = 0;
@@ -666,36 +735,27 @@ export async function deletePoi(id) {
 }
 
 // ============================================================
-// 路线规划（重写）
+// 路线规划
 // ============================================================
 export function renderRouteList(routes) {
     const container = document.getElementById('route-list');
     if (!container) return;
-
     if (!routes || routes.length === 0) {
         container.innerHTML = '<p class="text-secondary">暂无路线，点击右上角"新增路线"创建。</p>';
         return;
     }
-
-    // 按 sort_order 排序
     const sorted = [...routes].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
-
     let html = '';
     sorted.forEach(r => {
         const routeType = r.route_type || 'custom';
         const typeLabel = ROUTE_TYPE_LABELS[routeType] || routeType;
         const dayCatLabel = DAY_CATEGORY_LABELS[r.day_category] || '';
         const defaultBadge = r.is_default ? '<span class="default-badge">默认推荐</span>' : '';
-
-        // 主题标签
         let themeHtml = '';
         if (Array.isArray(r.theme_tags) && r.theme_tags.length > 0) {
             themeHtml = r.theme_tags.map(t => `<span class="theme-tag-badge">${t}</span>`).join('');
         }
-
-        // 关键景点
         const summaryPois = r.summary_pois ? `📍 ${r.summary_pois}` : '';
-
         const durationText = r.duration_min ? `${r.duration_min}分钟` : '—';
         const costText = r.estimated_cost ? `人均约${r.estimated_cost}元` : '';
 
@@ -735,10 +795,8 @@ export async function showAddRouteModal() {
     document.getElementById('edit-route-summary-pois').value = '';
     document.getElementById('edit-route-desc').value = '';
     setThemeTags([]);
-
     routeNodesData = [];
     renderRouteNodes();
-
     document.getElementById('routeModalTitle').textContent = '新增路线';
     const modal = new bootstrap.Modal(document.getElementById('routeModal'));
     modal.show();
@@ -747,7 +805,6 @@ export async function showAddRouteModal() {
 export async function showEditRouteModal(id) {
     const r = allRoutes.find(x => String(x.id) === String(id));
     if (!r) return;
-
     document.getElementById('edit-route-id').value = id;
     document.getElementById('edit-route-name').value = r.name || '';
     document.getElementById('edit-route-type').value = r.route_type || 'scenic_internal';
@@ -786,7 +843,6 @@ export async function showEditRouteModal(id) {
     modal.show();
 }
 
-// 主题标签读取/回填
 function getThemeTags() {
     const tags = [];
     document.querySelectorAll('#route-theme-tags input[type="checkbox"]:checked').forEach(cb => {
@@ -802,14 +858,11 @@ function setThemeTags(tags) {
     });
 }
 
-// 计算路线总时长（含交通）
 function calculateRouteTotalDuration() {
     let total = 0;
     let prevPoiId = null;
     routeNodesData.forEach(node => {
-        // 交通耗时
         if (prevPoiId && node.poi_id && String(prevPoiId) !== String(node.poi_id)) {
-            // 如果节点在同一景区内，则不计交通
             const prevPoi = allPois.find(p => String(p.id) === String(prevPoiId));
             const curPoi = allPois.find(p => String(p.id) === String(node.poi_id));
             if (!prevPoi || !curPoi || String(prevPoi.parent_id) !== String(curPoi.parent_id)) {
@@ -829,19 +882,16 @@ function calculateRouteTotalDuration() {
 function renderRouteNodes() {
     const container = document.getElementById('route-nodes-container');
     if (!container) return;
-
     if (routeNodesData.length === 0) {
         container.innerHTML = '<p class="text-secondary text-center py-3">暂无节点，点击"添加节点"开始规划</p>';
         document.getElementById('route-total-info').textContent = '（总时长：0分钟）';
         return;
     }
-
     let html = '';
     routeNodesData.forEach((n, idx) => {
         const typeLabel = NODE_TYPE_LABELS[n.node_type] || '📌 其他';
         const priorityLabel = PRIORITY_LABELS[n.priority_level] || '⭐⭐ 二级';
         const poiName = n.poi_id ? `<span class="text-secondary" style="font-size:11px;">· ${n.poi_name || n.poi_id}</span>` : '';
-
         html += `<div class="route-node-card">
             <div class="route-node-header">
                 <span class="route-node-order">${idx + 1}</span>
@@ -869,15 +919,11 @@ function renderRouteNodes() {
         </div>`;
     });
     container.innerHTML = html;
-
     const total = calculateRouteTotalDuration();
     document.getElementById('route-total-info').textContent = `（总时长：${total}分钟）`;
     document.getElementById('edit-route-duration').value = total;
 }
 
-// ============================================================
-// 节点编辑（新增优先级等字段）
-// ============================================================
 window.showAddRouteNodeModal = function() {
     editingNodeIndex = -1;
     document.getElementById('edit-node-index').value = '';
@@ -894,7 +940,6 @@ window.showAddRouteNodeModal = function() {
     document.getElementById('edit-node-nearby-restaurant').value = '';
     document.getElementById('edit-node-desc').value = '';
     document.getElementById('edit-node-tips').value = '';
-
     document.getElementById('routeNodeModalTitle').textContent = '添加节点';
     new bootstrap.Modal(document.getElementById('routeNodeModal')).show();
 };
@@ -921,7 +966,6 @@ window.editRouteNode = function(idx) {
     document.getElementById('edit-node-nearby-restaurant').value = node.nearby_restaurant || '';
     document.getElementById('edit-node-desc').value = node.description || '';
     document.getElementById('edit-node-tips').value = node.tips || '';
-
     document.getElementById('routeNodeModalTitle').textContent = '编辑节点';
     new bootstrap.Modal(document.getElementById('routeNodeModal')).show();
 };
@@ -929,10 +973,8 @@ window.editRouteNode = function(idx) {
 window.saveRouteNode = function() {
     const name = document.getElementById('edit-node-name').value.trim();
     if (!name) { alert('请输入节点名称'); return; }
-
     const poiId = document.getElementById('edit-node-poi').value || null;
     const poiName = poiId ? (allPois.find(p => String(p.id) === String(poiId))?.name || '') : '';
-
     const nodeData = {
         node_name: name,
         node_type: document.getElementById('edit-node-type').value,
@@ -948,7 +990,6 @@ window.saveRouteNode = function() {
         description: document.getElementById('edit-node-desc').value.trim(),
         tips: document.getElementById('edit-node-tips').value.trim()
     };
-
     if (editingNodeIndex >= 0 && editingNodeIndex < routeNodesData.length) {
         routeNodesData[editingNodeIndex] = nodeData;
     } else {
@@ -985,24 +1026,14 @@ window.openPoiPicker = function() {
 function renderPoiPickerList() {
     const container = document.getElementById('poi-picker-list');
     if (!container) return;
-
     const keyword = (poiPickerCurrentSearch || '').toLowerCase();
-
-    // 按类型分组
-    const groups = {
-        scenic: [],
-        core_node: [],
-        spot: [],
-        facility: []
-    };
-
+    const groups = { scenic: [], core_node: [], spot: [], service_place: [], facility: [] };
     allPois.forEach(p => {
         const t = p.type || 'spot';
         if (!groups[t]) groups[t] = [];
         if (keyword && !p.name.toLowerCase().includes(keyword)) return;
         groups[t].push(p);
     });
-
     let html = '';
     Object.keys(groups).forEach(t => {
         if (groups[t].length === 0) return;
@@ -1018,7 +1049,6 @@ function renderPoiPickerList() {
         });
         html += `</div>`;
     });
-
     container.innerHTML = html || '<p class="text-secondary">无匹配POI</p>';
 }
 
@@ -1059,10 +1089,8 @@ export async function saveRouteEdit() {
     const name = document.getElementById('edit-route-name').value.trim();
     if (!name) { alert('请输入路线名称'); return; }
     if (routeNodesData.length === 0) { alert('请至少添加一个节点'); return; }
-
     const totalMin = calculateRouteTotalDuration();
     const themeTags = getThemeTags();
-
     const data = {
         name: name,
         route_type: document.getElementById('edit-route-type').value,
@@ -1081,7 +1109,6 @@ export async function saveRouteEdit() {
         days: 1,
         group_type: 'default'
     };
-
     try {
         let routeId = id;
         if (id) {
@@ -1090,9 +1117,7 @@ export async function saveRouteEdit() {
             const r = await insertRoute(data);
             routeId = r.id;
         }
-
         await deleteRouteNodes(routeId);
-
         const nodes = routeNodesData.map((n, i) => ({
             route_id: routeId,
             order_num: i + 1,
@@ -1112,7 +1137,6 @@ export async function saveRouteEdit() {
             transport_time: 0
         }));
         if (nodes.length > 0) await insertRouteNodes(nodes);
-
         alert('保存成功');
         bootstrap.Modal.getInstance(document.getElementById('routeModal')).hide();
         await initAdminUI();
@@ -1136,7 +1160,6 @@ export function renderTransportEditor(presets) {
     if (!container) return;
     const poiList = allPois.filter(p => !p.parent_id);
     if (poiList.length === 0) { container.innerHTML = '<p>暂无POI数据</p>'; return; }
-
     let html = '';
     poiList.forEach(fromPoi => {
         html += `<div class="transport-group card mb-2">

@@ -110,7 +110,6 @@
                     </button>
                 </div>
 
-                <!-- 新增预约表单 -->
                 <div id="new-reservation-form" class="card p-3 mb-3 hidden">
                     <h6>新增预约</h6>
                     <div class="row g-2">
@@ -175,21 +174,17 @@
                             <option value="closed">休息</option>
                         </select>
                     </div>
-                    <div class="col-md-6">
-                        <label class="form-label">时段</label>
-                        <div class="d-flex gap-2 align-items-center">
-                            <select id="hours-type" class="form-select" style="flex:0 0 110px;" onchange="window.onHoursTypeChange()">
-                                <option value="custom">自定义时段</option>
-                                <option value="24h">24 小时</option>
-                            </select>
-                            <input id="business_hours" class="form-control" placeholder="08:00-22:00" style="flex:1;">
-                        </div>
-                        <div class="hint-text">选"24 小时"后，该景点不受 8:00-18:00 智能规划时段限制</div>
-                    </div>
                     <div class="col-md-6"><label class="form-label">电话</label><input id="phone" class="form-control"></div>
                     <div class="col-md-6"><label class="form-label">地址</label><input id="address" class="form-control"></div>
                     <div class="col-md-6"><label class="form-label">停车位</label><input type="number" id="parking" class="form-control" value="0"></div>
-                    <div class="col-12"><label class="form-label">简介</label><textarea id="intro" class="form-control" rows="2"></textarea></div>
+                    <div class="col-12">
+                        <label class="form-label">
+                            <i class="fas fa-bullhorn text-success"></i> 通知栏
+                            <span class="text-secondary small">（限 200 字，用于特色推荐、路线推荐、游玩推荐、状态通知、优惠信息等）</span>
+                        </label>
+                        <textarea id="notice" class="form-control" rows="3" maxlength="200" placeholder="例如：本周六下午 3 点银耳品鉴会，欢迎参加……"></textarea>
+                        <div class="hint-text"><span id="notice-counter">0</span>/200</div>
+                    </div>
                 </div>
                 <button class="btn btn-success mt-3" onclick="window.saveInfo()">
                     <i class="fas fa-save"></i> 保存
@@ -267,30 +262,12 @@ import {
 } from './js/merchant.js';
 import { deleteReservation, uploadFile } from './js/api.js';
 
-// ============================================================
-// 状态中文映射
-// ============================================================
 const STATUS_MAP = {
-    pending: '待确认',
-    confirmed: '已确认',
-    rejected: '已拒绝',
-    cancelled: '已取消'
+    pending: '待确认', confirmed: '已确认',
+    rejected: '已拒绝', cancelled: '已取消'
 };
-function translateStatus(s) {
-    return STATUS_MAP[s] || s || '未知';
-}
+function translateStatus(s) { return STATUS_MAP[s] || s || '未知'; }
 
-const BUSINESS_STATUS_MAP = {
-    'open': '营业中',
-    'opening': '开放中',
-    'running': '运行中',
-    'working': '工作中',
-    'closed': '休息'
-};
-
-// ============================================================
-// 全局状态
-// ============================================================
 const loginPage = document.getElementById('login-page');
 const main = document.getElementById('main');
 const loginBtn = document.getElementById('loginBtn');
@@ -303,16 +280,11 @@ let businessCategories = [];
 let businessItems = [];
 let reservationsCache = [];
 
-// ============================================================
-// 登录与认证
-// ============================================================
+// 登录
 loginBtn.addEventListener('click', async () => {
     const email = document.getElementById('account').value.trim();
     const pwd = document.getElementById('password').value;
-    if (!email || !pwd) {
-        loginMsg.textContent = '请输入邮箱和密码';
-        return;
-    }
+    if (!email || !pwd) { loginMsg.textContent = '请输入邮箱和密码'; return; }
     try {
         await signIn(email, pwd);
         loginMsg.textContent = '';
@@ -322,9 +294,7 @@ loginBtn.addEventListener('click', async () => {
     }
 });
 
-logoutBtn.addEventListener('click', async () => {
-    await signOut();
-});
+logoutBtn.addEventListener('click', async () => { await signOut(); });
 
 onAuthStateChange((event) => {
     if (event === 'SIGNED_IN') {
@@ -346,9 +316,6 @@ onAuthStateChange((event) => {
     }
 })();
 
-// ============================================================
-// 初始化商户端
-// ============================================================
 async function initMerchantUI() {
     try {
         merchant = await initMerchant();
@@ -365,8 +332,7 @@ async function initMerchantUI() {
         renderNewResCategoryOptions();
 
         const reservations = await fetchReservations().catch(e => {
-            console.warn('预约加载失败:', e);
-            return [];
+            console.warn('预约加载失败:', e); return [];
         });
         reservationsCache = reservations || [];
         renderReservations();
@@ -378,9 +344,16 @@ async function initMerchantUI() {
     }
 }
 
-// ============================================================
-// 业务管理 - 分类
-// ============================================================
+// 通知栏字数计数
+const noticeEl = document.getElementById('notice');
+const noticeCounter = document.getElementById('notice-counter');
+if (noticeEl && noticeCounter) {
+    noticeEl.addEventListener('input', () => {
+        noticeCounter.textContent = noticeEl.value.length;
+    });
+}
+
+// ========== 分类 ==========
 window.toggleCategoryPanel = function() {
     document.getElementById('category-panel').classList.toggle('hidden');
 };
@@ -413,9 +386,7 @@ window.deleteCategory = async function(name) {
         renderBusiness();
         renderNewResCategoryOptions();
         renderItemCategoryOptions();
-    } catch (e) {
-        alert('删除失败：' + e.message);
-    }
+    } catch (e) { alert('删除失败：' + e.message); }
 };
 
 function renderCategoryList() {
@@ -433,9 +404,7 @@ function renderCategoryList() {
     `).join('');
 }
 
-// ============================================================
-// 业务管理 - 项目
-// ============================================================
+// ========== 业务项目 ==========
 function renderBusiness() {
     const container = document.getElementById('business-container');
     if (!container) return;
@@ -446,45 +415,37 @@ function renderBusiness() {
     let html = '';
     businessCategories.forEach(cat => {
         const catItems = businessItems.filter(i => i.category === cat);
-        html += `
-            <div class="card mb-2">
-                <div class="category-header" onclick="this.nextElementSibling.classList.toggle('hidden')">
-                    <span>📁 ${cat} (${catItems.length})</span>
-                    <span>▼</span>
-                </div>
-                <div class="hidden p-2">
-                    ${catItems.length === 0 ? '<p class="text-secondary small mb-0">该分类下暂无项目</p>' :
-                        catItems.map((item) => {
-                            const globalIdx = businessItems.indexOf(item);
-                            return `
-                                <div class="d-flex justify-content-between align-items-center py-1 border-bottom">
-                                    <div>
-                                        <span>${item.name || '未命名'}</span>
-                                        ${item.price ? `<span class="text-success ms-2">${item.price}</span>` : ''}
-                                        ${item.duration ? `<span class="text-secondary ms-2 small">${item.duration}</span>` : ''}
-                                    </div>
-                                    <div>
-                                        <button class="btn btn-sm btn-secondary" onclick="window.editItem(${globalIdx})">编辑</button>
-                                        <button class="btn btn-sm btn-danger" onclick="window.deleteItem(${globalIdx})">删除</button>
-                                    </div>
-                                </div>
-                                ${item.description ? `<div class="text-secondary small ms-2">${item.description}</div>` : ''}
-                                ${item.image ? `<div class="ms-2 mt-1"><img src="${item.image}" class="upload-preview"></div>` : ''}
-                            `;
-                        }).join('')
-                    }
-                </div>
+        html += `<div class="card mb-2">
+            <div class="category-header" onclick="this.nextElementSibling.classList.toggle('hidden')">
+                <span>📁 ${cat} (${catItems.length})</span><span>▼</span>
             </div>
-        `;
+            <div class="hidden p-2">
+                ${catItems.length === 0 ? '<p class="text-secondary small mb-0">该分类下暂无项目</p>' :
+                    catItems.map((item) => {
+                        const globalIdx = businessItems.indexOf(item);
+                        return `<div class="d-flex justify-content-between align-items-center py-1 border-bottom">
+                            <div>
+                                <span>${item.name || '未命名'}</span>
+                                ${item.price ? `<span class="text-success ms-2">${item.price}</span>` : ''}
+                                ${item.duration ? `<span class="text-secondary ms-2 small">${item.duration}</span>` : ''}
+                            </div>
+                            <div>
+                                <button class="btn btn-sm btn-secondary" onclick="window.editItem(${globalIdx})">编辑</button>
+                                <button class="btn btn-sm btn-danger" onclick="window.deleteItem(${globalIdx})">删除</button>
+                            </div>
+                        </div>
+                        ${item.description ? `<div class="text-secondary small ms-2">${item.description}</div>` : ''}
+                        ${item.image ? `<div class="ms-2 mt-1"><img src="${item.image}" class="upload-preview"></div>` : ''}`;
+                    }).join('')
+                }
+            </div>
+        </div>`;
     });
     container.innerHTML = html || '<p class="text-secondary">暂无业务项目</p>';
 }
 
 window.showAddItemForm = function() {
-    if (businessCategories.length === 0) {
-        alert('请先添加分类');
-        return;
-    }
+    if (businessCategories.length === 0) { alert('请先添加分类'); return; }
     document.getElementById('item-edit-index').value = '';
     document.getElementById('item-name').value = '';
     document.getElementById('item-price').value = '';
@@ -509,8 +470,7 @@ window.editItem = function(idx) {
     document.getElementById('item-image-url').value = item.image || '';
     document.getElementById('item-image-file').value = '';
     document.getElementById('item-image-preview').innerHTML = item.image
-        ? `<img src="${item.image}" class="upload-preview">`
-        : '';
+        ? `<img src="${item.image}" class="upload-preview">` : '';
     renderItemCategoryOptions(item.category);
     document.getElementById('itemModalTitle').textContent = '编辑项目';
     new bootstrap.Modal(document.getElementById('itemModal')).show();
@@ -559,13 +519,9 @@ window.saveItem = async function() {
             const path = `${merchant.id}/${Date.now()}.${ext}`;
             imageUrl = await uploadFile('merchant-images', path, file);
         }
-
         const newItem = { category, name, price, duration, description, image: imageUrl };
-        if (idx === '') {
-            businessItems.push(newItem);
-        } else {
-            businessItems[parseInt(idx)] = newItem;
-        }
+        if (idx === '') businessItems.push(newItem);
+        else businessItems[parseInt(idx)] = newItem;
 
         await saveBusinessData(businessCategories, businessItems);
         bootstrap.Modal.getInstance(document.getElementById('itemModal')).hide();
@@ -588,14 +544,10 @@ window.deleteItem = async function(idx) {
     try {
         await saveBusinessData(businessCategories, businessItems);
         renderBusiness();
-    } catch (e) {
-        alert('删除失败：' + e.message);
-    }
+    } catch (e) { alert('删除失败：' + e.message); }
 };
 
-// ============================================================
-// 预约列表
-// ============================================================
+// ========== 预约列表 ==========
 window.toggleNewReservationForm = function() {
     document.getElementById('new-reservation-form').classList.toggle('hidden');
 };
@@ -628,8 +580,7 @@ function renderReservations() {
         return;
     }
     const sorted = [...reservationsCache].sort((a, b) =>
-        new Date(b.reservation_date || b.created_at) - new Date(a.reservation_date || a.created_at)
-    );
+        new Date(b.reservation_date || b.created_at) - new Date(a.reservation_date || a.created_at));
     container.innerHTML = sorted.map((r, idx) => `
         <div class="reservation-card">
             <div class="d-flex justify-content-between align-items-center" style="cursor:pointer;" onclick="window.toggleReservationCard(${idx})">
@@ -663,7 +614,6 @@ window.toggleReservationCard = function(idx) {
     const el = document.getElementById(`res-card-detail-${idx}`);
     if (el) el.classList.toggle('hidden');
 };
-
 window.confirmReservation = async function(id) {
     try {
         await updateReservationStatus(id, 'confirmed');
@@ -672,7 +622,6 @@ window.confirmReservation = async function(id) {
         renderReservations();
     } catch (e) { alert('操作失败：' + e.message); }
 };
-
 window.rejectReservation = async function(id) {
     try {
         await updateReservationStatus(id, 'rejected');
@@ -681,7 +630,6 @@ window.rejectReservation = async function(id) {
         renderReservations();
     } catch (e) { alert('操作失败：' + e.message); }
 };
-
 window.deleteReservationHandler = async function(id) {
     if (!confirm('确认删除此预约？')) return;
     try {
@@ -690,7 +638,6 @@ window.deleteReservationHandler = async function(id) {
         renderReservations();
     } catch (e) { alert('删除失败：' + e.message); }
 };
-
 window.saveNewReservation = async function() {
     const date = document.getElementById('new-res-date').value;
     const timeRange = document.getElementById('new-res-time').value;
@@ -702,20 +649,13 @@ window.saveNewReservation = async function() {
     const content = document.getElementById('new-res-content').value;
     const room = document.getElementById('new-res-room').value.trim();
     const remark = document.getElementById('new-res-remark').value.trim();
-
     if (!date || !name || !phone) { alert('请填写日期、联系人、电话'); return; }
     if (!content) { alert('请选择具体项目'); return; }
-
     try {
         await addReservation({
-            reservation_date: date,
-            time_slot_start: start,
-            time_slot_end: end,
-            unit, name, phone,
-            visitor_count: count,
-            reservation_content: content,
-            room, remark,
-            status: 'confirmed'
+            reservation_date: date, time_slot_start: start, time_slot_end: end,
+            unit, name, phone, visitor_count: count,
+            reservation_content: content, room, remark, status: 'confirmed'
         });
         alert('预约已保存');
         ['new-res-date', 'new-res-unit', 'new-res-name', 'new-res-phone', 'new-res-room', 'new-res-remark'].forEach(id => {
@@ -725,39 +665,22 @@ window.saveNewReservation = async function() {
         document.getElementById('new-res-cat').value = '';
         document.getElementById('new-res-content').innerHTML = '<option value="">请选择具体项目</option>';
         window.toggleNewReservationForm();
-
         reservationsCache = await fetchReservations();
         renderReservations();
-    } catch (e) {
-        alert('保存失败：' + e.message);
-    }
+    } catch (e) { alert('保存失败：' + e.message); }
 };
 
-// ============================================================
-// 导出 Excel（CSV 带 BOM）
-// ============================================================
+// 导出 Excel
 window.exportReservations = function() {
-    if (!reservationsCache || reservationsCache.length === 0) {
-        alert('暂无预约可导出');
-        return;
-    }
+    if (!reservationsCache || reservationsCache.length === 0) { alert('暂无预约可导出'); return; }
     const headers = ['预约日期', '时段', '单位', '联系人', '电话', '人数', '预约内容', '地点', '备注', '状态', '提交时间'];
     const rows = reservationsCache.map(r => [
-        r.reservation_date || '',
-        `${r.time_slot_start || ''}-${r.time_slot_end || ''}`,
-        r.unit || '',
-        r.name || '',
-        r.phone || '',
-        r.visitor_count || 1,
-        r.reservation_content || '',
-        r.room || '',
-        r.remark || '',
-        translateStatus(r.status),
-        r.created_at ? new Date(r.created_at).toLocaleString() : ''
+        r.reservation_date || '', `${r.time_slot_start || ''}-${r.time_slot_end || ''}`,
+        r.unit || '', r.name || '', r.phone || '', r.visitor_count || 1,
+        r.reservation_content || '', r.room || '', r.remark || '',
+        translateStatus(r.status), r.created_at ? new Date(r.created_at).toLocaleString() : ''
     ]);
-    const csv = [headers, ...rows]
-        .map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
-        .join('\n');
+    const csv = [headers, ...rows].map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n');
     const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -767,9 +690,7 @@ window.exportReservations = function() {
     URL.revokeObjectURL(url);
 };
 
-// ============================================================
-// 基本信息
-// ============================================================
+// ========== 基本信息 ==========
 function renderInfo() {
     if (!merchant) return;
     document.getElementById('business_type').value = merchant.business_type || 'other';
@@ -777,52 +698,22 @@ function renderInfo() {
     document.getElementById('phone').value = merchant.phone || '';
     document.getElementById('address').value = merchant.address || '';
     document.getElementById('parking').value = merchant.parking_spots || 0;
-    document.getElementById('intro').value = merchant.intro || '';
-
-    // 营业时段回填
-    const hoursType = document.getElementById('hours-type');
-    const hoursInput = document.getElementById('business_hours');
-    const bh = merchant.business_hours || '';
-    if (bh === '24h' || bh === '24小时' || bh === '00:00-24:00') {
-        hoursType.value = '24h';
-        hoursInput.value = '24h';
-        hoursInput.disabled = true;
-    } else {
-        hoursType.value = 'custom';
-        hoursInput.value = bh;
-        hoursInput.disabled = false;
-    }
+    document.getElementById('notice').value = merchant.notice || '';
+    const counter = document.getElementById('notice-counter');
+    if (counter) counter.textContent = (merchant.notice || '').length;
 }
 
-// ★ 时段类型切换
-window.onHoursTypeChange = function() {
-    const type = document.getElementById('hours-type').value;
-    const input = document.getElementById('business_hours');
-    if (type === '24h') {
-        input.value = '24h';
-        input.disabled = true;
-    } else {
-        input.value = '';
-        input.disabled = false;
-        input.placeholder = '08:00-22:00';
-        input.focus();
-    }
-};
-
 window.saveInfo = async function() {
+    const noticeVal = document.getElementById('notice').value.trim();
+    if (noticeVal.length > 200) { alert('通知内容不得超过 200 字'); return; }
     try {
-        const hoursType = document.getElementById('hours-type').value;
-        const hoursInput = document.getElementById('business_hours').value.trim();
-        const businessHours = hoursType === '24h' ? '24h' : (hoursInput || null);
-
         await updateInfo({
             business_type: document.getElementById('business_type').value,
             status: document.getElementById('status').value,
-            business_hours: businessHours,
             phone: document.getElementById('phone').value,
             address: document.getElementById('address').value,
             parking_spots: parseInt(document.getElementById('parking').value) || 0,
-            intro: document.getElementById('intro').value
+            notice: noticeVal || null
         });
         alert('保存成功');
     } catch (e) { alert('保存失败：' + e.message); }

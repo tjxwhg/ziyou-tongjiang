@@ -10,14 +10,13 @@
         body { background: #f5f5f5; font-family: system-ui, sans-serif; }
         .header { background: #1b5e20; color: white; padding: 12px 24px; display: flex; justify-content: space-between; align-items: center; }
         .header h3 { margin: 0; display: flex; align-items: center; gap: 10px; }
-        .container-custom { max-width: 1100px; margin: 20px auto; padding: 0 16px; }
+        .container-custom { max-width: 1000px; margin: 20px auto; padding: 0 16px; }
         .tab-content { background: white; padding: 20px; border-radius: 0 0 8px 8px; border: 1px solid #dee2e6; border-top: none; }
         .nav-tabs .nav-link.active { background: #2e7d32; color: white; border-color: #2e7d32; }
         .item-header { background: #f0f0f0; padding: 8px; border-radius: 4px; cursor: pointer; display: flex; justify-content: space-between; }
         .item-detail { padding: 10px; border: 1px solid #ddd; border-radius: 4px; margin-top: 4px; background: white; }
-        .upload-preview { max-width: 160px; max-height: 120px; border-radius: 4px; border: 1px solid #ddd; }
-        .category-header { cursor: pointer; background: #f9f9f9; padding: 8px; border: 1px solid #ddd; border-radius: 4px; display: flex; justify-content: space-between; align-items: center; margin: 4px 0; }
-        .category-header:hover { background: #e8f5e9; }
+        .upload-preview { max-width: 200px; max-height: 150px; border-radius: 4px; border: 1px solid #ddd; }
+        .category-header { cursor: pointer; background: #f9f9f9; padding: 8px; border: 1px solid #ddd; border-radius: 4px; display: flex; justify-content: space-between; margin: 4px 0; }
         .hidden { display: none !important; }
         #login-page { max-width: 400px; margin: 80px auto; }
         #login-page .card { padding: 24px; border-radius: 12px; box-shadow: 0 8px 32px rgba(0,0,0,0.1); }
@@ -27,11 +26,12 @@
         .status-pending { background: #fff3cd; color: #856404; }
         .status-confirmed { background: #d4edda; color: #155724; }
         .status-rejected { background: #f8d7da; color: #721c24; }
-        .item-row { display: flex; justify-content: space-between; align-items: center; padding: 6px 0; border-bottom: 1px solid #f0f0f0; }
-        .item-row:last-child { border-bottom: none; }
         .reservation-card { border: 1px solid #e0e0e0; border-radius: 8px; padding: 12px; margin-bottom: 10px; background: #fafafa; }
         .reservation-card .row-line { font-size: 13px; margin: 2px 0; }
         .reservation-card .row-line b { display: inline-block; min-width: 70px; color: #555; }
+        .voice-audio { max-width: 100%; margin-top: 6px; }
+        .voice-status { font-size: 12px; margin-left: 6px; }
+        .hint-text { color: #888; font-size: 12px; margin-top: 2px; }
         @media (max-width: 768px) { .header { flex-direction: column; gap: 8px; } }
     </style>
 </head>
@@ -158,21 +158,52 @@
                 <div class="row g-2">
                     <div class="col-md-6"><label class="form-label">业务类型</label>
                         <select id="business_type" class="form-select">
-                            <option value="scenic">景区</option><option value="museum">文博场馆</option>
-                            <option value="hotel">住宿</option><option value="restaurant">餐饮</option>
-                            <option value="shop">购物</option><option value="entertainment">娱乐</option>
-                            <option value="transport">交通</option><option value="other">其他</option>
+                            <option value="scenic">🏞️ 景区景点</option>
+                            <option value="museum">🏛️ 文博场馆</option>
+                            <option value="hotel">🏨 餐饮住宿</option>
+                            <option value="entertainment">🎢 游玩娱乐</option>
+                            <option value="shopping">🛍️ 消费购物</option>
+                            <option value="service_place">🏛️ 服务场所</option>
+                            <option value="facility">🚻 公共设施</option>
+                            <option value="other">📌 其他</option>
                         </select>
                     </div>
                     <div class="col-md-6"><label class="form-label">营业状态</label>
                         <select id="status" class="form-select">
-                            <option value="open">营业中</option><option value="closed">休息</option>
+                            <option value="open">营业中</option>
+                            <option value="opening">开放中</option>
+                            <option value="running">运行中</option>
+                            <option value="working">工作中</option>
+                            <option value="closed">休息</option>
                         </select>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">时段</label>
+                        <div class="d-flex gap-2 align-items-center">
+                            <select id="hours-type" class="form-select" style="flex:0 0 110px;" onchange="window.onHoursTypeChange()">
+                                <option value="custom">自定义时段</option>
+                                <option value="24h">24 小时</option>
+                            </select>
+                            <input id="business_hours" class="form-control" placeholder="08:00-22:00" style="flex:1;">
+                        </div>
+                        <div class="hint-text">选"24 小时"后，该景点不受 8:00-18:00 智能规划时段限制</div>
                     </div>
                     <div class="col-md-6"><label class="form-label">电话</label><input id="phone" class="form-control"></div>
                     <div class="col-md-6"><label class="form-label">地址</label><input id="address" class="form-control"></div>
-                    <div class="col-md-6"><label class="form-label">停车位</label><input type="number" id="parking" class="form-control"></div>
+                    <div class="col-md-6"><label class="form-label">停车位</label><input type="number" id="parking" class="form-control" value="0"></div>
                     <div class="col-12"><label class="form-label">简介</label><textarea id="intro" class="form-control" rows="2"></textarea></div>
+
+                    <!-- ★ 新增：商户语音 MP3 上传 -->
+                    <div class="col-12">
+                        <label class="form-label"><i class="fas fa-volume-high text-success"></i> 商户简介语音（MP3）</label>
+                        <div class="d-flex align-items-center gap-2">
+                            <input type="file" id="merchant-voice-file" class="form-control form-control-sm" accept="audio/mpeg,audio/mp3" onchange="window.onMerchantVoiceSelected(event)" style="flex:1;">
+                            <span id="merchant-voice-status" class="voice-status text-secondary"></span>
+                        </div>
+                        <input type="hidden" id="merchant-voice-mp3">
+                        <div id="merchant-voice-preview" class="mt-2"></div>
+                        <div class="hint-text">上传后自动保存到 merchant-images/merchant-voices/ 目录</div>
+                    </div>
                 </div>
                 <button class="btn btn-success mt-3" onclick="window.saveInfo()">
                     <i class="fas fa-save"></i> 保存
@@ -262,6 +293,14 @@ const STATUS_MAP = {
 function translateStatus(s) {
     return STATUS_MAP[s] || s || '未知';
 }
+
+const BUSINESS_STATUS_MAP = {
+    'open': '营业中',
+    'opening': '开放中',
+    'running': '运行中',
+    'working': '工作中',
+    'closed': '休息'
+};
 
 // ============================================================
 // 全局状态
@@ -401,7 +440,7 @@ function renderCategoryList() {
         return;
     }
     container.innerHTML = businessCategories.map(c => `
-        <div class="item-row">
+        <div class="item-row d-flex justify-content-between align-items-center py-1 border-bottom">
             <span>📁 ${c}</span>
             <button class="btn btn-sm btn-danger" onclick="window.deleteCategory('${c.replace(/'/g, "\\'")}')">删除</button>
         </div>
@@ -432,7 +471,7 @@ function renderBusiness() {
                         catItems.map((item) => {
                             const globalIdx = businessItems.indexOf(item);
                             return `
-                                <div class="item-row">
+                                <div class="d-flex justify-content-between align-items-center py-1 border-bottom">
                                     <div>
                                         <span>${item.name || '未命名'}</span>
                                         ${item.price ? `<span class="text-success ms-2">${item.price}</span>` : ''}
@@ -595,7 +634,6 @@ window.updateNewResContent = function() {
         catItems.map(i => `<option value="${i.name}">${i.name}${i.price ? ' ' + i.price : ''}</option>`).join('');
 };
 
-// ★ 预约列表：折叠展开模式
 function renderReservations() {
     const container = document.getElementById('reservation-list');
     if (!container) return;
@@ -635,7 +673,6 @@ function renderReservations() {
     `).join('');
 }
 
-// ★ 展开/收起预约卡片
 window.toggleReservationCard = function(idx) {
     const el = document.getElementById(`res-card-detail-${idx}`);
     if (el) el.classList.toggle('hidden');
@@ -711,7 +748,7 @@ window.saveNewReservation = async function() {
 };
 
 // ============================================================
-// 导出 Excel（CSV 带 BOM，Excel 可打开）
+// 导出 Excel（CSV 带 BOM）
 // ============================================================
 window.exportReservations = function() {
     if (!reservationsCache || reservationsCache.length === 0) {
@@ -755,17 +792,101 @@ function renderInfo() {
     document.getElementById('address').value = merchant.address || '';
     document.getElementById('parking').value = merchant.parking_spots || 0;
     document.getElementById('intro').value = merchant.intro || '';
+
+    // 营业时段回填
+    const hoursType = document.getElementById('hours-type');
+    const hoursInput = document.getElementById('business_hours');
+    const bh = merchant.business_hours || '';
+    if (bh === '24h' || bh === '24小时' || bh === '00:00-24:00') {
+        hoursType.value = '24h';
+        hoursInput.value = '24h';
+        hoursInput.disabled = true;
+    } else {
+        hoursType.value = 'custom';
+        hoursInput.value = bh;
+        hoursInput.disabled = false;
+    }
+
+    // 语音回填
+    document.getElementById('merchant-voice-file').value = '';
+    document.getElementById('merchant-voice-mp3').value = merchant.voice_mp3 || '';
+    document.getElementById('merchant-voice-status').textContent = merchant.voice_mp3 ? '已有语音' : '';
+    if (merchant.voice_mp3) {
+        document.getElementById('merchant-voice-preview').innerHTML =
+            `<audio controls src="${merchant.voice_mp3}" style="width:100%;max-width:400px;"></audio>`;
+    } else {
+        document.getElementById('merchant-voice-preview').innerHTML = '';
+    }
 }
+
+// ★ 时段类型切换
+window.onHoursTypeChange = function() {
+    const type = document.getElementById('hours-type').value;
+    const input = document.getElementById('business_hours');
+    if (type === '24h') {
+        input.value = '24h';
+        input.disabled = true;
+    } else {
+        input.value = '';
+        input.disabled = false;
+        input.placeholder = '08:00-22:00';
+        input.focus();
+    }
+};
+
+// ★ 商户语音上传
+window.onMerchantVoiceSelected = async function(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('audio/')) {
+        alert('请选择音频文件（MP3）');
+        event.target.value = '';
+        return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+        alert('音频文件不得超过 10MB');
+        event.target.value = '';
+        return;
+    }
+
+    const statusEl = document.getElementById('merchant-voice-status');
+    statusEl.textContent = '上传中...';
+    statusEl.className = 'voice-status text-warning';
+
+    try {
+        const merchantId = merchant.id || 'unknown';
+        const ext = file.name.split('.').pop() || 'mp3';
+        const path = `merchant-voices/${merchantId}_${Date.now()}.${ext}`;
+        const publicUrl = await uploadFile('merchant-images', path, file);
+
+        document.getElementById('merchant-voice-mp3').value = publicUrl;
+        statusEl.textContent = '✓ 上传成功';
+        statusEl.className = 'voice-status text-success';
+        document.getElementById('merchant-voice-preview').innerHTML =
+            `<audio controls src="${publicUrl}" style="width:100%;max-width:400px;"></audio>`;
+    } catch (e) {
+        statusEl.textContent = '上传失败：' + e.message;
+        statusEl.className = 'voice-status text-danger';
+        console.error(e);
+    }
+};
 
 window.saveInfo = async function() {
     try {
+        const hoursType = document.getElementById('hours-type').value;
+        const hoursInput = document.getElementById('business_hours').value.trim();
+        const businessHours = hoursType === '24h' ? '24h' : (hoursInput || null);
+
         await updateInfo({
             business_type: document.getElementById('business_type').value,
             status: document.getElementById('status').value,
+            business_hours: businessHours,
             phone: document.getElementById('phone').value,
             address: document.getElementById('address').value,
             parking_spots: parseInt(document.getElementById('parking').value) || 0,
-            intro: document.getElementById('intro').value
+            intro: document.getElementById('intro').value,
+            voice_mp3: document.getElementById('merchant-voice-mp3').value || null
         });
         alert('保存成功');
     } catch (e) { alert('保存失败：' + e.message); }

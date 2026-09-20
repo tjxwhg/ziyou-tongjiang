@@ -29,8 +29,6 @@
         .reservation-card { border: 1px solid #e0e0e0; border-radius: 8px; padding: 12px; margin-bottom: 10px; background: #fafafa; }
         .reservation-card .row-line { font-size: 13px; margin: 2px 0; }
         .reservation-card .row-line b { display: inline-block; min-width: 70px; color: #555; }
-        .voice-audio { max-width: 100%; margin-top: 6px; }
-        .voice-status { font-size: 12px; margin-left: 6px; }
         .hint-text { color: #888; font-size: 12px; margin-top: 2px; }
         @media (max-width: 768px) { .header { flex-direction: column; gap: 8px; } }
     </style>
@@ -192,18 +190,6 @@
                     <div class="col-md-6"><label class="form-label">地址</label><input id="address" class="form-control"></div>
                     <div class="col-md-6"><label class="form-label">停车位</label><input type="number" id="parking" class="form-control" value="0"></div>
                     <div class="col-12"><label class="form-label">简介</label><textarea id="intro" class="form-control" rows="2"></textarea></div>
-
-                    <!-- ★ 新增：商户语音 MP3 上传 -->
-                    <div class="col-12">
-                        <label class="form-label"><i class="fas fa-volume-high text-success"></i> 商户简介语音（MP3）</label>
-                        <div class="d-flex align-items-center gap-2">
-                            <input type="file" id="merchant-voice-file" class="form-control form-control-sm" accept="audio/mpeg,audio/mp3" onchange="window.onMerchantVoiceSelected(event)" style="flex:1;">
-                            <span id="merchant-voice-status" class="voice-status text-secondary"></span>
-                        </div>
-                        <input type="hidden" id="merchant-voice-mp3">
-                        <div id="merchant-voice-preview" class="mt-2"></div>
-                        <div class="hint-text">上传后自动保存到 merchant-images/merchant-voices/ 目录</div>
-                    </div>
                 </div>
                 <button class="btn btn-success mt-3" onclick="window.saveInfo()">
                     <i class="fas fa-save"></i> 保存
@@ -806,17 +792,6 @@ function renderInfo() {
         hoursInput.value = bh;
         hoursInput.disabled = false;
     }
-
-    // 语音回填
-    document.getElementById('merchant-voice-file').value = '';
-    document.getElementById('merchant-voice-mp3').value = merchant.voice_mp3 || '';
-    document.getElementById('merchant-voice-status').textContent = merchant.voice_mp3 ? '已有语音' : '';
-    if (merchant.voice_mp3) {
-        document.getElementById('merchant-voice-preview').innerHTML =
-            `<audio controls src="${merchant.voice_mp3}" style="width:100%;max-width:400px;"></audio>`;
-    } else {
-        document.getElementById('merchant-voice-preview').innerHTML = '';
-    }
 }
 
 // ★ 时段类型切换
@@ -834,44 +809,6 @@ window.onHoursTypeChange = function() {
     }
 };
 
-// ★ 商户语音上传
-window.onMerchantVoiceSelected = async function(event) {
-    const file = event.target.files[0];
-    if (!file) return;
-
-    if (!file.type.startsWith('audio/')) {
-        alert('请选择音频文件（MP3）');
-        event.target.value = '';
-        return;
-    }
-    if (file.size > 10 * 1024 * 1024) {
-        alert('音频文件不得超过 10MB');
-        event.target.value = '';
-        return;
-    }
-
-    const statusEl = document.getElementById('merchant-voice-status');
-    statusEl.textContent = '上传中...';
-    statusEl.className = 'voice-status text-warning';
-
-    try {
-        const merchantId = merchant.id || 'unknown';
-        const ext = file.name.split('.').pop() || 'mp3';
-        const path = `merchant-voices/${merchantId}_${Date.now()}.${ext}`;
-        const publicUrl = await uploadFile('merchant-images', path, file);
-
-        document.getElementById('merchant-voice-mp3').value = publicUrl;
-        statusEl.textContent = '✓ 上传成功';
-        statusEl.className = 'voice-status text-success';
-        document.getElementById('merchant-voice-preview').innerHTML =
-            `<audio controls src="${publicUrl}" style="width:100%;max-width:400px;"></audio>`;
-    } catch (e) {
-        statusEl.textContent = '上传失败：' + e.message;
-        statusEl.className = 'voice-status text-danger';
-        console.error(e);
-    }
-};
-
 window.saveInfo = async function() {
     try {
         const hoursType = document.getElementById('hours-type').value;
@@ -885,8 +822,7 @@ window.saveInfo = async function() {
             phone: document.getElementById('phone').value,
             address: document.getElementById('address').value,
             parking_spots: parseInt(document.getElementById('parking').value) || 0,
-            intro: document.getElementById('intro').value,
-            voice_mp3: document.getElementById('merchant-voice-mp3').value || null
+            intro: document.getElementById('intro').value
         });
         alert('保存成功');
     } catch (e) { alert('保存失败：' + e.message); }

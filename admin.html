@@ -50,6 +50,7 @@
         .modal-xl-custom { max-width: 1100px; }
         .subtype-checkbox-group { display: flex; flex-wrap: wrap; gap: 12px; padding: 6px 10px; border: 1px solid #ddd; border-radius: 6px; background: #fff; }
         .subtype-checkbox-group .form-check { margin: 0; }
+        .subtype-checkbox-group .form-check-label { cursor: pointer; }
         .hint-text { color: #888; font-size: 12px; margin-top: 2px; }
         .route-node-card { border: 1px solid #e0e0e0; border-radius: 8px; padding: 10px; margin-bottom: 8px; background: #fafafa; }
         .route-node-card .route-node-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
@@ -58,7 +59,7 @@
         .route-node-card .route-node-name { font-weight: 600; color: #333; }
         .route-node-card .route-node-desc { color: #888; font-size: 12px; margin-top: 2px; }
         .route-node-card .route-node-actions { display: flex; gap: 4px; flex-shrink: 0; }
-        .route-node-type-badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; margin-left: 6px; }
+        .route-node-type-badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; margin-left: 6px; background: #e0e0e0; color: #424242; }
         .route-card { border: 1px solid #e0e0e0; border-radius: 8px; padding: 12px; margin-bottom: 10px; background: #fafafa; }
         .route-card .route-header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; }
         .route-card .route-meta { color: #888; font-size: 12px; margin-top: 4px; }
@@ -78,8 +79,6 @@
         .poi-picker-search { margin-bottom: 8px; }
         .theme-checkbox-group { display: flex; flex-wrap: wrap; gap: 10px; padding: 6px 10px; border: 1px solid #ddd; border-radius: 6px; background: #fff; }
         .theme-checkbox-group .form-check { margin: 0; }
-        .level-info-box { background: #f0f8f0; border: 1px solid #c8e6c9; border-radius: 6px; padding: 8px 12px; margin-bottom: 8px; font-size: 13px; color: #1b5e20; }
-        .level-info-box.warn { background: #fff8e1; border-color: #ffe082; color: #e65100; }
         @media (max-width: 768px) { .header { flex-direction: column; gap: 8px; } }
     </style>
 </head>
@@ -134,7 +133,7 @@
             </div>
             <div class="tab-pane" id="tab-transport">
                 <h5><i class="fas fa-clock text-success"></i> 景点间交通耗时（分钟）</h5>
-                <p class="text-secondary">点击景点展开，修改后自动保存，反向数据自动填充。仅对跨景区的 L2/L3 景点生效，同景区内的景点间交通视为 0。</p>
+                <p class="text-secondary">点击景点展开，修改后自动保存，反向数据自动填充。只显示非核心节点的 L2/L3/L4 景点。</p>
                 <div id="transport-editor" class="mt-2"></div>
             </div>
             <div class="tab-pane" id="tab-merchants">
@@ -163,12 +162,12 @@
                     <div class="col-6">
                         <label class="form-label">规划等级 <span class="text-danger">*</span></label>
                         <select id="edit-poi-level" class="form-select" onchange="window.togglePoiLevelUI()">
-                            <option value="L1">🏞️ 一级 - 景区（容器）</option>
+                            <option value="L1">🏞️ 一级 - 景区（容器，不参与规划）</option>
                             <option value="L2">📍 二级 - 普通景点</option>
-                            <option value="L3">⭐ 三级 - 连续景点（含节点）</option>
+                            <option value="L3">⭐ 三级 - 连续景点（不可打断）</option>
                             <option value="L4">🏛️ 四级 - 服务场所/设施</option>
                         </select>
-                        <div class="hint-text" id="level-hint">L1 景区为容器不参与计算；L2 普通景点时长手填；L3 连续景点时长由节点累加且不可打断；L4 预留不参与规划</div>
+                        <div class="hint-text">L2/L3/L4 参与规划；L1 仅作分类标签</div>
                     </div>
                     <div class="col-6">
                         <label class="form-label">分类 <span class="text-danger">*</span></label>
@@ -206,12 +205,6 @@
                         </div>
                         <div class="hint-text">可多选</div>
                     </div>
-                    <div class="col-6 hidden" id="field-parent">
-                        <label class="form-label">所属景区 <span class="text-danger" id="parent-required">（可选）</span></label>
-                        <select id="edit-poi-parent" class="form-select" onchange="window.onParentChange()">
-                            <option value="">-- 不关联（独立存在）--</option>
-                        </select>
-                    </div>
                     <div class="col-6"><label class="form-label">纬度</label><input type="number" step="any" id="edit-poi-lat" class="form-control"></div>
                     <div class="col-6"><label class="form-label">经度</label><input type="number" step="any" id="edit-poi-lng" class="form-control"></div>
                     <div class="col-6">
@@ -228,15 +221,17 @@
                         <div class="hint-text">30 分钟一档；24h 显示为 00:00 - 23:59</div>
                     </div>
                     <div class="col-6 hidden" id="field-duration">
-                        <label class="form-label">游览时长(分钟) <span class="text-secondary small" id="duration-readonly-hint"></span></label>
-                        <input type="number" id="edit-poi-visit" class="form-control">
+                        <label class="form-label">游览时长（分钟）</label>
+                        <input type="number" id="edit-poi-visit" class="form-control" min="0">
+                        <div class="hint-text">手填时长；L3 为整条连续路线的总时长</div>
                     </div>
-                    <div class="col-6 hidden" id="field-featured">
-                        <label class="form-label">经典景点标记</label>
+                    <div class="col-6 hidden" id="field-core-node">
+                        <label class="form-label">核心节点</label>
                         <div class="form-check mt-2">
-                            <input type="checkbox" id="edit-poi-featured" class="form-check-input">
-                            <label class="form-check-label" for="edit-poi-featured">舒适型行程默认推荐</label>
+                            <input type="checkbox" id="edit-poi-core-node" class="form-check-input">
+                            <label class="form-check-label" for="edit-poi-core-node">仅地图显示，不进规划列表</label>
                         </div>
+                        <div class="hint-text">勾选后该 POI 不出现在游客端智能规划列表中，但地图继续显示，电子围栏继续触发语音。加入 L3 时自动勾选并锁定。</div>
                     </div>
                     <div class="col-12"><label class="form-label">简介</label><textarea id="edit-poi-desc" class="form-control" rows="2"></textarea></div>
                     <div class="col-12">
@@ -247,18 +242,18 @@
                         </div>
                         <input type="hidden" id="edit-poi-voice-mp3">
                         <div id="edit-poi-voice-preview" class="mt-2"></div>
-                        <div class="hint-text">上传后会自动保存到 merchant-images/poi-voices/ 目录；游客端通过电子围栏触发播放</div>
+                        <div class="hint-text">上传后会自动保存到 0frontend-assets/poi-voices/ 目录；游客端通过电子围栏触发播放</div>
                     </div>
                 </div>
                 <div id="sub-poi-section" class="hidden">
                     <hr>
                     <div class="d-flex justify-content-between align-items-center">
-                        <h6 class="mb-0"><i class="fas fa-layer-group text-success"></i> <span id="sub-poi-title">子项管理</span></h6>
+                        <h6 class="mb-0"><i class="fas fa-layer-group text-success"></i> <span id="sub-poi-title">核心节点管理</span></h6>
                         <button type="button" class="btn btn-success btn-sm" onclick="window.showSelectSubPoiModal()">
-                            <i class="fas fa-plus"></i> 从现有POI添加
+                            <i class="fas fa-plus"></i> 从现有 POI 添加
                         </button>
                     </div>
-                    <p class="text-secondary small mt-2 mb-1" id="sub-poi-hint"></p>
+                    <p class="text-secondary small mt-2 mb-1" id="sub-poi-hint">添加 L2 或 L4 景点作为核心节点。加入后这些景点不再出现在游客端规划列表，仅在地图显示并触发电子围栏。</p>
                     <div id="sub-poi-list" class="mt-2"></div>
                 </div>
             </div>
@@ -275,11 +270,10 @@
     <div class="modal-dialog modal-lg">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title">选择要添加的子项</h5>
+                <h5 class="modal-title">选择要添加的核心节点</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
-                <p class="text-secondary small">勾选现有独立POI，点击确定后归入当前景区/连续景点。</p>
                 <div id="sub-poi-select-list" style="max-height: 400px; overflow-y: auto; border: 1px solid #eee; border-radius: 8px; padding: 8px;"></div>
             </div>
             <div class="modal-footer">

@@ -57,7 +57,7 @@
         .trip-node .reminder-text { color: #C62828; font-weight: 500; background: #ffebee; padding: 2px 10px; border-radius: 12px; }
         .trip-node .trip-end-text { color: #2E7D32; font-weight: 700; font-size: 15px; }
         .total-duration { font-weight: 600; color: #1b5e20; background: #e8f5e9; padding: 6px 12px; border-radius: 6px; text-align: center; margin-top: 10px; }
-        .poi-select-list { max-height: 400px; overflow-y: auto; border: 1px solid #e0e0e0; border-radius: 8px; padding: 8px; }
+        .poi-select-list { max-height: 480px; overflow-y: auto; border: 1px solid #e0e0e0; border-radius: 8px; padding: 10px; background: #fafafa; }
         .reservation-form { background: #f8f9fa; border-radius: 8px; padding: 12px; margin-top: 10px; }
         .reservation-form .form-group { margin-bottom: 8px; }
         .reservation-form label { font-weight: 500; font-size: 14px; }
@@ -142,18 +142,26 @@
         .merchant-notice { background: #fff8e1; border-left: 4px solid #ff9800; border-radius: 8px; padding: 12px 14px; margin-top: 16px; }
         .merchant-notice h6 { color: #e65100; margin: 0 0 8px; font-weight: 700; font-size: 15px; display: flex; align-items: center; gap: 6px; }
         .merchant-notice p { color: #555; font-size: 14px; line-height: 1.6; margin: 0; white-space: pre-wrap; word-break: break-word; }
-        /* 4 大类分组 + 归属景区子分组 */
-        .big-category-group { margin-bottom: 16px; }
-        .big-category-title { font-weight: 700; font-size: 15px; color: white; background: #2e7d32; padding: 8px 12px; border-radius: 6px 6px 0 0; display: flex; align-items: center; gap: 6px; }
-        .scenic-subgroup { border: 1px solid #e0e0e0; border-top: none; }
-        .scenic-subgroup:last-child { border-radius: 0 0 6px 6px; }
-        .scenic-subgroup-title { background: #f0f8f0; color: #1b5e20; padding: 6px 12px; font-weight: 600; font-size: 13px; border-bottom: 1px solid #e8f5e9; display: flex; align-items: center; gap: 6px; }
-        .scenic-subgroup .poi-row { padding-left: 24px; }
-        .poi-row { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-bottom: 1px solid #f5f5f5; font-size: 14px; background: white; }
-        .poi-row:last-child { border-bottom: none; }
-        .poi-row input[type="checkbox"] { width: 18px; height: 18px; cursor: pointer; flex-shrink: 0; }
-        .poi-row .poi-name { flex: 1; color: #333; }
-        .poi-row .poi-dur { color: #888; font-size: 12px; }
+        /* ============================================================ */
+        /* 智能规划列表 - 大类/景区/子项 三级布局 */
+        /* ============================================================ */
+        .poi-category-section { margin-bottom: 16px; }
+        .poi-category-header { font-weight: 700; font-size: 14px; color: white; background: linear-gradient(135deg, #2e7d32, #1b5e20); padding: 8px 14px; border-radius: 8px 8px 0 0; display: flex; align-items: center; gap: 6px; }
+        .scenic-block { border: 1px solid #c8e6c9; border-top: none; background: #f1f8e9; padding: 10px 12px; }
+        .scenic-block:last-child { border-radius: 0 0 8px 8px; }
+        .scenic-block + .scenic-block { border-top: 1px solid #e8f5e9; }
+        .scenic-title { font-weight: 600; font-size: 13px; color: #1b5e20; margin-bottom: 6px; display: flex; align-items: center; gap: 6px; }
+        .scenic-children { margin-left: 16px; border-left: 2px dashed #a5d6a7; padding-left: 10px; }
+        .poi-selectable-row { display: flex; align-items: center; gap: 10px; padding: 8px 10px; font-size: 14px; background: white; border: 1px solid #e0e0e0; border-radius: 6px; margin-bottom: 4px; }
+        .poi-selectable-row input[type="checkbox"] { width: 18px; height: 18px; cursor: pointer; flex-shrink: 0; }
+        .poi-selectable-row .poi-name { flex: 1; color: #333; }
+        .poi-selectable-row .poi-dur { color: #888; font-size: 12px; }
+        .l3-inner-list { margin-left: 24px; margin-top: 4px; margin-bottom: 4px; border-left: 2px dotted #ffb74d; padding-left: 10px; }
+        .l3-inner-row { display: flex; align-items: center; gap: 8px; padding: 4px 8px; font-size: 13px; color: #666; background: #fffde7; border-radius: 4px; margin-bottom: 2px; }
+        .l3-inner-row .l3-order { color: #999; min-width: 18px; }
+        .l3-inner-row .l3-name { flex: 1; }
+        .poi-orphan-section { border: 1px solid #e0e0e0; border-top: none; background: white; padding: 10px 12px; border-radius: 0 0 8px 8px; }
+        .poi-orphan-title { font-size: 12px; color: #888; margin-bottom: 6px; }
     </style>
 </head>
 <body>
@@ -464,6 +472,11 @@ const NODE_TYPE_ICONS = {
     entrance: '🚪', parking: '🅿️', rest: '☕', core_view: '⭐',
     spot: '📍', entertainment: '🎢', wc: '🚻', exit: '🚪', other: '📌'
 };
+const CATEGORY_ICONS_MAP = {
+    '自然景区': '🏔️', '红色景区': '🔴', '文博场馆': '🏛️',
+    '餐饮住宿': '🍽️', '交通枢纽': '🚌', '游玩娱乐': '🎢',
+    '购物消费': '🛍️', '公共服务': '🏛️'
+};
 
 const LUNCH_START = 11 * 60 + 30;
 const LUNCH_END = 12 * 60 + 30;
@@ -498,7 +511,6 @@ function timeStrToMinutes(str) {
     return h * 60 + m;
 }
 
-// 交通计算：只查预设表
 function calcTravelBetween(prevPoiId, curPoiId) {
     if (!prevPoiId || !curPoiId) return 0;
     if (String(prevPoiId) === String(curPoiId)) return 0;
@@ -572,10 +584,20 @@ function initStartLocationSelect(pois) {
 }
 
 // ============================================================
-// 智能规划 POI 列表
-// 按 4 大类分组 + 归属景区子分组
-// 只显示 L2/L3/L4 且非核心节点；POI 名称后不加任何标记
+// 智能规划 POI 列表（与后台 POI 列表同构：大类 → 景区 → 子项）
+//  - 8 大类顺序固定
+//  - 每大类下先列该大类的 L1 景区（含其 L2/L3/L4 子项）
+//  - 再列该大类下无归属的 L2/L3
+//  - 最后统一一个"服务场所（L4）"节显示无归属的 L4
+//  - is_core_node 的 POI 不显示
+//  - POI 名称后不加任何级别标记
+//  - L3 勾选后展开其内部核心节点（只读）
 // ============================================================
+const CATEGORY_ORDER = [
+    '自然景区', '红色景区', '文博场馆', '餐饮住宿',
+    '交通枢纽', '游玩娱乐', '购物消费', '公共服务'
+];
+
 function renderPoiSelection(pois) {
     const container = document.getElementById('poiSelectContainer');
     if (!container) return;
@@ -584,6 +606,7 @@ function renderPoiSelection(pois) {
         return;
     }
 
+    // 可勾选：L2/L3/L4 且非核心节点
     const visiblePois = pois.filter(p =>
         (p.data_level === 'L2' || p.data_level === 'L3' || p.data_level === 'L4')
         && !p.is_core_node
@@ -594,50 +617,51 @@ function renderPoiSelection(pois) {
         return;
     }
 
-    const BIG_CATEGORIES = [
-        { label: '🏞️ 自然景区', categories: ['自然景区'] },
-        { label: '🔴 红色景区', categories: ['红色景区'] },
-        { label: '🏛️ 服务场所', categories: ['文博场馆', '餐饮住宿', '游玩娱乐', '购物消费'] },
-        { label: '🚻 公共设施', categories: ['交通枢纽', '公共服务'] }
-    ];
+    const l1List = pois.filter(p => p.data_level === 'L1');
 
     let html = '';
 
-    BIG_CATEGORIES.forEach(big => {
-        const bigItems = visiblePois.filter(p => {
-            const cat = (p.category || '').split(',')[0].trim();
-            return big.categories.includes(cat);
-        });
-        if (bigItems.length === 0) return;
+    // 8 大类
+    CATEGORY_ORDER.forEach(cat => {
+        const catL1 = l1List.filter(p => (p.category || '').split(',')[0].trim() === cat);
 
-        html += `<div class="big-category-group">`;
-        html += `<div class="big-category-title">${big.label} <span style="font-size:12px;font-weight:400;opacity:0.8;">(${bigItems.length})</span></div>`;
-
-        const groups = {};
-        bigItems.forEach(p => {
-            const sid = p.scenic_id ? String(p.scenic_id) : '__independent__';
-            if (!groups[sid]) groups[sid] = { scenicId: p.scenic_id, items: [] };
-            groups[sid].items.push(p);
+        // 该大类下无归属的 L2/L3（不含 L4，L4 统一处理）
+        const catOrphans = visiblePois.filter(p => {
+            if (p.data_level === 'L4') return false;
+            if (p.scenic_id !== null && p.scenic_id !== undefined) return false;
+            const pCat = (p.category || '').split(',')[0].trim();
+            return pCat === cat;
         });
 
-        Object.keys(groups).forEach(sid => {
-            if (sid === '__independent__') return;
-            const grp = groups[sid];
-            const scenic = allPoisMap[String(grp.scenicId)];
-            const scenicName = scenic ? scenic.name : '(未知景区)';
-            html += `<div class="scenic-subgroup">`;
-            html += `<div class="scenic-subgroup-title">🏞️ ${scenicName}</div>`;
-            grp.items.forEach(p => {
-                html += renderPoiRowHtml(p);
+        // 该大类下是否有任何可显示内容
+        const hasAnyScenic = catL1.some(l1 =>
+            visiblePois.some(p =>
+                String(p.scenic_id) === String(l1.id)
+                && (p.data_level === 'L2' || p.data_level === 'L3' || p.data_level === 'L4')
+            )
+        );
+
+        if (!hasAnyScenic && catOrphans.length === 0) return;
+
+        const catIcon = CATEGORY_ICONS_MAP[cat] || '📍';
+        html += `<div class="poi-category-section">`;
+        html += `<div class="poi-category-header">${catIcon} ${cat}</div>`;
+
+        // 该大类下的 L1 景区
+        catL1.forEach(l1 => {
+            html += renderScenicForSelection(l1, visiblePois);
+        });
+
+        // 无归属的 L2/L3
+        if (catOrphans.length > 0) {
+            html += `<div class="poi-orphan-section">`;
+            html += `<div class="poi-orphan-title">📌 无归属${cat}（独立景点）</div>`;
+            catOrphans.sort((a, b) => {
+                const order = { L2: 0, L3: 1 };
+                return (order[a.data_level] ?? 9) - (order[b.data_level] ?? 9);
             });
-            html += `</div>`;
-        });
-
-        if (groups['__independent__']) {
-            html += `<div class="scenic-subgroup">`;
-            html += `<div class="scenic-subgroup-title" style="background:#f5f5f5;color:#666;">📍 未归属景区</div>`;
-            groups['__independent__'].items.forEach(p => {
-                html += renderPoiRowHtml(p);
+            catOrphans.forEach(p => {
+                html += renderSelectableRow(p, pois);
             });
             html += `</div>`;
         }
@@ -645,21 +669,77 @@ function renderPoiSelection(pois) {
         html += `</div>`;
     });
 
+    // 无归属的 L4（服务场所）
+    const orphanL4 = visiblePois.filter(p =>
+        p.data_level === 'L4'
+        && (p.scenic_id === null || p.scenic_id === undefined)
+    );
+    if (orphanL4.length > 0) {
+        html += `<div class="poi-category-section">`;
+        html += `<div class="poi-category-header">🏛️ 服务场所（L4）</div>`;
+        html += `<div class="poi-orphan-section" style="border-radius:0 0 8px 8px;">`;
+        orphanL4.forEach(p => {
+            html += renderSelectableRow(p, pois);
+        });
+        html += `</div></div>`;
+    }
+
     container.innerHTML = html || '<div class="text-secondary text-center py-2">暂无可勾选景点</div>';
     updateSelectedInfo();
 }
 
-// 渲染单个 POI 行（不加任何级别标记）
-function renderPoiRowHtml(p) {
+// L1 景区卡片（含其 L2/L3/L4 子项）
+function renderScenicForSelection(l1, visiblePois) {
+    const children = visiblePois.filter(p =>
+        String(p.scenic_id) === String(l1.id)
+        && (p.data_level === 'L2' || p.data_level === 'L3' || p.data_level === 'L4')
+    ).sort((a, b) => {
+        const order = { L2: 0, L3: 1, L4: 2 };
+        return (order[a.data_level] ?? 9) - (order[b.data_level] ?? 9);
+    });
+
+    if (children.length === 0) return '';
+
+    let html = `<div class="scenic-block">`;
+    html += `<div class="scenic-title">🏞️ ${l1.name}</div>`;
+    html += `<div class="scenic-children">`;
+    children.forEach(child => {
+        html += renderSelectableRow(child, visiblePois);
+    });
+    html += `</div></div>`;
+    return html;
+}
+
+// 可勾选行（若 L3 勾选后，展开其内部核心节点）
+function renderSelectableRow(p, allPois) {
     const idStr = String(p.id);
     const isChecked = selectedPoiIds.has(idStr);
     const dur = p.visit_duration || 0;
-    return `<div class="poi-row">
+
+    let html = `<div class="poi-selectable-row">
         <input type="checkbox" ${isChecked ? 'checked' : ''}
                onclick="event.stopPropagation(); window.togglePoiSelection('${p.id}')">
         <span class="poi-name">${p.name}</span>
         <span class="poi-dur">${dur}分钟</span>
     </div>`;
+
+    // L3 勾选后，展开内部核心节点（只读）
+    if (p.data_level === 'L3' && isChecked) {
+        const innerNodes = allPois.filter(x => String(x.parent_id) === String(p.id));
+        if (innerNodes.length > 0) {
+            html += `<div class="l3-inner-list">`;
+            innerNodes.forEach((n, idx) => {
+                html += `<div class="l3-inner-row">
+                    <span class="l3-order">${idx + 1}.</span>
+                    <span class="l3-name">⭐ ${n.name}</span>
+                    <span class="poi-dur">${n.visit_duration || 0}分钟</span>
+                </div>`;
+            });
+            html += `</div>`;
+        }
+    }
+
+    return html;
 }
 
 window.togglePoiSelection = function(poiId) {

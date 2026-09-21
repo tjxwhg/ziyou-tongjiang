@@ -1,4 +1,4 @@
-// js/trip-planner.js - 智能行程规划引擎（三层级架构）
+// js/trip-planner.js - 行程规划引擎（L1/L2/L3/L4 简化版）
 import { formatTime, timeToMinutes, fetchWeatherForecast } from './utils.js';
 import {
     DAY_START, PLAN_CUTOFF, VISIT_END, NIGHT_END,
@@ -82,6 +82,7 @@ export class TripPlanner {
                 if (level === 'L3') {
                     result = this.handleL3(poi, item);
                 } else {
+                    // L2 和 L4 走同一分支（45 分钟阈值，可打断）
                     result = this.handleL2(poi, item);
                 }
 
@@ -177,7 +178,7 @@ export class TripPlanner {
     }
 
     // ============================================================
-    // L2 处理：允许打断，45 分钟阈值
+    // L2 处理：允许打断，45 分钟阈值（L4 也走此分支）
     // ============================================================
     handleL2(poi, item) {
         const remaining0 = (item.remaining !== null && item.remaining !== undefined)
@@ -187,7 +188,6 @@ export class TripPlanner {
         let remaining = remaining0;
 
         while (remaining > 0 && this.currentTime < VISIT_END) {
-            // 是否已进入就餐窗口
             let meal = null;
             if (!this.lunchInserted && this.currentTime >= LUNCH_START && this.currentTime < LUNCH_END) {
                 meal = 'lunch';
@@ -197,20 +197,17 @@ export class TripPlanner {
 
             if (meal) {
                 if (remaining < MIN_SEGMENT) {
-                    // 剩余 < 45 分钟：先游览完，再插餐
                     this.addVisitNode(poi, this.currentTime, remaining, totalDuration, 0);
                     this.currentTime += remaining;
                     remaining = 0;
                     this.checkAndInsertMealAfterVisit();
                     break;
                 } else {
-                    // 剩余 ≥ 45 分钟：打断插餐
                     this.insertMeal(meal);
                     continue;
                 }
             }
 
-            // 计算到下一个就餐窗口的时间
             let nextWindowStart = Infinity;
             if (!this.lunchInserted && this.currentTime < LUNCH_START) {
                 nextWindowStart = Math.min(nextWindowStart, LUNCH_START);
@@ -248,7 +245,7 @@ export class TripPlanner {
     }
 
     // ============================================================
-    // L3 处理：禁止打断，120 分钟阈值
+    // L3 处理：禁止打断，120 分钟阈值；时长直接读 visit_duration
     // ============================================================
     handleL3(poi, item) {
         const totalDuration = poi.visit_duration || 0;
@@ -257,7 +254,6 @@ export class TripPlanner {
         const dayLimit = poi.hours_type === '24h' ? NIGHT_END : VISIT_END;
         const endTime = this.currentTime + totalDuration;
 
-        // 检查是否能完成
         if (endTime > dayLimit) {
             this.warnings.push(`⚠️ 连续景点"${poi.name}"需 ${totalDuration} 分钟，今日剩余不足，移至次日`);
             this.addNode({
@@ -267,12 +263,8 @@ export class TripPlanner {
             return { overnight: true };
         }
 
-        // 整体游览，不打断
         this.addVisitNode(poi, this.currentTime, totalDuration, totalDuration, 0);
         this.currentTime = endTime;
-        this.totalVisitMinutes += 0; // addVisitNode 内已累加
-
-        // 结束后判断就餐
         this.handleMealAfterL3(endTime);
         return { overnight: false };
     }
@@ -306,7 +298,7 @@ export class TripPlanner {
     }
 
     // ============================================================
-    // 交通计算（核心：同景区内 L2/L3 之间交通 = 0）
+    // 交通计算：只查预设表，无隐式规则
     // ============================================================
     calcTravel(fromId, toId) {
         if (!fromId || !toId) return 0;
@@ -315,27 +307,6 @@ export class TripPlanner {
         const fromKey = fromId === 'county' ? 0 : fromId;
         const toKey = toId === 'county' ? 0 : toId;
 
-        // county 特殊处理
-        if (fromId === 'county' || toId === 'county') {
-            const key = `${fromKey}_${toKey}`;
-            let t = this.travelTimes[key];
-            if (t === undefined) t = this.travelTimes[`${toKey}_${fromKey}`];
-            return t || 0;
-        }
-
-        // 判断是否同景区（同属一个 L1 容器）
-        const fromPoi = this.allPoisMap[String(fromId)];
-        const toPoi = this.allPoisMap[String(toId)];
-        if (fromPoi && toPoi) {
-            const fromParent = fromPoi.parent_id ? String(fromPoi.parent_id) : null;
-            const toParent = toPoi.parent_id ? String(toPoi.parent_id) : null;
-            if (fromParent && toParent && fromParent === toParent) {
-                // 同景区内交通 = 0（已纳入游览时长）
-                return 0;
-            }
-        }
-
-        // 跨景区取预设
         const key = `${fromKey}_${toKey}`;
         let t = this.travelTimes[key];
         if (t === undefined) t = this.travelTimes[`${toKey}_${fromKey}`];
@@ -503,7 +474,6 @@ export class TripPlanner {
     }
 
     addReminders() {
-        // 天气提醒
         if (this.weatherData && this.weatherData.length > 0) {
             for (let i = 0; i < this.allDays.length; i++) {
                 const day = this.allDays[i];
@@ -514,7 +484,6 @@ export class TripPlanner {
                 }
             }
         }
-        // 交通/游览强度提醒
         for (const day of this.allDays) {
             let dailyTravel = 0, dailyVisit = 0, singleLongTravel = false;
             for (const node of day.nodes) {

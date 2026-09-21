@@ -1,4 +1,4 @@
-// js/admin.js - 管理后台完整逻辑（含归属景区 scenic_id）
+// js/admin.js - 管理后台完整逻辑（scenic_id 改为 integer）
 import {
     getPois, getPoi, insertPoi, updatePoi, deletePoi as apiDeletePoi,
     getRoutes, getRoute, insertRoute, updateRoute, deleteRoute as apiDeleteRoute,
@@ -21,6 +21,22 @@ let poiPickerSelectedId = null;
 let poiPickerCurrentSearch = '';
 
 const STORAGE_BUCKET = '0frontend-assets';
+
+// ★ ID 校验：兼容 integer 和 uuid
+function isValidId(val) {
+    if (val === null || val === undefined || val === '') return false;
+    const s = String(val).trim();
+    if (/^\d+$/.test(s)) return true;   // integer
+    if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s)) return true;  // uuid
+    return false;
+}
+// ★ 转为安全的 ID 值：整数保持整数，uuid 保持字符串
+function toSafeId(val) {
+    if (!isValidId(val)) return null;
+    const s = String(val).trim();
+    if (/^\d+$/.test(s)) return parseInt(s, 10);
+    return s;
+}
 
 // ============================================================
 // Modal 安全关闭
@@ -176,7 +192,7 @@ export async function initAdminUI() {
 }
 
 // ============================================================
-// POI 列表渲染（后台）
+// POI 列表渲染
 // ============================================================
 export function renderPoiList(pois) {
     const container = document.getElementById('poi-list');
@@ -198,9 +214,9 @@ export function renderPoiList(pois) {
         const durationInfo = (level === 'L2' || level === 'L3' || level === 'L4')
             ? ` <span class="text-secondary small">${p.visit_duration || 0}分钟</span>` : '';
 
-        // 归属景区名称
+        // 归属景区名称（scenic_id 现在是 integer）
         let scenicName = '';
-        if (p.scenic_id) {
+        if (p.scenic_id !== null && p.scenic_id !== undefined) {
             const sc = pois.find(x => String(x.id) === String(p.scenic_id));
             if (sc) scenicName = sc.name;
         }
@@ -265,7 +281,6 @@ export function showAddPoiModal() {
     document.getElementById('edit-poi-voice-preview').innerHTML = '';
     setFacilitySubtypeCheckboxes([]);
 
-    // 归属景区下拉
     refreshScenicSelect(null);
 
     document.getElementById('poiModalTitle').textContent = '新增POI';
@@ -317,7 +332,6 @@ export async function showEditPoiModal(poiId) {
     else if (poi.facility_subtype) subtypes = [poi.facility_subtype];
     setFacilitySubtypeCheckboxes(subtypes);
 
-    // ★ 归属景区回填
     refreshScenicSelect(poiId);
 
     document.getElementById('poiModalTitle').textContent = `编辑POI - ${poi.name}`;
@@ -328,7 +342,7 @@ export async function showEditPoiModal(poiId) {
     new bootstrap.Modal(document.getElementById('poiModal')).show();
 }
 
-// ★ 刷新"归属景区"下拉
+// ★ 刷新"归属景区"下拉（scenic_id 现在是 integer）
 function refreshScenicSelect(currentId) {
     const scenicSel = document.getElementById('edit-poi-scenic');
     if (!scenicSel) return;
@@ -336,9 +350,11 @@ function refreshScenicSelect(currentId) {
     const currentPoi = currentId ? allPois.find(x => String(x.id) === String(currentId)) : null;
     allPois.filter(p =>
         p.data_level === 'L1' &&
+        isValidId(p.id) &&
         String(p.id) !== String(currentId)
     ).forEach(p => {
-        const selected = currentPoi && String(p.id) === String(currentPoi.scenic_id) ? 'selected' : '';
+        const hasValidScenic = currentPoi && currentPoi.scenic_id !== null && currentPoi.scenic_id !== undefined;
+        const selected = hasValidScenic && String(p.id) === String(currentPoi.scenic_id) ? 'selected' : '';
         scenicSel.innerHTML += `<option value="${p.id}" ${selected}>🏞️ ${p.name}</option>`;
     });
 }
@@ -490,8 +506,10 @@ export function showSelectSubPoiModal() {
     }
 
     const candidates = allPois.filter(p => {
+        if (!isValidId(p.id)) return false;
         if (String(p.id) === String(currentPoi.id)) return false;
         if (p.data_level !== 'L2' && p.data_level !== 'L4') return false;
+        if (p.parent_id && !isValidId(p.parent_id)) return false;
         if (p.parent_id && String(p.parent_id) !== String(currentPoi.id)) return false;
         return true;
     });
@@ -528,11 +546,19 @@ export async function confirmSubPoiSelection() {
         await closeModal('selectSubPoiModal');
         return;
     }
+    if (!isValidId(currentEditingPoiId)) {
+        alert('当前 L3 的 ID 不合法，无法添加子项');
+        return;
+    }
     try {
-        await Promise.all(selectedIds.map(id => updatePoi(id, {
-            parent_id: currentEditingPoiId,
-            is_core_node: true
-        })));
+        const parentIdVal = toSafeId(currentEditingPoiId);
+        await Promise.all(selectedIds.filter(id => isValidId(id)).map(id => {
+            const idVal = toSafeId(id);
+            return updatePoi(idVal, {
+                parent_id: parentIdVal,
+                is_core_node: true
+            });
+        }));
         await closeModal('selectSubPoiModal');
         await initAdminUI();
         renderSubPoiList();
@@ -543,7 +569,8 @@ export async function confirmSubPoiSelection() {
 export async function removeSubPoi(subPoiId) {
     if (!confirm('确认将该核心节点移出？移出后它会恢复为普通景点，重新出现在游客端规划列表。')) return;
     try {
-        await updatePoi(subPoiId, {
+        const idVal = toSafeId(subPoiId);
+        await updatePoi(idVal, {
             parent_id: null,
             is_core_node: false
         });
@@ -588,8 +615,14 @@ export async function savePoiEdit() {
         isCoreNode = document.getElementById('edit-poi-core-node').checked;
     }
 
-    // ★ 归属景区
-    const scenicIdVal = (level === 'L1') ? null : (document.getElementById('edit-poi-scenic')?.value || null);
+    // ★ 归属景区（scenic_id 现在是 integer）
+    let scenicIdVal = null;
+    if (level !== 'L1') {
+        const raw = document.getElementById('edit-poi-scenic')?.value || '';
+        if (raw && isValidId(raw)) {
+            scenicIdVal = toSafeId(raw);
+        }
+    }
 
     const updates = {
         name: document.getElementById('edit-poi-name').value.trim(),
@@ -626,8 +659,8 @@ export async function savePoiEdit() {
             await initAdminUI();
             alert('新增成功');
         } else {
-            updates.parent_id = existingPoi.parent_id || null;
-            await updatePoi(poiId, updates);
+            updates.parent_id = isValidId(existingPoi.parent_id) ? toSafeId(existingPoi.parent_id) : null;
+            await updatePoi(toSafeId(poiId), updates);
             await closeModal('poiModal');
             await initAdminUI();
             alert('保存成功');
@@ -649,12 +682,12 @@ export async function deletePoi(id) {
     if (!confirm(msg)) return;
     try {
         if (subPois.length > 0) {
-            await Promise.all(subPois.map(p => updatePoi(p.id, {
+            await Promise.all(subPois.map(p => updatePoi(toSafeId(p.id), {
                 parent_id: null,
                 is_core_node: false
             })));
         }
-        await apiDeletePoi(id);
+        await apiDeletePoi(toSafeId(id));
         await initAdminUI();
     } catch (e) { alert('删除失败：' + e.message); }
 }
@@ -666,7 +699,9 @@ export function renderTransportEditor(presets) {
     const container = document.getElementById('transport-editor');
     if (!container) return;
     const poiList = allPois.filter(p =>
-        !p.is_core_node && (p.data_level === 'L2' || p.data_level === 'L3' || p.data_level === 'L4')
+        !p.is_core_node &&
+        (p.data_level === 'L2' || p.data_level === 'L3' || p.data_level === 'L4') &&
+        isValidId(p.id)
     );
     if (poiList.length === 0) {
         container.innerHTML = '<p class="text-secondary">暂无参与规划的 L2/L3/L4 景点。</p>';
@@ -706,12 +741,18 @@ window.saveTransportTime = async function(input) {
     const to = input.dataset.to;
     const val = parseInt(input.value);
     if (isNaN(val) || val < 0) return;
+    if (!isValidId(from) || !isValidId(to)) {
+        alert('POI ID 非法，无法保存');
+        return;
+    }
     try {
-        await upsertTransportPreset(from, to, val);
+        const fromVal = toSafeId(from);
+        const toVal = toSafeId(to);
+        await upsertTransportPreset(fromVal, toVal, val);
         const presets = await getTransportPresets();
         allPresets = presets;
         const reverseExists = presets.some(p => String(p.from_poi_id) === String(to) && String(p.to_poi_id) === String(from));
-        if (!reverseExists) await upsertTransportPreset(to, from, val);
+        if (!reverseExists) await upsertTransportPreset(toVal, fromVal, val);
         document.querySelectorAll('#transport-editor input[type="number"]').forEach(inp => {
             const f = inp.dataset.from, t = inp.dataset.to;
             if (String(f) === String(to) && String(t) === String(from) && inp.value === '') inp.value = val;
@@ -990,6 +1031,7 @@ function renderPoiPickerList() {
     const keyword = (poiPickerCurrentSearch || '').toLowerCase();
     const groups = { L1: [], L2: [], L3: [], L4: [], core: [] };
     allPois.forEach(p => {
+        if (!isValidId(p.id)) return;
         let key;
         if (p.is_core_node) key = 'core';
         else key = p.data_level || 'L2';
@@ -1071,7 +1113,7 @@ export async function saveRouteEdit() {
         const nodes = routeNodesData.map((n, i) => ({
             route_id: routeId, order_num: i + 1,
             node_name: n.node_name, node_type: n.node_type,
-            poi_id: n.poi_id || null,
+            poi_id: (n.poi_id && isValidId(n.poi_id)) ? toSafeId(n.poi_id) : null,
             priority_level: n.priority_level || 2,
             duration_min: n.duration_min || 10,
             duration_short: n.duration_short || null,

@@ -31,7 +31,7 @@ const LEVEL_LABELS = {
     L1: '🏞️ L1 景区',
     L2: '📍 L2 景点',
     L3: '⭐ L3 连续景点',
-    L4: '🏛️ L4 预留'
+    L4: '🏛️ L4 服务/设施'
 };
 
 const LEVEL_CLASSES = {
@@ -202,23 +202,31 @@ export function renderPoiList(pois) {
                 : '');
 
         const subItems = pois.filter(x => String(x.parent_id) === String(p.id));
-        const l2Count = subItems.filter(x => x.data_level === 'L2').length;
+        const l2Count = subItems.filter(x => x.data_level === 'L2' && x.type !== 'core_node').length;
         const l3Count = subItems.filter(x => x.data_level === 'L3').length;
         const l4Count = subItems.filter(x => x.data_level === 'L4').length;
+        const nodeCount = subItems.filter(x => x.type === 'core_node').length;
 
         let subInfo = '';
         if (subItems.length > 0) {
-            subInfo = ` <span class="text-secondary" style="font-size:12px;">(${l2Count}普通 ${l3Count}连续 ${l4Count}场所/设施)</span>`;
+            const parts = [];
+            if (l2Count) parts.push(`${l2Count}普通景点`);
+            if (l3Count) parts.push(`${l3Count}连续景点`);
+            if (l4Count) parts.push(`${l4Count}服务/设施`);
+            if (nodeCount) parts.push(`${nodeCount}节点`);
+            subInfo = ` <span class="text-secondary" style="font-size:12px;">(${parts.join(' ')})</span>`;
         }
 
         const featuredTag = p.is_featured ? ` <span class="featured-badge">⭐经典</span>` : '';
         const durationInfo = level === 'L2'
             ? ` <span class="text-secondary small">${p.visit_duration || 0}分钟</span>`
             : (level === 'L3' ? ` <span class="text-secondary small">${p.visit_duration || 0}分钟(累加)</span>` : '');
+        const emptyHint = (level === 'L3' && subItems.length === 0)
+            ? ` <span class="text-warning small">（暂无子项，请点击"编辑"添加）</span>` : '';
 
         html += `<div class="poi-card" id="poi-card-${p.id}">
             <div class="poi-header">
-                <span>${levelBadge} <b>${p.name}</b>${featuredTag} ${catBadge}${voiceBadge}${durationInfo} ${hoursText}${subInfo}</span>
+                <span>${levelBadge} <b>${p.name}</b>${featuredTag} ${catBadge}${voiceBadge}${durationInfo} ${hoursText}${subInfo}${emptyHint}</span>
                 <div>
                     <button class="btn btn-sm btn-secondary" onclick="window.showEditPoiModal('${p.id}')"><i class="fas fa-edit"></i> 编辑</button>
                     <button class="btn btn-sm btn-danger" onclick="window.deletePoi('${p.id}')"><i class="fas fa-trash"></i> 删除</button>
@@ -226,6 +234,7 @@ export function renderPoiList(pois) {
             </div>`;
 
         if (subItems.length > 0) {
+            // 排序：L2 普通景点 > L3 连续景点 > L4 服务/设施 > core_node
             const order = { L2: 0, L3: 1, L4: 2 };
             const sorted = [...subItems].sort((a, b) => {
                 const oa = a.type === 'core_node' ? 9 : (order[a.data_level] ?? 5);
@@ -235,8 +244,9 @@ export function renderPoiList(pois) {
 
             html += `<div class="node-list mt-2">`;
             sorted.forEach(sub => {
-                const subLevel = sub.type === 'core_node' ? null : (sub.data_level || 'L2');
-                const subBadge = sub.type === 'core_node'
+                const isNode = sub.type === 'core_node';
+                const subLevel = isNode ? null : (sub.data_level || 'L2');
+                const subBadge = isNode
                     ? `<span class="type-badge type-badge-core">⭐ 节点</span>`
                     : getLevelBadge(subLevel);
                 const subCatIcon = CATEGORY_ICONS[sub.category] || '';
@@ -250,13 +260,17 @@ export function renderPoiList(pois) {
                     <button class="btn btn-sm btn-outline-secondary" onclick="window.showEditPoiModal('${sub.id}')"><i class="fas fa-edit"></i></button>
                 </div>`;
 
+                // L3 展开显示内部节点
                 if (subLevel === 'L3') {
                     const innerNodes = pois.filter(x => String(x.parent_id) === String(sub.id));
                     if (innerNodes.length > 0) {
                         html += `<div style="margin-left:30px;border-left:2px dashed #ffeb3b;padding-left:10px;">`;
                         innerNodes.forEach(n => {
+                            const nBadge = n.type === 'core_node'
+                                ? `<span class="type-badge type-badge-core">⭐ 节点</span>`
+                                : getLevelBadge(n.data_level || 'L2');
                             html += `<div class="sub-poi-item" style="background:#fffde7;">
-                                <span><span class="type-badge type-badge-core">⭐ 节点</span> ${n.name} <span class="text-secondary small">(${n.visit_duration || 0}分钟)</span></span>
+                                <span>${nBadge} ${n.name} <span class="text-secondary small">(${n.visit_duration || 0}分钟)</span></span>
                                 <button class="btn btn-sm btn-outline-secondary" onclick="window.showEditPoiModal('${n.id}')"><i class="fas fa-edit"></i></button>
                             </div>`;
                         });
@@ -496,6 +510,7 @@ window.onFacilitySubtypeChange = function() {
 // ============================================================
 // 等级切换 UI
 // ★ L2/L3 的父级为可选，不强制
+// ★ L3 内部可挂 L2 景点或 core_node
 // ============================================================
 export function togglePoiLevelUI() {
     const level = document.getElementById('edit-poi-level').value;
@@ -522,7 +537,7 @@ export function togglePoiLevelUI() {
         // L1 景区：容器，无时长，有子项管理
         subSection.classList.remove('hidden');
         if (subTitle) subTitle.textContent = '景点管理';
-        if (subHint) subHint.textContent = '景区的子项可为 L2 普通景点、L3 连续景点、L4 服务场所/设施。景区下必须至少有 1 个景点。';
+        if (subHint) subHint.textContent = '景区的子项可为 L2 普通景点、L3 连续景点、L4 服务场所/设施。';
         if (parentRequired) parentRequired.textContent = '（L1 无父级）';
     } else if (level === 'L2') {
         // L2 普通景点：时长手填；父级可选（可为独立景点）
@@ -533,16 +548,17 @@ export function togglePoiLevelUI() {
         durationHint.textContent = '（分钟，手填）';
     } else if (level === 'L3') {
         // L3 连续景点：时长自动累加；父级可选（可为独立景点）
+        // ★ 可直接新建，无需先建 L1/L2；保存后可在编辑中管理子项
         fieldParent.classList.remove('hidden');
         fieldDuration.classList.remove('hidden');
         subSection.classList.remove('hidden');
-        if (subTitle) subTitle.textContent = '节点管理';
-        if (subHint) subHint.textContent = '连续景点的子项只能是核心节点（core_node）。节点总时长 = 连续景点总时长，不可打断。';
+        if (subTitle) subTitle.textContent = '连续景点内部项管理';
+        if (subHint) subHint.textContent = '连续景点的子项可为 L2 普通景点或核心节点（core_node），管理员可自定义排序。整体不可打断，总时长自动累加。';
         if (parentRequired) parentRequired.textContent = '（可选，不关联则为独立景点）';
         durationHint.textContent = '（自动累加，只读）';
         visitInput.readOnly = true;
     } else if (level === 'L4') {
-        // L4 预留：服务场所/设施，父级可选
+        // L4 服务/设施：父级可选
         fieldParent.classList.remove('hidden');
         fieldDuration.classList.remove('hidden');
         fieldFacilitySubtype.classList.remove('hidden');
@@ -576,8 +592,9 @@ function renderSubPoiList() {
 
     let html = '';
     sorted.forEach(sub => {
-        const subLevel = sub.type === 'core_node' ? null : (sub.data_level || 'L2');
-        const subBadge = sub.type === 'core_node'
+        const isNode = sub.type === 'core_node';
+        const subLevel = isNode ? null : (sub.data_level || 'L2');
+        const subBadge = isNode
             ? `<span class="type-badge type-badge-core">⭐ 节点</span>`
             : getLevelBadge(subLevel);
         const featuredTag = sub.is_featured ? ' <span class="featured-badge">⭐</span>' : '';
@@ -611,13 +628,13 @@ export function showSelectSubPoiModal() {
             ['L2', 'L3', 'L4'].includes(p.data_level)
         );
     } else if (currentLevel === 'L3') {
-        // L3 连续景点只能添加 core_node
+        // ★ L3 连续景点：可添加 L2 普通景点或 core_node
         candidates = allPois.filter(p =>
-            p.type === 'core_node' &&
+            (p.type === 'core_node' || p.data_level === 'L2') &&
             p.id !== currentPoi.id
         );
-    } else {
-        alert('仅 L1 景区和 L3 连续景点可管理子项');
+    } else if (currentLevel === 'L2' || currentLevel === 'L4') {
+        alert('L2 普通景点和 L4 服务/设施不能管理子项');
         return;
     }
 
@@ -712,6 +729,7 @@ async function recomputeL3Duration(l3Id) {
 
 // ============================================================
 // 保存 POI
+// ★ L3 可直接新建，无任何前置限制
 // ============================================================
 export async function savePoiEdit() {
     const poiId = document.getElementById('edit-poi-id').value;
@@ -743,13 +761,10 @@ export async function savePoiEdit() {
         type = 'spot';
         visitDuration = parseInt(document.getElementById('edit-poi-visit').value) || 60;
     } else if (level === 'L3') {
+        // ★ L3 允许新建时子项为空（管理员随后再添加）
         type = 'spot';
         const subs = allPois.filter(p => String(p.parent_id) === String(poiId));
         visitDuration = subs.reduce((s, x) => s + (x.visit_duration || 0), 0);
-        if (visitDuration === 0 && isNew) {
-            alert('L3 连续景点需先保存后添加节点，请先以其他等级保存或先创建再添加节点');
-            return;
-        }
     } else if (level === 'L4') {
         const subtypes = getFacilitySubtypeCheckboxes();
         if (subtypes.length > 0) {
@@ -791,29 +806,25 @@ export async function savePoiEdit() {
 
     try {
         if (isNew) {
+            // ★ 新建时统一插入，不再有 L3 的特殊处理
+            const result = await insertPoi(updates);
+            bootstrap.Modal.getInstance(document.getElementById('poiModal')).hide();
+            await initAdminUI();
+            alert('新增成功');
+            // 如果是 L3，提示可以继续添加内部项
             if (level === 'L3') {
-                const result = await insertPoi(updates);
-                bootstrap.Modal.getInstance(document.getElementById('poiModal')).hide();
-                await initAdminUI();
-                alert('L3 连续景点已创建，请再次点击编辑以添加节点');
-                setTimeout(() => window.showEditPoiModal(result.id), 200);
-                return;
+                setTimeout(() => {
+                    if (confirm('L3 连续景点已创建。是否现在添加内部项（L2 景点或核心节点）？')) {
+                        window.showEditPoiModal(result.id);
+                    }
+                }, 300);
             }
-            await insertPoi(updates);
         } else {
             await updatePoi(poiId, updates);
+            alert('保存成功');
+            bootstrap.Modal.getInstance(document.getElementById('poiModal')).hide();
+            await initAdminUI();
         }
-
-        if (level === 'L1' && !isNew) {
-            const subs = allPois.filter(p => String(p.parent_id) === String(poiId));
-            if (subs.length === 0) {
-                setTimeout(() => alert('提示：该景区下还没有景点，请通过"子项管理"添加至少 1 个景点。'), 300);
-            }
-        }
-
-        alert(isNew ? '新增成功' : '保存成功');
-        bootstrap.Modal.getInstance(document.getElementById('poiModal')).hide();
-        await initAdminUI();
     } catch (e) {
         alert('保存失败：' + e.message);
         console.error(e);

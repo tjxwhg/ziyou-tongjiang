@@ -1,4 +1,4 @@
-// js/admin.js - 管理后台完整逻辑（scenic_id 改为 integer）
+// js/admin.js - 管理后台完整逻辑（三级布局 + scenic_id integer）
 import {
     getPois, getPoi, insertPoi, updatePoi, deletePoi as apiDeletePoi,
     getRoutes, getRoute, insertRoute, updateRoute, deleteRoute as apiDeleteRoute,
@@ -26,11 +26,10 @@ const STORAGE_BUCKET = '0frontend-assets';
 function isValidId(val) {
     if (val === null || val === undefined || val === '') return false;
     const s = String(val).trim();
-    if (/^\d+$/.test(s)) return true;   // integer
-    if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s)) return true;  // uuid
+    if (/^\d+$/.test(s)) return true;
+    if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s)) return true;
     return false;
 }
-// ★ 转为安全的 ID 值：整数保持整数，uuid 保持字符串
 function toSafeId(val) {
     if (!isValidId(val)) return null;
     const s = String(val).trim();
@@ -192,65 +191,222 @@ export async function initAdminUI() {
 }
 
 // ============================================================
-// POI 列表渲染
+// POI 列表渲染（按大类 → 景区 → 子项的三级结构）
 // ============================================================
+const CATEGORY_ORDER = [
+    '自然景区', '红色景区', '文博场馆', '餐饮住宿',
+    '交通枢纽', '游玩娱乐', '购物消费', '公共服务'
+];
+
 export function renderPoiList(pois) {
     const container = document.getElementById('poi-list');
     if (!container) return;
-    const topLevelPois = pois.filter(p => !p.parent_id);
+
+    const l1List = pois.filter(p => p.data_level === 'L1');
+    const l4List = pois.filter(p => p.data_level === 'L4' && !p.parent_id);
+    const topL2L3 = pois.filter(p =>
+        (p.data_level === 'L2' || p.data_level === 'L3')
+        && !p.parent_id
+    );
 
     let html = '';
-    for (let p of topLevelPois) {
-        const level = p.data_level || 'L2';
-        const levelBadge = p.is_core_node ? getCoreNodeBadge() : getLevelBadge(level);
-        const catIcon = CATEGORY_ICONS[p.category] || '';
-        const catBadge = p.category ? `<span class="category-badge">${catIcon} ${p.category}</span>` : '';
-        const voiceBadge = p.voice_mp3 ? `<span class="voice-badge">🔊 语音</span>` : '';
-        const hoursText = p.hours_type === '24h'
-            ? '<span class="badge bg-info text-dark">24H</span>'
-            : (p.open_time && p.close_time
-                ? `<span class="text-secondary small">${normalizeTimeStr(p.open_time)}-${normalizeTimeStr(p.close_time)}</span>`
-                : '');
-        const durationInfo = (level === 'L2' || level === 'L3' || level === 'L4')
-            ? ` <span class="text-secondary small">${p.visit_duration || 0}分钟</span>` : '';
 
-        // 归属景区名称（scenic_id 现在是 integer）
-        let scenicName = '';
-        if (p.scenic_id !== null && p.scenic_id !== undefined) {
-            const sc = pois.find(x => String(x.id) === String(p.scenic_id));
-            if (sc) scenicName = sc.name;
-        }
-        const scenicBadge = scenicName ? ` <span class="category-badge" style="background:#e8f5e9;color:#1b5e20;">🏞️ ${scenicName}</span>` : '';
+    // 8 个大类
+    CATEGORY_ORDER.forEach(cat => {
+        const catL1 = l1List.filter(p => (p.category || '').split(',')[0].trim() === cat);
+        const catOrphans = topL2L3.filter(p => {
+            if (p.scenic_id !== null && p.scenic_id !== undefined) return false;
+            const pCat = (p.category || '').split(',')[0].trim();
+            return pCat === cat;
+        });
 
-        const subItems = level === 'L3'
-            ? pois.filter(x => String(x.parent_id) === String(p.id))
-            : [];
-        const subInfo = subItems.length > 0
-            ? ` <span class="text-secondary" style="font-size:12px;">(含 ${subItems.length} 个核心节点)</span>` : '';
+        if (catL1.length === 0 && catOrphans.length === 0) return;
 
-        html += `<div class="poi-card" id="poi-card-${p.id}">
-            <div class="poi-header">
-                <span>${levelBadge} <b>${p.name}</b>${scenicBadge} ${catBadge}${voiceBadge}${durationInfo} ${hoursText}${subInfo}</span>
-                <div>
-                    <button class="btn btn-sm btn-secondary" onclick="window.showEditPoiModal('${p.id}')"><i class="fas fa-edit"></i> 编辑</button>
-                    <button class="btn btn-sm btn-danger" onclick="window.deletePoi('${p.id}')"><i class="fas fa-trash"></i> 删除</button>
-                </div>
-            </div>`;
-        if (subItems.length > 0) {
-            html += `<div class="node-list mt-2" style="margin-left:20px;border-left:2px solid #90a4ae;padding-left:10px;">`;
-            subItems.forEach(sub => {
-                const subCatIcon = CATEGORY_ICONS[sub.category] || '';
-                const subCat = sub.category ? ` <span class="category-badge">${subCatIcon} ${sub.category}</span>` : '';
-                html += `<div class="sub-poi-item" style="background:#eceff1;">
-                    <span>⭐ ${sub.name}${subCat} <span class="text-secondary small">(${sub.visit_duration || 0}分钟)</span></span>
-                    <button class="btn btn-sm btn-outline-secondary" onclick="window.showEditPoiModal('${sub.id}')"><i class="fas fa-edit"></i></button>
-                </div>`;
+        const catIcon = CATEGORY_ICONS[cat] || '📍';
+        html += `<div class="poi-category-section">`;
+        html += `<div class="poi-category-header">${catIcon} ${cat}</div>`;
+
+        catL1.forEach(l1 => {
+            html += renderL1Card(l1, pois);
+        });
+
+        if (catOrphans.length > 0) {
+            html += `<div class="poi-orphan-list">`;
+            html += `<div class="poi-orphan-list-title">📌 无归属${cat}（独立景点）</div>`;
+            catOrphans.sort((a, b) => {
+                const order = { L2: 0, L3: 1 };
+                return (order[a.data_level] ?? 9) - (order[b.data_level] ?? 9);
+            });
+            catOrphans.forEach(p => {
+                html += renderOrphanCard(p, pois);
             });
             html += `</div>`;
         }
+
+        html += `</div>`;
+    });
+
+    // 服务场所（所有 L4）
+    if (l4List.length > 0) {
+        html += `<div class="poi-category-section">`;
+        html += `<div class="poi-category-header">🏛️ 服务场所（L4）</div>`;
+        l4List.forEach(l4 => {
+            html += renderL4Card(l4, pois);
+        });
         html += `</div>`;
     }
-    container.innerHTML = html || '<p>暂无POI</p>';
+
+    container.innerHTML = html || '<p class="text-secondary">暂无POI</p>';
+}
+
+// L1 卡片（含其子项 L2/L3）
+function renderL1Card(l1, pois) {
+    const l1Badge = getLevelBadge('L1');
+    const catIcon = CATEGORY_ICONS[l1.category] || '';
+    const catBadge = l1.category ? `<span class="category-badge">${catIcon} ${l1.category}</span>` : '';
+    const voiceBadge = l1.voice_mp3 ? `<span class="voice-badge">🔊 语音</span>` : '';
+    const hoursText = l1.hours_type === '24h'
+        ? '<span class="badge bg-info text-dark">24H</span>'
+        : (l1.open_time && l1.close_time
+            ? `<span class="text-secondary small">${normalizeTimeStr(l1.open_time)}-${normalizeTimeStr(l1.close_time)}</span>`
+            : '');
+
+    const children = pois.filter(p =>
+        String(p.scenic_id) === String(l1.id)
+        && (p.data_level === 'L2' || p.data_level === 'L3')
+        && !p.parent_id
+    ).sort((a, b) => {
+        const order = { L2: 0, L3: 1 };
+        return (order[a.data_level] ?? 9) - (order[b.data_level] ?? 9);
+    });
+
+    let html = `<div class="poi-l1-card">`;
+    html += `<div class="poi-l1-header">`;
+    html += `<span class="poi-name-group">${l1Badge} <b>${l1.name}</b> ${catBadge}${voiceBadge} ${hoursText}</span>`;
+    html += `<div>`;
+    html += `<button class="btn btn-sm btn-secondary" onclick="window.showEditPoiModal('${l1.id}')"><i class="fas fa-edit"></i> 编辑</button>`;
+    html += `<button class="btn btn-sm btn-danger ms-1" onclick="window.deletePoi('${l1.id}')"><i class="fas fa-trash"></i> 删除</button>`;
+    html += `</div></div>`;
+
+    if (children.length > 0) {
+        html += `<div class="poi-l1-children">`;
+        children.forEach(child => {
+            html += renderChildCard(child, pois, 0);
+        });
+        html += `</div>`;
+    } else {
+        html += `<div class="poi-empty-hint">（该景区下暂无景点，请点击"编辑"添加子项）</div>`;
+    }
+
+    html += `</div>`;
+    return html;
+}
+
+// L2/L3 子项卡片（递归：L3 会展示内部核心节点）
+function renderChildCard(p, pois, depth) {
+    const isCoreNode = p.is_core_node && p.parent_id;
+    const badge = isCoreNode ? getCoreNodeBadge() : getLevelBadge(p.data_level || 'L2');
+    const catIcon = CATEGORY_ICONS[p.category] || '';
+    const catBadge = p.category ? `<span class="category-badge">${catIcon} ${p.category}</span>` : '';
+    const voiceBadge = p.voice_mp3 ? `<span class="voice-badge">🔊 语音</span>` : '';
+    const durationInfo = (p.visit_duration)
+        ? `<span class="text-secondary small">${p.visit_duration}分钟</span>` : '';
+    const hoursText = p.hours_type === '24h'
+        ? '<span class="badge bg-info text-dark">24H</span>'
+        : (p.open_time && p.close_time
+            ? `<span class="text-secondary small">${normalizeTimeStr(p.open_time)}-${normalizeTimeStr(p.close_time)}</span>`
+            : '');
+    const facilityTag = p.type === 'facility' ? ' ' + getFacilitySubtypeBadge(p.facility_subtype) : '';
+
+    let html = `<div class="poi-child-card">`;
+    html += `<div class="poi-child-header">`;
+    html += `<span class="poi-name-group">${badge} <b>${p.name}</b>${facilityTag} ${catBadge}${voiceBadge} ${durationInfo} ${hoursText}</span>`;
+    html += `<div>`;
+    html += `<button class="btn btn-sm btn-secondary" onclick="window.showEditPoiModal('${p.id}')"><i class="fas fa-edit"></i> 编辑</button>`;
+    html += `<button class="btn btn-sm btn-danger ms-1" onclick="window.deletePoi('${p.id}')"><i class="fas fa-trash"></i> 删除</button>`;
+    html += `</div></div>`;
+
+    if (p.data_level === 'L3' && !isCoreNode) {
+        const innerNodes = pois.filter(x => String(x.parent_id) === String(p.id));
+        if (innerNodes.length > 0) {
+            html += `<div class="poi-l3-children">`;
+            innerNodes.forEach(n => {
+                html += renderChildCard(n, pois, depth + 1);
+            });
+            html += `</div>`;
+        }
+    }
+
+    html += `</div>`;
+    return html;
+}
+
+// 无归属 L2/L3 卡片
+function renderOrphanCard(p, pois) {
+    const badge = getLevelBadge(p.data_level || 'L2');
+    const catIcon = CATEGORY_ICONS[p.category] || '';
+    const catBadge = p.category ? `<span class="category-badge">${catIcon} ${p.category}</span>` : '';
+    const voiceBadge = p.voice_mp3 ? `<span class="voice-badge">🔊 语音</span>` : '';
+    const durationInfo = (p.visit_duration)
+        ? `<span class="text-secondary small">${p.visit_duration}分钟</span>` : '';
+    const hoursText = p.hours_type === '24h'
+        ? '<span class="badge bg-info text-dark">24H</span>'
+        : (p.open_time && p.close_time
+            ? `<span class="text-secondary small">${normalizeTimeStr(p.open_time)}-${normalizeTimeStr(p.close_time)}</span>`
+            : '');
+
+    let html = `<div class="poi-orphan-card">`;
+    html += `<div class="poi-child-header">`;
+    html += `<span class="poi-name-group">${badge} <b>${p.name}</b> ${catBadge}${voiceBadge} ${durationInfo} ${hoursText}</span>`;
+    html += `<div>`;
+    html += `<button class="btn btn-sm btn-secondary" onclick="window.showEditPoiModal('${p.id}')"><i class="fas fa-edit"></i> 编辑</button>`;
+    html += `<button class="btn btn-sm btn-danger ms-1" onclick="window.deletePoi('${p.id}')"><i class="fas fa-trash"></i> 删除</button>`;
+    html += `</div></div>`;
+
+    if (p.data_level === 'L3') {
+        const innerNodes = pois.filter(x => String(x.parent_id) === String(p.id));
+        if (innerNodes.length > 0) {
+            html += `<div class="poi-l3-children">`;
+            innerNodes.forEach(n => {
+                html += renderChildCard(n, pois, 1);
+            });
+            html += `</div>`;
+        }
+    }
+
+    html += `</div>`;
+    return html;
+}
+
+// L4 服务/设施卡片
+function renderL4Card(l4, pois) {
+    const badge = getLevelBadge('L4');
+    const catIcon = CATEGORY_ICONS[l4.category] || '';
+    const catBadge = l4.category ? `<span class="category-badge">${catIcon} ${l4.category}</span>` : '';
+    const facilityTag = l4.type === 'facility' ? ' ' + getFacilitySubtypeBadge(l4.facility_subtype) : '';
+    const voiceBadge = l4.voice_mp3 ? `<span class="voice-badge">🔊 语音</span>` : '';
+    const durationInfo = (l4.visit_duration)
+        ? `<span class="text-secondary small">${l4.visit_duration}分钟</span>` : '';
+    const hoursText = l4.hours_type === '24h'
+        ? '<span class="badge bg-info text-dark">24H</span>'
+        : (l4.open_time && l4.close_time
+            ? `<span class="text-secondary small">${normalizeTimeStr(l4.open_time)}-${normalizeTimeStr(l4.close_time)}</span>`
+            : '');
+
+    let ownerBadge = '';
+    if (l4.scenic_id !== null && l4.scenic_id !== undefined) {
+        const owner = pois.find(x => String(x.id) === String(l4.scenic_id));
+        if (owner) ownerBadge = ` <span class="category-badge" style="background:#e8f5e9;color:#1b5e20;">🏞️ ${owner.name}</span>`;
+    }
+
+    let html = `<div class="poi-orphan-card">`;
+    html += `<div class="poi-child-header">`;
+    html += `<span class="poi-name-group">${badge} <b>${l4.name}</b>${facilityTag} ${catBadge}${ownerBadge}${voiceBadge} ${durationInfo} ${hoursText}</span>`;
+    html += `<div>`;
+    html += `<button class="btn btn-sm btn-secondary" onclick="window.showEditPoiModal('${l4.id}')"><i class="fas fa-edit"></i> 编辑</button>`;
+    html += `<button class="btn btn-sm btn-danger ms-1" onclick="window.deletePoi('${l4.id}')"><i class="fas fa-trash"></i> 删除</button>`;
+    html += `</div></div></div>`;
+    return html;
 }
 
 // ============================================================
@@ -342,7 +498,7 @@ export async function showEditPoiModal(poiId) {
     new bootstrap.Modal(document.getElementById('poiModal')).show();
 }
 
-// ★ 刷新"归属景区"下拉（scenic_id 现在是 integer）
+// ★ 刷新"归属景区"下拉
 function refreshScenicSelect(currentId) {
     const scenicSel = document.getElementById('edit-poi-scenic');
     if (!scenicSel) return;
@@ -615,7 +771,7 @@ export async function savePoiEdit() {
         isCoreNode = document.getElementById('edit-poi-core-node').checked;
     }
 
-    // ★ 归属景区（scenic_id 现在是 integer）
+    // 归属景区（integer）
     let scenicIdVal = null;
     if (level !== 'L1') {
         const raw = document.getElementById('edit-poi-scenic')?.value || '';

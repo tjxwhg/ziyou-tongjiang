@@ -1,4 +1,4 @@
-// js/admin.js - 管理后台完整逻辑（三层级架构 + 独立景点支持）
+// js/admin.js - 管理后台完整逻辑（三层级架构 + 独立景点 + 0frontend-assets bucket）
 import {
     getPois, getPoi, insertPoi, updatePoi, deletePoi as apiDeletePoi,
     getRoutes, getRoute, insertRoute, updateRoute, deleteRoute as apiDeleteRoute,
@@ -20,6 +20,9 @@ let editingNodeIndex = -1;
 
 let poiPickerSelectedId = null;
 let poiPickerCurrentSearch = '';
+
+// ★ 统一使用的 Storage Bucket
+const STORAGE_BUCKET = '0frontend-assets';
 
 // ============================================================
 // 标签与徽章
@@ -390,7 +393,7 @@ function refreshParentSelect(currentId, currentLevel) {
     }
 }
 
-// ★ 语音上传
+// ★ 语音上传（使用统一 bucket 0frontend-assets）
 window.onPoiVoiceSelected = async function(event) {
     const file = event.target.files[0];
     if (!file) return;
@@ -407,7 +410,7 @@ window.onPoiVoiceSelected = async function(event) {
         const poiId = document.getElementById('edit-poi-id').value || 'new_' + Date.now();
         const ext = file.name.split('.').pop() || 'mp3';
         const path = `poi-voices/${poiId}_${Date.now()}.${ext}`;
-        const publicUrl = await uploadFile('merchant-images', path, file);
+        const publicUrl = await uploadFile(STORAGE_BUCKET, path, file);
         document.getElementById('edit-poi-voice-mp3').value = publicUrl;
         statusEl.textContent = '✓ 上传成功';
         statusEl.className = 'text-success small';
@@ -708,7 +711,7 @@ async function recomputeL3Duration(l3Id) {
 }
 
 // ============================================================
-// 保存 POI（★ 移除 L2/L3 必须选择父级的强制校验）
+// 保存 POI
 // ============================================================
 export async function savePoiEdit() {
     const poiId = document.getElementById('edit-poi-id').value;
@@ -801,7 +804,6 @@ export async function savePoiEdit() {
             await updatePoi(poiId, updates);
         }
 
-        // L1 容器校验：保存后检查是否有子项
         if (level === 'L1' && !isNew) {
             const subs = allPois.filter(p => String(p.parent_id) === String(poiId));
             if (subs.length === 0) {
@@ -1260,12 +1262,11 @@ export async function deleteRoute(id) {
 }
 
 // ============================================================
-// 交通耗时（仅顶层 L2/L3，因为 L1 是容器）
+// 交通耗时
 // ============================================================
 export function renderTransportEditor(presets) {
     const container = document.getElementById('transport-editor');
     if (!container) return;
-    // ★ 只显示顶层的 L2/L3（L1 容器不参与交通计算）
     const poiList = allPois.filter(p => !p.parent_id && (p.data_level === 'L2' || p.data_level === 'L3'));
     if (poiList.length === 0) {
         container.innerHTML = '<p class="text-secondary">暂无独立的 L2/L3 景点，无需配置交通耗时。</p>';

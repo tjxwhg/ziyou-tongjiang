@@ -1,4 +1,4 @@
-// js/admin.js - 管理后台完整逻辑（三级布局 + scenic_id integer）
+// js/admin.js - 管理后台完整逻辑（景区下含 L2/L3/L4）
 import {
     getPois, getPoi, insertPoi, updatePoi, deletePoi as apiDeletePoi,
     getRoutes, getRoute, insertRoute, updateRoute, deleteRoute as apiDeleteRoute,
@@ -203,7 +203,12 @@ export function renderPoiList(pois) {
     if (!container) return;
 
     const l1List = pois.filter(p => p.data_level === 'L1');
-    const l4List = pois.filter(p => p.data_level === 'L4' && !p.parent_id);
+    // 有归属的 L4 会显示在所属景区下，此列表只保留无归属的 L4
+    const l4List = pois.filter(p =>
+        p.data_level === 'L4'
+        && !p.parent_id
+        && (p.scenic_id === null || p.scenic_id === undefined)
+    );
     const topL2L3 = pois.filter(p =>
         (p.data_level === 'L2' || p.data_level === 'L3')
         && !p.parent_id
@@ -246,7 +251,7 @@ export function renderPoiList(pois) {
         html += `</div>`;
     });
 
-    // 服务场所（所有 L4）
+    // 服务场所（只含无归属的 L4）
     if (l4List.length > 0) {
         html += `<div class="poi-category-section">`;
         html += `<div class="poi-category-header">🏛️ 服务场所（L4）</div>`;
@@ -259,7 +264,7 @@ export function renderPoiList(pois) {
     container.innerHTML = html || '<p class="text-secondary">暂无POI</p>';
 }
 
-// L1 卡片（含其子项 L2/L3）
+// L1 卡片（含其子项 L2/L3/L4）
 function renderL1Card(l1, pois) {
     const l1Badge = getLevelBadge('L1');
     const catIcon = CATEGORY_ICONS[l1.category] || '';
@@ -271,12 +276,13 @@ function renderL1Card(l1, pois) {
             ? `<span class="text-secondary small">${normalizeTimeStr(l1.open_time)}-${normalizeTimeStr(l1.close_time)}</span>`
             : '');
 
+    // 景区下的子项：包含 L2 + L3 + L4（有归属的）
     const children = pois.filter(p =>
         String(p.scenic_id) === String(l1.id)
-        && (p.data_level === 'L2' || p.data_level === 'L3')
+        && (p.data_level === 'L2' || p.data_level === 'L3' || p.data_level === 'L4')
         && !p.parent_id
     ).sort((a, b) => {
-        const order = { L2: 0, L3: 1 };
+        const order = { L2: 0, L3: 1, L4: 2 };
         return (order[a.data_level] ?? 9) - (order[b.data_level] ?? 9);
     });
 
@@ -302,7 +308,7 @@ function renderL1Card(l1, pois) {
     return html;
 }
 
-// L2/L3 子项卡片（递归：L3 会展示内部核心节点）
+// L2/L3/L4 子项卡片（递归：L3 会展示内部核心节点）
 function renderChildCard(p, pois, depth) {
     const isCoreNode = p.is_core_node && p.parent_id;
     const badge = isCoreNode ? getCoreNodeBadge() : getLevelBadge(p.data_level || 'L2');
@@ -378,7 +384,7 @@ function renderOrphanCard(p, pois) {
     return html;
 }
 
-// L4 服务/设施卡片
+// L4 服务/设施卡片（无归属专用）
 function renderL4Card(l4, pois) {
     const badge = getLevelBadge('L4');
     const catIcon = CATEGORY_ICONS[l4.category] || '';
@@ -393,15 +399,9 @@ function renderL4Card(l4, pois) {
             ? `<span class="text-secondary small">${normalizeTimeStr(l4.open_time)}-${normalizeTimeStr(l4.close_time)}</span>`
             : '');
 
-    let ownerBadge = '';
-    if (l4.scenic_id !== null && l4.scenic_id !== undefined) {
-        const owner = pois.find(x => String(x.id) === String(l4.scenic_id));
-        if (owner) ownerBadge = ` <span class="category-badge" style="background:#e8f5e9;color:#1b5e20;">🏞️ ${owner.name}</span>`;
-    }
-
     let html = `<div class="poi-orphan-card">`;
     html += `<div class="poi-child-header">`;
-    html += `<span class="poi-name-group">${badge} <b>${l4.name}</b>${facilityTag} ${catBadge}${ownerBadge}${voiceBadge} ${durationInfo} ${hoursText}</span>`;
+    html += `<span class="poi-name-group">${badge} <b>${l4.name}</b>${facilityTag} ${catBadge}${voiceBadge} ${durationInfo} ${hoursText}</span>`;
     html += `<div>`;
     html += `<button class="btn btn-sm btn-secondary" onclick="window.showEditPoiModal('${l4.id}')"><i class="fas fa-edit"></i> 编辑</button>`;
     html += `<button class="btn btn-sm btn-danger ms-1" onclick="window.deletePoi('${l4.id}')"><i class="fas fa-trash"></i> 删除</button>`;

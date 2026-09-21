@@ -56,12 +56,6 @@
         .trip-node .weather-text { color: #0D47A1; font-weight: 500; }
         .trip-node .reminder-text { color: #C62828; font-weight: 500; background: #ffebee; padding: 2px 10px; border-radius: 12px; }
         .trip-node .trip-end-text { color: #2E7D32; font-weight: 700; font-size: 15px; }
-        .poi-category-group { margin-bottom: 12px; }
-        .poi-category-title { font-weight: 600; color: #1b5e20; background: #e8f5e9; padding: 6px 12px; border-radius: 6px; cursor: pointer; display: flex; justify-content: space-between; }
-        .poi-category-content { padding-left: 12px; margin-top: 4px; }
-        .poi-item { padding: 4px 0; border-bottom: 1px solid #f5f5f5; }
-        .poi-item .poi-name { display: flex; align-items: center; gap: 8px; }
-        .poi-item .poi-duration-badge { font-size: 12px; color: #888; margin-left: 8px; }
         .total-duration { font-weight: 600; color: #1b5e20; background: #e8f5e9; padding: 6px 12px; border-radius: 6px; text-align: center; margin-top: 10px; }
         .poi-select-list { max-height: 400px; overflow-y: auto; border: 1px solid #e0e0e0; border-radius: 8px; padding: 8px; }
         .reservation-form { background: #f8f9fa; border-radius: 8px; padding: 12px; margin-top: 10px; }
@@ -156,11 +150,6 @@
         .scenic-group-list .poi-row input[type="checkbox"] { width: 18px; height: 18px; cursor: pointer; flex-shrink: 0; }
         .scenic-group-list .poi-row .poi-name { flex: 1; color: #333; }
         .scenic-group-list .poi-row .poi-dur { color: #888; font-size: 12px; }
-        .independent-group { margin-bottom: 14px; }
-        .independent-group .poi-row { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-bottom: 1px solid #f5f5f5; font-size: 14px; background: white; border: 1px solid #e0e0e0; border-radius: 8px; margin-bottom: 4px; }
-        .independent-group .poi-row input[type="checkbox"] { width: 18px; height: 18px; cursor: pointer; flex-shrink: 0; }
-        .independent-group .poi-row .poi-name { flex: 1; color: #333; }
-        .independent-group .poi-row .poi-dur { color: #888; font-size: 12px; }
     </style>
 </head>
 <body>
@@ -240,7 +229,7 @@
                 <div id="selectedOrderContainer" class="border rounded p-2" style="min-height:40px;background:#fafafa;">
                     <span class="text-secondary">尚未选择景点</span>
                 </div>
-                <div class="hint-text" style="color:#888;font-size:12px;margin-top:4px;">※ 连续景点内部节点顺序由后台预设，不可调整</div>
+                <div class="hint-text" style="color:#888;font-size:12px;margin-top:4px;">※ 连续景点的总时长由后台预设，包含内部所有点位</div>
             </div>
             <button class="btn btn-primary-custom w-100 mt-3" id="generatePlanBtn"><i class="fas fa-wand-magic-sparkles"></i> 生成行程方案</button>
             <div id="planLoading" class="text-center mt-3 hidden">
@@ -472,6 +461,12 @@ const NODE_TYPE_ICONS = {
     spot: '📍', entertainment: '🎢', wc: '🚻', exit: '🚪', other: '📌'
 };
 
+const CATEGORY_ICONS_MAP = {
+    '自然景区': '🏔️', '红色景区': '🔴', '文博场馆': '🏛️',
+    '餐饮住宿': '🍽️', '交通枢纽': '🚌', '游玩娱乐': '🎢',
+    '购物消费': '🛍️', '公共服务': '🏛️', '其他': '📍'
+};
+
 const LUNCH_START = 11 * 60 + 30;
 const LUNCH_END = 12 * 60 + 30;
 const DINNER_START = 18 * 60;
@@ -505,14 +500,7 @@ function timeStrToMinutes(str) {
     return h * 60 + m;
 }
 
-// ★ 判断 POI 是否被某个 L3 包含（用于游客端隐藏）
-function isInsideL3(poi) {
-    if (!poi || !poi.parent_id) return false;
-    const parent = allPoisMap[String(poi.parent_id)];
-    if (!parent) return false;
-    return parent.data_level === 'L3';
-}
-
+// ★ 交通计算：只查预设表，无隐式规则
 function calcTravelBetween(prevPoiId, curPoiId) {
     if (!prevPoiId || !curPoiId) return 0;
     if (String(prevPoiId) === String(curPoiId)) return 0;
@@ -521,12 +509,6 @@ function calcTravelBetween(prevPoiId, curPoiId) {
     }
     if (String(curPoiId) === 'county' || curPoiId === COUNTY_ID) {
         return transportPresetsCache[`${prevPoiId}_${COUNTY_ID}`] || transportPresetsCache[`${prevPoiId}_county`] || 0;
-    }
-    const prevPoi = allPoisMap[String(prevPoiId)];
-    const curPoi = allPoisMap[String(curPoiId)];
-    if (prevPoi && curPoi && prevPoi.parent_id && curPoi.parent_id
-        && String(prevPoi.parent_id) === String(curPoi.parent_id)) {
-        return 0;
     }
     return transportPresetsCache[`${prevPoiId}_${curPoiId}`] || 0;
 }
@@ -594,9 +576,9 @@ function initStartLocationSelect(pois) {
 // ============================================================
 // ★ 智能规划 POI 列表
 // 规则：
-//  - 被 L3 包含的 POI 不单独显示（不可勾选）
-//  - L1 容器作分组标题；L1 下顶层 L2/L3/L4 平铺显示
-//  - ★ 勾选 L3 后，展开显示其内部节点（只读，按 tour_route 顺序）
+//  - 只显示 L2/L3/L4
+//  - 排除 is_core_node = true 的 POI（被 L3 包含或手动标记）
+//  - 按 category 分组
 // ============================================================
 function renderPoiSelection(pois) {
     const container = document.getElementById('poiSelectContainer');
@@ -606,38 +588,32 @@ function renderPoiSelection(pois) {
         return;
     }
 
-    const l1List = pois.filter(p => p.data_level === 'L1' && !p.parent_id);
-    const independent = pois.filter(p =>
-        !p.parent_id && (p.data_level === 'L2' || p.data_level === 'L3' || p.data_level === 'L4')
+    const visiblePois = pois.filter(p =>
+        (p.data_level === 'L2' || p.data_level === 'L3' || p.data_level === 'L4')
+        && !p.is_core_node
     );
 
+    if (visiblePois.length === 0) {
+        container.innerHTML = '<div class="text-secondary text-center py-2">暂无可勾选景点</div>';
+        return;
+    }
+
+    const categories = {};
+    const categoryOrder = ['自然景区', '红色景区', '文博场馆', '餐饮住宿', '交通枢纽', '游玩娱乐', '购物消费', '公共服务', '其他'];
+    visiblePois.forEach(p => {
+        const cat = p.category ? p.category.split(',')[0].trim() : '其他';
+        if (!categories[cat]) categories[cat] = [];
+        categories[cat].push(p);
+    });
+
     let html = '';
-
-    l1List.forEach(l1 => {
-        const children = pois.filter(p =>
-            String(p.parent_id) === String(l1.id)
-            && (p.data_level === 'L2' || p.data_level === 'L3' || p.data_level === 'L4')
-            && !isInsideL3(p)
-        );
-        if (children.length === 0) return;
-
-        // ★ 按 tour_route 排序
-        const orderedChildren = (() => {
-            const tr = Array.isArray(l1.tour_route) ? l1.tour_route : [];
-            if (tr.length === 0) return children;
-            const idxMap = {};
-            tr.forEach((id, i) => { idxMap[String(id)] = i; });
-            return [...children].sort((a, b) => {
-                const ia = idxMap[String(a.id)] ?? 999;
-                const ib = idxMap[String(b.id)] ?? 999;
-                return ia - ib;
-            });
-        })();
-
+    categoryOrder.forEach(cat => {
+        const items = categories[cat] || [];
+        if (items.length === 0) return;
         html += `<div class="scenic-group">`;
-        html += `<div class="scenic-group-title">🏞️ ${l1.name}</div>`;
+        html += `<div class="scenic-group-title">${CATEGORY_ICONS_MAP[cat] || '📍'} ${cat}</div>`;
         html += `<div class="scenic-group-list">`;
-        orderedChildren.forEach(child => {
+        items.forEach(child => {
             const cidStr = String(child.id);
             const isChecked = selectedPoiIds.has(cidStr);
             const dur = child.visit_duration || 0;
@@ -648,77 +624,11 @@ function renderPoiSelection(pois) {
                 <span class="poi-name">${child.name}${lvTag}</span>
                 <span class="poi-dur">${dur}分钟</span>
             </div>`;
-
-            // ★ 若 L3 已勾选，展开显示内部节点（只读，按 tour_route 顺序）
-            if (child.data_level === 'L3' && isChecked) {
-                const inner = pois.filter(x => String(x.parent_id) === String(child.id));
-                const orderedInner = (() => {
-                    const tr = Array.isArray(child.tour_route) ? child.tour_route : [];
-                    if (tr.length === 0) return inner;
-                    const idxMap = {};
-                    tr.forEach((id, i) => { idxMap[String(id)] = i; });
-                    return [...inner].sort((a, b) => {
-                        const ia = idxMap[String(a.id)] ?? 999;
-                        const ib = idxMap[String(b.id)] ?? 999;
-                        return ia - ib;
-                    });
-                })();
-                orderedInner.forEach((n, idx) => {
-                    const ndur = n.visit_duration || 0;
-                    html += `<div class="poi-row" style="padding-left:34px;background:#fffde7;color:#666;font-size:13px;">
-                        <span style="margin-right:6px;">${idx + 1}.</span>
-                        <span>⭐ ${n.name}</span>
-                        <span class="poi-dur">${ndur}分钟</span>
-                    </div>`;
-                });
-            }
         });
         html += `</div></div>`;
     });
 
-    if (independent.length > 0) {
-        html += `<div class="independent-group">`;
-        html += `<div class="scenic-group-title" style="background:#e8f5e9;border-radius:8px;margin-bottom:6px;">📍 独立景点 / 服务设施</div>`;
-        independent.forEach(p => {
-            const pidStr = String(p.id);
-            const isChecked = selectedPoiIds.has(pidStr);
-            const dur = p.visit_duration || 0;
-            const lvTag = p.data_level === 'L3' ? ' ⭐' : (p.data_level === 'L4' ? ' 🏛️' : '');
-            html += `<div class="poi-row">
-                <input type="checkbox" ${isChecked ? 'checked' : ''}
-                       onclick="event.stopPropagation(); window.togglePoiSelection('${p.id}')">
-                <span class="poi-name">${p.name}${lvTag}</span>
-                <span class="poi-dur">${dur}分钟</span>
-            </div>`;
-
-            // ★ 独立 L3 勾选后也展开
-            if (p.data_level === 'L3' && isChecked) {
-                const inner = pois.filter(x => String(x.parent_id) === String(p.id));
-                const orderedInner = (() => {
-                    const tr = Array.isArray(p.tour_route) ? p.tour_route : [];
-                    if (tr.length === 0) return inner;
-                    const idxMap = {};
-                    tr.forEach((id, i) => { idxMap[String(id)] = i; });
-                    return [...inner].sort((a, b) => {
-                        const ia = idxMap[String(a.id)] ?? 999;
-                        const ib = idxMap[String(b.id)] ?? 999;
-                        return ia - ib;
-                    });
-                })();
-                orderedInner.forEach((n, idx) => {
-                    const ndur = n.visit_duration || 0;
-                    html += `<div class="poi-row" style="padding-left:34px;background:#fffde7;color:#666;font-size:13px;">
-                        <span style="margin-right:6px;">${idx + 1}.</span>
-                        <span>⭐ ${n.name}</span>
-                        <span class="poi-dur">${ndur}分钟</span>
-                    </div>`;
-                });
-            }
-        });
-        html += `</div>`;
-    }
-
-    container.innerHTML = html || '<div class="text-secondary text-center py-2">暂无可勾选景点</div>';
+    container.innerHTML = html;
     updateSelectedInfo();
 }
 
@@ -741,8 +651,8 @@ window.togglePoiSelection = function(poiId) {
 window.selectAllPois = function(select) {
     if (select) {
         allPois.forEach(poi => {
-            if ((poi.data_level === 'L2' || poi.data_level === 'L3')
-                && !isInsideL3(poi)) {
+            if ((poi.data_level === 'L2' || poi.data_level === 'L3' || poi.data_level === 'L4')
+                && !poi.is_core_node) {
                 const idStr = String(poi.id);
                 selectedPoiIds.add(idStr);
                 if (!selectedPoiOrder.includes(idStr)) selectedPoiOrder.push(idStr);
@@ -820,7 +730,7 @@ window.generatePlans = async function() {
     const selectedPois = selectedPoiOrder.map(id => {
         const poi = allPoisMap[String(id)];
         if (!poi) return null;
-        if (poi.data_level !== 'L2' && poi.data_level !== 'L3') return null;
+        if (poi.data_level !== 'L2' && poi.data_level !== 'L3' && poi.data_level !== 'L4') return null;
         return { ...poi };
     }).filter(Boolean);
     if (selectedPois.length === 0) { alert('未找到有效的景点数据'); return; }

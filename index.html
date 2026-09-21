@@ -148,7 +148,6 @@
         .merchant-notice { background: #fff8e1; border-left: 4px solid #ff9800; border-radius: 8px; padding: 12px 14px; margin-top: 16px; }
         .merchant-notice h6 { color: #e65100; margin: 0 0 8px; font-weight: 700; font-size: 15px; display: flex; align-items: center; gap: 6px; }
         .merchant-notice p { color: #555; font-size: 14px; line-height: 1.6; margin: 0; white-space: pre-wrap; word-break: break-word; }
-        /* 智能规划列表：景区分组 */
         .scenic-group { margin-bottom: 14px; border: 1px solid #e0e0e0; border-radius: 8px; overflow: hidden; background: white; }
         .scenic-group-title { background: #f0f8f0; color: #1b5e20; padding: 8px 12px; font-weight: 600; font-size: 14px; border-bottom: 1px solid #e0e0e0; display: flex; align-items: center; gap: 6px; }
         .scenic-group-list { padding: 4px 0; }
@@ -157,7 +156,6 @@
         .scenic-group-list .poi-row input[type="checkbox"] { width: 18px; height: 18px; cursor: pointer; flex-shrink: 0; }
         .scenic-group-list .poi-row .poi-name { flex: 1; color: #333; }
         .scenic-group-list .poi-row .poi-dur { color: #888; font-size: 12px; }
-        .scenic-group-list .poi-row.node-only { background: #fffde7; padding-left: 30px; font-size: 13px; color: #666; }
         .independent-group { margin-bottom: 14px; }
         .independent-group .poi-row { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-bottom: 1px solid #f5f5f5; font-size: 14px; background: white; border: 1px solid #e0e0e0; border-radius: 8px; margin-bottom: 4px; }
         .independent-group .poi-row input[type="checkbox"] { width: 18px; height: 18px; cursor: pointer; flex-shrink: 0; }
@@ -474,7 +472,6 @@ const NODE_TYPE_ICONS = {
     spot: '📍', entertainment: '🎢', wc: '🚻', exit: '🚪', other: '📌'
 };
 
-// 就餐时间窗口（统一 11:30-12:30 / 18:00-19:00）
 const LUNCH_START = 11 * 60 + 30;
 const LUNCH_END = 12 * 60 + 30;
 const DINNER_START = 18 * 60;
@@ -506,6 +503,14 @@ function fmtTime(minutes) {
 function timeStrToMinutes(str) {
     const [h, m] = str.split(':').map(Number);
     return h * 60 + m;
+}
+
+// ★ 判断 POI 是否被某个 L3 包含（用于游客端隐藏）
+function isInsideL3(poi) {
+    if (!poi || !poi.parent_id) return false;
+    const parent = allPoisMap[String(poi.parent_id)];
+    if (!parent) return false;
+    return parent.data_level === 'L3';
 }
 
 function calcTravelBetween(prevPoiId, curPoiId) {
@@ -559,29 +564,22 @@ function setDefaultStartTime() {
     if (dateInput) dateInput.value = now.toISOString().slice(0, 10);
 }
 
-// ★ 出发地点 + 住宿地点：加入 L1 景区、住宿类 POI
 function initStartLocationSelect(pois) {
     const startSel = document.getElementById('planStartLocation');
     const lodgingSel = document.getElementById('planLodging');
     if (!startSel || !lodgingSel) return;
 
-    // 出发地点
     startSel.innerHTML = '<option value="county">红军广场（县城）</option>';
     const l1List = pois.filter(p => p.data_level === 'L1' && !p.parent_id);
     l1List.forEach(p => {
         startSel.innerHTML += `<option value="${p.id}">🏞️ ${p.name}</option>`;
     });
 
-    // 住宿地点：先重置
     lodgingSel.innerHTML = `
         <option value="all" selected>全部（智能决定）</option>
         <option value="county">县城（每天返回县城）</option>
     `;
 
-    // 找出住宿类 POI：
-    // 1. category 含"住宿"
-    // 2. facility_subtype 含 hotel
-    // 3. L4 且 business_type 含 hotel（若可用）
     const lodgingPois = pois.filter(p => {
         if (p.category && p.category.includes('住宿')) return true;
         if (Array.isArray(p.facility_subtype) && p.facility_subtype.includes('hotel')) return true;
@@ -594,12 +592,11 @@ function initStartLocationSelect(pois) {
 }
 
 // ============================================================
-// 智能规划 POI 列表
+// ★ 智能规划 POI 列表
 // 规则：
-//  - L1 容器作分组标题（不可勾选）
-//  - L1 下所有 L2/L3/L4 平铺显示，可勾选
-//  - L3 内部 core_node 展开显示，仅展示（灰色，不可勾选）
-//  - 独立 L2/L3/L4（无父级）显示在"独立景点/服务"分组下
+//  - 被 L3 包含的 POI 不单独显示（不可勾选）
+//  - L1 容器作分组标题；L1 下顶层 L2/L3/L4 平铺显示
+//  - ★ 勾选 L3 后，展开显示其内部节点（只读，按 tour_route 顺序）
 // ============================================================
 function renderPoiSelection(pois) {
     const container = document.getElementById('poiSelectContainer');
@@ -609,26 +606,38 @@ function renderPoiSelection(pois) {
         return;
     }
 
-    // L1 容器
     const l1List = pois.filter(p => p.data_level === 'L1' && !p.parent_id);
-    // 独立 L2/L3/L4（无父级且非 L1）
     const independent = pois.filter(p =>
         !p.parent_id && (p.data_level === 'L2' || p.data_level === 'L3' || p.data_level === 'L4')
     );
 
     let html = '';
 
-    // 逐个 L1 容器渲染
     l1List.forEach(l1 => {
-        // L1 下的直接子项：L2 / L3 / L4
-        const children = pois.filter(p => String(p.parent_id) === String(l1.id)
-            && (p.data_level === 'L2' || p.data_level === 'L3' || p.data_level === 'L4'));
+        const children = pois.filter(p =>
+            String(p.parent_id) === String(l1.id)
+            && (p.data_level === 'L2' || p.data_level === 'L3' || p.data_level === 'L4')
+            && !isInsideL3(p)
+        );
         if (children.length === 0) return;
+
+        // ★ 按 tour_route 排序
+        const orderedChildren = (() => {
+            const tr = Array.isArray(l1.tour_route) ? l1.tour_route : [];
+            if (tr.length === 0) return children;
+            const idxMap = {};
+            tr.forEach((id, i) => { idxMap[String(id)] = i; });
+            return [...children].sort((a, b) => {
+                const ia = idxMap[String(a.id)] ?? 999;
+                const ib = idxMap[String(b.id)] ?? 999;
+                return ia - ib;
+            });
+        })();
 
         html += `<div class="scenic-group">`;
         html += `<div class="scenic-group-title">🏞️ ${l1.name}</div>`;
         html += `<div class="scenic-group-list">`;
-        children.forEach(child => {
+        orderedChildren.forEach(child => {
             const cidStr = String(child.id);
             const isChecked = selectedPoiIds.has(cidStr);
             const dur = child.visit_duration || 0;
@@ -640,14 +649,26 @@ function renderPoiSelection(pois) {
                 <span class="poi-dur">${dur}分钟</span>
             </div>`;
 
-            // 若为 L3，展开显示内部节点（仅展示）
-            if (child.data_level === 'L3') {
-                const innerNodes = pois.filter(x => String(x.parent_id) === String(child.id));
-                innerNodes.forEach(n => {
-                    html += `<div class="poi-row node-only">
-                        <span style="margin-right:6px;">⭐</span>
-                        <span class="poi-name">${n.name}</span>
-                        <span class="poi-dur">${n.visit_duration || 0}分钟</span>
+            // ★ 若 L3 已勾选，展开显示内部节点（只读，按 tour_route 顺序）
+            if (child.data_level === 'L3' && isChecked) {
+                const inner = pois.filter(x => String(x.parent_id) === String(child.id));
+                const orderedInner = (() => {
+                    const tr = Array.isArray(child.tour_route) ? child.tour_route : [];
+                    if (tr.length === 0) return inner;
+                    const idxMap = {};
+                    tr.forEach((id, i) => { idxMap[String(id)] = i; });
+                    return [...inner].sort((a, b) => {
+                        const ia = idxMap[String(a.id)] ?? 999;
+                        const ib = idxMap[String(b.id)] ?? 999;
+                        return ia - ib;
+                    });
+                })();
+                orderedInner.forEach((n, idx) => {
+                    const ndur = n.visit_duration || 0;
+                    html += `<div class="poi-row" style="padding-left:34px;background:#fffde7;color:#666;font-size:13px;">
+                        <span style="margin-right:6px;">${idx + 1}.</span>
+                        <span>⭐ ${n.name}</span>
+                        <span class="poi-dur">${ndur}分钟</span>
                     </div>`;
                 });
             }
@@ -655,7 +676,6 @@ function renderPoiSelection(pois) {
         html += `</div></div>`;
     });
 
-    // 独立 L2/L3/L4
     if (independent.length > 0) {
         html += `<div class="independent-group">`;
         html += `<div class="scenic-group-title" style="background:#e8f5e9;border-radius:8px;margin-bottom:6px;">📍 独立景点 / 服务设施</div>`;
@@ -670,14 +690,27 @@ function renderPoiSelection(pois) {
                 <span class="poi-name">${p.name}${lvTag}</span>
                 <span class="poi-dur">${dur}分钟</span>
             </div>`;
-            // L3 展开
-            if (p.data_level === 'L3') {
-                const innerNodes = pois.filter(x => String(x.parent_id) === String(p.id));
-                innerNodes.forEach(n => {
-                    html += `<div class="poi-row node-only">
-                        <span style="margin-right:6px;">⭐</span>
-                        <span class="poi-name">${n.name}</span>
-                        <span class="poi-dur">${n.visit_duration || 0}分钟</span>
+
+            // ★ 独立 L3 勾选后也展开
+            if (p.data_level === 'L3' && isChecked) {
+                const inner = pois.filter(x => String(x.parent_id) === String(p.id));
+                const orderedInner = (() => {
+                    const tr = Array.isArray(p.tour_route) ? p.tour_route : [];
+                    if (tr.length === 0) return inner;
+                    const idxMap = {};
+                    tr.forEach((id, i) => { idxMap[String(id)] = i; });
+                    return [...inner].sort((a, b) => {
+                        const ia = idxMap[String(a.id)] ?? 999;
+                        const ib = idxMap[String(b.id)] ?? 999;
+                        return ia - ib;
+                    });
+                })();
+                orderedInner.forEach((n, idx) => {
+                    const ndur = n.visit_duration || 0;
+                    html += `<div class="poi-row" style="padding-left:34px;background:#fffde7;color:#666;font-size:13px;">
+                        <span style="margin-right:6px;">${idx + 1}.</span>
+                        <span>⭐ ${n.name}</span>
+                        <span class="poi-dur">${ndur}分钟</span>
                     </div>`;
                 });
             }
@@ -708,8 +741,8 @@ window.togglePoiSelection = function(poiId) {
 window.selectAllPois = function(select) {
     if (select) {
         allPois.forEach(poi => {
-            // 只勾选 L2 / L3（L4 不参与规划）
-            if (poi.data_level === 'L2' || poi.data_level === 'L3') {
+            if ((poi.data_level === 'L2' || poi.data_level === 'L3')
+                && !isInsideL3(poi)) {
                 const idStr = String(poi.id);
                 selectedPoiIds.add(idStr);
                 if (!selectedPoiOrder.includes(idStr)) selectedPoiOrder.push(idStr);
@@ -784,7 +817,6 @@ window.generatePlans = async function() {
     if (!startDate) { alert('请选择出发日期'); return; }
     if (selectedPoiOrder.length === 0) { alert('请至少选择一个景点'); return; }
 
-    // 只保留 L2/L3（L4 不参与规划）
     const selectedPois = selectedPoiOrder.map(id => {
         const poi = allPoisMap[String(id)];
         if (!poi) return null;
@@ -1431,9 +1463,6 @@ window.adoptRouteFinal = function() {
     alert('已采用路线并生成行程');
 };
 
-// ============================================================
-// 商户详情页导航按钮
-// ============================================================
 window.navigateToCurrentPoi = function() {
     if (!currentDetailPoi) { alert('未获取到位置信息'); return; }
     const lat = parseFloat(currentDetailPoi.lat);
@@ -1446,7 +1475,6 @@ window.navigateToCurrentPoi = function() {
 
 // ============================================================
 // 商户详情页
-// 布局：名称+导航 → 状态行 → 项目列表 → 预约 → 通知栏
 // ============================================================
 window.showPoiDetail = async function(poi) {
     currentDetailPoi = poi;
@@ -1462,7 +1490,6 @@ window.showPoiDetail = async function(poi) {
         const merchant = merchants && merchants.length > 0 ? merchants[0] : null;
         document.getElementById('merchantDetailTitle').textContent = poi.name;
 
-        // ============ 第 2 行：营业状态 / 电话 / 车位 ============
         let statusRowHtml = '';
         if (merchant) {
             const statusLabel = merchant.status === 'open' ? '🟢 营业中'
@@ -1486,7 +1513,6 @@ window.showPoiDetail = async function(poi) {
             html += `<div class="merchant-status-row">${statusRowHtml}</div>`;
         }
 
-        // ============ 第 3 行：项目/活动列表 ============
         let categories = [], items = [];
         if (merchant) {
             const sd = merchant.service_data || {};
@@ -1517,7 +1543,6 @@ window.showPoiDetail = async function(poi) {
             html += `<p style="margin-top:12px;color:#555;">${poi.description}</p>`;
         }
 
-        // ============ 第 4 行：预约按钮（内容流，向下展开） ============
         if (merchant) {
             const categoryOptions = categories.map(c => `<option value="${c}">${c}</option>`).join('');
             html += `
@@ -1559,7 +1584,6 @@ window.showPoiDetail = async function(poi) {
             `;
         }
 
-        // ============ 最底部：通知栏 ============
         if (merchant && merchant.notice) {
             html += `
                 <div class="merchant-notice">

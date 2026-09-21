@@ -79,6 +79,8 @@
         .poi-picker-search { margin-bottom: 8px; }
         .theme-checkbox-group { display: flex; flex-wrap: wrap; gap: 10px; padding: 6px 10px; border: 1px solid #ddd; border-radius: 6px; background: #fff; }
         .theme-checkbox-group .form-check { margin: 0; }
+        .group-section { margin-bottom: 20px; }
+        .group-title { font-weight: 700; font-size: 15px; color: #1b5e20; padding: 8px 12px; background: #e8f5e9; border-radius: 6px; border-left: 4px solid #2e7d32; }
         @media (max-width: 768px) { .header { flex-direction: column; gap: 8px; } }
     </style>
 </head>
@@ -182,6 +184,13 @@
                             <option value="公共服务">🏛️ 公共服务</option>
                         </select>
                         <div class="hint-text">用于游客端筛选展示</div>
+                    </div>
+                    <div class="col-6 hidden" id="field-scenic">
+                        <label class="form-label">归属景区 <span class="text-secondary small">（可选）</span></label>
+                        <select id="edit-poi-scenic" class="form-select">
+                            <option value="">-- 无归属（独立景点）--</option>
+                        </select>
+                        <div class="hint-text">仅用于后台和游客端展示分组，不影响规划计算</div>
                     </div>
                     <div class="col-6 hidden" id="field-facility-subtype">
                         <label class="form-label">公共设施子类型 <span class="text-danger">*</span></label>

@@ -1,4 +1,4 @@
-// js/admin.js - 管理后台完整逻辑（三层级 + L3 子项可编辑时长 + 安全关闭 Modal）
+// js/admin.js - L3 简化方案（is_core_node 标记 + 手填时长 + 无递归）
 import {
     getPois, getPoi, insertPoi, updatePoi, deletePoi as apiDeletePoi,
     getRoutes, getRoute, insertRoute, updateRoute, deleteRoute as apiDeleteRoute,
@@ -12,21 +12,18 @@ import {
 
 let allPois = [], allRoutes = [], allPresets = [], allMerchants = [], allFeedbacks = [];
 let currentEditingPoiId = null;
-let currentEditingPoiObj = null;   // ★ 保存当前编辑的 POI 对象引用
-let currentSubPoiIds = [];
-let currentTourRoute = [];
+let currentEditingPoiObj = null;
 let categoryManuallySet = false;
 
 let routeNodesData = [];
 let editingNodeIndex = -1;
-
 let poiPickerSelectedId = null;
 let poiPickerCurrentSearch = '';
 
 const STORAGE_BUCKET = '0frontend-assets';
 
 // ============================================================
-// ★ Modal 安全关闭工具
+// Modal 安全关闭
 // ============================================================
 function cleanupBackdrop() {
     document.querySelectorAll('.modal-backdrop').forEach(b => b.remove());
@@ -34,7 +31,6 @@ function cleanupBackdrop() {
     document.body.style.removeProperty('overflow');
     document.body.style.removeProperty('padding-right');
 }
-
 function closeModal(modalId) {
     return new Promise((resolve) => {
         const el = document.getElementById(modalId);
@@ -51,7 +47,6 @@ function closeModal(modalId) {
             };
             el.addEventListener('hidden.bs.modal', done);
             instance.hide();
-            // 兜底：400ms 后强制 resolve
             setTimeout(done, 400);
         } else {
             cleanupBackdrop();
@@ -61,9 +56,9 @@ function closeModal(modalId) {
 }
 
 // ============================================================
-// 标签与徽章
+// 标签
 // ============================================================
-const LEVEL_LABELS = { L1: '🏞️ L1 景区', L2: '📍 L2 景点', L3: '⭐ L3 连续景点', L4: '🏛️ L4 服务/设施' };
+const LEVEL_LABELS = { L1: '🏞️ L1 景区', L2: '📍 L2 普通景点', L3: '⭐ L3 连续景点', L4: '🏛️ L4 服务/设施' };
 const LEVEL_CLASSES = { L1: 'quality-L1', L2: 'quality-L2', L3: 'quality-L3', L4: 'quality-L4' };
 
 const FACILITY_SUBTYPE_LABELS = {
@@ -94,6 +89,9 @@ function getLevelBadge(level) {
     const cls = LEVEL_CLASSES[level] || 'quality-L4';
     const label = LEVEL_LABELS[level] || level;
     return `<span class="data-quality-badge ${cls}">${label}</span>`;
+}
+function getCoreNodeBadge() {
+    return `<span class="data-quality-badge" style="background:#b0bec5;color:#fff;">🗺️ 核心节点</span>`;
 }
 function getFacilitySubtypeBadge(subtypes) {
     if (!subtypes) return '';
@@ -178,17 +176,18 @@ export async function initAdminUI() {
 }
 
 // ============================================================
-// POI 列表渲染（顶层）
+// POI 列表渲染
 // ============================================================
 export function renderPoiList(pois) {
     const container = document.getElementById('poi-list');
     if (!container) return;
+    // 顶层：无父级的 POI（L1、独立 L2/L3/L4、手动标记的核心节点）
     const topLevelPois = pois.filter(p => !p.parent_id);
 
     let html = '';
     for (let p of topLevelPois) {
         const level = p.data_level || 'L2';
-        const levelBadge = getLevelBadge(level);
+        const levelBadge = p.is_core_node ? getCoreNodeBadge() : getLevelBadge(level);
         const catIcon = CATEGORY_ICONS[p.category] || '';
         const catBadge = p.category ? `<span class="category-badge">${catIcon} ${p.category}</span>` : '';
         const voiceBadge = p.voice_mp3 ? `<span class="voice-badge">🔊 语音</span>` : '';
@@ -197,91 +196,39 @@ export function renderPoiList(pois) {
             : (p.open_time && p.close_time
                 ? `<span class="text-secondary small">${normalizeTimeStr(p.open_time)}-${normalizeTimeStr(p.close_time)}</span>`
                 : '');
+        const durationInfo = (level === 'L2' || level === 'L3' || level === 'L4')
+            ? ` <span class="text-secondary small">${p.visit_duration || 0}分钟</span>` : '';
 
-        const subItems = pois.filter(x => String(x.parent_id) === String(p.id));
-        const l2Count = subItems.filter(x => x.data_level === 'L2' && x.type !== 'core_node').length;
-        const l3Count = subItems.filter(x => x.data_level === 'L3').length;
-        const l4Count = subItems.filter(x => x.data_level === 'L4').length;
-        const nodeCount = subItems.filter(x => x.type === 'core_node').length;
-
-        let subInfo = '';
-        if (subItems.length > 0) {
-            const parts = [];
-            if (l2Count) parts.push(`${l2Count}普通景点`);
-            if (l3Count) parts.push(`${l3Count}连续景点`);
-            if (l4Count) parts.push(`${l4Count}服务/设施`);
-            if (nodeCount) parts.push(`${nodeCount}节点`);
-            subInfo = ` <span class="text-secondary" style="font-size:12px;">(${parts.join(' ')})</span>`;
-        }
-
-        const featuredTag = p.is_featured ? ` <span class="featured-badge">⭐经典</span>` : '';
-        const durationInfo = level === 'L2'
-            ? ` <span class="text-secondary small">${p.visit_duration || 0}分钟</span>`
-            : (level === 'L3' ? ` <span class="text-secondary small">${p.visit_duration || 0}分钟(累加)</span>` : '');
-        const emptyHint = (level === 'L3' && subItems.length === 0)
-            ? ` <span class="text-warning small">（暂无子项，请点击"编辑"添加）</span>` : '';
+        // 子项（仅 L3）
+        const subItems = level === 'L3'
+            ? pois.filter(x => String(x.parent_id) === String(p.id))
+            : [];
+        const subInfo = subItems.length > 0
+            ? ` <span class="text-secondary" style="font-size:12px;">(含 ${subItems.length} 个核心节点)</span>` : '';
 
         html += `<div class="poi-card" id="poi-card-${p.id}">
             <div class="poi-header">
-                <span>${levelBadge} <b>${p.name}</b>${featuredTag} ${catBadge}${voiceBadge}${durationInfo} ${hoursText}${subInfo}${emptyHint}</span>
+                <span>${levelBadge} <b>${p.name}</b> ${catBadge}${voiceBadge}${durationInfo} ${hoursText}${subInfo}</span>
                 <div>
                     <button class="btn btn-sm btn-secondary" onclick="window.showEditPoiModal('${p.id}')"><i class="fas fa-edit"></i> 编辑</button>
                     <button class="btn btn-sm btn-danger" onclick="window.deletePoi('${p.id}')"><i class="fas fa-trash"></i> 删除</button>
                 </div>
             </div>`;
         if (subItems.length > 0) {
-            html += `<div class="node-list mt-2">`;
-            const ordered = orderSubItems(p, subItems);
-            ordered.forEach(sub => { html += renderPoiTreeItemHtml(sub, 0); });
+            html += `<div class="node-list mt-2" style="margin-left:20px;border-left:2px solid #90a4ae;padding-left:10px;">`;
+            subItems.forEach(sub => {
+                const subCatIcon = CATEGORY_ICONS[sub.category] || '';
+                const subCat = sub.category ? ` <span class="category-badge">${subCatIcon} ${sub.category}</span>` : '';
+                html += `<div class="sub-poi-item" style="background:#eceff1;">
+                    <span>⭐ ${sub.name}${subCat} <span class="text-secondary small">(${sub.visit_duration || 0}分钟)</span></span>
+                    <button class="btn btn-sm btn-outline-secondary" onclick="window.showEditPoiModal('${sub.id}')"><i class="fas fa-edit"></i></button>
+                </div>`;
+            });
             html += `</div>`;
         }
         html += `</div>`;
     }
     container.innerHTML = html || '<p>暂无POI</p>';
-}
-
-// 按 tour_route 排序子项
-function orderSubItems(parentPoi, subItems) {
-    const tr = Array.isArray(parentPoi.tour_route) ? parentPoi.tour_route : [];
-    if (tr.length > 0) {
-        const idxMap = {};
-        tr.forEach((id, i) => { idxMap[String(id)] = i; });
-        return [...subItems].sort((a, b) => {
-            const ia = idxMap[String(a.id)] ?? 999;
-            const ib = idxMap[String(b.id)] ?? 999;
-            return ia - ib;
-        });
-    }
-    const order = { L2: 0, L3: 1, L4: 2 };
-    return [...subItems].sort((a, b) => {
-        const oa = a.type === 'core_node' ? 9 : (order[a.data_level] ?? 5);
-        const ob = b.type === 'core_node' ? 9 : (order[b.data_level] ?? 5);
-        return oa - ob;
-    });
-}
-
-function renderPoiTreeItemHtml(sub, depth) {
-    const isNode = sub.type === 'core_node';
-    const subLevel = isNode ? null : (sub.data_level || 'L2');
-    const subBadge = isNode
-        ? `<span class="type-badge type-badge-core">⭐ 节点</span>`
-        : getLevelBadge(subLevel);
-    const catIcon = CATEGORY_ICONS[sub.category] || '';
-    const catBadge = sub.category ? ` <span class="category-badge">${catIcon} ${sub.category}</span>` : '';
-    const subDur = sub.visit_duration ? ` <span class="text-secondary small">(${sub.visit_duration}分钟)</span>` : '';
-    const facilityTag = sub.type === 'facility' ? ' ' + getFacilitySubtypeBadge(sub.facility_subtype) : '';
-    const subHours = sub.hours_type === '24h' ? ' <span class="badge bg-info text-dark" style="font-size:10px;">24H</span>' : '';
-
-    let html = `<div class="sub-poi-item" style="margin-left:${depth * 24}px;${depth > 0 ? 'background:#fffde7;' : ''}">
-        <span>${subBadge} ${sub.name}${facilityTag}${catBadge}${subHours}${subDur}</span>
-        <button class="btn btn-sm btn-outline-secondary" onclick="window.showEditPoiModal('${sub.id}')"><i class="fas fa-edit"></i></button>
-    </div>`;
-    if (subLevel === 'L3') {
-        const innerNodes = allPois.filter(x => String(x.parent_id) === String(sub.id));
-        const ordered = orderSubItems(sub, innerNodes);
-        ordered.forEach(n => { html += renderPoiTreeItemHtml(n, depth + 1); });
-    }
-    return html;
 }
 
 // ============================================================
@@ -290,10 +237,7 @@ function renderPoiTreeItemHtml(sub, depth) {
 export function showAddPoiModal() {
     currentEditingPoiId = null;
     currentEditingPoiObj = null;
-    currentSubPoiIds = [];
-    currentTourRoute = [];
     categoryManuallySet = false;
-
     populateTimeSelects();
 
     document.getElementById('edit-poi-id').value = '';
@@ -307,30 +251,28 @@ export function showAddPoiModal() {
     setSelectValueSafe(document.getElementById('edit-poi-close'), '18:00');
     document.getElementById('edit-poi-visit').value = '';
     document.getElementById('edit-poi-desc').value = '';
-    document.getElementById('edit-poi-featured').checked = false;
+    document.getElementById('edit-poi-core-node').checked = false;
+    document.getElementById('edit-poi-core-node').disabled = false;
     document.getElementById('edit-poi-voice-file').value = '';
     document.getElementById('edit-poi-voice-mp3').value = '';
     document.getElementById('edit-poi-voice-status').textContent = '';
     document.getElementById('edit-poi-voice-preview').innerHTML = '';
-
     setFacilitySubtypeCheckboxes([]);
-    refreshParentSelect(null, 'L2');
 
     document.getElementById('poiModalTitle').textContent = '新增POI';
     togglePoiLevelUI();
     toggleHoursTypeUI();
     renderSubPoiList();
 
-    const modal = new bootstrap.Modal(document.getElementById('poiModal'));
-    modal.show();
+    new bootstrap.Modal(document.getElementById('poiModal')).show();
 }
 
 export async function showEditPoiModal(poiId) {
     const poi = allPois.find(p => String(p.id) === String(poiId));
     if (!poi) return;
     currentEditingPoiId = poiId;
-    currentEditingPoiObj = poi;   // ★ 保存对象引用
-
+    currentEditingPoiObj = poi;
+    categoryManuallySet = true;
     populateTimeSelects();
 
     document.getElementById('edit-poi-id').value = poiId;
@@ -341,14 +283,17 @@ export async function showEditPoiModal(poiId) {
     document.getElementById('edit-poi-lng').value = poi.lng || '';
     document.getElementById('edit-poi-hours-type').value = poi.hours_type || 'custom';
 
-    const openVal = normalizeTimeStr(poi.open_time) || '08:00';
-    const closeVal = normalizeTimeStr(poi.close_time) || '18:00';
-    setSelectValueSafe(document.getElementById('edit-poi-open'), openVal);
-    setSelectValueSafe(document.getElementById('edit-poi-close'), closeVal);
+    setSelectValueSafe(document.getElementById('edit-poi-open'), normalizeTimeStr(poi.open_time) || '08:00');
+    setSelectValueSafe(document.getElementById('edit-poi-close'), normalizeTimeStr(poi.close_time) || '18:00');
 
     document.getElementById('edit-poi-visit').value = poi.visit_duration || '';
     document.getElementById('edit-poi-desc').value = poi.description || '';
-    document.getElementById('edit-poi-featured').checked = !!poi.is_featured;
+
+    // 核心节点复选框
+    const coreCb = document.getElementById('edit-poi-core-node');
+    coreCb.checked = !!poi.is_core_node;
+    // 若 POI 属于 L3（有父级），锁定复选框（由 L3 管理）
+    coreCb.disabled = !!poi.parent_id;
 
     document.getElementById('edit-poi-voice-file').value = '';
     document.getElementById('edit-poi-voice-mp3').value = poi.voice_mp3 || '';
@@ -365,36 +310,12 @@ export async function showEditPoiModal(poiId) {
     else if (poi.facility_subtype) subtypes = [poi.facility_subtype];
     setFacilitySubtypeCheckboxes(subtypes);
 
-    refreshParentSelect(poiId, poi.data_level || 'L2');
-
-    currentTourRoute = [];
-    if (poi.tour_route && Array.isArray(poi.tour_route)) {
-        poi.tour_route.forEach(id => {
-            const sub = allPois.find(x => String(x.id) === String(id));
-            if (sub) currentTourRoute.push({ id: sub.id, name: sub.name });
-        });
-    }
-
     document.getElementById('poiModalTitle').textContent = `编辑POI - ${poi.name}`;
     togglePoiLevelUI();
     toggleHoursTypeUI();
     renderSubPoiList();
 
-    const modal = new bootstrap.Modal(document.getElementById('poiModal'));
-    modal.show();
-}
-
-function refreshParentSelect(currentId, currentLevel) {
-    const parentSelect = document.getElementById('edit-poi-parent');
-    parentSelect.innerHTML = '<option value="">-- 不关联（独立景点）--</option>';
-    const currentPoi = currentId ? allPois.find(x => String(x.id) === String(currentId)) : null;
-
-    allPois.filter(p =>
-        p.data_level === 'L1' && !p.parent_id && String(p.id) !== String(currentId)
-    ).forEach(p => {
-        const selected = currentPoi && String(p.id) === String(currentPoi.parent_id) ? 'selected' : '';
-        parentSelect.innerHTML += `<option value="${p.id}" ${selected}>🏞️ ${p.name}</option>`;
-    });
+    new bootstrap.Modal(document.getElementById('poiModal')).show();
 }
 
 window.onPoiVoiceSelected = async function(event) {
@@ -460,101 +381,46 @@ function setFacilitySubtypeCheckboxes(values) {
 }
 
 window.onCategoryChange = function() { categoryManuallySet = true; };
-window.onParentChange = function() {
-    if (categoryManuallySet) return;
-    const parentId = document.getElementById('edit-poi-parent').value;
-    if (!parentId) return;
-    const parent = allPois.find(p => String(p.id) === String(parentId));
-    if (parent && parent.category) {
-        document.getElementById('edit-poi-category').value = parent.category;
-    }
-};
-window.onFacilitySubtypeChange = function() {
-    if (categoryManuallySet) return;
-    const subtypes = getFacilitySubtypeCheckboxes();
-    const catSelect = document.getElementById('edit-poi-category');
-    if (subtypes.includes('restaurant') || subtypes.includes('hotel')) catSelect.value = '餐饮住宿';
-    else if (subtypes.includes('shopping')) catSelect.value = '购物消费';
-    else if (subtypes.includes('service')) catSelect.value = '公共服务';
-};
 
 // ============================================================
-// ★ 等级切换 UI
-// ★ 判断"是否为节点"：type='core_node' 或 父级是 L3
+// 等级切换 UI（简化：按 data_level 显示字段）
 // ============================================================
 export function togglePoiLevelUI() {
     const level = document.getElementById('edit-poi-level').value;
     const fieldFacilitySubtype = document.getElementById('field-facility-subtype');
-    const fieldParent = document.getElementById('field-parent');
     const fieldDuration = document.getElementById('field-duration');
-    const fieldFeatured = document.getElementById('field-featured');
+    const fieldCoreNode = document.getElementById('field-core-node');
     const subSection = document.getElementById('sub-poi-section');
-    const parentRequired = document.getElementById('parent-required');
-    const durationHint = document.getElementById('duration-readonly-hint');
     const visitInput = document.getElementById('edit-poi-visit');
     const subTitle = document.getElementById('sub-poi-title');
     const subHint = document.getElementById('sub-poi-hint');
 
     fieldFacilitySubtype.classList.add('hidden');
-    fieldParent.classList.add('hidden');
     fieldDuration.classList.add('hidden');
-    fieldFeatured.classList.add('hidden');
+    fieldCoreNode.classList.add('hidden');
     subSection.classList.add('hidden');
-    durationHint.textContent = '';
     visitInput.readOnly = false;
 
-    // ★ 判断是否在编辑"节点"
-    const editingPoi = currentEditingPoiObj;
-    let isEditingNode = false;
-    if (editingPoi) {
-        if (editingPoi.type === 'core_node') {
-            isEditingNode = true;
-        } else if (editingPoi.parent_id) {
-            const parent = allPois.find(p => String(p.id) === String(editingPoi.parent_id));
-            if (parent && parent.data_level === 'L3') isEditingNode = true;
-        }
-    }
-
-    if (isEditingNode) {
-        // ★ 节点：时长可编辑，无子项管理
-        fieldParent.classList.remove('hidden');
-        fieldDuration.classList.remove('hidden');
-        if (parentRequired) parentRequired.textContent = '（所属连续景点）';
-        durationHint.textContent = '（分钟，手填）';
-        return;
-    }
-
     if (level === 'L1') {
-        subSection.classList.remove('hidden');
-        if (subTitle) subTitle.textContent = '景点管理';
-        if (subHint) subHint.textContent = '景区的子项可为 L2 普通景点、L3 连续景点、L4 服务场所/设施。';
-        if (parentRequired) parentRequired.textContent = '（L1 无父级）';
+        // L1：无时长、无子项、无核心节点（作为分类标签）
     } else if (level === 'L2') {
-        fieldParent.classList.remove('hidden');
         fieldDuration.classList.remove('hidden');
-        fieldFeatured.classList.remove('hidden');
-        if (parentRequired) parentRequired.textContent = '（可选，不关联则为独立景点）';
-        durationHint.textContent = '（分钟，手填）';
+        fieldCoreNode.classList.remove('hidden');
     } else if (level === 'L3') {
-        fieldParent.classList.remove('hidden');
         fieldDuration.classList.remove('hidden');
+        fieldCoreNode.classList.remove('hidden');
         subSection.classList.remove('hidden');
-        if (subTitle) subTitle.textContent = '连续景点内部项管理（可上下调整顺序）';
-        if (subHint) subHint.textContent = '从本景区内任意 POI 中选择（含景点、其他连续景点、服务设施、节点）。被包含的 POI 在游客端不再单独显示。使用 ↑↓ 按钮调整游览顺序。';
-        if (parentRequired) parentRequired.textContent = '（可选，不关联则为独立景点）';
-        durationHint.textContent = '（自动累加，只读）';
-        visitInput.readOnly = true;
+        if (subTitle) subTitle.textContent = '核心节点管理';
+        if (subHint) subHint.textContent = '添加 L2 或 L4 景点作为核心节点。加入后这些景点不再出现在游客端规划列表，仅在地图显示并触发电子围栏。';
     } else if (level === 'L4') {
-        fieldParent.classList.remove('hidden');
         fieldDuration.classList.remove('hidden');
+        fieldCoreNode.classList.remove('hidden');
         fieldFacilitySubtype.classList.remove('hidden');
-        if (parentRequired) parentRequired.textContent = '（可选）';
-        durationHint.textContent = '（分钟，手填，用于参考）';
     }
 }
 
 // ============================================================
-// 子项列表渲染（含 ↑↓ 排序）
+// L3 子项管理（核心节点）
 // ============================================================
 function renderSubPoiList() {
     const container = document.getElementById('sub-poi-list');
@@ -563,45 +429,20 @@ function renderSubPoiList() {
         container.innerHTML = '<p class="text-secondary small mb-0">请先保存POI，再次编辑时即可管理子项。</p>';
         return;
     }
-    const currentPoi = allPois.find(p => String(p.id) === String(currentEditingPoiId));
-    const isL3 = currentPoi && currentPoi.data_level === 'L3';
-
     const subPois = allPois.filter(p => String(p.parent_id) === String(currentEditingPoiId));
-    currentSubPoiIds = subPois.map(p => p.id);
     if (subPois.length === 0) {
-        container.innerHTML = '<p class="text-secondary small mb-0">暂无子项。</p>';
+        container.innerHTML = '<p class="text-secondary small mb-0">暂无核心节点。</p>';
         return;
     }
-
-    const ordered = orderSubItems(currentPoi || {}, subPois);
-
     let html = '';
-    if (isL3) {
-        html += `<p class="text-secondary small mb-2">当前顺序即游客端的游览顺序，可用 ↑↓ 调整。</p>`;
-    }
-    ordered.forEach((sub, idx) => {
-        const isNode = sub.type === 'core_node';
-        const subLevel = isNode ? null : (sub.data_level || 'L2');
-        const subBadge = isNode
-            ? `<span class="type-badge type-badge-core">⭐ 节点</span>`
-            : getLevelBadge(subLevel);
-        const featuredTag = sub.is_featured ? ' <span class="featured-badge">⭐</span>' : '';
+    subPois.forEach(sub => {
         const catIcon = CATEGORY_ICONS[sub.category] || '';
         const catBadge = sub.category ? ` <span class="category-badge">${catIcon} ${sub.category}</span>` : '';
         const facilityTag = sub.type === 'facility' ? ' ' + getFacilitySubtypeBadge(sub.facility_subtype) : '';
-
-        let orderBtns = '';
-        if (isL3) {
-            orderBtns = `
-                <button class="btn btn-sm btn-outline-primary" onclick="window.moveL3SubItem(${idx}, -1)" ${idx === 0 ? 'disabled' : ''} title="上移">↑</button>
-                <button class="btn btn-sm btn-outline-primary" onclick="window.moveL3SubItem(${idx}, 1)" ${idx === ordered.length - 1 ? 'disabled' : ''} title="下移">↓</button>
-            `;
-        }
-
-        html += `<div class="sub-poi-item" style="margin-left:0;">
-            <span>${subBadge} ${sub.name}${facilityTag}${featuredTag}${catBadge} <span class="text-secondary small">(${sub.visit_duration || 0}分钟)</span></span>
+        const lvTag = sub.data_level === 'L4' ? ' 🏛️' : '';
+        html += `<div class="sub-poi-item" style="background:#eceff1;">
+            <span>⭐ ${sub.name}${lvTag}${facilityTag}${catBadge} <span class="text-secondary small">(${sub.visit_duration || 0}分钟)</span></span>
             <div>
-                ${orderBtns}
                 <button class="btn btn-sm btn-outline-secondary me-1" onclick="window.showEditPoiModal('${sub.id}')"><i class="fas fa-edit"></i> 编辑</button>
                 <button class="btn btn-sm btn-danger" onclick="window.removeSubPoi('${sub.id}')"><i class="fas fa-unlink"></i> 移出</button>
             </div>
@@ -610,118 +451,42 @@ function renderSubPoiList() {
     container.innerHTML = html;
 }
 
-window.moveL3SubItem = async function(idx, dir) {
-    if (!currentEditingPoiId) return;
-    const currentPoi = allPois.find(p => String(p.id) === String(currentEditingPoiId));
-    if (!currentPoi) return;
-    const subPois = allPois.filter(p => String(p.parent_id) === String(currentEditingPoiId));
-    const ordered = orderSubItems(currentPoi, subPois);
-    const newIdx = idx + dir;
-    if (newIdx < 0 || newIdx >= ordered.length) return;
-    [ordered[idx], ordered[newIdx]] = [ordered[newIdx], ordered[idx]];
-    const ids = ordered.map(x => x.id);
-    try {
-        await updatePoi(currentEditingPoiId, { tour_route: ids });
-        currentPoi.tour_route = ids;
-        const p = allPois.find(x => String(x.id) === String(currentEditingPoiId));
-        if (p) p.tour_route = ids;
-        renderSubPoiList();
-    } catch (e) { alert('调整失败：' + e.message); }
-};
-
-// ============================================================
-// 子项添加模态框
-// ============================================================
 export function showSelectSubPoiModal() {
     if (!currentEditingPoiId) { alert('请先保存POI'); return; }
     const currentPoi = allPois.find(p => String(p.id) === String(currentEditingPoiId));
     if (!currentPoi) return;
-    const currentLevel = currentPoi.data_level || 'L2';
-
-    let candidates = [];
-    let hintMessage = '';
-
-    function isInsideOtherL3(poi) {
-        if (!poi.parent_id) return false;
-        const parent = allPois.find(x => String(x.id) === String(poi.parent_id));
-        if (!parent) return false;
-        if (parent.data_level === 'L3' && String(parent.id) !== String(currentPoi.id)) return true;
-        return false;
-    }
-
-    if (currentLevel === 'L1') {
-        candidates = allPois.filter(p =>
-            !p.parent_id && p.id !== currentPoi.id &&
-            ['L2', 'L3', 'L4'].includes(p.data_level)
-        );
-        hintMessage = '可添加无归属的 L2 景点、L3 连续景点、L4 服务设施到此景区。';
-    } else if (currentLevel === 'L3') {
-        const scenicId = currentPoi.parent_id;
-        if (scenicId) {
-            const scenicPoi = allPois.find(p => String(p.id) === String(scenicId));
-            const scenicName = scenicPoi ? scenicPoi.name : '本景区';
-            candidates = allPois.filter(p => {
-                if (String(p.id) === String(currentPoi.id)) return false;
-                if (isInsideOtherL3(p)) return false;
-                if (String(p.parent_id) === String(scenicId) && p.data_level !== 'L1') return true;
-                if (!p.parent_id && p.type === 'core_node') return true;
-                return false;
-            });
-            hintMessage = `从「${scenicName}」内的景点、其他连续景点、服务设施、核心节点中选择。被包含的 POI 在游客端将不再单独显示。`;
-        } else {
-            candidates = allPois.filter(p => {
-                if (String(p.id) === String(currentPoi.id)) return false;
-                if (isInsideOtherL3(p)) return false;
-                if (p.parent_id) return false;
-                if (p.data_level === 'L1') return false;
-                return true;
-            });
-            hintMessage = '当前为独立 L3（未归属景区），只能添加无归属的 POI。';
-        }
-    } else {
-        alert('仅 L1 景区和 L3 连续景点可管理子项');
+    if (currentPoi.data_level !== 'L3') {
+        alert('仅 L3 连续景点可添加核心节点');
         return;
     }
+
+    // 候选：L2 或 L4，且不属于任何其他 L3
+    const candidates = allPois.filter(p => {
+        if (String(p.id) === String(currentPoi.id)) return false;
+        if (p.data_level !== 'L2' && p.data_level !== 'L4') return false;
+        if (p.parent_id && String(p.parent_id) !== String(currentPoi.id)) return false;
+        return true;
+    });
 
     const list = document.getElementById('sub-poi-select-list');
     if (!list) return;
     if (candidates.length === 0) {
-        list.innerHTML = `<p class="text-secondary">${hintMessage}</p><p class="text-secondary">没有可添加的 POI</p>`;
+        list.innerHTML = '<p class="text-secondary">没有可添加的 L2/L4 景点（或它们已属于其他 L3）</p>';
         return;
     }
 
-    let html = `<p class="text-secondary small mb-2">${hintMessage}</p>`;
-    const groups = {};
+    let html = `<p class="text-secondary small mb-2">勾选后将自动标记为核心节点，不再出现在游客端规划列表。</p>`;
     candidates.forEach(p => {
-        const key = p.type === 'core_node' ? 'core_node' : (p.data_level || 'L2');
-        if (!groups[key]) groups[key] = [];
-        groups[key].push(p);
+        const lvTag = p.data_level === 'L4' ? ' [L4 服务/设施]' : ' [L2 景点]';
+        const facilityTag = p.type === 'facility' && p.facility_subtype
+            ? ` [${subtypesToText(p.facility_subtype)}]` : '';
+        const alreadyIn = String(p.parent_id) === String(currentPoi.id) ? ' <span class="text-success small">(已在)</span>' : '';
+        html += `<label style="display:flex;align-items:center;padding:6px 8px;border-bottom:1px solid #f0f0f0;cursor:pointer;">
+            <input type="checkbox" value="${p.id}" ${String(p.parent_id) === String(currentPoi.id) ? 'checked disabled' : ''} style="margin-right:8px;">
+            <span>${p.name}${lvTag}${facilityTag}</span>${alreadyIn}
+            <span style="color:#888;font-size:12px;margin-left:8px;">${p.visit_duration || 0}分钟</span>
+        </label>`;
     });
-    const groupOrder = ['core_node', 'L2', 'L3', 'L4'];
-    const labelMap = {
-        L2: '📍 L2 普通景点', L3: '⭐ L3 连续景点',
-        L4: '🏛️ L4 服务场所/设施', core_node: '⭐ 核心节点'
-    };
-    groupOrder.forEach(key => {
-        if (!groups[key] || groups[key].length === 0) return;
-        html += `<div style="margin-bottom:8px;"><b style="color:#1b5e20;">${labelMap[key] || key} (${groups[key].length})</b></div>`;
-        groups[key].forEach(p => {
-            const facilityTag = p.type === 'facility' && p.facility_subtype
-                ? ` [${subtypesToText(p.facility_subtype)}]` : '';
-            const parentName = p.parent_id
-                ? (allPois.find(x => String(x.id) === String(p.parent_id))?.name || '其他')
-                : null;
-            const currentParent = parentName
-                ? ` <span class="text-warning small">(属 ${parentName})</span>`
-                : ' <span class="text-success small">(无归属)</span>';
-            html += `<label style="display:flex;align-items:center;padding:6px 8px;border-bottom:1px solid #f0f0f0;cursor:pointer;">
-                <input type="checkbox" value="${p.id}" style="margin-right:8px;">
-                <span>${p.name}${facilityTag}</span>${currentParent}
-                <span style="color:#888;font-size:12px;margin-left:8px;">${p.visit_duration || 0}分钟</span>
-            </label>`;
-        });
-    });
-
     list.innerHTML = html;
     new bootstrap.Modal(document.getElementById('selectSubPoiModal')).show();
 }
@@ -729,7 +494,7 @@ export function showSelectSubPoiModal() {
 export async function confirmSubPoiSelection() {
     const list = document.getElementById('sub-poi-select-list');
     if (!list) return;
-    const checkboxes = list.querySelectorAll('input[type="checkbox"]');
+    const checkboxes = list.querySelectorAll('input[type="checkbox"]:not([disabled])');
     const selectedIds = [];
     checkboxes.forEach(cb => { if (cb.checked) selectedIds.push(cb.value); });
     if (selectedIds.length === 0) {
@@ -737,134 +502,79 @@ export async function confirmSubPoiSelection() {
         return;
     }
     try {
-        await Promise.all(selectedIds.map(id => updatePoi(id, { parent_id: currentEditingPoiId })));
-        selectedIds.forEach(id => {
-            const p = allPois.find(x => String(x.id) === String(id));
-            if (p) p.parent_id = currentEditingPoiId;
-        });
-        const currentPoi = allPois.find(p => String(p.id) === String(currentEditingPoiId));
-        if (currentPoi && currentPoi.data_level === 'L3') {
-            const existing = Array.isArray(currentPoi.tour_route) ? [...currentPoi.tour_route] : [];
-            const existingSet = new Set(existing.map(x => String(x)));
-            selectedIds.forEach(id => { if (!existingSet.has(String(id))) existing.push(id); });
-            await updatePoi(currentEditingPoiId, { tour_route: existing });
-            currentPoi.tour_route = existing;
-            await recomputeL3DurationRecursive(currentEditingPoiId);
-        }
+        // 加入 L3：设置 parent_id + is_core_node = true
+        await Promise.all(selectedIds.map(id => updatePoi(id, {
+            parent_id: currentEditingPoiId,
+            is_core_node: true
+        })));
         await closeModal('selectSubPoiModal');
-        renderSubPoiList();
         await initAdminUI();
-        alert(`已添加 ${selectedIds.length} 个子项`);
+        // 刷新当前编辑界面
+        const fresh = allPois.find(p => String(p.id) === String(currentEditingPoiId));
+        if (fresh) {
+            // 重新渲染子项列表
+            const subPois = allPois.filter(p => String(p.parent_id) === String(currentEditingPoiId));
+            renderSubPoiList();
+        }
+        alert(`已添加 ${selectedIds.length} 个核心节点`);
     } catch (e) { alert('添加失败：' + e.message); }
 }
 
 export async function removeSubPoi(subPoiId) {
-    if (!confirm('确认将该子项从父级移出？')) return;
+    if (!confirm('确认将该核心节点移出？移出后它会恢复为普通景点，重新出现在游客端规划列表。')) return;
     try {
-        await updatePoi(subPoiId, { parent_id: null });
-        const poi = allPois.find(p => String(p.id) === String(subPoiId));
-        if (poi) poi.parent_id = null;
-        const currentPoi = allPois.find(p => String(p.id) === String(currentEditingPoiId));
-        if (currentPoi && Array.isArray(currentPoi.tour_route)) {
-            const newTr = currentPoi.tour_route.filter(x => String(x) !== String(subPoiId));
-            await updatePoi(currentEditingPoiId, { tour_route: newTr });
-            currentPoi.tour_route = newTr;
-        }
-        if (currentPoi && currentPoi.data_level === 'L3') {
-            await recomputeL3DurationRecursive(currentEditingPoiId);
-        }
+        await updatePoi(subPoiId, {
+            parent_id: null,
+            is_core_node: false
+        });
         renderSubPoiList();
         await initAdminUI();
     } catch (e) { alert('移出失败：' + e.message); }
 }
 
-async function recomputeL3DurationRecursive(l3Id) {
-    const subs = allPois.filter(p => String(p.parent_id) === String(l3Id));
-    let total = 0;
-    for (const s of subs) {
-        if (s.data_level === 'L3') total += await computeL3DurationRecursive(s.id);
-        else total += s.visit_duration || 0;
-    }
-    await updatePoi(l3Id, { visit_duration: total });
-    const p = allPois.find(x => String(x.id) === String(l3Id));
-    if (p) p.visit_duration = total;
-    return total;
-}
-async function computeL3DurationRecursive(l3Id) {
-    const subs = allPois.filter(p => String(p.parent_id) === String(l3Id));
-    let total = 0;
-    for (const s of subs) {
-        if (s.data_level === 'L3') total += await computeL3DurationRecursive(s.id);
-        else total += s.visit_duration || 0;
-    }
-    return total;
-}
-
 // ============================================================
-// ★ 保存 POI
-// ★ 用 safeClosePoiModal 避免 backdrop 残留
+// 保存 POI
 // ============================================================
 export async function savePoiEdit() {
     const poiId = document.getElementById('edit-poi-id').value;
     const isNew = !poiId;
     const level = document.getElementById('edit-poi-level').value;
-
     const existingPoi = !isNew ? allPois.find(p => String(p.id) === String(poiId)) : null;
-
-    // ★ 判断是否在编辑"节点"：type='core_node' 或 父级是 L3
-    let isEditingNode = false;
-    if (existingPoi) {
-        if (existingPoi.type === 'core_node') {
-            isEditingNode = true;
-        } else if (existingPoi.parent_id) {
-            const parent = allPois.find(p => String(p.id) === String(existingPoi.parent_id));
-            if (parent && parent.data_level === 'L3') isEditingNode = true;
-        }
-    }
-
-    let parentId = null;
-    if (level !== 'L1') {
-        const parentRaw = document.getElementById('edit-poi-parent').value;
-        if (parentRaw) parentId = parentRaw;
-    }
 
     const hoursType = document.getElementById('edit-poi-hours-type').value;
     let openTime = normalizeTimeStr(document.getElementById('edit-poi-open').value) || '08:00';
     let closeTime = normalizeTimeStr(document.getElementById('edit-poi-close').value) || '18:00';
     if (hoursType === '24h') { openTime = '00:00'; closeTime = '23:59'; }
 
+    // 类型和时长
     let type = 'spot';
     let visitDuration = 0;
-    let dataLevel = level;
 
-    if (isEditingNode) {
-        // ★ 节点：保留原 type 和 data_level；时长可编辑
-        type = existingPoi.type || 'spot';
-        dataLevel = existingPoi.data_level || null;
-        const inputVal = parseInt(document.getElementById('edit-poi-visit').value);
-        visitDuration = isNaN(inputVal) ? (existingPoi.visit_duration || 30) : inputVal;
-    } else if (level === 'L1') {
+    if (level === 'L1') {
         type = 'scenic';
         visitDuration = 0;
-    } else if (level === 'L2') {
+    } else if (level === 'L2' || level === 'L3') {
         type = 'spot';
-        visitDuration = parseInt(document.getElementById('edit-poi-visit').value) || 60;
-    } else if (level === 'L3') {
-        type = 'spot';
-        const subs = allPois.filter(p => String(p.parent_id) === String(poiId));
-        let total = 0;
-        for (const s of subs) total += s.visit_duration || 0;
-        visitDuration = total;
+        visitDuration = parseInt(document.getElementById('edit-poi-visit').value) || 0;
     } else if (level === 'L4') {
         const subtypes = getFacilitySubtypeCheckboxes();
         type = subtypes.length > 0 ? 'facility' : 'service_place';
         visitDuration = parseInt(document.getElementById('edit-poi-visit').value) || 0;
     }
 
+    // is_core_node：若属于 L3（有父级），保持 true；否则从复选框读取
+    let isCoreNode = false;
+    if (existingPoi && existingPoi.parent_id) {
+        // 保持由 L3 管理
+        isCoreNode = true;
+    } else {
+        isCoreNode = document.getElementById('edit-poi-core-node').checked;
+    }
+
     const updates = {
         name: document.getElementById('edit-poi-name').value.trim(),
         type: type,
-        data_level: dataLevel,
+        data_level: level,
         category: document.getElementById('edit-poi-category').value,
         lat: parseFloat(document.getElementById('edit-poi-lat').value) || 0,
         lng: parseFloat(document.getElementById('edit-poi-lng').value) || 0,
@@ -873,7 +583,7 @@ export async function savePoiEdit() {
         close_time: closeTime,
         visit_duration: visitDuration,
         description: document.getElementById('edit-poi-desc').value,
-        parent_id: parentId,
+        is_core_node: isCoreNode,
         voice_mp3: document.getElementById('edit-poi-voice-mp3').value || null,
         status: 'active'
     };
@@ -885,29 +595,18 @@ export async function savePoiEdit() {
         updates.facility_subtype = null;
     }
 
-    updates.is_featured = (level === 'L2' && !isEditingNode)
-        ? document.getElementById('edit-poi-featured').checked : false;
-
-    if (!isNew && (level === 'L1' || level === 'L3') && existingPoi && Array.isArray(existingPoi.tour_route)) {
-        updates.tour_route = existingPoi.tour_route;
-    }
-
     if (!updates.name) { alert('请输入名称'); return; }
 
     try {
         if (isNew) {
-            const result = await insertPoi(updates);
+            updates.parent_id = null;
+            await insertPoi(updates);
             await closeModal('poiModal');
             await initAdminUI();
             alert('新增成功');
-            if (level === 'L3') {
-                setTimeout(() => {
-                    if (confirm('L3 连续景点已创建。是否现在添加内部项？')) {
-                        window.showEditPoiModal(result.id);
-                    }
-                }, 300);
-            }
         } else {
+            // 保留原有 parent_id（除非用户是 L3 自动管理）
+            updates.parent_id = existingPoi.parent_id || null;
             await updatePoi(poiId, updates);
             await closeModal('poiModal');
             await initAdminUI();
@@ -922,13 +621,21 @@ export async function savePoiEdit() {
 export async function deletePoi(id) {
     const poi = allPois.find(p => String(p.id) === String(id));
     if (!poi) return;
+
+    // 若删除 L3，自动解除子项
     const subPois = allPois.filter(p => String(p.parent_id) === String(id));
     let msg = '确认删除此POI？';
-    if (subPois.length > 0) msg = `该POI下有 ${subPois.length} 个子项，删除后子项将解除关联（不会删除），是否继续？`;
+    if (subPois.length > 0) {
+        msg = `该 L3 下有 ${subPois.length} 个核心节点，删除后将自动解除关联，它们会恢复为普通景点。是否继续？`;
+    }
     if (!confirm(msg)) return;
+
     try {
         if (subPois.length > 0) {
-            await Promise.all(subPois.map(p => updatePoi(p.id, { parent_id: null })));
+            await Promise.all(subPois.map(p => updatePoi(p.id, {
+                parent_id: null,
+                is_core_node: false
+            })));
         }
         await apiDeletePoi(id);
         await initAdminUI();
@@ -936,7 +643,73 @@ export async function deletePoi(id) {
 }
 
 // ============================================================
-// 路线规划
+// 交通耗时（只显示非核心节点的 L2/L3/L4）
+// ============================================================
+export function renderTransportEditor(presets) {
+    const container = document.getElementById('transport-editor');
+    if (!container) return;
+    const poiList = allPois.filter(p =>
+        !p.is_core_node && (p.data_level === 'L2' || p.data_level === 'L3' || p.data_level === 'L4')
+    );
+    if (poiList.length === 0) {
+        container.innerHTML = '<p class="text-secondary">暂无参与规划的 L2/L3/L4 景点。</p>';
+        return;
+    }
+    let html = '';
+    poiList.forEach(fromPoi => {
+        const fromLvTag = fromPoi.data_level === 'L3' ? ' ⭐' : (fromPoi.data_level === 'L4' ? ' 🏛️' : '');
+        html += `<div class="transport-group card mb-2">
+            <div class="card-header" style="cursor:pointer;background:#f8f9fa;" onclick="this.nextElementSibling.classList.toggle('hidden')">
+                <b>🚩 ${fromPoi.name}${fromLvTag}</b> <span class="text-secondary">(点击展开)</span>
+            </div>
+            <div class="card-body hidden">`;
+        poiList.forEach(toPoi => {
+            if (String(fromPoi.id) === String(toPoi.id)) return;
+            let val = presets.find(p => String(p.from_poi_id) === String(fromPoi.id) && String(p.to_poi_id) === String(toPoi.id))?.time_min;
+            if (val === undefined) val = presets.find(p => String(p.from_poi_id) === String(toPoi.id) && String(p.to_poi_id) === String(fromPoi.id))?.time_min;
+            const isEstimate = val === undefined;
+            const displayVal = isEstimate ? '' : val;
+            const toLvTag = toPoi.data_level === 'L3' ? ' ⭐' : (toPoi.data_level === 'L4' ? ' 🏛️' : '');
+            html += `<div class="transport-item">
+                <span>→ ${toPoi.name}${toLvTag}</span>
+                <div>
+                    <input type="number" value="${displayVal}" placeholder="分钟" 
+                           data-from="${fromPoi.id}" data-to="${toPoi.id}" 
+                           style="${isEstimate ? 'background:#fff3cd;' : ''}" 
+                           onchange="window.saveTransportTime(this)">
+                    <span class="save-status"></span>
+                </div>
+            </div>`;
+        });
+        html += `</div></div>`;
+    });
+    container.innerHTML = html;
+}
+
+window.saveTransportTime = async function(input) {
+    const from = input.dataset.from;
+    const to = input.dataset.to;
+    const val = parseInt(input.value);
+    if (isNaN(val) || val < 0) return;
+    try {
+        await upsertTransportPreset(from, to, val);
+        const presets = await getTransportPresets();
+        allPresets = presets;
+        const reverseExists = presets.some(p => String(p.from_poi_id) === String(to) && String(p.to_poi_id) === String(from));
+        if (!reverseExists) await upsertTransportPreset(to, from, val);
+        document.querySelectorAll('#transport-editor input[type="number"]').forEach(inp => {
+            const f = inp.dataset.from, t = inp.dataset.to;
+            if (String(f) === String(to) && String(t) === String(from) && inp.value === '') inp.value = val;
+        });
+        const status = input.parentElement.querySelector('.save-status');
+        if (status) { status.textContent = '✓已保存'; setTimeout(() => status.textContent = '', 1500); }
+        input.style.background = '#e8f5e9';
+        setTimeout(() => input.style.background = '', 1500);
+    } catch (e) { alert('保存失败：' + e.message); }
+};
+
+// ============================================================
+// 路线规划（保持原样，省略部分代码）
 // ============================================================
 export function renderRouteList(routes) {
     const container = document.getElementById('route-list');
@@ -984,6 +757,7 @@ export function renderRouteList(routes) {
     container.innerHTML = html;
 }
 
+// 路线编辑部分保持原逻辑（省略与本次改动无关的代码，直接沿用上一版本即可）
 export async function showAddRouteModal() {
     document.getElementById('edit-route-id').value = '';
     document.getElementById('edit-route-name').value = '';
@@ -1057,24 +831,17 @@ function calculateRouteTotalDuration() {
     let total = 0, prevPoiId = null;
     routeNodesData.forEach(node => {
         if (prevPoiId && node.poi_id && String(prevPoiId) !== String(node.poi_id)) {
-            const prevPoi = allPois.find(p => String(p.id) === String(prevPoiId));
-            const curPoi = allPois.find(p => String(p.id) === String(node.poi_id));
-            const sameScenic = prevPoi && curPoi && prevPoi.parent_id && curPoi.parent_id
-                && String(prevPoi.parent_id) === String(curPoi.parent_id);
-            if (!sameScenic) {
-                const preset = allPresets.find(p =>
-                    (String(p.from_poi_id) === String(prevPoiId) && String(p.to_poi_id) === String(node.poi_id)) ||
-                    (String(p.from_poi_id) === String(node.poi_id) && String(p.to_poi_id) === String(prevPoiId))
-                );
-                if (preset) total += preset.time_min || 0;
-            }
+            const preset = allPresets.find(p =>
+                (String(p.from_poi_id) === String(prevPoiId) && String(p.to_poi_id) === String(node.poi_id)) ||
+                (String(p.from_poi_id) === String(node.poi_id) && String(p.to_poi_id) === String(prevPoiId))
+            );
+            if (preset) total += preset.time_min || 0;
         }
         total += node.duration_min || 0;
         if (node.poi_id) prevPoiId = node.poi_id;
     });
     return total;
 }
-
 function renderRouteNodes() {
     const container = document.getElementById('route-nodes-container');
     if (!container) return;
@@ -1092,18 +859,8 @@ function renderRouteNodes() {
             <div class="route-node-header">
                 <span class="route-node-order">${idx + 1}</span>
                 <div class="route-node-info">
-                    <div class="route-node-name">
-                        ${n.node_name || '未命名节点'}
-                        <span class="route-node-type-badge">${typeLabel}</span>
-                        <span style="font-size:11px;color:#ff9800;margin-left:6px;">${priorityLabel}</span>
-                        ${poiName}
-                    </div>
-                    <div class="route-node-desc">
-                        <i class="fas fa-clock"></i> ${n.duration_min || 0}分钟
-                        ${n.is_skippable ? ' · 可跳过' : ''}
-                        ${n.meal_suitable ? ' · 可用餐' : ''}
-                        ${n.description ? ` · ${n.description}` : ''}
-                    </div>
+                    <div class="route-node-name">${n.node_name || '未命名节点'} <span class="route-node-type-badge">${typeLabel}</span> <span style="font-size:11px;color:#ff9800;margin-left:6px;">${priorityLabel}</span> ${poiName}</div>
+                    <div class="route-node-desc"><i class="fas fa-clock"></i> ${n.duration_min || 0}分钟 ${n.is_skippable ? ' · 可跳过' : ''} ${n.meal_suitable ? ' · 可用餐' : ''} ${n.description ? ` · ${n.description}` : ''}</div>
                 </div>
                 <div class="route-node-actions">
                     <button class="btn btn-sm btn-outline-secondary" onclick="window.moveRouteNode(${idx}, -1)" ${idx === 0 ? 'disabled' : ''}>↑</button>
@@ -1206,9 +963,6 @@ window.removeRouteNode = function(idx) {
     renderRouteNodes();
 };
 
-// ============================================================
-// POI 选择器
-// ============================================================
 window.openPoiPicker = function() {
     poiPickerSelectedId = document.getElementById('edit-node-poi').value || null;
     poiPickerCurrentSearch = '';
@@ -1220,29 +974,29 @@ function renderPoiPickerList() {
     const container = document.getElementById('poi-picker-list');
     if (!container) return;
     const keyword = (poiPickerCurrentSearch || '').toLowerCase();
-    const groups = { L1: [], L2: [], L3: [], L4: [], core_node: [] };
+    const groups = { L1: [], L2: [], L3: [], L4: [], core: [] };
     allPois.forEach(p => {
-        const key = p.type === 'core_node' ? 'core_node' : (p.data_level || 'L2');
+        let key;
+        if (p.is_core_node) key = 'core';
+        else key = p.data_level || 'L2';
         if (!groups[key]) groups[key] = [];
         if (keyword && !p.name.toLowerCase().includes(keyword)) return;
         groups[key].push(p);
     });
     const labelMap = {
         L1: '🏞️ L1 景区', L2: '📍 L2 普通景点', L3: '⭐ L3 连续景点',
-        L4: '🏛️ L4 服务场所/设施', core_node: '⭐ 核心节点'
+        L4: '🏛️ L4 服务/设施', core: '🗺️ 核心节点'
     };
     let html = '';
     Object.keys(groups).forEach(k => {
         if (groups[k].length === 0) return;
-        html += `<div class="poi-group">
-            <div class="poi-group-title">${labelMap[k] || k} (${groups[k].length})</div>`;
+        html += `<div class="poi-group"><div class="poi-group-title">${labelMap[k] || k} (${groups[k].length})</div>`;
         groups[k].forEach(p => {
             const selected = String(p.id) === String(poiPickerSelectedId) ? 'selected' : '';
             const facilityTag = (p.type === 'facility' && p.facility_subtype)
                 ? ` [${subtypesToText(p.facility_subtype)}]` : '';
             html += `<div class="poi-picker-item ${selected}" onclick="window.selectPoiPickerItem('${p.id}', '${p.name.replace(/'/g, "\\'")}')">
-                ${p.name}${facilityTag}
-            </div>`;
+                ${p.name}${facilityTag}</div>`;
         });
         html += `</div>`;
     });
@@ -1274,9 +1028,6 @@ window.confirmPoiPicker = async function() {
     await closeModal('poiPickerModal');
 };
 
-// ============================================================
-// 保存路线
-// ============================================================
 export async function saveRouteEdit() {
     const id = document.getElementById('edit-route-id').value;
     const name = document.getElementById('edit-route-name').value.trim();
@@ -1333,75 +1084,6 @@ export async function deleteRoute(id) {
     } catch (e) { alert('删除失败：' + e.message); }
 }
 
-// ============================================================
-// 交通耗时
-// ============================================================
-export function renderTransportEditor(presets) {
-    const container = document.getElementById('transport-editor');
-    if (!container) return;
-    const poiList = allPois.filter(p =>
-        !p.parent_id && (p.data_level === 'L2' || p.data_level === 'L3' || p.data_level === 'L4')
-    );
-    if (poiList.length === 0) {
-        container.innerHTML = '<p class="text-secondary">暂无顶层 L2/L3/L4 景点，无需配置交通耗时。</p>';
-        return;
-    }
-    let html = '';
-    poiList.forEach(fromPoi => {
-        const fromLvTag = fromPoi.data_level === 'L3' ? ' ⭐' : (fromPoi.data_level === 'L4' ? ' 🏛️' : '');
-        html += `<div class="transport-group card mb-2">
-            <div class="card-header" style="cursor:pointer;background:#f8f9fa;" onclick="this.nextElementSibling.classList.toggle('hidden')">
-                <b>🚩 ${fromPoi.name}${fromLvTag}</b> <span class="text-secondary">(点击展开)</span>
-            </div>
-            <div class="card-body hidden">`;
-        poiList.forEach(toPoi => {
-            if (String(fromPoi.id) === String(toPoi.id)) return;
-            let val = presets.find(p => String(p.from_poi_id) === String(fromPoi.id) && String(p.to_poi_id) === String(toPoi.id))?.time_min;
-            if (val === undefined) val = presets.find(p => String(p.from_poi_id) === String(toPoi.id) && String(p.to_poi_id) === String(fromPoi.id))?.time_min;
-            const isEstimate = val === undefined;
-            const displayVal = isEstimate ? '' : val;
-            const toLvTag = toPoi.data_level === 'L3' ? ' ⭐' : (toPoi.data_level === 'L4' ? ' 🏛️' : '');
-            html += `<div class="transport-item">
-                <span>→ ${toPoi.name}${toLvTag}</span>
-                <div>
-                    <input type="number" value="${displayVal}" placeholder="分钟" 
-                           data-from="${fromPoi.id}" data-to="${toPoi.id}" 
-                           style="${isEstimate ? 'background:#fff3cd;' : ''}" 
-                           onchange="window.saveTransportTime(this)">
-                    <span class="save-status"></span>
-                </div>
-            </div>`;
-        });
-        html += `</div></div>`;
-    });
-    container.innerHTML = html;
-}
-
-window.saveTransportTime = async function(input) {
-    const from = input.dataset.from;
-    const to = input.dataset.to;
-    const val = parseInt(input.value);
-    if (isNaN(val) || val < 0) return;
-    try {
-        await upsertTransportPreset(from, to, val);
-        const presets = await getTransportPresets();
-        allPresets = presets;
-        const reverseExists = presets.some(p => String(p.from_poi_id) === String(to) && String(p.to_poi_id) === String(from));
-        if (!reverseExists) await upsertTransportPreset(to, from, val);
-        document.querySelectorAll('#transport-editor input[type="number"]').forEach(inp => {
-            const f = inp.dataset.from, t = inp.dataset.to;
-            if (String(f) === String(to) && String(t) === String(from) && inp.value === '') inp.value = val;
-        });
-        const status = input.parentElement.querySelector('.save-status');
-        if (status) { status.textContent = '✓已保存'; setTimeout(() => status.textContent = '', 1500); }
-        input.style.background = '#e8f5e9';
-        setTimeout(() => input.style.background = '', 1500);
-    } catch (e) { alert('保存失败：' + e.message); }
-};
-
-// ============================================================
-// 商户 / 留言
-// ============================================================
 export function renderMerchantList(merchants) {
     const container = document.getElementById('merchant-list');
     if (!container) return;

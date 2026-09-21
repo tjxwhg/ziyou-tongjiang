@@ -262,6 +262,9 @@ import {
 } from './js/merchant.js';
 import { deleteReservation, uploadFile } from './js/api.js';
 
+// ★ 统一使用的 Storage Bucket
+const STORAGE_BUCKET = '0frontend-assets';
+
 const STATUS_MAP = {
     pending: '待确认', confirmed: '已确认',
     rejected: '已拒绝', cancelled: '已取消'
@@ -516,8 +519,9 @@ window.saveItem = async function() {
         if (fileInput.files && fileInput.files[0]) {
             const file = fileInput.files[0];
             const ext = file.name.split('.').pop() || 'jpg';
-            const path = `${merchant.id}/${Date.now()}.${ext}`;
-            imageUrl = await uploadFile('merchant-images', path, file);
+            const path = `merchant-items/${merchant.id}/${Date.now()}.${ext}`;
+            // ★ 使用统一 bucket 0frontend-assets
+            imageUrl = await uploadFile(STORAGE_BUCKET, path, file);
         }
         const newItem = { category, name, price, duration, description, image: imageUrl };
         if (idx === '') businessItems.push(newItem);

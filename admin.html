@@ -79,8 +79,29 @@
         .poi-picker-search { margin-bottom: 8px; }
         .theme-checkbox-group { display: flex; flex-wrap: wrap; gap: 10px; padding: 6px 10px; border: 1px solid #ddd; border-radius: 6px; background: #fff; }
         .theme-checkbox-group .form-check { margin: 0; }
-        .group-section { margin-bottom: 20px; }
-        .group-title { font-weight: 700; font-size: 15px; color: #1b5e20; padding: 8px 12px; background: #e8f5e9; border-radius: 6px; border-left: 4px solid #2e7d32; }
+        /* ============================================================ */
+        /* POI 列表 - 大类/景区/子项三级布局 */
+        /* ============================================================ */
+        .poi-category-section { margin-bottom: 24px; }
+        .poi-category-header { font-weight: 700; font-size: 16px; color: white; background: linear-gradient(135deg, #2e7d32, #1b5e20); padding: 10px 16px; border-radius: 8px 8px 0 0; display: flex; align-items: center; gap: 8px; }
+        .poi-category-section > .poi-l1-card:first-child { border-top: none; }
+        .poi-l1-card { border: 1px solid #c8e6c9; border-top: none; background: #f1f8e9; padding: 12px 16px; }
+        .poi-l1-card:last-child { border-radius: 0 0 8px 8px; }
+        .poi-l1-card + .poi-l1-card { border-top: 1px solid #e8f5e9; }
+        .poi-l1-header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
+        .poi-l1-header .poi-name-group { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+        .poi-l1-children { margin-left: 20px; border-left: 2px dashed #a5d6a7; padding-left: 12px; }
+        .poi-child-card { background: white; border: 1px solid #e0e0e0; border-radius: 6px; padding: 8px 12px; margin-bottom: 6px; }
+        .poi-child-card .poi-child-header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; }
+        .poi-child-card .poi-child-header .poi-name-group { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+        .poi-l3-children { margin-left: 16px; border-left: 2px dotted #ffb74d; padding-left: 12px; margin-top: 6px; }
+        .poi-l3-children .poi-child-card { background: #fffde7; }
+        .poi-orphan-card { background: white; border: 1px solid #e0e0e0; border-radius: 6px; padding: 8px 12px; margin-bottom: 6px; margin-left: 12px; }
+        .poi-orphan-card .poi-child-header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; }
+        .poi-orphan-card .poi-child-header .poi-name-group { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+        .poi-orphan-list { padding: 12px 0 4px 0; }
+        .poi-orphan-list-title { font-size: 12px; color: #888; margin-left: 12px; margin-bottom: 6px; }
+        .poi-empty-hint { color: #999; font-size: 12px; margin-left: 12px; }
         @media (max-width: 768px) { .header { flex-direction: column; gap: 8px; } }
     </style>
 </head>

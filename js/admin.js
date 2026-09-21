@@ -1,4 +1,4 @@
-// js/admin.js - 管理后台完整逻辑（三层级架构）
+// js/admin.js - 管理后台完整逻辑（三层级架构 + 独立景点支持）
 import {
     getPois, getPoi, insertPoi, updatePoi, deletePoi as apiDeletePoi,
     getRoutes, getRoute, insertRoute, updateRoute, deleteRoute as apiDeleteRoute,
@@ -75,7 +75,6 @@ const NODE_TYPE_LABELS = {
 
 const PRIORITY_LABELS = { 1: '⭐ 一级', 2: '⭐⭐ 二级', 3: '⭐⭐⭐ 三级' };
 
-// 按等级显示的类型徽章
 function getLevelBadge(level) {
     const cls = LEVEL_CLASSES[level] || 'quality-L4';
     const label = LEVEL_LABELS[level] || level;
@@ -123,7 +122,6 @@ function populateTimeSelects() {
     closeSel.innerHTML = closeHtml;
 }
 
-// 时间标准化：兼容 'HH:MM'、'HH:MM:SS'
 function normalizeTimeStr(t) {
     if (t === null || t === undefined || t === '') return '';
     const s = String(t).trim();
@@ -133,7 +131,6 @@ function normalizeTimeStr(t) {
     return `${h}:${m[2]}`;
 }
 
-// 安全设置下拉框值
 function setSelectValueSafe(sel, val) {
     if (!sel) return;
     if (!val) { sel.selectedIndex = -1; return; }
@@ -212,7 +209,6 @@ export function renderPoiList(pois) {
         }
 
         const featuredTag = p.is_featured ? ` <span class="featured-badge">⭐经典</span>` : '';
-        // L1 时长显示（无）
         const durationInfo = level === 'L2'
             ? ` <span class="text-secondary small">${p.visit_duration || 0}分钟</span>`
             : (level === 'L3' ? ` <span class="text-secondary small">${p.visit_duration || 0}分钟(累加)</span>` : '');
@@ -227,7 +223,6 @@ export function renderPoiList(pois) {
             </div>`;
 
         if (subItems.length > 0) {
-            // 排序：L2(普通) > L3(连续) > L4(场所/设施) > 节点
             const order = { L2: 0, L3: 1, L4: 2 };
             const sorted = [...subItems].sort((a, b) => {
                 const oa = a.type === 'core_node' ? 9 : (order[a.data_level] ?? 5);
@@ -252,7 +247,6 @@ export function renderPoiList(pois) {
                     <button class="btn btn-sm btn-outline-secondary" onclick="window.showEditPoiModal('${sub.id}')"><i class="fas fa-edit"></i></button>
                 </div>`;
 
-                // 若子项本身是 L3，展开其内部节点
                 if (subLevel === 'L3') {
                     const innerNodes = pois.filter(x => String(x.parent_id) === String(sub.id));
                     if (innerNodes.length > 0) {
@@ -366,13 +360,14 @@ export async function showEditPoiModal(poiId) {
     modal.show();
 }
 
-// 刷新"所属景区"下拉：L2/L3 的父级必须是 L1 景区
+// 刷新"所属景区"下拉
+// ★ L2/L3 均可不关联父级，作为独立景点存在
 function refreshParentSelect(currentId, currentLevel) {
     const parentSelect = document.getElementById('edit-poi-parent');
-    parentSelect.innerHTML = '<option value="">-- 不关联（独立存在）--</option>';
+    parentSelect.innerHTML = '<option value="">-- 不关联（独立景点）--</option>';
     const currentPoi = currentId ? allPois.find(x => String(x.id) === String(currentId)) : null;
 
-    // L1 景区的候选：所有 data_level = L1 的顶级 POI
+    // L1 景区候选
     allPois.filter(p =>
         p.data_level === 'L1' &&
         !p.parent_id &&
@@ -382,7 +377,7 @@ function refreshParentSelect(currentId, currentLevel) {
         parentSelect.innerHTML += `<option value="${p.id}" ${selected}>🏞️ ${p.name}</option>`;
     });
 
-    // L3 节点的父级可以是 L3 景点（可选，因为节点一般挂在 L3 下）
+    // L3 节点的父级可以是 L3 景点
     if (currentLevel === 'node') {
         allPois.filter(p =>
             p.data_level === 'L3' &&
@@ -496,7 +491,8 @@ window.onFacilitySubtypeChange = function() {
 };
 
 // ============================================================
-// 等级切换 UI（核心：按 data_level 显示不同字段）
+// 等级切换 UI
+// ★ L2/L3 的父级为可选，不强制
 // ============================================================
 export function togglePoiLevelUI() {
     const level = document.getElementById('edit-poi-level').value;
@@ -511,7 +507,6 @@ export function togglePoiLevelUI() {
     const subTitle = document.getElementById('sub-poi-title');
     const subHint = document.getElementById('sub-poi-hint');
 
-    // 重置
     fieldFacilitySubtype.classList.add('hidden');
     fieldParent.classList.add('hidden');
     fieldDuration.classList.add('hidden');
@@ -527,24 +522,24 @@ export function togglePoiLevelUI() {
         if (subHint) subHint.textContent = '景区的子项可为 L2 普通景点、L3 连续景点、L4 服务场所/设施。景区下必须至少有 1 个景点。';
         if (parentRequired) parentRequired.textContent = '（L1 无父级）';
     } else if (level === 'L2') {
-        // L2 普通景点：有时长，可归属景区
+        // L2 普通景点：时长手填；父级可选（可为独立景点）
         fieldParent.classList.remove('hidden');
         fieldDuration.classList.remove('hidden');
         fieldFeatured.classList.remove('hidden');
-        if (parentRequired) parentRequired.textContent = '*（必须选择所属景区）';
+        if (parentRequired) parentRequired.textContent = '（可选，不关联则为独立景点）';
         durationHint.textContent = '（分钟，手填）';
     } else if (level === 'L3') {
-        // L3 连续景点：内部节点累加时长，仅允许节点
+        // L3 连续景点：时长自动累加；父级可选（可为独立景点）
         fieldParent.classList.remove('hidden');
         fieldDuration.classList.remove('hidden');
         subSection.classList.remove('hidden');
         if (subTitle) subTitle.textContent = '节点管理';
         if (subHint) subHint.textContent = '连续景点的子项只能是核心节点（core_node）。节点总时长 = 连续景点总时长，不可打断。';
-        if (parentRequired) parentRequired.textContent = '*（必须选择所属景区）';
+        if (parentRequired) parentRequired.textContent = '（可选，不关联则为独立景点）';
         durationHint.textContent = '（自动累加，只读）';
         visitInput.readOnly = true;
     } else if (level === 'L4') {
-        // L4 预留：服务场所/设施
+        // L4 预留：服务场所/设施，父级可选
         fieldParent.classList.remove('hidden');
         fieldDuration.classList.remove('hidden');
         fieldFacilitySubtype.classList.remove('hidden');
@@ -606,7 +601,7 @@ export function showSelectSubPoiModal() {
 
     let candidates = [];
     if (currentLevel === 'L1') {
-        // L1 景区可以添加：无父级的 L2 / L3 / L4
+        // L1 景区可添加：无父级的 L2 / L3 / L4
         candidates = allPois.filter(p =>
             !p.parent_id &&
             p.id !== currentPoi.id &&
@@ -631,7 +626,6 @@ export function showSelectSubPoiModal() {
     }
 
     let html = '';
-    // 按等级分组
     const groups = {};
     candidates.forEach(p => {
         const key = p.type === 'core_node' ? 'core_node' : (p.data_level || 'L2');
@@ -679,7 +673,6 @@ export async function confirmSubPoiSelection() {
             const p = allPois.find(x => String(x.id) === String(id));
             if (p) p.parent_id = currentEditingPoiId;
         });
-        // 若是 L3 景点，重算时长
         const currentPoi = allPois.find(p => String(p.id) === String(currentEditingPoiId));
         if (currentPoi && currentPoi.data_level === 'L3') {
             await recomputeL3Duration(currentEditingPoiId);
@@ -706,7 +699,6 @@ export async function removeSubPoi(subPoiId) {
     } catch (e) { alert('移出失败：' + e.message); }
 }
 
-// 重算 L3 景点时长
 async function recomputeL3Duration(l3Id) {
     const subs = allPois.filter(p => String(p.parent_id) === String(l3Id));
     const total = subs.reduce((s, x) => s + (x.visit_duration || 0), 0);
@@ -716,24 +708,18 @@ async function recomputeL3Duration(l3Id) {
 }
 
 // ============================================================
-// 保存 POI（含等级校验）
+// 保存 POI（★ 移除 L2/L3 必须选择父级的强制校验）
 // ============================================================
 export async function savePoiEdit() {
     const poiId = document.getElementById('edit-poi-id').value;
     const isNew = !poiId;
     const level = document.getElementById('edit-poi-level').value;
 
-    // 校验等级与父级的关系
+    // 父级：L1 无父级；L2/L3/L4 可选
     let parentId = null;
     if (level !== 'L1') {
         const parentRaw = document.getElementById('edit-poi-parent').value;
         if (parentRaw) parentId = parentRaw;
-    }
-
-    // L2/L3 必须选择所属景区
-    if ((level === 'L2' || level === 'L3') && !parentId) {
-        alert('L2 普通景点和 L3 连续景点必须选择所属景区');
-        return;
     }
 
     const hoursType = document.getElementById('edit-poi-hours-type').value;
@@ -744,7 +730,6 @@ export async function savePoiEdit() {
         closeTime = '23:59';
     }
 
-    // 根据等级推导 type 和 visit_duration
     let type = 'spot';
     let visitDuration = 0;
 
@@ -756,7 +741,6 @@ export async function savePoiEdit() {
         visitDuration = parseInt(document.getElementById('edit-poi-visit').value) || 60;
     } else if (level === 'L3') {
         type = 'spot';
-        // 自动累加子节点
         const subs = allPois.filter(p => String(p.parent_id) === String(poiId));
         visitDuration = subs.reduce((s, x) => s + (x.visit_duration || 0), 0);
         if (visitDuration === 0 && isNew) {
@@ -764,7 +748,6 @@ export async function savePoiEdit() {
             return;
         }
     } else if (level === 'L4') {
-        // L4 服务场所/设施：根据子类型推断 type
         const subtypes = getFacilitySubtypeCheckboxes();
         if (subtypes.length > 0) {
             type = 'facility';
@@ -791,7 +774,6 @@ export async function savePoiEdit() {
         status: 'active'
     };
 
-    // 设施子类型
     if (type === 'facility') {
         const subtypes = getFacilitySubtypeCheckboxes();
         updates.facility_subtype = subtypes.length > 0 ? subtypes : null;
@@ -799,7 +781,6 @@ export async function savePoiEdit() {
         updates.facility_subtype = null;
     }
 
-    // 经典标记（仅 L2 普通景点）
     updates.is_featured = (level === 'L2')
         ? document.getElementById('edit-poi-featured').checked : false;
 
@@ -807,10 +788,8 @@ export async function savePoiEdit() {
 
     try {
         if (isNew) {
-            // L3 新建时先创建空的 L3，然后由用户添加节点
             if (level === 'L3') {
                 const result = await insertPoi(updates);
-                // 创建后再自动跳转编辑该 POI
                 bootstrap.Modal.getInstance(document.getElementById('poiModal')).hide();
                 await initAdminUI();
                 alert('L3 连续景点已创建，请再次点击编辑以添加节点');
@@ -986,7 +965,6 @@ function calculateRouteTotalDuration() {
         if (prevPoiId && node.poi_id && String(prevPoiId) !== String(node.poi_id)) {
             const prevPoi = allPois.find(p => String(p.id) === String(prevPoiId));
             const curPoi = allPois.find(p => String(p.id) === String(node.poi_id));
-            // 同景区不计交通
             const sameScenic = prevPoi && curPoi
                 && prevPoi.parent_id && curPoi.parent_id
                 && String(prevPoi.parent_id) === String(curPoi.parent_id);
@@ -1282,13 +1260,17 @@ export async function deleteRoute(id) {
 }
 
 // ============================================================
-// 交通耗时（仅顶层 L1 及独立 L2/L3）
+// 交通耗时（仅顶层 L2/L3，因为 L1 是容器）
 // ============================================================
 export function renderTransportEditor(presets) {
     const container = document.getElementById('transport-editor');
     if (!container) return;
-    const poiList = allPois.filter(p => !p.parent_id && p.data_level !== 'L1');
-    if (poiList.length === 0) { container.innerHTML = '<p>暂无独立的 L2/L3 数据</p>'; return; }
+    // ★ 只显示顶层的 L2/L3（L1 容器不参与交通计算）
+    const poiList = allPois.filter(p => !p.parent_id && (p.data_level === 'L2' || p.data_level === 'L3'));
+    if (poiList.length === 0) {
+        container.innerHTML = '<p class="text-secondary">暂无独立的 L2/L3 景点，无需配置交通耗时。</p>';
+        return;
+    }
     let html = '';
     poiList.forEach(fromPoi => {
         html += `<div class="transport-group card mb-2">

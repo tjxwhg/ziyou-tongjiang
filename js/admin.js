@@ -1,4 +1,4 @@
-// js/admin.js - L3 简化方案（is_core_node 标记 + 手填时长 + 无递归）
+// js/admin.js - 管理后台完整逻辑（含归属景区 scenic_id）
 import {
     getPois, getPoi, insertPoi, updatePoi, deletePoi as apiDeletePoi,
     getRoutes, getRoute, insertRoute, updateRoute, deleteRoute as apiDeleteRoute,
@@ -176,12 +176,11 @@ export async function initAdminUI() {
 }
 
 // ============================================================
-// POI 列表渲染
+// POI 列表渲染（后台）
 // ============================================================
 export function renderPoiList(pois) {
     const container = document.getElementById('poi-list');
     if (!container) return;
-    // 顶层：无父级的 POI（L1、独立 L2/L3/L4、手动标记的核心节点）
     const topLevelPois = pois.filter(p => !p.parent_id);
 
     let html = '';
@@ -199,7 +198,14 @@ export function renderPoiList(pois) {
         const durationInfo = (level === 'L2' || level === 'L3' || level === 'L4')
             ? ` <span class="text-secondary small">${p.visit_duration || 0}分钟</span>` : '';
 
-        // 子项（仅 L3）
+        // 归属景区名称
+        let scenicName = '';
+        if (p.scenic_id) {
+            const sc = pois.find(x => String(x.id) === String(p.scenic_id));
+            if (sc) scenicName = sc.name;
+        }
+        const scenicBadge = scenicName ? ` <span class="category-badge" style="background:#e8f5e9;color:#1b5e20;">🏞️ ${scenicName}</span>` : '';
+
         const subItems = level === 'L3'
             ? pois.filter(x => String(x.parent_id) === String(p.id))
             : [];
@@ -208,7 +214,7 @@ export function renderPoiList(pois) {
 
         html += `<div class="poi-card" id="poi-card-${p.id}">
             <div class="poi-header">
-                <span>${levelBadge} <b>${p.name}</b> ${catBadge}${voiceBadge}${durationInfo} ${hoursText}${subInfo}</span>
+                <span>${levelBadge} <b>${p.name}</b>${scenicBadge} ${catBadge}${voiceBadge}${durationInfo} ${hoursText}${subInfo}</span>
                 <div>
                     <button class="btn btn-sm btn-secondary" onclick="window.showEditPoiModal('${p.id}')"><i class="fas fa-edit"></i> 编辑</button>
                     <button class="btn btn-sm btn-danger" onclick="window.deletePoi('${p.id}')"><i class="fas fa-trash"></i> 删除</button>
@@ -259,6 +265,9 @@ export function showAddPoiModal() {
     document.getElementById('edit-poi-voice-preview').innerHTML = '';
     setFacilitySubtypeCheckboxes([]);
 
+    // 归属景区下拉
+    refreshScenicSelect(null);
+
     document.getElementById('poiModalTitle').textContent = '新增POI';
     togglePoiLevelUI();
     toggleHoursTypeUI();
@@ -289,10 +298,8 @@ export async function showEditPoiModal(poiId) {
     document.getElementById('edit-poi-visit').value = poi.visit_duration || '';
     document.getElementById('edit-poi-desc').value = poi.description || '';
 
-    // 核心节点复选框
     const coreCb = document.getElementById('edit-poi-core-node');
     coreCb.checked = !!poi.is_core_node;
-    // 若 POI 属于 L3（有父级），锁定复选框（由 L3 管理）
     coreCb.disabled = !!poi.parent_id;
 
     document.getElementById('edit-poi-voice-file').value = '';
@@ -310,12 +317,30 @@ export async function showEditPoiModal(poiId) {
     else if (poi.facility_subtype) subtypes = [poi.facility_subtype];
     setFacilitySubtypeCheckboxes(subtypes);
 
+    // ★ 归属景区回填
+    refreshScenicSelect(poiId);
+
     document.getElementById('poiModalTitle').textContent = `编辑POI - ${poi.name}`;
     togglePoiLevelUI();
     toggleHoursTypeUI();
     renderSubPoiList();
 
     new bootstrap.Modal(document.getElementById('poiModal')).show();
+}
+
+// ★ 刷新"归属景区"下拉
+function refreshScenicSelect(currentId) {
+    const scenicSel = document.getElementById('edit-poi-scenic');
+    if (!scenicSel) return;
+    scenicSel.innerHTML = '<option value="">-- 无归属（独立景点）--</option>';
+    const currentPoi = currentId ? allPois.find(x => String(x.id) === String(currentId)) : null;
+    allPois.filter(p =>
+        p.data_level === 'L1' &&
+        String(p.id) !== String(currentId)
+    ).forEach(p => {
+        const selected = currentPoi && String(p.id) === String(currentPoi.scenic_id) ? 'selected' : '';
+        scenicSel.innerHTML += `<option value="${p.id}" ${selected}>🏞️ ${p.name}</option>`;
+    });
 }
 
 window.onPoiVoiceSelected = async function(event) {
@@ -383,13 +408,14 @@ function setFacilitySubtypeCheckboxes(values) {
 window.onCategoryChange = function() { categoryManuallySet = true; };
 
 // ============================================================
-// 等级切换 UI（简化：按 data_level 显示字段）
+// 等级切换 UI
 // ============================================================
 export function togglePoiLevelUI() {
     const level = document.getElementById('edit-poi-level').value;
     const fieldFacilitySubtype = document.getElementById('field-facility-subtype');
     const fieldDuration = document.getElementById('field-duration');
     const fieldCoreNode = document.getElementById('field-core-node');
+    const fieldScenic = document.getElementById('field-scenic');
     const subSection = document.getElementById('sub-poi-section');
     const visitInput = document.getElementById('edit-poi-visit');
     const subTitle = document.getElementById('sub-poi-title');
@@ -398,17 +424,20 @@ export function togglePoiLevelUI() {
     fieldFacilitySubtype.classList.add('hidden');
     fieldDuration.classList.add('hidden');
     fieldCoreNode.classList.add('hidden');
+    if (fieldScenic) fieldScenic.classList.add('hidden');
     subSection.classList.add('hidden');
     visitInput.readOnly = false;
 
     if (level === 'L1') {
-        // L1：无时长、无子项、无核心节点（作为分类标签）
+        // L1 景区：无时长、无归属、无核心节点
     } else if (level === 'L2') {
         fieldDuration.classList.remove('hidden');
         fieldCoreNode.classList.remove('hidden');
+        if (fieldScenic) fieldScenic.classList.remove('hidden');
     } else if (level === 'L3') {
         fieldDuration.classList.remove('hidden');
         fieldCoreNode.classList.remove('hidden');
+        if (fieldScenic) fieldScenic.classList.remove('hidden');
         subSection.classList.remove('hidden');
         if (subTitle) subTitle.textContent = '核心节点管理';
         if (subHint) subHint.textContent = '添加 L2 或 L4 景点作为核心节点。加入后这些景点不再出现在游客端规划列表，仅在地图显示并触发电子围栏。';
@@ -416,11 +445,12 @@ export function togglePoiLevelUI() {
         fieldDuration.classList.remove('hidden');
         fieldCoreNode.classList.remove('hidden');
         fieldFacilitySubtype.classList.remove('hidden');
+        if (fieldScenic) fieldScenic.classList.remove('hidden');
     }
 }
 
 // ============================================================
-// L3 子项管理（核心节点）
+// L3 子项管理
 // ============================================================
 function renderSubPoiList() {
     const container = document.getElementById('sub-poi-list');
@@ -439,9 +469,8 @@ function renderSubPoiList() {
         const catIcon = CATEGORY_ICONS[sub.category] || '';
         const catBadge = sub.category ? ` <span class="category-badge">${catIcon} ${sub.category}</span>` : '';
         const facilityTag = sub.type === 'facility' ? ' ' + getFacilitySubtypeBadge(sub.facility_subtype) : '';
-        const lvTag = sub.data_level === 'L4' ? ' 🏛️' : '';
         html += `<div class="sub-poi-item" style="background:#eceff1;">
-            <span>⭐ ${sub.name}${lvTag}${facilityTag}${catBadge} <span class="text-secondary small">(${sub.visit_duration || 0}分钟)</span></span>
+            <span>⭐ ${sub.name}${facilityTag}${catBadge} <span class="text-secondary small">(${sub.visit_duration || 0}分钟)</span></span>
             <div>
                 <button class="btn btn-sm btn-outline-secondary me-1" onclick="window.showEditPoiModal('${sub.id}')"><i class="fas fa-edit"></i> 编辑</button>
                 <button class="btn btn-sm btn-danger" onclick="window.removeSubPoi('${sub.id}')"><i class="fas fa-unlink"></i> 移出</button>
@@ -460,7 +489,6 @@ export function showSelectSubPoiModal() {
         return;
     }
 
-    // 候选：L2 或 L4，且不属于任何其他 L3
     const candidates = allPois.filter(p => {
         if (String(p.id) === String(currentPoi.id)) return false;
         if (p.data_level !== 'L2' && p.data_level !== 'L4') return false;
@@ -477,13 +505,12 @@ export function showSelectSubPoiModal() {
 
     let html = `<p class="text-secondary small mb-2">勾选后将自动标记为核心节点，不再出现在游客端规划列表。</p>`;
     candidates.forEach(p => {
-        const lvTag = p.data_level === 'L4' ? ' [L4 服务/设施]' : ' [L2 景点]';
         const facilityTag = p.type === 'facility' && p.facility_subtype
             ? ` [${subtypesToText(p.facility_subtype)}]` : '';
         const alreadyIn = String(p.parent_id) === String(currentPoi.id) ? ' <span class="text-success small">(已在)</span>' : '';
         html += `<label style="display:flex;align-items:center;padding:6px 8px;border-bottom:1px solid #f0f0f0;cursor:pointer;">
             <input type="checkbox" value="${p.id}" ${String(p.parent_id) === String(currentPoi.id) ? 'checked disabled' : ''} style="margin-right:8px;">
-            <span>${p.name}${lvTag}${facilityTag}</span>${alreadyIn}
+            <span>${p.name}${facilityTag}</span>${alreadyIn}
             <span style="color:#888;font-size:12px;margin-left:8px;">${p.visit_duration || 0}分钟</span>
         </label>`;
     });
@@ -502,20 +529,13 @@ export async function confirmSubPoiSelection() {
         return;
     }
     try {
-        // 加入 L3：设置 parent_id + is_core_node = true
         await Promise.all(selectedIds.map(id => updatePoi(id, {
             parent_id: currentEditingPoiId,
             is_core_node: true
         })));
         await closeModal('selectSubPoiModal');
         await initAdminUI();
-        // 刷新当前编辑界面
-        const fresh = allPois.find(p => String(p.id) === String(currentEditingPoiId));
-        if (fresh) {
-            // 重新渲染子项列表
-            const subPois = allPois.filter(p => String(p.parent_id) === String(currentEditingPoiId));
-            renderSubPoiList();
-        }
+        renderSubPoiList();
         alert(`已添加 ${selectedIds.length} 个核心节点`);
     } catch (e) { alert('添加失败：' + e.message); }
 }
@@ -546,7 +566,6 @@ export async function savePoiEdit() {
     let closeTime = normalizeTimeStr(document.getElementById('edit-poi-close').value) || '18:00';
     if (hoursType === '24h') { openTime = '00:00'; closeTime = '23:59'; }
 
-    // 类型和时长
     let type = 'spot';
     let visitDuration = 0;
 
@@ -562,14 +581,15 @@ export async function savePoiEdit() {
         visitDuration = parseInt(document.getElementById('edit-poi-visit').value) || 0;
     }
 
-    // is_core_node：若属于 L3（有父级），保持 true；否则从复选框读取
     let isCoreNode = false;
     if (existingPoi && existingPoi.parent_id) {
-        // 保持由 L3 管理
         isCoreNode = true;
     } else {
         isCoreNode = document.getElementById('edit-poi-core-node').checked;
     }
+
+    // ★ 归属景区
+    const scenicIdVal = (level === 'L1') ? null : (document.getElementById('edit-poi-scenic')?.value || null);
 
     const updates = {
         name: document.getElementById('edit-poi-name').value.trim(),
@@ -584,6 +604,7 @@ export async function savePoiEdit() {
         visit_duration: visitDuration,
         description: document.getElementById('edit-poi-desc').value,
         is_core_node: isCoreNode,
+        scenic_id: scenicIdVal,
         voice_mp3: document.getElementById('edit-poi-voice-mp3').value || null,
         status: 'active'
     };
@@ -605,7 +626,6 @@ export async function savePoiEdit() {
             await initAdminUI();
             alert('新增成功');
         } else {
-            // 保留原有 parent_id（除非用户是 L3 自动管理）
             updates.parent_id = existingPoi.parent_id || null;
             await updatePoi(poiId, updates);
             await closeModal('poiModal');
@@ -621,15 +641,12 @@ export async function savePoiEdit() {
 export async function deletePoi(id) {
     const poi = allPois.find(p => String(p.id) === String(id));
     if (!poi) return;
-
-    // 若删除 L3，自动解除子项
     const subPois = allPois.filter(p => String(p.parent_id) === String(id));
     let msg = '确认删除此POI？';
     if (subPois.length > 0) {
         msg = `该 L3 下有 ${subPois.length} 个核心节点，删除后将自动解除关联，它们会恢复为普通景点。是否继续？`;
     }
     if (!confirm(msg)) return;
-
     try {
         if (subPois.length > 0) {
             await Promise.all(subPois.map(p => updatePoi(p.id, {
@@ -643,7 +660,7 @@ export async function deletePoi(id) {
 }
 
 // ============================================================
-// 交通耗时（只显示非核心节点的 L2/L3/L4）
+// 交通耗时
 // ============================================================
 export function renderTransportEditor(presets) {
     const container = document.getElementById('transport-editor');
@@ -657,10 +674,9 @@ export function renderTransportEditor(presets) {
     }
     let html = '';
     poiList.forEach(fromPoi => {
-        const fromLvTag = fromPoi.data_level === 'L3' ? ' ⭐' : (fromPoi.data_level === 'L4' ? ' 🏛️' : '');
         html += `<div class="transport-group card mb-2">
             <div class="card-header" style="cursor:pointer;background:#f8f9fa;" onclick="this.nextElementSibling.classList.toggle('hidden')">
-                <b>🚩 ${fromPoi.name}${fromLvTag}</b> <span class="text-secondary">(点击展开)</span>
+                <b>🚩 ${fromPoi.name}</b> <span class="text-secondary">(点击展开)</span>
             </div>
             <div class="card-body hidden">`;
         poiList.forEach(toPoi => {
@@ -669,9 +685,8 @@ export function renderTransportEditor(presets) {
             if (val === undefined) val = presets.find(p => String(p.from_poi_id) === String(toPoi.id) && String(p.to_poi_id) === String(fromPoi.id))?.time_min;
             const isEstimate = val === undefined;
             const displayVal = isEstimate ? '' : val;
-            const toLvTag = toPoi.data_level === 'L3' ? ' ⭐' : (toPoi.data_level === 'L4' ? ' 🏛️' : '');
             html += `<div class="transport-item">
-                <span>→ ${toPoi.name}${toLvTag}</span>
+                <span>→ ${toPoi.name}</span>
                 <div>
                     <input type="number" value="${displayVal}" placeholder="分钟" 
                            data-from="${fromPoi.id}" data-to="${toPoi.id}" 
@@ -709,7 +724,7 @@ window.saveTransportTime = async function(input) {
 };
 
 // ============================================================
-// 路线规划（保持原样，省略部分代码）
+// 路线规划
 // ============================================================
 export function renderRouteList(routes) {
     const container = document.getElementById('route-list');
@@ -757,7 +772,6 @@ export function renderRouteList(routes) {
     container.innerHTML = html;
 }
 
-// 路线编辑部分保持原逻辑（省略与本次改动无关的代码，直接沿用上一版本即可）
 export async function showAddRouteModal() {
     document.getElementById('edit-route-id').value = '';
     document.getElementById('edit-route-name').value = '';

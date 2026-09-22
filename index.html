@@ -156,6 +156,7 @@
         .poi-selectable-row input[type="checkbox"] { width: 18px; height: 18px; cursor: pointer; flex-shrink: 0; }
         .poi-selectable-row .poi-name { flex: 1; color: #333; }
         .poi-selectable-row .poi-dur { color: #888; font-size: 12px; }
+        .type-tag { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 11px; background: #e8f5e9; color: #1b5e20; font-weight: 500; flex-shrink: 0; }
         .l3-inner-list { margin-left: 24px; margin-top: 4px; margin-bottom: 4px; border-left: 2px dotted #ffb74d; padding-left: 10px; }
         .l3-inner-row { display: flex; align-items: center; gap: 8px; padding: 4px 8px; font-size: 13px; color: #666; background: #fffde7; border-radius: 4px; margin-bottom: 2px; }
         .l3-inner-row .l3-order { color: #999; min-width: 18px; }
@@ -584,14 +585,27 @@ function initStartLocationSelect(pois) {
 }
 
 // ============================================================
-// 智能规划 POI 列表（与后台 POI 列表同构：大类 → 景区 → 子项）
-//  - 8 大类顺序固定
-//  - 每大类下先列该大类的 L1 景区（含其 L2/L3/L4 子项）
-//  - 再列该大类下无归属的 L2/L3
-//  - 最后统一一个"服务场所（L4）"节显示无归属的 L4
-//  - is_core_node 的 POI 不显示
-//  - POI 名称后不加任何级别标记
-//  - L3 勾选后展开其内部核心节点（只读）
+// ★ 类型标签
+// ============================================================
+function getTypeTagHtml(p) {
+    if (p.data_level === 'L3') return '<span class="type-tag">⭐ 连续景点</span>';
+    if (p.data_level === 'L4') {
+        const sub = Array.isArray(p.facility_subtype) ? p.facility_subtype[0] : p.facility_subtype;
+        const L4_MAP = { restaurant: '🍽️ 餐厅', hotel: '🏨 住宿', shopping: '🛍️ 购物', service: '🚻 设施' };
+        if (sub && L4_MAP[sub]) return `<span class="type-tag">${L4_MAP[sub]}</span>`;
+        return '<span class="type-tag">🏛️ 服务</span>';
+    }
+    const cat = (p.category || '').split(',')[0].trim();
+    const L2_MAP = {
+        '自然景区': '🏔️ 景点', '红色景区': '🔴 景点', '文博场馆': '📚 文博',
+        '餐饮住宿': '🍽️ 食宿', '游玩娱乐': '🎢 娱乐', '购物消费': '🛍️ 购物',
+        '交通枢纽': '🚌 交通', '公共服务': '🏛️ 服务'
+    };
+    return `<span class="type-tag">${L2_MAP[cat] || cat}</span>`;
+}
+
+// ============================================================
+// ★ 智能规划 POI 列表（大类 → 景区 → 子项）
 // ============================================================
 const CATEGORY_ORDER = [
     '自然景区', '红色景区', '文博场馆', '餐饮住宿',
@@ -606,7 +620,6 @@ function renderPoiSelection(pois) {
         return;
     }
 
-    // 可勾选：L2/L3/L4 且非核心节点
     const visiblePois = pois.filter(p =>
         (p.data_level === 'L2' || p.data_level === 'L3' || p.data_level === 'L4')
         && !p.is_core_node
@@ -621,11 +634,9 @@ function renderPoiSelection(pois) {
 
     let html = '';
 
-    // 8 大类
     CATEGORY_ORDER.forEach(cat => {
         const catL1 = l1List.filter(p => (p.category || '').split(',')[0].trim() === cat);
 
-        // 该大类下无归属的 L2/L3（不含 L4，L4 统一处理）
         const catOrphans = visiblePois.filter(p => {
             if (p.data_level === 'L4') return false;
             if (p.scenic_id !== null && p.scenic_id !== undefined) return false;
@@ -633,7 +644,6 @@ function renderPoiSelection(pois) {
             return pCat === cat;
         });
 
-        // 该大类下是否有任何可显示内容
         const hasAnyScenic = catL1.some(l1 =>
             visiblePois.some(p =>
                 String(p.scenic_id) === String(l1.id)
@@ -647,12 +657,10 @@ function renderPoiSelection(pois) {
         html += `<div class="poi-category-section">`;
         html += `<div class="poi-category-header">${catIcon} ${cat}</div>`;
 
-        // 该大类下的 L1 景区
         catL1.forEach(l1 => {
             html += renderScenicForSelection(l1, visiblePois);
         });
 
-        // 无归属的 L2/L3
         if (catOrphans.length > 0) {
             html += `<div class="poi-orphan-section">`;
             html += `<div class="poi-orphan-title">📌 无归属${cat}（独立景点）</div>`;
@@ -669,7 +677,6 @@ function renderPoiSelection(pois) {
         html += `</div>`;
     });
 
-    // 无归属的 L4（服务场所）
     const orphanL4 = visiblePois.filter(p =>
         p.data_level === 'L4'
         && (p.scenic_id === null || p.scenic_id === undefined)
@@ -688,7 +695,6 @@ function renderPoiSelection(pois) {
     updateSelectedInfo();
 }
 
-// L1 景区卡片（含其 L2/L3/L4 子项）
 function renderScenicForSelection(l1, visiblePois) {
     const children = visiblePois.filter(p =>
         String(p.scenic_id) === String(l1.id)
@@ -710,21 +716,23 @@ function renderScenicForSelection(l1, visiblePois) {
     return html;
 }
 
-// 可勾选行（若 L3 勾选后，展开其内部核心节点）
+// ★ 可勾选行（含类型标签；L3 默认展开内部子项）
 function renderSelectableRow(p, allPois) {
     const idStr = String(p.id);
     const isChecked = selectedPoiIds.has(idStr);
     const dur = p.visit_duration || 0;
+    const typeTag = getTypeTagHtml(p);
 
     let html = `<div class="poi-selectable-row">
         <input type="checkbox" ${isChecked ? 'checked' : ''}
                onclick="event.stopPropagation(); window.togglePoiSelection('${p.id}')">
         <span class="poi-name">${p.name}</span>
+        ${typeTag}
         <span class="poi-dur">${dur}分钟</span>
     </div>`;
 
-    // L3 勾选后，展开内部核心节点（只读）
-    if (p.data_level === 'L3' && isChecked) {
+    // ★ L3 默认展开内部子项（不依赖勾选状态）
+    if (p.data_level === 'L3') {
         const innerNodes = allPois.filter(x => String(x.parent_id) === String(p.id));
         if (innerNodes.length > 0) {
             html += `<div class="l3-inner-list">`;

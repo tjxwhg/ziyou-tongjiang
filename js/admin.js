@@ -1,9 +1,9 @@
-// js/admin.js - 管理后台完整逻辑（交通耗时含县城 + scenic_id integer）
+// js/admin.js - 管理后台完整逻辑（交通耗时"以前面为准"）
 import {
     getPois, getPoi, insertPoi, updatePoi, deletePoi as apiDeletePoi,
     getRoutes, getRoute, insertRoute, updateRoute, deleteRoute as apiDeleteRoute,
     getRouteNodes, insertRouteNodes, deleteRouteNodes,
-    getTransportPresets, upsertTransportPreset,
+    getTransportPresets, upsertTransportPreset, deleteTransportPreset,
     getMerchantsByPoi, getMerchant, updateMerchant, createMerchantRecord,
     getReservations, updateReservation,
     getFeedbacks, updateFeedback, deleteFeedback as apiDeleteFeedback,
@@ -177,6 +177,9 @@ export async function initAdminUI() {
     }
 }
 
+// ============================================================
+// POI 列表渲染
+// ============================================================
 const CATEGORY_ORDER = [
     '自然景区', '红色景区', '文博场馆', '餐饮住宿',
     '交通枢纽', '游玩娱乐', '购物消费', '公共服务'
@@ -385,6 +388,9 @@ function renderL4Card(l4, pois) {
     return html;
 }
 
+// ============================================================
+// 新增 / 编辑 POI
+// ============================================================
 export function showAddPoiModal() {
     currentEditingPoiId = null;
     currentEditingPoiObj = null;
@@ -810,7 +816,7 @@ export async function deletePoi(id) {
 }
 
 // ============================================================
-// ★ 交通耗时编辑器（方案丙：县城卡片 + 每景点首行加"→ 县城"）
+// ★ 交通耗时编辑器（"以前面为准"规则）
 // ============================================================
 export function renderTransportEditor(presets) {
     const container = document.getElementById('transport-editor');
@@ -824,31 +830,88 @@ export function renderTransportEditor(presets) {
         container.innerHTML = '<p class="text-secondary">暂无参与规划的 L2/L3/L4 景点。</p>';
         return;
     }
+
+    // 构建顺序索引：县城 = -1，其他按 poiList 顺序
+    const orderIndex = { '0': -1 };
+    poiList.forEach((p, i) => { orderIndex[String(p.id)] = i; });
+    function getOrder(id) {
+        const k = String(id);
+        return (k in orderIndex) ? orderIndex[k] : 9999;
+    }
+    function getPoiName(id) {
+        if (String(id) === '0') return '红军广场（县城）';
+        const p = poiList.find(x => String(x.id) === String(id));
+        return p ? p.name : id;
+    }
+
+    // ★ 判断一对 (from, to) 的权威方向和记录
+    function resolveAuthority(fromId, toId) {
+        const fromIdx = getOrder(fromId);
+        const toIdx = getOrder(toId);
+        const earlierId = fromIdx <= toIdx ? fromId : toId;
+        const laterId = fromIdx <= toIdx ? toId : fromId;
+        const authorityRecord = presets.find(p =>
+            String(p.from_poi_id) === String(earlierId)
+            && String(p.to_poi_id) === String(laterId)
+        );
+        return {
+            earlierId,
+            laterId,
+            authorityRecord,
+            isEarlierRow: String(fromId) === String(earlierId)
+        };
+    }
+
+    // ★ 渲染一行
+    function renderRow(fromId, toId, label) {
+        const { earlierId, authorityRecord, isEarlierRow } = resolveAuthority(fromId, toId);
+        let displayVal = '';
+        let isReadonly = false;
+        let note = '';
+
+        if (authorityRecord) {
+            displayVal = authorityRecord.time_min;
+            if (!isEarlierRow) {
+                // 当前是"后面"行：只读显示权威值
+                isReadonly = true;
+                note = `<span class="text-secondary small ms-2">🔒 由「${getPoiName(earlierId)}」定义</span>`;
+            }
+        }
+
+        const inputStyle = isReadonly
+            ? 'background:#e0e0e0;cursor:not-allowed;color:#666;'
+            : (authorityRecord ? '' : 'background:#fff3cd;');
+
+        const inputAttrs = isReadonly
+            ? `readonly data-readonly="1" style="${inputStyle}"`
+            : `onchange="window.saveTransportTime(this)" style="${inputStyle}"`;
+
+        return `<div class="transport-item">
+            <span>${label}</span>
+            <div style="display:flex;align-items:center;">
+                <input type="number" value="${displayVal}" placeholder="分钟" 
+                       data-from="${fromId}" data-to="${toId}" 
+                       ${inputAttrs}>
+                ${note}
+                <span class="save-status"></span>
+            </div>
+        </div>`;
+    }
+
     let html = '';
 
-    // 1. 红军广场卡片（县城 → 各景点）
+    // 1. 红军广场卡片
     html += `<div class="transport-group card mb-2" style="border:2px solid #1b5e20;">
         <div class="card-header" style="cursor:pointer;background:#e8f5e9;" onclick="this.nextElementSibling.classList.toggle('hidden')">
             <b>🏠 红军广场（县城）</b> <span class="text-secondary">→ 各景点耗时（点击展开）</span>
         </div>
         <div class="card-body hidden">`;
     poiList.forEach(toPoi => {
-        let val = presets.find(p => String(p.from_poi_id) === '0' && String(p.to_poi_id) === String(toPoi.id))?.time_min;
-        const displayVal = val === undefined ? '' : val;
-        html += `<div class="transport-item">
-            <span>→ ${toPoi.name}</span>
-            <div>
-                <input type="number" value="${displayVal}" placeholder="分钟" 
-                       data-from="0" data-to="${toPoi.id}" 
-                       style="${val === undefined ? 'background:#fff3cd;' : ''}" 
-                       onchange="window.saveTransportTime(this)">
-                <span class="save-status"></span>
-            </div>
-        </div>`;
+        html += renderRow('0', toPoi.id, `→ ${toPoi.name}`);
     });
     html += `</div></div>`;
 
-    // 2. 每个景点卡片
+    // 2. 各景点卡片
     poiList.forEach(fromPoi => {
         html += `<div class="transport-group card mb-2">
             <div class="card-header" style="cursor:pointer;background:#f8f9fa;" onclick="this.nextElementSibling.classList.toggle('hidden')">
@@ -857,75 +920,58 @@ export function renderTransportEditor(presets) {
             <div class="card-body hidden">`;
 
         // 首行：→ 红军广场
-        let returnVal = presets.find(p => String(p.from_poi_id) === String(fromPoi.id) && String(p.to_poi_id) === '0')?.time_min;
-        const returnDisplayVal = returnVal === undefined ? '' : returnVal;
-        html += `<div class="transport-item" style="background:#e8f5e9;">
-            <span>🏠 → 红军广场（县城）</span>
-            <div>
-                <input type="number" value="${returnDisplayVal}" placeholder="分钟" 
-                       data-from="${fromPoi.id}" data-to="0" 
-                       style="${returnVal === undefined ? 'background:#fff3cd;' : ''}" 
-                       onchange="window.saveTransportTime(this)">
-                <span class="save-status"></span>
-            </div>
-        </div>`;
+        html += renderRow(fromPoi.id, '0', '🏠 → 红军广场（县城）');
 
         // 后续：→ 其他景点
         poiList.forEach(toPoi => {
             if (String(fromPoi.id) === String(toPoi.id)) return;
-            let val = presets.find(p => String(p.from_poi_id) === String(fromPoi.id) && String(p.to_poi_id) === String(toPoi.id))?.time_min;
-            if (val === undefined) val = presets.find(p => String(p.from_poi_id) === String(toPoi.id) && String(p.to_poi_id) === String(fromPoi.id))?.time_min;
-            const isEstimate = val === undefined;
-            const displayVal = isEstimate ? '' : val;
-            html += `<div class="transport-item">
-                <span>→ ${toPoi.name}</span>
-                <div>
-                    <input type="number" value="${displayVal}" placeholder="分钟" 
-                           data-from="${fromPoi.id}" data-to="${toPoi.id}" 
-                           style="${isEstimate ? 'background:#fff3cd;' : ''}" 
-                           onchange="window.saveTransportTime(this)">
-                    <span class="save-status"></span>
-                </div>
-            </div>`;
+            html += renderRow(fromPoi.id, toPoi.id, `→ ${toPoi.name}`);
         });
+
         html += `</div></div>`;
     });
 
     container.innerHTML = html;
 }
 
+// ★ 保存交通耗时：保存时清理反向记录
 window.saveTransportTime = async function(input) {
+    // 只读输入框不会触发 onchange，此处双重保险
+    if (input.readOnly || input.dataset.readonly === '1') return;
+
     const from = input.dataset.from;
     const to = input.dataset.to;
     const val = parseInt(input.value);
     if (isNaN(val) || val < 0) return;
-    // 允许 0（县城）
+
     const fromValid = (from === '0') || isValidId(from);
     const toValid = (to === '0') || isValidId(to);
     if (!fromValid || !toValid) {
         alert('POI ID 非法，无法保存');
         return;
     }
+
     try {
         const fromVal = from === '0' ? 0 : toSafeId(from);
         const toVal = to === '0' ? 0 : toSafeId(to);
+
+        // 1. 保存正向记录
         await upsertTransportPreset(fromVal, toVal, val);
+
+        // 2. 删除反向记录（保证单一权威）
         const presets = await getTransportPresets();
-        allPresets = presets;
-        // 仅当两端都不是县城时，才自动填充反向
-        const isCountyRoute = (fromVal === 0 || toVal === 0);
-        if (!isCountyRoute) {
-            const reverseExists = presets.some(p => String(p.from_poi_id) === String(to) && String(p.to_poi_id) === String(from));
-            if (!reverseExists) await upsertTransportPreset(toVal, fromVal, val);
+        const reverseExists = presets.some(p =>
+            String(p.from_poi_id) === String(toVal)
+            && String(p.to_poi_id) === String(fromVal)
+        );
+        if (reverseExists) {
+            await deleteTransportPreset(toVal, fromVal);
         }
-        document.querySelectorAll('#transport-editor input[type="number"]').forEach(inp => {
-            const f = inp.dataset.from, t = inp.dataset.to;
-            if (String(f) === String(to) && String(t) === String(from) && inp.value === '' && !isCountyRoute) inp.value = val;
-        });
-        const status = input.parentElement.querySelector('.save-status');
-        if (status) { status.textContent = '✓已保存'; setTimeout(() => status.textContent = '', 1500); }
-        input.style.background = '#e8f5e9';
-        setTimeout(() => input.style.background = '', 1500);
+
+        // 3. 刷新数据
+        const updatedPresets = await getTransportPresets();
+        allPresets = updatedPresets;
+        renderTransportEditor(allPresets);
     } catch (e) { alert('保存失败：' + e.message); }
 };
 

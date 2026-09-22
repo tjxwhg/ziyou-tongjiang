@@ -1,4 +1,4 @@
-// js/admin.js - 管理后台完整逻辑（景区下含 L2/L3/L4）
+// js/admin.js - 管理后台完整逻辑（交通耗时含县城 + scenic_id integer）
 import {
     getPois, getPoi, insertPoi, updatePoi, deletePoi as apiDeletePoi,
     getRoutes, getRoute, insertRoute, updateRoute, deleteRoute as apiDeleteRoute,
@@ -22,7 +22,6 @@ let poiPickerCurrentSearch = '';
 
 const STORAGE_BUCKET = '0frontend-assets';
 
-// ★ ID 校验：兼容 integer 和 uuid
 function isValidId(val) {
     if (val === null || val === undefined || val === '') return false;
     const s = String(val).trim();
@@ -37,9 +36,6 @@ function toSafeId(val) {
     return s;
 }
 
-// ============================================================
-// Modal 安全关闭
-// ============================================================
 function cleanupBackdrop() {
     document.querySelectorAll('.modal-backdrop').forEach(b => b.remove());
     document.body.classList.remove('modal-open');
@@ -70,9 +66,6 @@ function closeModal(modalId) {
     });
 }
 
-// ============================================================
-// 标签
-// ============================================================
 const LEVEL_LABELS = { L1: '🏞️ L1 景区', L2: '📍 L2 普通景点', L3: '⭐ L3 连续景点', L4: '🏛️ L4 服务/设施' };
 const LEVEL_CLASSES = { L1: 'quality-L1', L2: 'quality-L2', L3: 'quality-L3', L4: 'quality-L4' };
 
@@ -122,9 +115,6 @@ function subtypesToText(subtypes) {
     return subtypes.map(s => (FACILITY_SUBTYPE_LABELS[s] || s).replace(/^[^\s]+\s/, '')).join('/');
 }
 
-// ============================================================
-// 时间选择器
-// ============================================================
 function buildTimeOptions() {
     const opts = [];
     for (let h = 0; h < 24; h++) {
@@ -166,9 +156,6 @@ function setSelectValueSafe(sel, val) {
     sel.value = val;
 }
 
-// ============================================================
-// 初始化
-// ============================================================
 export async function initAdminUI() {
     try {
         populateTimeSelects();
@@ -190,9 +177,6 @@ export async function initAdminUI() {
     }
 }
 
-// ============================================================
-// POI 列表渲染（按大类 → 景区 → 子项的三级结构）
-// ============================================================
 const CATEGORY_ORDER = [
     '自然景区', '红色景区', '文博场馆', '餐饮住宿',
     '交通枢纽', '游玩娱乐', '购物消费', '公共服务'
@@ -203,7 +187,6 @@ export function renderPoiList(pois) {
     if (!container) return;
 
     const l1List = pois.filter(p => p.data_level === 'L1');
-    // 有归属的 L4 会显示在所属景区下，此列表只保留无归属的 L4
     const l4List = pois.filter(p =>
         p.data_level === 'L4'
         && !p.parent_id
@@ -216,7 +199,6 @@ export function renderPoiList(pois) {
 
     let html = '';
 
-    // 8 个大类
     CATEGORY_ORDER.forEach(cat => {
         const catL1 = l1List.filter(p => (p.category || '').split(',')[0].trim() === cat);
         const catOrphans = topL2L3.filter(p => {
@@ -251,7 +233,6 @@ export function renderPoiList(pois) {
         html += `</div>`;
     });
 
-    // 服务场所（只含无归属的 L4）
     if (l4List.length > 0) {
         html += `<div class="poi-category-section">`;
         html += `<div class="poi-category-header">🏛️ 服务场所（L4）</div>`;
@@ -264,7 +245,6 @@ export function renderPoiList(pois) {
     container.innerHTML = html || '<p class="text-secondary">暂无POI</p>';
 }
 
-// L1 卡片（含其子项 L2/L3/L4）
 function renderL1Card(l1, pois) {
     const l1Badge = getLevelBadge('L1');
     const catIcon = CATEGORY_ICONS[l1.category] || '';
@@ -276,7 +256,6 @@ function renderL1Card(l1, pois) {
             ? `<span class="text-secondary small">${normalizeTimeStr(l1.open_time)}-${normalizeTimeStr(l1.close_time)}</span>`
             : '');
 
-    // 景区下的子项：包含 L2 + L3 + L4（有归属的）
     const children = pois.filter(p =>
         String(p.scenic_id) === String(l1.id)
         && (p.data_level === 'L2' || p.data_level === 'L3' || p.data_level === 'L4')
@@ -308,7 +287,6 @@ function renderL1Card(l1, pois) {
     return html;
 }
 
-// L2/L3/L4 子项卡片（递归：L3 会展示内部核心节点）
 function renderChildCard(p, pois, depth) {
     const isCoreNode = p.is_core_node && p.parent_id;
     const badge = isCoreNode ? getCoreNodeBadge() : getLevelBadge(p.data_level || 'L2');
@@ -347,7 +325,6 @@ function renderChildCard(p, pois, depth) {
     return html;
 }
 
-// 无归属 L2/L3 卡片
 function renderOrphanCard(p, pois) {
     const badge = getLevelBadge(p.data_level || 'L2');
     const catIcon = CATEGORY_ICONS[p.category] || '';
@@ -384,7 +361,6 @@ function renderOrphanCard(p, pois) {
     return html;
 }
 
-// L4 服务/设施卡片（无归属专用）
 function renderL4Card(l4, pois) {
     const badge = getLevelBadge('L4');
     const catIcon = CATEGORY_ICONS[l4.category] || '';
@@ -409,9 +385,6 @@ function renderL4Card(l4, pois) {
     return html;
 }
 
-// ============================================================
-// 新增 / 编辑 POI
-// ============================================================
 export function showAddPoiModal() {
     currentEditingPoiId = null;
     currentEditingPoiObj = null;
@@ -498,7 +471,6 @@ export async function showEditPoiModal(poiId) {
     new bootstrap.Modal(document.getElementById('poiModal')).show();
 }
 
-// ★ 刷新"归属景区"下拉
 function refreshScenicSelect(currentId) {
     const scenicSel = document.getElementById('edit-poi-scenic');
     if (!scenicSel) return;
@@ -579,9 +551,6 @@ function setFacilitySubtypeCheckboxes(values) {
 
 window.onCategoryChange = function() { categoryManuallySet = true; };
 
-// ============================================================
-// 等级切换 UI
-// ============================================================
 export function togglePoiLevelUI() {
     const level = document.getElementById('edit-poi-level').value;
     const fieldFacilitySubtype = document.getElementById('field-facility-subtype');
@@ -601,7 +570,6 @@ export function togglePoiLevelUI() {
     visitInput.readOnly = false;
 
     if (level === 'L1') {
-        // L1 景区：无时长、无归属、无核心节点
     } else if (level === 'L2') {
         fieldDuration.classList.remove('hidden');
         fieldCoreNode.classList.remove('hidden');
@@ -621,9 +589,6 @@ export function togglePoiLevelUI() {
     }
 }
 
-// ============================================================
-// L3 子项管理
-// ============================================================
 function renderSubPoiList() {
     const container = document.getElementById('sub-poi-list');
     if (!container) return;
@@ -735,9 +700,6 @@ export async function removeSubPoi(subPoiId) {
     } catch (e) { alert('移出失败：' + e.message); }
 }
 
-// ============================================================
-// 保存 POI
-// ============================================================
 export async function savePoiEdit() {
     const poiId = document.getElementById('edit-poi-id').value;
     const isNew = !poiId;
@@ -771,7 +733,6 @@ export async function savePoiEdit() {
         isCoreNode = document.getElementById('edit-poi-core-node').checked;
     }
 
-    // 归属景区（integer）
     let scenicIdVal = null;
     if (level !== 'L1') {
         const raw = document.getElementById('edit-poi-scenic')?.value || '';
@@ -849,7 +810,7 @@ export async function deletePoi(id) {
 }
 
 // ============================================================
-// 交通耗时
+// ★ 交通耗时编辑器（方案丙：县城卡片 + 每景点首行加"→ 县城"）
 // ============================================================
 export function renderTransportEditor(presets) {
     const container = document.getElementById('transport-editor');
@@ -864,12 +825,52 @@ export function renderTransportEditor(presets) {
         return;
     }
     let html = '';
+
+    // 1. 红军广场卡片（县城 → 各景点）
+    html += `<div class="transport-group card mb-2" style="border:2px solid #1b5e20;">
+        <div class="card-header" style="cursor:pointer;background:#e8f5e9;" onclick="this.nextElementSibling.classList.toggle('hidden')">
+            <b>🏠 红军广场（县城）</b> <span class="text-secondary">→ 各景点耗时（点击展开）</span>
+        </div>
+        <div class="card-body hidden">`;
+    poiList.forEach(toPoi => {
+        let val = presets.find(p => String(p.from_poi_id) === '0' && String(p.to_poi_id) === String(toPoi.id))?.time_min;
+        const displayVal = val === undefined ? '' : val;
+        html += `<div class="transport-item">
+            <span>→ ${toPoi.name}</span>
+            <div>
+                <input type="number" value="${displayVal}" placeholder="分钟" 
+                       data-from="0" data-to="${toPoi.id}" 
+                       style="${val === undefined ? 'background:#fff3cd;' : ''}" 
+                       onchange="window.saveTransportTime(this)">
+                <span class="save-status"></span>
+            </div>
+        </div>`;
+    });
+    html += `</div></div>`;
+
+    // 2. 每个景点卡片
     poiList.forEach(fromPoi => {
         html += `<div class="transport-group card mb-2">
             <div class="card-header" style="cursor:pointer;background:#f8f9fa;" onclick="this.nextElementSibling.classList.toggle('hidden')">
                 <b>🚩 ${fromPoi.name}</b> <span class="text-secondary">(点击展开)</span>
             </div>
             <div class="card-body hidden">`;
+
+        // 首行：→ 红军广场
+        let returnVal = presets.find(p => String(p.from_poi_id) === String(fromPoi.id) && String(p.to_poi_id) === '0')?.time_min;
+        const returnDisplayVal = returnVal === undefined ? '' : returnVal;
+        html += `<div class="transport-item" style="background:#e8f5e9;">
+            <span>🏠 → 红军广场（县城）</span>
+            <div>
+                <input type="number" value="${returnDisplayVal}" placeholder="分钟" 
+                       data-from="${fromPoi.id}" data-to="0" 
+                       style="${returnVal === undefined ? 'background:#fff3cd;' : ''}" 
+                       onchange="window.saveTransportTime(this)">
+                <span class="save-status"></span>
+            </div>
+        </div>`;
+
+        // 后续：→ 其他景点
         poiList.forEach(toPoi => {
             if (String(fromPoi.id) === String(toPoi.id)) return;
             let val = presets.find(p => String(p.from_poi_id) === String(fromPoi.id) && String(p.to_poi_id) === String(toPoi.id))?.time_min;
@@ -889,6 +890,7 @@ export function renderTransportEditor(presets) {
         });
         html += `</div></div>`;
     });
+
     container.innerHTML = html;
 }
 
@@ -897,21 +899,28 @@ window.saveTransportTime = async function(input) {
     const to = input.dataset.to;
     const val = parseInt(input.value);
     if (isNaN(val) || val < 0) return;
-    if (!isValidId(from) || !isValidId(to)) {
+    // 允许 0（县城）
+    const fromValid = (from === '0') || isValidId(from);
+    const toValid = (to === '0') || isValidId(to);
+    if (!fromValid || !toValid) {
         alert('POI ID 非法，无法保存');
         return;
     }
     try {
-        const fromVal = toSafeId(from);
-        const toVal = toSafeId(to);
+        const fromVal = from === '0' ? 0 : toSafeId(from);
+        const toVal = to === '0' ? 0 : toSafeId(to);
         await upsertTransportPreset(fromVal, toVal, val);
         const presets = await getTransportPresets();
         allPresets = presets;
-        const reverseExists = presets.some(p => String(p.from_poi_id) === String(to) && String(p.to_poi_id) === String(from));
-        if (!reverseExists) await upsertTransportPreset(toVal, fromVal, val);
+        // 仅当两端都不是县城时，才自动填充反向
+        const isCountyRoute = (fromVal === 0 || toVal === 0);
+        if (!isCountyRoute) {
+            const reverseExists = presets.some(p => String(p.from_poi_id) === String(to) && String(p.to_poi_id) === String(from));
+            if (!reverseExists) await upsertTransportPreset(toVal, fromVal, val);
+        }
         document.querySelectorAll('#transport-editor input[type="number"]').forEach(inp => {
             const f = inp.dataset.from, t = inp.dataset.to;
-            if (String(f) === String(to) && String(t) === String(from) && inp.value === '') inp.value = val;
+            if (String(f) === String(to) && String(t) === String(from) && inp.value === '' && !isCountyRoute) inp.value = val;
         });
         const status = input.parentElement.querySelector('.save-status');
         if (status) { status.textContent = '✓已保存'; setTimeout(() => status.textContent = '', 1500); }

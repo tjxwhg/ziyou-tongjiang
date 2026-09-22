@@ -1,9 +1,10 @@
-// js/admin.js - 管理后台完整逻辑（交通耗时"以前面为准" + 保存不重新渲染）
+// js/admin.js - 管理后台完整逻辑（交通耗时方向规范化 + 并发保护 + 完整清理）
 import {
     getPois, getPoi, insertPoi, updatePoi, deletePoi as apiDeletePoi,
     getRoutes, getRoute, insertRoute, updateRoute, deleteRoute as apiDeleteRoute,
     getRouteNodes, insertRouteNodes, deleteRouteNodes,
     getTransportPresets, upsertTransportPreset, deleteTransportPreset,
+    replaceTransportPreset, deleteTransportPresetsForPoi,
     getMerchantsByPoi, getMerchant, updateMerchant, createMerchantRecord,
     getReservations, updateReservation,
     getFeedbacks, updateFeedback, deleteFeedback as apiDeleteFeedback,
@@ -19,10 +20,13 @@ let routeNodesData = [];
 let editingNodeIndex = -1;
 let poiPickerSelectedId = null;
 let poiPickerCurrentSearch = '';
-let currentTransportPoiList = [];   // ★ 缓存当前交通耗时编辑器的 POI 列表
+let currentTransportPoiList = [];
 
 const STORAGE_BUCKET = '0frontend-assets';
 
+// ============================================================
+// 通用工具
+// ============================================================
 function isValidId(val) {
     if (val === null || val === undefined || val === '') return false;
     const s = String(val).trim();
@@ -35,6 +39,9 @@ function toSafeId(val) {
     const s = String(val).trim();
     if (/^\d+$/.test(s)) return parseInt(s, 10);
     return s;
+}
+function getMainCategory(cat) {
+    return (cat || '').split(',')[0].trim();
 }
 
 function cleanupBackdrop() {
@@ -157,6 +164,9 @@ function setSelectValueSafe(sel, val) {
     sel.value = val;
 }
 
+// ============================================================
+// 初始化
+// ============================================================
 export async function initAdminUI() {
     try {
         populateTimeSelects();
@@ -204,11 +214,10 @@ export function renderPoiList(pois) {
     let html = '';
 
     CATEGORY_ORDER.forEach(cat => {
-        const catL1 = l1List.filter(p => (p.category || '').split(',')[0].trim() === cat);
+        const catL1 = l1List.filter(p => getMainCategory(p.category) === cat);
         const catOrphans = topL2L3.filter(p => {
             if (p.scenic_id !== null && p.scenic_id !== undefined) return false;
-            const pCat = (p.category || '').split(',')[0].trim();
-            return pCat === cat;
+            return getMainCategory(p.category) === cat;
         });
 
         if (catL1.length === 0 && catOrphans.length === 0) return;
@@ -251,7 +260,8 @@ export function renderPoiList(pois) {
 
 function renderL1Card(l1, pois) {
     const l1Badge = getLevelBadge('L1');
-    const catIcon = CATEGORY_ICONS[l1.category] || '';
+    const mainCat = getMainCategory(l1.category);
+    const catIcon = CATEGORY_ICONS[mainCat] || '';
     const catBadge = l1.category ? `<span class="category-badge">${catIcon} ${l1.category}</span>` : '';
     const voiceBadge = l1.voice_mp3 ? `<span class="voice-badge">🔊 语音</span>` : '';
     const hoursText = l1.hours_type === '24h'
@@ -294,7 +304,8 @@ function renderL1Card(l1, pois) {
 function renderChildCard(p, pois, depth) {
     const isCoreNode = p.is_core_node && p.parent_id;
     const badge = isCoreNode ? getCoreNodeBadge() : getLevelBadge(p.data_level || 'L2');
-    const catIcon = CATEGORY_ICONS[p.category] || '';
+    const mainCat = getMainCategory(p.category);
+    const catIcon = CATEGORY_ICONS[mainCat] || '';
     const catBadge = p.category ? `<span class="category-badge">${catIcon} ${p.category}</span>` : '';
     const voiceBadge = p.voice_mp3 ? `<span class="voice-badge">🔊 语音</span>` : '';
     const durationInfo = (p.visit_duration)
@@ -331,7 +342,8 @@ function renderChildCard(p, pois, depth) {
 
 function renderOrphanCard(p, pois) {
     const badge = getLevelBadge(p.data_level || 'L2');
-    const catIcon = CATEGORY_ICONS[p.category] || '';
+    const mainCat = getMainCategory(p.category);
+    const catIcon = CATEGORY_ICONS[mainCat] || '';
     const catBadge = p.category ? `<span class="category-badge">${catIcon} ${p.category}</span>` : '';
     const voiceBadge = p.voice_mp3 ? `<span class="voice-badge">🔊 语音</span>` : '';
     const durationInfo = (p.visit_duration)
@@ -367,7 +379,8 @@ function renderOrphanCard(p, pois) {
 
 function renderL4Card(l4, pois) {
     const badge = getLevelBadge('L4');
-    const catIcon = CATEGORY_ICONS[l4.category] || '';
+    const mainCat = getMainCategory(l4.category);
+    const catIcon = CATEGORY_ICONS[mainCat] || '';
     const catBadge = l4.category ? `<span class="category-badge">${catIcon} ${l4.category}</span>` : '';
     const facilityTag = l4.type === 'facility' ? ' ' + getFacilitySubtypeBadge(l4.facility_subtype) : '';
     const voiceBadge = l4.voice_mp3 ? `<span class="voice-badge">🔊 语音</span>` : '';
@@ -597,7 +610,7 @@ export function togglePoiLevelUI() {
 }
 
 // ============================================================
-// L3 子项管理（带 ↑↓ 排序）
+// L3 子项管理
 // ============================================================
 function renderSubPoiList() {
     const container = document.getElementById('sub-poi-list');
@@ -615,7 +628,6 @@ function renderSubPoiList() {
         return;
     }
 
-    // ★ 按 tour_route 顺序排序
     let sorted = subPois;
     const tr = Array.isArray(currentPoi.tour_route) ? currentPoi.tour_route : [];
     if (tr.length > 0) {
@@ -630,7 +642,7 @@ function renderSubPoiList() {
 
     let html = `<p class="text-secondary small mb-2">当前顺序即游客端的游览顺序，可用 ↑↓ 调整。</p>`;
     sorted.forEach((sub, idx) => {
-        const catIcon = CATEGORY_ICONS[sub.category] || '';
+        const catIcon = CATEGORY_ICONS[getMainCategory(sub.category)] || '';
         const catBadge = sub.category ? ` <span class="category-badge">${catIcon} ${sub.category}</span>` : '';
         const facilityTag = sub.type === 'facility' ? ' ' + getFacilitySubtypeBadge(sub.facility_subtype) : '';
         html += `<div class="sub-poi-item" style="background:#eceff1;">
@@ -672,9 +684,9 @@ window.moveL3SubItem = async function(idx, dir) {
     const ids = sorted.map(x => x.id);
     try {
         await updatePoi(toSafeId(currentEditingPoiId), { tour_route: ids });
-        currentPoi.tour_route = ids;
-        const p = allPois.find(x => String(x.id) === String(currentEditingPoiId));
-        if (p) p.tour_route = ids;
+        // ★ 重新拉取最新引用（防止对象过期）
+        const fresh = allPois.find(x => String(x.id) === String(currentEditingPoiId));
+        if (fresh) fresh.tour_route = ids;
         renderSubPoiList();
     } catch (e) { alert('调整失败：' + e.message); }
 };
@@ -743,7 +755,6 @@ export async function confirmSubPoiSelection() {
             });
         }));
 
-        // 自动追加到 tour_route
         const currentPoi = allPois.find(p => String(p.id) === String(currentEditingPoiId));
         if (currentPoi) {
             const existing = Array.isArray(currentPoi.tour_route) ? [...currentPoi.tour_route] : [];
@@ -862,9 +873,9 @@ export async function savePoiEdit() {
             await initAdminUI();
             alert('新增成功');
         } else {
-            updates.parent_id = isValidId(existingPoi.parent_id) ? toSafeId(existingPoi.parent_id) : null;
-            // 保留原 tour_route
-            if (existingPoi.tour_route) updates.tour_route = existingPoi.tour_route;
+            updates.parent_id = existingPoi && isValidId(existingPoi.parent_id)
+                ? toSafeId(existingPoi.parent_id) : null;
+            if (existingPoi && existingPoi.tour_route) updates.tour_route = existingPoi.tour_route;
             await updatePoi(toSafeId(poiId), updates);
             await closeModal('poiModal');
             await initAdminUI();
@@ -880,25 +891,48 @@ export async function deletePoi(id) {
     const poi = allPois.find(p => String(p.id) === String(id));
     if (!poi) return;
     const subPois = allPois.filter(p => String(p.parent_id) === String(id));
-    let msg = '确认删除此POI？';
+
+    // ★ 找出所有引用了此 POI 的 L3 tour_route
+    const affectedL3s = allPois.filter(p =>
+        Array.isArray(p.tour_route) &&
+        p.tour_route.some(x => String(x) === String(id))
+    );
+
+    let msg = '确认删除此POI？其关联的交通耗时记录也会一并清理。';
     if (subPois.length > 0) {
         msg = `该 L3 下有 ${subPois.length} 个核心节点，删除后将自动解除关联，它们会恢复为普通景点。是否继续？`;
     }
+    if (affectedL3s.length > 0 && subPois.length === 0) {
+        msg = `有 ${affectedL3s.length} 个 L3 的 tour_route 引用了此 POI，将同步移除。是否继续？`;
+    }
     if (!confirm(msg)) return;
+
     try {
+        // 1. 解绑子节点
         if (subPois.length > 0) {
             await Promise.all(subPois.map(p => updatePoi(toSafeId(p.id), {
                 parent_id: null,
                 is_core_node: false
             })));
         }
+        // 2. 从其他 L3 的 tour_route 中移除
+        for (const l3 of affectedL3s) {
+            if (String(l3.id) === String(id)) continue;
+            const newTr = l3.tour_route.filter(x => String(x) !== String(id));
+            await updatePoi(toSafeId(l3.id), { tour_route: newTr });
+        }
+        // 3. 清交通预设
+        try {
+            await deleteTransportPresetsForPoi(toSafeId(id));
+        } catch (e) { console.warn('[deletePoi] 清理交通预设失败:', e); }
+
         await apiDeletePoi(toSafeId(id));
         await initAdminUI();
     } catch (e) { alert('删除失败：' + e.message); }
 }
 
 // ============================================================
-// ★ 交通耗时编辑器（"以前面为准" + 保存不重新渲染）
+// 交通耗时编辑器（规范化方向 + 并发保护 + 历史数据修正）
 // ============================================================
 export function renderTransportEditor(presets) {
     const container = document.getElementById('transport-editor');
@@ -912,7 +946,7 @@ export function renderTransportEditor(presets) {
         container.innerHTML = '<p class="text-secondary">暂无参与规划的 L2/L3/L4 景点。</p>';
         return;
     }
-    currentTransportPoiList = poiList;   // ★ 缓存
+    currentTransportPoiList = poiList;
 
     const orderIndex = { '0': -1 };
     poiList.forEach((p, i) => { orderIndex[String(p.id)] = i; });
@@ -926,12 +960,27 @@ export function renderTransportEditor(presets) {
         return p ? p.name : id;
     }
 
+    // ★ 规范化历史数据方向 + 去重
+    const seen = new Set();
+    const fixedPresets = [];
+    presets.forEach(p => {
+        const a = String(p.from_poi_id), b = String(p.to_poi_id);
+        const ai = getOrder(a), bi = getOrder(b);
+        const key = ai <= bi ? `${a}_${b}` : `${b}_${a}`;
+        if (seen.has(key)) return;
+        seen.add(key);
+        const canonFrom = ai <= bi ? p.from_poi_id : p.to_poi_id;
+        const canonTo   = ai <= bi ? p.to_poi_id   : p.from_poi_id;
+        fixedPresets.push({ ...p, from_poi_id: canonFrom, to_poi_id: canonTo });
+    });
+    allPresets = fixedPresets;
+
     function resolveAuthority(fromId, toId) {
         const fromIdx = getOrder(fromId);
         const toIdx = getOrder(toId);
         const earlierId = fromIdx <= toIdx ? fromId : toId;
         const laterId = fromIdx <= toIdx ? toId : fromId;
-        const authorityRecord = presets.find(p =>
+        const authorityRecord = allPresets.find(p =>
             String(p.from_poi_id) === String(earlierId)
             && String(p.to_poi_id) === String(laterId)
         );
@@ -963,7 +1012,7 @@ export function renderTransportEditor(presets) {
 
         const inputAttrs = isReadonly
             ? `readonly data-readonly="1" style="${inputStyle}"`
-            : `onchange="window.saveTransportTime(this)" style="${inputStyle}"`;
+            : `oninput="window.markTransportDirty(this)" onchange="window.saveTransportTime(this)" style="${inputStyle}"`;
 
         return `<div class="transport-item">
             <span>${label}</span>
@@ -1009,14 +1058,20 @@ export function renderTransportEditor(presets) {
     container.innerHTML = html;
 }
 
-// ★ 辅助：根据 id 查名称
 function findTransportPoiName(id) {
     if (String(id) === '0') return '红军广场（县城）';
     const p = currentTransportPoiList.find(x => String(x.id) === String(id));
     return p ? p.name : String(id);
 }
 
-// ★ 辅助：更新反向行为只读显示（不重新渲染）
+function getTransportOrderIndex(poiId) {
+    if (String(poiId) === '0') return -1;
+    const idx = currentTransportPoiList.findIndex(
+        p => String(p.id) === String(poiId)
+    );
+    return idx >= 0 ? idx : 9999;
+}
+
 function updateSymmetricRow(fromVal, toVal, val) {
     const symmetricInputs = document.querySelectorAll(
         `#transport-editor input[data-from="${toVal}"][data-to="${fromVal}"]`
@@ -1029,6 +1084,7 @@ function updateSymmetricRow(fromVal, toVal, val) {
         inp.style.cursor = 'not-allowed';
         inp.style.color = '#666';
         inp.removeAttribute('onchange');
+        inp.removeAttribute('oninput');
 
         const parent = inp.parentElement;
         let note = parent.querySelector('.authority-note');
@@ -1042,18 +1098,32 @@ function updateSymmetricRow(fromVal, toVal, val) {
         const statusEl = parent.querySelector('.save-status');
         if (statusEl) {
             statusEl.textContent = '✓已保存';
-            setTimeout(() => statusEl.textContent = '', 1500);
+            statusEl.style.color = '#2e7d32';
+            setTimeout(() => { statusEl.textContent = ''; statusEl.style.color = ''; }, 1500);
         }
     });
 }
 
+// ★ 脏标记
+window.markTransportDirty = function(input) {
+    if (input.readOnly || input.dataset.readonly === '1') return;
+    const statusEl = input.parentElement.querySelector('.save-status');
+    if (statusEl) {
+        statusEl.textContent = '● 待保存';
+        statusEl.style.color = '#ff9800';
+    }
+    input.style.background = '#fff3cd';
+};
+
+// ★ 保存时规范化方向 + 并发保护 + 使用原子替换
 window.saveTransportTime = async function(input) {
+    if (input.dataset.saving === '1') return;
     if (input.readOnly || input.dataset.readonly === '1') return;
 
     const from = input.dataset.from;
     const to = input.dataset.to;
     const val = parseInt(input.value);
-    if (isNaN(val) || val < 0) return;
+    if (isNaN(val) || val < 0) { input.value = ''; return; }
 
     const fromValid = (from === '0') || isValidId(from);
     const toValid = (to === '0') || isValidId(to);
@@ -1062,49 +1132,51 @@ window.saveTransportTime = async function(input) {
         return;
     }
 
+    input.dataset.saving = '1';
     try {
         const fromVal = from === '0' ? 0 : toSafeId(from);
         const toVal = to === '0' ? 0 : toSafeId(to);
 
-        // 1. 保存正向记录
-        await upsertTransportPreset(fromVal, toVal, val);
+        // ★ 关键：按 POI 顺序规范化方向（较早 → 较晚）
+        const fromIdx = getTransportOrderIndex(fromVal);
+        const toIdx = getTransportOrderIndex(toVal);
+        const canonFrom = fromIdx <= toIdx ? fromVal : toVal;
+        const canonTo = fromIdx <= toIdx ? toVal : fromVal;
 
-        // 2. 删除反向记录（若存在）
-        const presets = await getTransportPresets();
-        const reverseExists = presets.some(p =>
-            String(p.from_poi_id) === String(toVal)
-            && String(p.to_poi_id) === String(fromVal)
-        );
-        if (reverseExists) {
-            await deleteTransportPreset(toVal, fromVal);
-        }
+        // ★ 使用原子替换
+        await replaceTransportPreset(canonFrom, canonTo, val);
 
-        // 3. 更新内存缓存（不重新渲染）
+        // 更新内存缓存
         allPresets = allPresets.filter(p =>
-            !(String(p.from_poi_id) === String(toVal) && String(p.to_poi_id) === String(fromVal))
+            !(String(p.from_poi_id) === String(canonFrom) && String(p.to_poi_id) === String(canonTo)) &&
+            !(String(p.from_poi_id) === String(canonTo) && String(p.to_poi_id) === String(canonFrom))
         );
-        const existingIdx = allPresets.findIndex(p =>
-            String(p.from_poi_id) === String(fromVal) && String(p.to_poi_id) === String(toVal)
-        );
-        if (existingIdx >= 0) {
-            allPresets[existingIdx].time_min = val;
-        } else {
-            allPresets.push({ from_poi_id: fromVal, to_poi_id: toVal, time_min: val });
-        }
+        allPresets.push({ from_poi_id: canonFrom, to_poi_id: canonTo, time_min: val });
 
-        // 4. 显示"已保存"，不重新渲染编辑器
+        // 成功提示
         const statusEl = input.parentElement.querySelector('.save-status');
         if (statusEl) {
             statusEl.textContent = '✓已保存';
-            setTimeout(() => statusEl.textContent = '', 1500);
+            statusEl.style.color = '#2e7d32';
+            setTimeout(() => { statusEl.textContent = ''; statusEl.style.color = ''; }, 1500);
         }
         input.style.background = '#e8f5e9';
-        setTimeout(() => input.style.background = '', 1500);
+        setTimeout(() => { input.style.background = ''; }, 1500);
 
-        // 5. 更新对称行（如果是第一次配置，会将反向行改为只读）
-        updateSymmetricRow(fromVal, toVal, val);
+        // 更新对称行
+        updateSymmetricRow(canonFrom, canonTo, val);
 
-    } catch (e) { alert('保存失败：' + e.message); }
+    } catch (e) {
+        alert('保存失败：' + e.message);
+        input.style.background = '#ffebee';
+        const statusEl = input.parentElement.querySelector('.save-status');
+        if (statusEl) {
+            statusEl.textContent = '✗ 保存失败';
+            statusEl.style.color = '#c62828';
+        }
+    } finally {
+        delete input.dataset.saving;
+    }
 };
 
 // ============================================================
@@ -1483,6 +1555,9 @@ export async function deleteRoute(id) {
     } catch (e) { alert('删除失败：' + e.message); }
 }
 
+// ============================================================
+// 商户 / 留言
+// ============================================================
 export function renderMerchantList(merchants) {
     const container = document.getElementById('merchant-list');
     if (!container) return;

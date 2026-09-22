@@ -1,4 +1,5 @@
 // js/config.js - 全局配置（三层级架构）
+
 export const SUPABASE_URL = 'https://aermnnksvhezfykxefla.supabase.co';
 export const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFlcm1ubmtzdmhlemZ5a3hlZmxhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIwNzQ4ODEsImV4cCI6MjA5NzY1MDg4MX0.c2Wemu90PiezEaXn2Hv3tBL-D5YFXYTVxei14CI-Rvk';
 
@@ -7,6 +8,9 @@ export const DAY_START = 480;          // 08:00
 export const PLAN_CUTOFF = 1020;       // 17:00 规划截止
 export const VISIT_END = 1080;         // 18:00 普通游览截止
 export const NIGHT_END = 1320;         // 22:00 24h POI 夜间上限
+export const DAY_END = VISIT_END;      // ★ 新增：日程结束（算法默认）
+export const NEW_ARRIVAL_CUTOFF = 960; // ★ 新增：16:00 后不再新增到达
+
 export const LUNCH_START = 690;        // 11:30
 export const LUNCH_END = 750;          // 12:30
 export const DINNER_START = 1080;      // 18:00
@@ -69,9 +73,21 @@ export const WEIGHT_TEMPLATES = {
 };
 
 // ========== 分类常量 ==========
-export const COUNTY_SPOT_KEYWORDS = ['轿房沟美食街', '银耳博物馆', '红四方面军总指挥部旧址纪念馆', '省委党校旧址纪念馆', '通江花月夜'];
+export const COUNTY_SPOT_KEYWORDS = [
+    '轿房沟美食街', '银耳博物馆', '红四方面军总指挥部旧址纪念馆',
+    '省委党校旧址纪念馆', '通江花月夜'
+];
 export const LONG_SPOT_NAMES = ['空山天盆', '诺水河溶洞', '王坪烈士陵园', '红军烈士陵园'];
 export const ALLOWED_CATEGORIES = ['自然景区', '红色景区', '文博场馆'];
 export const NON_VISIT_CATEGORIES = ['交通枢纽', '餐饮住宿', '公共服务', '购物消费', '游玩娱乐'];
 export const EXCLUDED_TRANSPORT_CATS = ['公共服务', '游玩娱乐', '购物消费'];
-export const COUNTY = { lat: 31.911705, lng: 107.245033, name: '红军广场', id: 'county' };
+
+// ========== 县城统一定义（唯一真源） ==========
+export const COUNTY = {
+    id: 'county',
+    numericId: 0,
+    lat: 31.911705,
+    lng: 107.245033,
+    name: '红军广场',
+    displayName: '红军广场（县城）'
+};

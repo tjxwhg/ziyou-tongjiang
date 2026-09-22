@@ -157,7 +157,7 @@
         .poi-selectable-row .poi-name { flex: 1; color: #333; }
         .poi-selectable-row .poi-dur { color: #888; font-size: 12px; }
         .type-tag { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 11px; background: #e8f5e9; color: #1b5e20; font-weight: 500; flex-shrink: 0; }
-        .l3-inner-list { margin-left: 24px; margin-top: 4px; margin-bottom: 4px; border-left: 2px dotted #ffb74d; padding-left: 10px; }
+        .l3-inner-list { margin-left: 24px; margin-top: 4px; margin-bottom: 8px; border-left: 2px dotted #ffb74d; padding-left: 10px; }
         .l3-inner-row { display: flex; align-items: center; gap: 8px; padding: 4px 8px; font-size: 13px; color: #666; background: #fffde7; border-radius: 4px; margin-bottom: 2px; }
         .l3-inner-row .l3-order { color: #999; min-width: 18px; }
         .l3-inner-row .l3-name { flex: 1; }
@@ -620,6 +620,7 @@ function renderPoiSelection(pois) {
         return;
     }
 
+    // 可勾选：L2/L3/L4 且非核心节点
     const visiblePois = pois.filter(p =>
         (p.data_level === 'L2' || p.data_level === 'L3' || p.data_level === 'L4')
         && !p.is_core_node
@@ -658,7 +659,8 @@ function renderPoiSelection(pois) {
         html += `<div class="poi-category-header">${catIcon} ${cat}</div>`;
 
         catL1.forEach(l1 => {
-            html += renderScenicForSelection(l1, visiblePois);
+            // ★ 传两个参数：visiblePois（用于筛选可勾选子项）、pois（完整列表，用于查 L3 内部子项）
+            html += renderScenicForSelection(l1, visiblePois, pois);
         });
 
         if (catOrphans.length > 0) {
@@ -695,7 +697,10 @@ function renderPoiSelection(pois) {
     updateSelectedInfo();
 }
 
-function renderScenicForSelection(l1, visiblePois) {
+// ★ 渲染单个景区（含其 L2/L3/L4 子项）
+// visiblePois：用于筛选顶层可勾选子项
+// allPois：完整列表，用于查 L3 内部核心节点
+function renderScenicForSelection(l1, visiblePois, allPois) {
     const children = visiblePois.filter(p =>
         String(p.scenic_id) === String(l1.id)
         && (p.data_level === 'L2' || p.data_level === 'L3' || p.data_level === 'L4')
@@ -710,13 +715,13 @@ function renderScenicForSelection(l1, visiblePois) {
     html += `<div class="scenic-title">🏞️ ${l1.name}</div>`;
     html += `<div class="scenic-children">`;
     children.forEach(child => {
-        html += renderSelectableRow(child, visiblePois);
+        html += renderSelectableRow(child, allPois);
     });
     html += `</div></div>`;
     return html;
 }
 
-// ★ 可勾选行（含类型标签；L3 默认展开内部子项）
+// ★ 可勾选行（含类型标签；L3 默认展开内部子项，按 tour_route 顺序）
 function renderSelectableRow(p, allPois) {
     const idStr = String(p.id);
     const isChecked = selectedPoiIds.has(idStr);
@@ -731,12 +736,25 @@ function renderSelectableRow(p, allPois) {
         <span class="poi-dur">${dur}分钟</span>
     </div>`;
 
-    // ★ L3 默认展开内部子项（不依赖勾选状态）
+    // ★ L3 默认展开内部子项（按 tour_route 排序）
     if (p.data_level === 'L3') {
         const innerNodes = allPois.filter(x => String(x.parent_id) === String(p.id));
         if (innerNodes.length > 0) {
+            // 按 tour_route 顺序排序
+            let sorted = innerNodes;
+            const tr = Array.isArray(p.tour_route) ? p.tour_route : [];
+            if (tr.length > 0) {
+                const idxMap = {};
+                tr.forEach((id, i) => { idxMap[String(id)] = i; });
+                sorted = [...innerNodes].sort((a, b) => {
+                    const ia = idxMap[String(a.id)] ?? 999;
+                    const ib = idxMap[String(b.id)] ?? 999;
+                    return ia - ib;
+                });
+            }
+
             html += `<div class="l3-inner-list">`;
-            innerNodes.forEach((n, idx) => {
+            sorted.forEach((n, idx) => {
                 html += `<div class="l3-inner-row">
                     <span class="l3-order">${idx + 1}.</span>
                     <span class="l3-name">⭐ ${n.name}</span>

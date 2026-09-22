@@ -1,4 +1,4 @@
-// js/map.js - 地图核心
+// js/map.js - 地图核心（电子围栏冷却 + 精度过滤）
 import { getPoiInternal } from './api.js';
 import { wgs84ToGcj02, getDistance, speak, cancelSpeech } from './utils.js';
 import { poiColors } from './config.js';
@@ -9,13 +9,16 @@ let poiMarkers = [];
 let allPois = [];
 let currentGcjPos = null;
 let voiceEnabled = true;
-let lastTriggeredPoiIds = {};
+let lastTriggeredAt = {};    // ★ { poiId: timestamp }
 let watchId = null;
 let currentAudio = null;
 let currentFilterCategory = null;
 let internalPathLayer = null;
 
-// 初始化地图
+const VOICE_COOLDOWN_MS = 30 * 60 * 1000;   // ★ 30 分钟冷却
+const FENCE_RADIUS_M = 40;
+const ACCURACY_LIMIT_M = 100;               // ★ 精度过滤
+
 export function initMap(containerId) {
     if (map) return map;
     map = L.map(containerId, { zoomControl: false }).setView([31.911705, 107.245033], 12);
@@ -27,7 +30,6 @@ export function initMap(containerId) {
     return map;
 }
 
-// 加载POI到地图
 export function loadPoisToMap(pois) {
     allPois = pois;
     if (typeof window !== 'undefined') {
@@ -35,6 +37,7 @@ export function loadPoisToMap(pois) {
     }
     poiMarkers.forEach(m => map.removeLayer(m));
     poiMarkers = [];
+    currentFilterCategory = null;   // ★ 重置筛选
     pois.forEach(p => {
         const cat = (p.category || '').split(',')[0] || '其他';
         const color = poiColors[cat] || '#999';
@@ -54,10 +57,8 @@ export function loadPoisToMap(pois) {
         });
         poiMarkers.push(marker);
     });
-    if (currentFilterCategory) applyFilter(currentFilterCategory);
 }
 
-// 显示POI内部路网
 export async function showPoiInternal(poiId) {
     if (internalPathLayer) {
         map.removeLayer(internalPathLayer);
@@ -110,7 +111,6 @@ export async function showPoiInternal(poiId) {
     }
 }
 
-// 分类筛选
 export function applyFilter(category) {
     currentFilterCategory = category;
     poiMarkers.forEach(marker => {
@@ -147,7 +147,6 @@ export function clearFilter() {
     });
 }
 
-// 定位
 export function locateUser() {
     if (!navigator.geolocation) {
         alert('您的浏览器不支持定位');
@@ -188,23 +187,27 @@ function startWatching() {
                     iconSize: [20, 20]
                 })
             }).addTo(map);
-            checkVoiceTrigger(gcj.lat, gcj.lng);
+            checkVoiceTrigger(gcj.lat, gcj.lng, pos.coords.accuracy);
         },
         (err) => console.warn('定位监听错误', err),
         { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 }
     );
 }
 
-function checkVoiceTrigger(lat, lng) {
+// ★ 电子围栏触发（冷却 + 精度过滤）
+function checkVoiceTrigger(lat, lng, accuracy) {
     if (!voiceEnabled || !allPois.length) return;
-    const today = new Date().toISOString().slice(0, 10);
-    const threshold = 40;
+    if (accuracy && accuracy > ACCURACY_LIMIT_M) return;
+    const now = Date.now();
     allPois.forEach(poi => {
         if (!poi.lat || !poi.lng) return;
         const dist = getDistance(lat, lng, poi.lat, poi.lng);
-        if (dist <= threshold && lastTriggeredPoiIds[poi.id] !== today) {
-            triggerVoice(poi);
-            lastTriggeredPoiIds[poi.id] = today;
+        if (dist <= FENCE_RADIUS_M) {
+            const last = lastTriggeredAt[poi.id] || 0;
+            if (now - last > VOICE_COOLDOWN_MS) {
+                triggerVoice(poi);
+                lastTriggeredAt[poi.id] = now;
+            }
         }
     });
 }

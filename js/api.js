@@ -1,12 +1,30 @@
-// js/api.js - Supabase API 操作（新增 deleteTransportPreset）
+// js/api.js - Supabase API 操作（新增 replaceTransportPreset、缓存版本号、稳定排序）
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from './config.js';
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
+// ============================================================
+// 缓存版本号（用于游客端缓存失效）
+// ============================================================
+export function bumpCacheVersion() {
+    try {
+        const v = parseInt(localStorage.getItem('ztj_cache_version') || '0', 10) + 1;
+        localStorage.setItem('ztj_cache_version', String(v));
+    } catch (e) { /* ignore */ }
+}
+export function getCacheVersion() {
+    try { return localStorage.getItem('ztj_cache_version') || '0'; }
+    catch (e) { return '0'; }
+}
+
 // ========== POI ==========
 export async function getPois() {
-    const { data, error } = await supabase.from('ztj_poi').select('*').eq('status', 'active');
+    const { data, error } = await supabase
+        .from('ztj_poi')
+        .select('*')
+        .eq('status', 'active')
+        .order('id', { ascending: true });        // ★ 稳定排序
     if (error) throw error;
     return data || [];
 }
@@ -20,17 +38,21 @@ export async function getPoi(id) {
 export async function insertPoi(poi) {
     const { data, error } = await supabase.from('ztj_poi').insert(poi).select();
     if (error) throw error;
+    if (!data || data.length === 0) throw new Error('插入失败：未返回数据');
+    bumpCacheVersion();
     return data[0];
 }
 
 export async function updatePoi(id, updates) {
     const { error } = await supabase.from('ztj_poi').update(updates).eq('id', id);
     if (error) throw error;
+    bumpCacheVersion();
 }
 
 export async function deletePoi(id) {
     const { error } = await supabase.from('ztj_poi').delete().eq('id', id);
     if (error) throw error;
+    bumpCacheVersion();
 }
 
 // ========== 景区 ==========
@@ -101,7 +123,10 @@ export async function deleteInternalEdges(poiId) {
 
 // ========== 路线 ==========
 export async function getRoutes() {
-    const { data, error } = await supabase.from('ztj_routes').select('*');
+    const { data, error } = await supabase
+        .from('ztj_routes')
+        .select('*')
+        .order('sort_order', { ascending: true });  // ★ 稳定排序
     if (error) throw error;
     return data || [];
 }
@@ -115,26 +140,35 @@ export async function getRoute(id) {
 export async function insertRoute(route) {
     const { data, error } = await supabase.from('ztj_routes').insert(route).select();
     if (error) throw error;
+    if (!data || data.length === 0) throw new Error('路线插入失败');
+    bumpCacheVersion();
     return data[0];
 }
 
 export async function updateRoute(id, updates) {
     const { error } = await supabase.from('ztj_routes').update(updates).eq('id', id);
     if (error) throw error;
+    bumpCacheVersion();
 }
 
 export async function deleteRoute(id) {
     const { error } = await supabase.from('ztj_routes').delete().eq('id', id);
     if (error) throw error;
+    bumpCacheVersion();
 }
 
 export async function getRouteNodes(routeId) {
-    const { data, error } = await supabase.from('ztj_route_nodes').select('*').eq('route_id', routeId).order('order_num');
+    const { data, error } = await supabase
+        .from('ztj_route_nodes')
+        .select('*')
+        .eq('route_id', routeId)
+        .order('order_num');
     if (error) throw error;
     return data || [];
 }
 
 export async function insertRouteNodes(nodes) {
+    if (!nodes || nodes.length === 0) return;
     const { error } = await supabase.from('ztj_route_nodes').insert(nodes);
     if (error) throw error;
 }
@@ -157,20 +191,37 @@ export async function upsertTransportPreset(from, to, time) {
         { onConflict: 'from_poi_id,to_poi_id' }
     );
     if (error) throw error;
+    bumpCacheVersion();
 }
 
-// ★ 新增：删除指定方向的交通耗时记录
 export async function deleteTransportPreset(from, to) {
     const { error } = await supabase.from('ztj_transport_presets')
         .delete()
         .eq('from_poi_id', from)
         .eq('to_poi_id', to);
     if (error) throw error;
+    bumpCacheVersion();
 }
 
+// ★ 新增：原子替换（先写正向，再删反向，最坏情况只冗余不丢）
+export async function replaceTransportPreset(from, to, time) {
+    await upsertTransportPreset(from, to, time);
+    try {
+        await deleteTransportPreset(to, from);
+    } catch (e) {
+        console.warn('[replaceTransportPreset] 反向删除失败（非致命）:', e);
+    }
+}
+
+// ★ 修正：分别删除双向（避免 or() 语法歧义）
 export async function deleteTransportPresetsForPoi(poiId) {
-    const { error } = await supabase.from('ztj_transport_presets').delete().or(`from_poi_id.eq.${poiId},to_poi_id.eq.${poiId}`);
-    if (error) throw error;
+    const { error: e1 } = await supabase
+        .from('ztj_transport_presets').delete().eq('from_poi_id', poiId);
+    if (e1) throw e1;
+    const { error: e2 } = await supabase
+        .from('ztj_transport_presets').delete().eq('to_poi_id', poiId);
+    if (e2) throw e2;
+    bumpCacheVersion();
 }
 
 // ========== 商户 ==========
@@ -290,7 +341,7 @@ export async function uploadFile(bucket, path, file) {
     return publicUrl;
 }
 
-// ========== 用户偏好 ==========
+// ========== 用户偏好（保留） ==========
 export async function getUserPreferences(userId) {
     const { data, error } = await supabase.from('user_preferences').select('*').eq('user_id', userId).single();
     if (error && error.code === 'PGRST116') return null;
@@ -316,6 +367,10 @@ export async function saveTripSolution(userId, solutionData, style, score) {
 }
 
 export async function getUserTripSolutions(userId) {
+    if (!userId) {
+        console.warn('[getUserTripSolutions] userId 为空，返回空结果');
+        return [];
+    }
     const { data, error } = await supabase.from('trip_solutions')
         .select('*')
         .eq('user_id', userId)

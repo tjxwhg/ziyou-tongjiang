@@ -1,6 +1,8 @@
 // js/simulated-annealing.js - 模拟退火算法（浏览器端执行）
-import { DAY_START, DAY_END, LUNCH_START, LUNCH_END, DINNER_START, DINNER_END, MEAL_DURATION, NEW_ARRIVAL_CUTOFF, MAX_RETURN_TIME, SA_CONFIG, WEIGHT_TEMPLATES } from './config.js';
-import { formatTime } from './utils.js';
+import {
+    DAY_START, DAY_END, MAX_RETURN_TIME,
+    SA_CONFIG, WEIGHT_TEMPLATES
+} from './config.js';
 
 // ============================================================
 // 硬约束检查
@@ -194,7 +196,6 @@ export function simulatedAnnealing(poiList, constraints, userPref, style) {
     const weights = WEIGHT_TEMPLATES[style] || WEIGHT_TEMPLATES.relaxed;
     const poiIds = poiList.map(p => p.id);
 
-    // 生成初始解
     const sequence = [...poiIds];
     for (let i = sequence.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));

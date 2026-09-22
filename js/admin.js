@@ -1,4 +1,4 @@
-// js/admin.js - 管理后台完整逻辑（L3 子项排序 + 交通耗时"以前面为准"）
+// js/admin.js - 管理后台完整逻辑（交通耗时"以前面为准" + 保存不重新渲染）
 import {
     getPois, getPoi, insertPoi, updatePoi, deletePoi as apiDeletePoi,
     getRoutes, getRoute, insertRoute, updateRoute, deleteRoute as apiDeleteRoute,
@@ -19,6 +19,7 @@ let routeNodesData = [];
 let editingNodeIndex = -1;
 let poiPickerSelectedId = null;
 let poiPickerCurrentSearch = '';
+let currentTransportPoiList = [];   // ★ 缓存当前交通耗时编辑器的 POI 列表
 
 const STORAGE_BUCKET = '0frontend-assets';
 
@@ -389,7 +390,7 @@ function renderL4Card(l4, pois) {
 }
 
 // ============================================================
-// 新增/编辑 POI
+// 新增 / 编辑 POI
 // ============================================================
 export function showAddPoiModal() {
     currentEditingPoiId = null;
@@ -596,7 +597,7 @@ export function togglePoiLevelUI() {
 }
 
 // ============================================================
-// ★ L3 子项列表（带 ↑↓ 排序）
+// L3 子项管理（带 ↑↓ 排序）
 // ============================================================
 function renderSubPoiList() {
     const container = document.getElementById('sub-poi-list');
@@ -645,7 +646,6 @@ function renderSubPoiList() {
     container.innerHTML = html;
 }
 
-// ★ 调整 L3 子项顺序
 window.moveL3SubItem = async function(idx, dir) {
     if (!currentEditingPoiId) return;
     const currentPoi = allPois.find(p => String(p.id) === String(currentEditingPoiId));
@@ -667,10 +667,8 @@ window.moveL3SubItem = async function(idx, dir) {
     const newIdx = idx + dir;
     if (newIdx < 0 || newIdx >= sorted.length) return;
 
-    // 交换
     [sorted[idx], sorted[newIdx]] = [sorted[newIdx], sorted[idx]];
 
-    // 保存到 tour_route
     const ids = sorted.map(x => x.id);
     try {
         await updatePoi(toSafeId(currentEditingPoiId), { tour_route: ids });
@@ -745,7 +743,7 @@ export async function confirmSubPoiSelection() {
             });
         }));
 
-        // ★ 自动追加到 tour_route 末尾
+        // 自动追加到 tour_route
         const currentPoi = allPois.find(p => String(p.id) === String(currentEditingPoiId));
         if (currentPoi) {
             const existing = Array.isArray(currentPoi.tour_route) ? [...currentPoi.tour_route] : [];
@@ -772,7 +770,6 @@ export async function removeSubPoi(subPoiId) {
             parent_id: null,
             is_core_node: false
         });
-        // 从 tour_route 中移除
         if (currentEditingPoiId) {
             const currentPoi = allPois.find(p => String(p.id) === String(currentEditingPoiId));
             if (currentPoi && Array.isArray(currentPoi.tour_route)) {
@@ -901,7 +898,7 @@ export async function deletePoi(id) {
 }
 
 // ============================================================
-// 交通耗时（"以前面为准"）
+// ★ 交通耗时编辑器（"以前面为准" + 保存不重新渲染）
 // ============================================================
 export function renderTransportEditor(presets) {
     const container = document.getElementById('transport-editor');
@@ -915,6 +912,7 @@ export function renderTransportEditor(presets) {
         container.innerHTML = '<p class="text-secondary">暂无参与规划的 L2/L3/L4 景点。</p>';
         return;
     }
+    currentTransportPoiList = poiList;   // ★ 缓存
 
     const orderIndex = { '0': -1 };
     poiList.forEach((p, i) => { orderIndex[String(p.id)] = i; });
@@ -955,7 +953,7 @@ export function renderTransportEditor(presets) {
             displayVal = authorityRecord.time_min;
             if (!isEarlierRow) {
                 isReadonly = true;
-                note = `<span class="text-secondary small ms-2">🔒 由「${getPoiName(earlierId)}」定义</span>`;
+                note = `<span class="text-secondary small ms-2 authority-note">🔒 由「${getPoiName(earlierId)}」定义</span>`;
             }
         }
 
@@ -1011,6 +1009,44 @@ export function renderTransportEditor(presets) {
     container.innerHTML = html;
 }
 
+// ★ 辅助：根据 id 查名称
+function findTransportPoiName(id) {
+    if (String(id) === '0') return '红军广场（县城）';
+    const p = currentTransportPoiList.find(x => String(x.id) === String(id));
+    return p ? p.name : String(id);
+}
+
+// ★ 辅助：更新反向行为只读显示（不重新渲染）
+function updateSymmetricRow(fromVal, toVal, val) {
+    const symmetricInputs = document.querySelectorAll(
+        `#transport-editor input[data-from="${toVal}"][data-to="${fromVal}"]`
+    );
+    symmetricInputs.forEach(inp => {
+        inp.value = val;
+        inp.readOnly = true;
+        inp.dataset.readonly = '1';
+        inp.style.background = '#e0e0e0';
+        inp.style.cursor = 'not-allowed';
+        inp.style.color = '#666';
+        inp.removeAttribute('onchange');
+
+        const parent = inp.parentElement;
+        let note = parent.querySelector('.authority-note');
+        if (!note) {
+            note = document.createElement('span');
+            note.className = 'text-secondary small ms-2 authority-note';
+            parent.appendChild(note);
+        }
+        note.textContent = `🔒 由「${findTransportPoiName(fromVal)}」定义`;
+
+        const statusEl = parent.querySelector('.save-status');
+        if (statusEl) {
+            statusEl.textContent = '✓已保存';
+            setTimeout(() => statusEl.textContent = '', 1500);
+        }
+    });
+}
+
 window.saveTransportTime = async function(input) {
     if (input.readOnly || input.dataset.readonly === '1') return;
 
@@ -1030,8 +1066,10 @@ window.saveTransportTime = async function(input) {
         const fromVal = from === '0' ? 0 : toSafeId(from);
         const toVal = to === '0' ? 0 : toSafeId(to);
 
+        // 1. 保存正向记录
         await upsertTransportPreset(fromVal, toVal, val);
 
+        // 2. 删除反向记录（若存在）
         const presets = await getTransportPresets();
         const reverseExists = presets.some(p =>
             String(p.from_poi_id) === String(toVal)
@@ -1041,9 +1079,31 @@ window.saveTransportTime = async function(input) {
             await deleteTransportPreset(toVal, fromVal);
         }
 
-        const updatedPresets = await getTransportPresets();
-        allPresets = updatedPresets;
-        renderTransportEditor(allPresets);
+        // 3. 更新内存缓存（不重新渲染）
+        allPresets = allPresets.filter(p =>
+            !(String(p.from_poi_id) === String(toVal) && String(p.to_poi_id) === String(fromVal))
+        );
+        const existingIdx = allPresets.findIndex(p =>
+            String(p.from_poi_id) === String(fromVal) && String(p.to_poi_id) === String(toVal)
+        );
+        if (existingIdx >= 0) {
+            allPresets[existingIdx].time_min = val;
+        } else {
+            allPresets.push({ from_poi_id: fromVal, to_poi_id: toVal, time_min: val });
+        }
+
+        // 4. 显示"已保存"，不重新渲染编辑器
+        const statusEl = input.parentElement.querySelector('.save-status');
+        if (statusEl) {
+            statusEl.textContent = '✓已保存';
+            setTimeout(() => statusEl.textContent = '', 1500);
+        }
+        input.style.background = '#e8f5e9';
+        setTimeout(() => input.style.background = '', 1500);
+
+        // 5. 更新对称行（如果是第一次配置，会将反向行改为只读）
+        updateSymmetricRow(fromVal, toVal, val);
+
     } catch (e) { alert('保存失败：' + e.message); }
 };
 

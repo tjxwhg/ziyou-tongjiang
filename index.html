@@ -163,6 +163,8 @@
         .l3-inner-row .l3-name { flex: 1; }
         .poi-orphan-section { border: 1px solid #e0e0e0; border-top: none; background: white; padding: 10px 12px; border-radius: 0 0 8px 8px; }
         .poi-orphan-title { font-size: 12px; color: #888; margin-bottom: 6px; }
+        .poi-selectable-row .poi-name i.fa-caret-down,
+        .poi-selectable-row .poi-name i.fa-caret-right { font-size: 14px; vertical-align: middle; }
     </style>
 </head>
 <body>
@@ -487,6 +489,7 @@ const VISIT_END = 18 * 60;
 const MEAL_DURATION = 60;
 const COUNTY_ID = 0;
 
+let collapsedL3Ids = new Set();   // ★ L3 折叠状态
 let allPois = [];
 let allPoisMap = {};
 let currentTripData = null;
@@ -620,7 +623,6 @@ function renderPoiSelection(pois) {
         return;
     }
 
-    // 可勾选：L2/L3/L4 且非核心节点
     const visiblePois = pois.filter(p =>
         (p.data_level === 'L2' || p.data_level === 'L3' || p.data_level === 'L4')
         && !p.is_core_node
@@ -659,7 +661,6 @@ function renderPoiSelection(pois) {
         html += `<div class="poi-category-header">${catIcon} ${cat}</div>`;
 
         catL1.forEach(l1 => {
-            // ★ 传两个参数：visiblePois（用于筛选可勾选子项）、pois（完整列表，用于查 L3 内部子项）
             html += renderScenicForSelection(l1, visiblePois, pois);
         });
 
@@ -697,9 +698,6 @@ function renderPoiSelection(pois) {
     updateSelectedInfo();
 }
 
-// ★ 渲染单个景区（含其 L2/L3/L4 子项）
-// visiblePois：用于筛选顶层可勾选子项
-// allPois：完整列表，用于查 L3 内部核心节点
 function renderScenicForSelection(l1, visiblePois, allPois) {
     const children = visiblePois.filter(p =>
         String(p.scenic_id) === String(l1.id)
@@ -721,52 +719,70 @@ function renderScenicForSelection(l1, visiblePois, allPois) {
     return html;
 }
 
-// ★ 可勾选行（含类型标签；L3 默认展开内部子项，按 tour_route 顺序）
+// ★ 可勾选行（含类型标签；L3 默认展开内部子项，可点击折叠）
 function renderSelectableRow(p, allPois) {
     const idStr = String(p.id);
     const isChecked = selectedPoiIds.has(idStr);
     const dur = p.visit_duration || 0;
     const typeTag = getTypeTagHtml(p);
+    const isL3 = p.data_level === 'L3';
+    const isCollapsed = collapsedL3Ids.has(idStr);
+    const hasChildren = isL3 && allPois.some(x => String(x.parent_id) === idStr);
+
+    // L3 名称可点击折叠
+    const nameHtml = (isL3 && hasChildren)
+        ? `<span class="poi-name" style="cursor:pointer;user-select:none;" onclick="window.toggleL3Collapse('${p.id}')" title="点击折叠/展开">
+             <i class="fas ${isCollapsed ? 'fa-caret-right' : 'fa-caret-down'} text-success me-1"></i>${p.name}
+           </span>`
+        : `<span class="poi-name">${p.name}</span>`;
 
     let html = `<div class="poi-selectable-row">
         <input type="checkbox" ${isChecked ? 'checked' : ''}
                onclick="event.stopPropagation(); window.togglePoiSelection('${p.id}')">
-        <span class="poi-name">${p.name}</span>
+        ${nameHtml}
         ${typeTag}
         <span class="poi-dur">${dur}分钟</span>
     </div>`;
 
-    // ★ L3 默认展开内部子项（按 tour_route 排序）
-    if (p.data_level === 'L3') {
-        const innerNodes = allPois.filter(x => String(x.parent_id) === String(p.id));
-        if (innerNodes.length > 0) {
-            // 按 tour_route 顺序排序
-            let sorted = innerNodes;
-            const tr = Array.isArray(p.tour_route) ? p.tour_route : [];
-            if (tr.length > 0) {
-                const idxMap = {};
-                tr.forEach((id, i) => { idxMap[String(id)] = i; });
-                sorted = [...innerNodes].sort((a, b) => {
-                    const ia = idxMap[String(a.id)] ?? 999;
-                    const ib = idxMap[String(b.id)] ?? 999;
-                    return ia - ib;
-                });
-            }
-
-            html += `<div class="l3-inner-list">`;
-            sorted.forEach((n, idx) => {
-                html += `<div class="l3-inner-row">
-                    <span class="l3-order">${idx + 1}.</span>
-                    <span class="l3-name">⭐ ${n.name}</span>
-                    <span class="poi-dur">${n.visit_duration || 0}分钟</span>
-                </div>`;
+    // L3 展开内部子项（按 tour_route 排序），支持折叠
+    if (isL3 && hasChildren && !isCollapsed) {
+        const innerNodes = allPois.filter(x => String(x.parent_id) === idStr);
+        let sorted = innerNodes;
+        const tr = Array.isArray(p.tour_route) ? p.tour_route : [];
+        if (tr.length > 0) {
+            const idxMap = {};
+            tr.forEach((id, i) => { idxMap[String(id)] = i; });
+            sorted = [...innerNodes].sort((a, b) => {
+                const ia = idxMap[String(a.id)] ?? 999;
+                const ib = idxMap[String(b.id)] ?? 999;
+                return ia - ib;
             });
-            html += `</div>`;
         }
+
+        html += `<div class="l3-inner-list">`;
+        sorted.forEach((n, idx) => {
+            html += `<div class="l3-inner-row">
+                <span class="l3-order">${idx + 1}.</span>
+                <span class="l3-name">⭐ ${n.name}</span>
+                <span class="poi-dur">${n.visit_duration || 0}分钟</span>
+            </div>`;
+        });
+        html += `</div>`;
     }
 
     return html;
 }
+
+// ★ 切换 L3 折叠状态
+window.toggleL3Collapse = function(poiId) {
+    const idStr = String(poiId);
+    if (collapsedL3Ids.has(idStr)) {
+        collapsedL3Ids.delete(idStr);
+    } else {
+        collapsedL3Ids.add(idStr);
+    }
+    renderPoiSelection(allPois);
+};
 
 window.togglePoiSelection = function(poiId) {
     const idStr = String(poiId);

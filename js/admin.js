@@ -1,4 +1,4 @@
-// js/admin.js - 管理后台完整逻辑（交通耗时"以前面为准"）
+// js/admin.js - 管理后台完整逻辑（L3 子项排序 + 交通耗时"以前面为准"）
 import {
     getPois, getPoi, insertPoi, updatePoi, deletePoi as apiDeletePoi,
     getRoutes, getRoute, insertRoute, updateRoute, deleteRoute as apiDeleteRoute,
@@ -178,7 +178,7 @@ export async function initAdminUI() {
 }
 
 // ============================================================
-// POI 列表渲染
+// POI 列表
 // ============================================================
 const CATEGORY_ORDER = [
     '自然景区', '红色景区', '文博场馆', '餐饮住宿',
@@ -389,7 +389,7 @@ function renderL4Card(l4, pois) {
 }
 
 // ============================================================
-// 新增 / 编辑 POI
+// 新增/编辑 POI
 // ============================================================
 export function showAddPoiModal() {
     currentEditingPoiId = null;
@@ -586,7 +586,7 @@ export function togglePoiLevelUI() {
         if (fieldScenic) fieldScenic.classList.remove('hidden');
         subSection.classList.remove('hidden');
         if (subTitle) subTitle.textContent = '核心节点管理';
-        if (subHint) subHint.textContent = '添加 L2 或 L4 景点作为核心节点。加入后这些景点不再出现在游客端规划列表，仅在地图显示并触发电子围栏。';
+        if (subHint) subHint.textContent = '添加 L2 或 L4 景点作为核心节点。可用 ↑↓ 调整游览顺序。';
     } else if (level === 'L4') {
         fieldDuration.classList.remove('hidden');
         fieldCoreNode.classList.remove('hidden');
@@ -595,6 +595,9 @@ export function togglePoiLevelUI() {
     }
 }
 
+// ============================================================
+// ★ L3 子项列表（带 ↑↓ 排序）
+// ============================================================
 function renderSubPoiList() {
     const container = document.getElementById('sub-poi-list');
     if (!container) return;
@@ -602,26 +605,81 @@ function renderSubPoiList() {
         container.innerHTML = '<p class="text-secondary small mb-0">请先保存POI，再次编辑时即可管理子项。</p>';
         return;
     }
+    const currentPoi = allPois.find(p => String(p.id) === String(currentEditingPoiId));
+    if (!currentPoi) { container.innerHTML = ''; return; }
+
     const subPois = allPois.filter(p => String(p.parent_id) === String(currentEditingPoiId));
     if (subPois.length === 0) {
         container.innerHTML = '<p class="text-secondary small mb-0">暂无核心节点。</p>';
         return;
     }
-    let html = '';
-    subPois.forEach(sub => {
+
+    // ★ 按 tour_route 顺序排序
+    let sorted = subPois;
+    const tr = Array.isArray(currentPoi.tour_route) ? currentPoi.tour_route : [];
+    if (tr.length > 0) {
+        const idxMap = {};
+        tr.forEach((id, i) => { idxMap[String(id)] = i; });
+        sorted = [...subPois].sort((a, b) => {
+            const ia = idxMap[String(a.id)] ?? 999;
+            const ib = idxMap[String(b.id)] ?? 999;
+            return ia - ib;
+        });
+    }
+
+    let html = `<p class="text-secondary small mb-2">当前顺序即游客端的游览顺序，可用 ↑↓ 调整。</p>`;
+    sorted.forEach((sub, idx) => {
         const catIcon = CATEGORY_ICONS[sub.category] || '';
         const catBadge = sub.category ? ` <span class="category-badge">${catIcon} ${sub.category}</span>` : '';
         const facilityTag = sub.type === 'facility' ? ' ' + getFacilitySubtypeBadge(sub.facility_subtype) : '';
         html += `<div class="sub-poi-item" style="background:#eceff1;">
-            <span>⭐ ${sub.name}${facilityTag}${catBadge} <span class="text-secondary small">(${sub.visit_duration || 0}分钟)</span></span>
+            <span><span class="badge bg-secondary me-2">${idx + 1}</span>⭐ ${sub.name}${facilityTag}${catBadge} <span class="text-secondary small">(${sub.visit_duration || 0}分钟)</span></span>
             <div>
-                <button class="btn btn-sm btn-outline-secondary me-1" onclick="window.showEditPoiModal('${sub.id}')"><i class="fas fa-edit"></i> 编辑</button>
+                <button class="btn btn-sm btn-outline-primary" onclick="window.moveL3SubItem(${idx}, -1)" ${idx === 0 ? 'disabled' : ''} title="上移">↑</button>
+                <button class="btn btn-sm btn-outline-primary" onclick="window.moveL3SubItem(${idx}, 1)" ${idx === sorted.length - 1 ? 'disabled' : ''} title="下移">↓</button>
+                <button class="btn btn-sm btn-outline-secondary ms-2 me-1" onclick="window.showEditPoiModal('${sub.id}')"><i class="fas fa-edit"></i> 编辑</button>
                 <button class="btn btn-sm btn-danger" onclick="window.removeSubPoi('${sub.id}')"><i class="fas fa-unlink"></i> 移出</button>
             </div>
         </div>`;
     });
     container.innerHTML = html;
 }
+
+// ★ 调整 L3 子项顺序
+window.moveL3SubItem = async function(idx, dir) {
+    if (!currentEditingPoiId) return;
+    const currentPoi = allPois.find(p => String(p.id) === String(currentEditingPoiId));
+    if (!currentPoi) return;
+
+    const subPois = allPois.filter(p => String(p.parent_id) === String(currentEditingPoiId));
+    let sorted = subPois;
+    const tr = Array.isArray(currentPoi.tour_route) ? currentPoi.tour_route : [];
+    if (tr.length > 0) {
+        const idxMap = {};
+        tr.forEach((id, i) => { idxMap[String(id)] = i; });
+        sorted = [...subPois].sort((a, b) => {
+            const ia = idxMap[String(a.id)] ?? 999;
+            const ib = idxMap[String(b.id)] ?? 999;
+            return ia - ib;
+        });
+    }
+
+    const newIdx = idx + dir;
+    if (newIdx < 0 || newIdx >= sorted.length) return;
+
+    // 交换
+    [sorted[idx], sorted[newIdx]] = [sorted[newIdx], sorted[idx]];
+
+    // 保存到 tour_route
+    const ids = sorted.map(x => x.id);
+    try {
+        await updatePoi(toSafeId(currentEditingPoiId), { tour_route: ids });
+        currentPoi.tour_route = ids;
+        const p = allPois.find(x => String(x.id) === String(currentEditingPoiId));
+        if (p) p.tour_route = ids;
+        renderSubPoiList();
+    } catch (e) { alert('调整失败：' + e.message); }
+};
 
 export function showSelectSubPoiModal() {
     if (!currentEditingPoiId) { alert('请先保存POI'); return; }
@@ -686,6 +744,19 @@ export async function confirmSubPoiSelection() {
                 is_core_node: true
             });
         }));
+
+        // ★ 自动追加到 tour_route 末尾
+        const currentPoi = allPois.find(p => String(p.id) === String(currentEditingPoiId));
+        if (currentPoi) {
+            const existing = Array.isArray(currentPoi.tour_route) ? [...currentPoi.tour_route] : [];
+            const existingSet = new Set(existing.map(x => String(x)));
+            selectedIds.forEach(id => {
+                if (!existingSet.has(String(id))) existing.push(toSafeId(id));
+            });
+            await updatePoi(parentIdVal, { tour_route: existing });
+            currentPoi.tour_route = existing;
+        }
+
         await closeModal('selectSubPoiModal');
         await initAdminUI();
         renderSubPoiList();
@@ -701,11 +772,23 @@ export async function removeSubPoi(subPoiId) {
             parent_id: null,
             is_core_node: false
         });
+        // 从 tour_route 中移除
+        if (currentEditingPoiId) {
+            const currentPoi = allPois.find(p => String(p.id) === String(currentEditingPoiId));
+            if (currentPoi && Array.isArray(currentPoi.tour_route)) {
+                const newTr = currentPoi.tour_route.filter(x => String(x) !== String(subPoiId));
+                await updatePoi(toSafeId(currentEditingPoiId), { tour_route: newTr });
+                currentPoi.tour_route = newTr;
+            }
+        }
         renderSubPoiList();
         await initAdminUI();
     } catch (e) { alert('移出失败：' + e.message); }
 }
 
+// ============================================================
+// 保存 POI
+// ============================================================
 export async function savePoiEdit() {
     const poiId = document.getElementById('edit-poi-id').value;
     const isNew = !poiId;
@@ -783,6 +866,8 @@ export async function savePoiEdit() {
             alert('新增成功');
         } else {
             updates.parent_id = isValidId(existingPoi.parent_id) ? toSafeId(existingPoi.parent_id) : null;
+            // 保留原 tour_route
+            if (existingPoi.tour_route) updates.tour_route = existingPoi.tour_route;
             await updatePoi(toSafeId(poiId), updates);
             await closeModal('poiModal');
             await initAdminUI();
@@ -816,7 +901,7 @@ export async function deletePoi(id) {
 }
 
 // ============================================================
-// ★ 交通耗时编辑器（"以前面为准"规则）
+// 交通耗时（"以前面为准"）
 // ============================================================
 export function renderTransportEditor(presets) {
     const container = document.getElementById('transport-editor');
@@ -831,7 +916,6 @@ export function renderTransportEditor(presets) {
         return;
     }
 
-    // 构建顺序索引：县城 = -1，其他按 poiList 顺序
     const orderIndex = { '0': -1 };
     poiList.forEach((p, i) => { orderIndex[String(p.id)] = i; });
     function getOrder(id) {
@@ -844,7 +928,6 @@ export function renderTransportEditor(presets) {
         return p ? p.name : id;
     }
 
-    // ★ 判断一对 (from, to) 的权威方向和记录
     function resolveAuthority(fromId, toId) {
         const fromIdx = getOrder(fromId);
         const toIdx = getOrder(toId);
@@ -862,7 +945,6 @@ export function renderTransportEditor(presets) {
         };
     }
 
-    // ★ 渲染一行
     function renderRow(fromId, toId, label) {
         const { earlierId, authorityRecord, isEarlierRow } = resolveAuthority(fromId, toId);
         let displayVal = '';
@@ -872,7 +954,6 @@ export function renderTransportEditor(presets) {
         if (authorityRecord) {
             displayVal = authorityRecord.time_min;
             if (!isEarlierRow) {
-                // 当前是"后面"行：只读显示权威值
                 isReadonly = true;
                 note = `<span class="text-secondary small ms-2">🔒 由「${getPoiName(earlierId)}」定义</span>`;
             }
@@ -900,7 +981,6 @@ export function renderTransportEditor(presets) {
 
     let html = '';
 
-    // 1. 红军广场卡片
     html += `<div class="transport-group card mb-2" style="border:2px solid #1b5e20;">
         <div class="card-header" style="cursor:pointer;background:#e8f5e9;" onclick="this.nextElementSibling.classList.toggle('hidden')">
             <b>🏠 红军广场（县城）</b> <span class="text-secondary">→ 各景点耗时（点击展开）</span>
@@ -911,7 +991,6 @@ export function renderTransportEditor(presets) {
     });
     html += `</div></div>`;
 
-    // 2. 各景点卡片
     poiList.forEach(fromPoi => {
         html += `<div class="transport-group card mb-2">
             <div class="card-header" style="cursor:pointer;background:#f8f9fa;" onclick="this.nextElementSibling.classList.toggle('hidden')">
@@ -919,10 +998,8 @@ export function renderTransportEditor(presets) {
             </div>
             <div class="card-body hidden">`;
 
-        // 首行：→ 红军广场
         html += renderRow(fromPoi.id, '0', '🏠 → 红军广场（县城）');
 
-        // 后续：→ 其他景点
         poiList.forEach(toPoi => {
             if (String(fromPoi.id) === String(toPoi.id)) return;
             html += renderRow(fromPoi.id, toPoi.id, `→ ${toPoi.name}`);
@@ -934,9 +1011,7 @@ export function renderTransportEditor(presets) {
     container.innerHTML = html;
 }
 
-// ★ 保存交通耗时：保存时清理反向记录
 window.saveTransportTime = async function(input) {
-    // 只读输入框不会触发 onchange，此处双重保险
     if (input.readOnly || input.dataset.readonly === '1') return;
 
     const from = input.dataset.from;
@@ -955,10 +1030,8 @@ window.saveTransportTime = async function(input) {
         const fromVal = from === '0' ? 0 : toSafeId(from);
         const toVal = to === '0' ? 0 : toSafeId(to);
 
-        // 1. 保存正向记录
         await upsertTransportPreset(fromVal, toVal, val);
 
-        // 2. 删除反向记录（保证单一权威）
         const presets = await getTransportPresets();
         const reverseExists = presets.some(p =>
             String(p.from_poi_id) === String(toVal)
@@ -968,7 +1041,6 @@ window.saveTransportTime = async function(input) {
             await deleteTransportPreset(toVal, fromVal);
         }
 
-        // 3. 刷新数据
         const updatedPresets = await getTransportPresets();
         allPresets = updatedPresets;
         renderTransportEditor(allPresets);

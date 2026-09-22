@@ -142,9 +142,7 @@
         .merchant-notice { background: #fff8e1; border-left: 4px solid #ff9800; border-radius: 8px; padding: 12px 14px; margin-top: 16px; }
         .merchant-notice h6 { color: #e65100; margin: 0 0 8px; font-weight: 700; font-size: 15px; display: flex; align-items: center; gap: 6px; }
         .merchant-notice p { color: #555; font-size: 14px; line-height: 1.6; margin: 0; white-space: pre-wrap; word-break: break-word; }
-        /* ============================================================ */
         /* 智能规划列表 - 大类/景区/子项 三级布局 */
-        /* ============================================================ */
         .poi-category-section { margin-bottom: 16px; }
         .poi-category-header { font-weight: 700; font-size: 14px; color: white; background: linear-gradient(135deg, #2e7d32, #1b5e20); padding: 8px 14px; border-radius: 8px 8px 0 0; display: flex; align-items: center; gap: 6px; }
         .scenic-block { border: 1px solid #c8e6c9; border-top: none; background: #f1f8e9; padding: 10px 12px; }
@@ -401,8 +399,7 @@
         "./utils.js": "./js/utils.js",
         "./map.js": "./js/map.js",
         "./trip-planner.js": "./js/trip-planner.js",
-        "./trip-executor.js": "./js/trip-executor.js",
-        "./user.js": "./js/user.js"
+        "./trip-executor.js": "./js/trip-executor.js"
     }
 }
 </script>
@@ -418,7 +415,11 @@ import {
 import { initMap, loadPoisToMap, locateUser, setVoiceEnabled, clearFilter, applyFilter } from './js/map.js';
 import { generateTripPlan } from './js/trip-planner.js';
 import { startNavigation, endNavigation } from './js/trip-executor.js';
+import { COUNTY } from './js/config.js';
 
+// ============================================================
+// 设备标识
+// ============================================================
 function getDeviceId() {
     let id = localStorage.getItem('deviceId');
     if (!id) {
@@ -429,40 +430,57 @@ function getDeviceId() {
 }
 const DEVICE_ID = getDeviceId();
 
+// ============================================================
+// 本地存储工具
+// ============================================================
 function getLocalData(key) {
     try { return JSON.parse(localStorage.getItem(key) || '[]'); } catch { return []; }
 }
 function setLocalData(key, data) { localStorage.setItem(key, JSON.stringify(data)); }
 
+// ============================================================
+// 缓存（带版本号，后台改数据后自动失效）
+// ============================================================
 const CACHE_TTL = 5 * 60 * 1000;
 const CACHE_PREFIX = 'ztj_cache_';
+const VERSION_KEY = 'ztj_cache_version';
+
 function getCache(key) {
     try {
         const raw = localStorage.getItem(CACHE_PREFIX + key);
         if (!raw) return null;
-        const { data, ts } = JSON.parse(raw);
-        if (Date.now() - ts > CACHE_TTL) return null;
-        return data;
+        const parsed = JSON.parse(raw);
+        if (Date.now() - parsed.ts > CACHE_TTL) return null;
+        return parsed;   // { data, ts, version }
     } catch { return null; }
 }
 function setCache(key, data) {
-    try { localStorage.setItem(CACHE_PREFIX + key, JSON.stringify({ data, ts: Date.now() })); } catch {}
+    try {
+        const version = localStorage.getItem(VERSION_KEY) || '0';
+        localStorage.setItem(CACHE_PREFIX + key,
+            JSON.stringify({ data, ts: Date.now(), version }));
+    } catch {}
 }
 async function getPoisCached() {
     const cached = getCache('pois');
-    if (cached) return cached;
+    const currentVersion = localStorage.getItem(VERSION_KEY) || '0';
+    if (cached && cached.version === currentVersion) return cached.data;
     const data = await getPois();
     setCache('pois', data);
     return data;
 }
 async function getTransportPresetsCached() {
     const cached = getCache('transport');
-    if (cached) return cached;
+    const currentVersion = localStorage.getItem(VERSION_KEY) || '0';
+    if (cached && cached.version === currentVersion) return cached.data;
     const data = await getTransportPresets();
     setCache('transport', data);
     return data;
 }
 
+// ============================================================
+// 常量
+// ============================================================
 const STATUS_MAP = { pending: '待确认', confirmed: '已确认', rejected: '已拒绝', cancelled: '已取消' };
 function translateStatus(s) { return STATUS_MAP[s] || s || '未知'; }
 
@@ -487,9 +505,12 @@ const DINNER_START = 18 * 60;
 const DINNER_END = 19 * 60;
 const VISIT_END = 18 * 60;
 const MEAL_DURATION = 60;
-const COUNTY_ID = 0;
+const COUNTY_ID = COUNTY.numericId;   // 0
 
-let collapsedL3Ids = new Set();   // ★ L3 折叠状态
+// ============================================================
+// 全局状态
+// ============================================================
+let collapsedL3Ids = new Set();
 let allPois = [];
 let allPoisMap = {};
 let currentTripData = null;
@@ -505,6 +526,9 @@ let currentArrivalTime = 10 * 60;
 let transportPresetsCache = {};
 let currentDetailPoi = null;
 
+// ============================================================
+// 工具函数
+// ============================================================
 function fmtTime(minutes) {
     const h = Math.floor(minutes / 60);
     const m = minutes % 60;
@@ -527,6 +551,9 @@ function calcTravelBetween(prevPoiId, curPoiId) {
     return transportPresetsCache[`${prevPoiId}_${curPoiId}`] || 0;
 }
 
+// ============================================================
+// 时间选择器
+// ============================================================
 function initTimeSelectors() {
     const sel = document.getElementById('planStartTime');
     if (!sel) return;
@@ -588,7 +615,7 @@ function initStartLocationSelect(pois) {
 }
 
 // ============================================================
-// ★ 类型标签
+// 类型标签
 // ============================================================
 function getTypeTagHtml(p) {
     if (p.data_level === 'L3') return '<span class="type-tag">⭐ 连续景点</span>';
@@ -608,7 +635,7 @@ function getTypeTagHtml(p) {
 }
 
 // ============================================================
-// ★ 智能规划 POI 列表（大类 → 景区 → 子项）
+// 智能规划 POI 列表（大类 → 景区 → 子项）
 // ============================================================
 const CATEGORY_ORDER = [
     '自然景区', '红色景区', '文博场馆', '餐饮住宿',
@@ -719,7 +746,6 @@ function renderScenicForSelection(l1, visiblePois, allPois) {
     return html;
 }
 
-// ★ 可勾选行（含类型标签；L3 默认展开内部子项，可点击折叠）
 function renderSelectableRow(p, allPois) {
     const idStr = String(p.id);
     const isChecked = selectedPoiIds.has(idStr);
@@ -729,7 +755,6 @@ function renderSelectableRow(p, allPois) {
     const isCollapsed = collapsedL3Ids.has(idStr);
     const hasChildren = isL3 && allPois.some(x => String(x.parent_id) === idStr);
 
-    // L3 名称可点击折叠
     const nameHtml = (isL3 && hasChildren)
         ? `<span class="poi-name" style="cursor:pointer;user-select:none;" onclick="window.toggleL3Collapse('${p.id}')" title="点击折叠/展开">
              <i class="fas ${isCollapsed ? 'fa-caret-right' : 'fa-caret-down'} text-success me-1"></i>${p.name}
@@ -744,7 +769,6 @@ function renderSelectableRow(p, allPois) {
         <span class="poi-dur">${dur}分钟</span>
     </div>`;
 
-    // L3 展开内部子项（按 tour_route 排序），支持折叠
     if (isL3 && hasChildren && !isCollapsed) {
         const innerNodes = allPois.filter(x => String(x.parent_id) === idStr);
         let sorted = innerNodes;
@@ -773,7 +797,6 @@ function renderSelectableRow(p, allPois) {
     return html;
 }
 
-// ★ 切换 L3 折叠状态
 window.toggleL3Collapse = function(poiId) {
     const idStr = String(poiId);
     if (collapsedL3Ids.has(idStr)) {
@@ -1663,6 +1686,9 @@ window.showPoiDetail = async function(poi) {
     }
 };
 
+// ============================================================
+// 全局函数绑定
+// ============================================================
 window.locateUser = locateUser;
 window.clearFilter = clearFilter;
 window.filterPOI = (category) => { applyFilter(category); };
@@ -1682,6 +1708,9 @@ window.backToPreferences = function() {
 window.startNavigation = startNavigation;
 window.endNavigation = endNavigation;
 
+// ============================================================
+// 顶部导航交互
+// ============================================================
 const brandToggle = document.getElementById('brandToggle');
 const categoryBar = document.getElementById('categoryBar');
 let hideTimer = null;
@@ -1702,6 +1731,9 @@ document.addEventListener('click', function(e) {
     }
 });
 
+// ============================================================
+// 初始化
+// ============================================================
 async function init() {
     try {
         const pois = await getPoisCached();

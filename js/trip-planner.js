@@ -1,4 +1,4 @@
-// js/trip-planner.js - 行程规划引擎（含 overnight 分支完整收尾）
+// js/trip-planner.js - 行程规划引擎（修复 allDone 就餐 + 无数据提示）
 import { formatTime, timeToMinutes, fetchWeatherForecast } from './utils.js';
 import {
     DAY_START, PLAN_CUTOFF, VISIT_END, NIGHT_END,
@@ -73,6 +73,19 @@ export class TripPlanner {
                 } else if (travel > MAX_RETURN_TIME) {
                     this.warnings.push(`❌ 从 ${this.getPoiName(this.lastPoiId)} 到 ${poi.name} 交通耗时 ${travel} 分钟超限，跳过。`);
                     continue;
+                } else {
+                    // ★ travel === 0：检查是否真的缺数据
+                    if (String(this.lastPoiId) !== String(poi.id)
+                        && String(this.lastPoiId) !== 'county'
+                        && String(poi.id) !== 'county') {
+                        if (!this.hasTravelData(this.lastPoiId, poi.id)) {
+                            this.addNode({
+                                type: 'reminder',
+                                message: `前往"${poi.name}"暂无交通耗时数据，请提醒管理员在后台配置`
+                            });
+                            this.warnings.push(`⚠️ 未配置 ${this.getPoiName(this.lastPoiId)} → ${poi.name} 的交通耗时`);
+                        }
+                    }
                 }
 
                 const level = poi.data_level || 'L2';
@@ -106,15 +119,12 @@ export class TripPlanner {
                 }
             }
 
-            // ============================================================
-            // ★ overnight 分支：完整收尾
-            // ============================================================
+            // overnight 分支
             if (overnight) {
                 const nextItem = queue[0];
                 const nextL3Poi = nextItem ? nextItem.poi : null;
-                const prevPoi = this.lastPoiId === 'county' ? null : this.poiMap[this.lastPoiId];
+                const prevPoi = this.lastPoiId === 'county' ? null : this.allPoisMap[String(this.lastPoiId)];
 
-                // 判断"前一个景点"与"L3"是否同景区
                 let sameScenic = false;
                 if (prevPoi && nextL3Poi
                     && prevPoi.scenic_id !== null && prevPoi.scenic_id !== undefined
@@ -124,7 +134,6 @@ export class TripPlanner {
                 }
 
                 if (sameScenic) {
-                    // ★ 同景区：就地住宿，次日保持 lastPoiId
                     this.ensureTwoMeals();
                     this.addNode({
                         type: 'accommodation',
@@ -135,10 +144,10 @@ export class TripPlanner {
                     this.closeDay();
                     this.advanceToNextDay(true);
                 } else {
-                    // ★ 不同景区：返回县城，次日从县城出发
                     if (this.lastPoiId !== 'county' && this.lastPoiId) {
                         const returnTravel = this.calcTravel(this.lastPoiId, 'county');
                         if (returnTravel > 10 && returnTravel <= MAX_RETURN_TIME) {
+                            const travelStart = this.currentTime;
                             this.addNode({
                                 type: 'transport',
                                 name: '返回县城',
@@ -150,6 +159,7 @@ export class TripPlanner {
                             });
                             this.totalTravelMinutes += returnTravel;
                             this.currentTime += returnTravel;
+                            this.checkAndInsertMealAfterTransport(travelStart, this.currentTime);
                         }
                         this.lastPoiId = 'county';
                     }
@@ -168,10 +178,14 @@ export class TripPlanner {
 
             const allDone = queue.length === 0;
 
+            // ============================================================
+            // ★ 修复：allDone 分支补就餐处理 + ensureTwoMeals
+            // ============================================================
             if (allDone) {
                 if (this.lastPoiId !== 'county' && this.lastPoiId) {
                     const returnTravel = this.calcTravel(this.lastPoiId, 'county');
                     if (returnTravel > 0 && returnTravel <= MAX_RETURN_TIME && returnTravel > 10) {
+                        const travelStart = this.currentTime;
                         this.addNode({
                             type: 'transport',
                             name: '返回县城',
@@ -183,9 +197,14 @@ export class TripPlanner {
                         });
                         this.totalTravelMinutes += returnTravel;
                         this.currentTime += returnTravel;
+                        // ★ 关键：返回县城后检查是否需要插餐
+                        this.checkAndInsertMealAfterTransport(travelStart, this.currentTime);
                     }
                     this.lastPoiId = 'county';
                 }
+                // ★ 关键：确保两餐都吃了
+                this.ensureTwoMeals();
+
                 this.addNode({
                     type: 'trip_end',
                     name: '整个行程规划结束',
@@ -354,6 +373,18 @@ export class TripPlanner {
         return t || 0;
     }
 
+    // ★ 新增：判断交通耗时数据是否存在
+    hasTravelData(fromId, toId) {
+        if (!fromId || !toId) return true;
+        const fromKey = fromId === 'county' ? 0 : fromId;
+        const toKey = toId === 'county' ? 0 : toId;
+        const key = `${fromKey}_${toKey}`;
+        if (this.travelTimes[key] !== undefined) return true;
+        const reverseKey = `${toKey}_${fromKey}`;
+        if (this.travelTimes[reverseKey] !== undefined) return true;
+        return false;
+    }
+
     checkAndInsertMealAfterTransport(travelStart, travelEnd) {
         let meal = null;
         if (!this.lunchInserted && travelStart < LUNCH_END && travelEnd >= LUNCH_START) {
@@ -428,10 +459,11 @@ export class TripPlanner {
     }
 
     addVisitNode(poi, startTime, duration, totalDuration, remainingAfter = 0) {
+        // ★ L3 也统一加"浏览"前缀
         const visitNode = {
             type: 'visit',
             name: poi.data_level === 'L3'
-                ? `⭐ ${poi.name}`
+                ? `浏览 ⭐ ${poi.name}`
                 : `浏览 ${poi.name}`,
             nodeType: poi.data_level === 'L3' ? 'core_route' : 'poi',
             startTime,

@@ -5,11 +5,11 @@ export const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiO
 
 // ========== 时间参数 ==========
 export const DAY_START = 480;          // 08:00
-export const PLAN_CUTOFF = 1020;       // 17:00 规划截止
-export const VISIT_END = 1080;         // 18:00 普通游览截止
+export const PLAN_CUTOFF = 1020;       // 17:00 最后游览开始时间
+export const VISIT_END = 1080;         // 18:00 硬结束
 export const NIGHT_END = 1320;         // 22:00 24h POI 夜间上限
-export const DAY_END = VISIT_END;      // ★ 新增：日程结束（算法默认）
-export const NEW_ARRIVAL_CUTOFF = 960; // ★ 新增：16:00 后不再新增到达
+export const DAY_END = VISIT_END;
+export const NEW_ARRIVAL_CUTOFF = 960;
 
 export const LUNCH_START = 690;        // 11:30
 export const LUNCH_END = 750;          // 12:30
@@ -17,8 +17,13 @@ export const DINNER_START = 1080;      // 18:00
 export const DINNER_END = 1140;        // 19:00
 export const MEAL_DURATION = 60;       // 每餐时长
 export const MAX_RETURN_TIME = 180;
-export const MIN_SEGMENT = 45;         // L2 打断阈值
+export const MIN_SEGMENT = 45;
 export const MIN_REST_DURATION = 10;
+
+// ========== 规划约束（新增） ==========
+export const MAX_WAIT_FOR_MEAL = 59;      // 收尾阶段距下一餐的最大等待分钟
+export const MIN_VISIT_SEGMENT = 45;      // 当天剩余游览 < 45 分钟则丢弃
+export const MAX_POI_DURATION = 14400;    // 单 POI 最大游览时长（240 小时）
 
 // L3 错过判定阈值（就餐窗口结束 + 120 分钟）
 export const LUNCH_THRESHOLD = LUNCH_END + 120;    // 14:30
@@ -82,7 +87,7 @@ export const ALLOWED_CATEGORIES = ['自然景区', '红色景区', '文博场馆
 export const NON_VISIT_CATEGORIES = ['交通枢纽', '餐饮住宿', '公共服务', '购物消费', '游玩娱乐'];
 export const EXCLUDED_TRANSPORT_CATS = ['公共服务', '游玩娱乐', '购物消费'];
 
-// ========== 县城统一定义（唯一真源） ==========
+// ========== 县城统一标识 ==========
 export const COUNTY = {
     id: 'county',
     numericId: 0,

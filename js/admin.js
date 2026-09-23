@@ -1,4 +1,4 @@
-// js/admin.js - 管理后台完整逻辑（交通耗时方向规范化 + 并发保护 + 完整清理）
+// js/admin.js - 管理后台完整逻辑
 import {
     getPois, getPoi, insertPoi, updatePoi, deletePoi as apiDeletePoi,
     getRoutes, getRoute, insertRoute, updateRoute, deleteRoute as apiDeleteRoute,
@@ -10,6 +10,7 @@ import {
     getFeedbacks, updateFeedback, deleteFeedback as apiDeleteFeedback,
     uploadFile
 } from './api.js';
+import { MAX_POI_DURATION } from './config.js';
 
 let allPois = [], allRoutes = [], allPresets = [], allMerchants = [], allFeedbacks = [];
 let currentEditingPoiId = null;
@@ -684,7 +685,6 @@ window.moveL3SubItem = async function(idx, dir) {
     const ids = sorted.map(x => x.id);
     try {
         await updatePoi(toSafeId(currentEditingPoiId), { tour_route: ids });
-        // ★ 重新拉取最新引用（防止对象过期）
         const fresh = allPois.find(x => String(x.id) === String(currentEditingPoiId));
         if (fresh) fresh.tour_route = ids;
         renderSubPoiList();
@@ -823,6 +823,12 @@ export async function savePoiEdit() {
         visitDuration = parseInt(document.getElementById('edit-poi-visit').value) || 0;
     }
 
+    // ★ 新增：游览时长上限校验（240 小时 = 14400 分钟）
+    if (visitDuration > MAX_POI_DURATION) {
+        alert(`游览时长不得超过 ${MAX_POI_DURATION / 60} 小时（${MAX_POI_DURATION} 分钟）`);
+        return;
+    }
+
     let isCoreNode = false;
     if (existingPoi && existingPoi.parent_id) {
         isCoreNode = true;
@@ -891,8 +897,6 @@ export async function deletePoi(id) {
     const poi = allPois.find(p => String(p.id) === String(id));
     if (!poi) return;
     const subPois = allPois.filter(p => String(p.parent_id) === String(id));
-
-    // ★ 找出所有引用了此 POI 的 L3 tour_route
     const affectedL3s = allPois.filter(p =>
         Array.isArray(p.tour_route) &&
         p.tour_route.some(x => String(x) === String(id))
@@ -908,20 +912,17 @@ export async function deletePoi(id) {
     if (!confirm(msg)) return;
 
     try {
-        // 1. 解绑子节点
         if (subPois.length > 0) {
             await Promise.all(subPois.map(p => updatePoi(toSafeId(p.id), {
                 parent_id: null,
                 is_core_node: false
             })));
         }
-        // 2. 从其他 L3 的 tour_route 中移除
         for (const l3 of affectedL3s) {
             if (String(l3.id) === String(id)) continue;
             const newTr = l3.tour_route.filter(x => String(x) !== String(id));
             await updatePoi(toSafeId(l3.id), { tour_route: newTr });
         }
-        // 3. 清交通预设
         try {
             await deleteTransportPresetsForPoi(toSafeId(id));
         } catch (e) { console.warn('[deletePoi] 清理交通预设失败:', e); }
@@ -932,7 +933,7 @@ export async function deletePoi(id) {
 }
 
 // ============================================================
-// 交通耗时编辑器（规范化方向 + 并发保护 + 历史数据修正）
+// 交通耗时编辑器
 // ============================================================
 export function renderTransportEditor(presets) {
     const container = document.getElementById('transport-editor');
@@ -960,7 +961,7 @@ export function renderTransportEditor(presets) {
         return p ? p.name : id;
     }
 
-    // ★ 规范化历史数据方向 + 去重
+    // 规范化历史数据方向 + 去重
     const seen = new Set();
     const fixedPresets = [];
     presets.forEach(p => {
@@ -1104,7 +1105,6 @@ function updateSymmetricRow(fromVal, toVal, val) {
     });
 }
 
-// ★ 脏标记
 window.markTransportDirty = function(input) {
     if (input.readOnly || input.dataset.readonly === '1') return;
     const statusEl = input.parentElement.querySelector('.save-status');
@@ -1115,7 +1115,6 @@ window.markTransportDirty = function(input) {
     input.style.background = '#fff3cd';
 };
 
-// ★ 保存时规范化方向 + 并发保护 + 使用原子替换
 window.saveTransportTime = async function(input) {
     if (input.dataset.saving === '1') return;
     if (input.readOnly || input.dataset.readonly === '1') return;
@@ -1137,23 +1136,19 @@ window.saveTransportTime = async function(input) {
         const fromVal = from === '0' ? 0 : toSafeId(from);
         const toVal = to === '0' ? 0 : toSafeId(to);
 
-        // ★ 关键：按 POI 顺序规范化方向（较早 → 较晚）
         const fromIdx = getTransportOrderIndex(fromVal);
         const toIdx = getTransportOrderIndex(toVal);
         const canonFrom = fromIdx <= toIdx ? fromVal : toVal;
         const canonTo = fromIdx <= toIdx ? toVal : fromVal;
 
-        // ★ 使用原子替换
         await replaceTransportPreset(canonFrom, canonTo, val);
 
-        // 更新内存缓存
         allPresets = allPresets.filter(p =>
             !(String(p.from_poi_id) === String(canonFrom) && String(p.to_poi_id) === String(canonTo)) &&
             !(String(p.from_poi_id) === String(canonTo) && String(p.to_poi_id) === String(canonFrom))
         );
         allPresets.push({ from_poi_id: canonFrom, to_poi_id: canonTo, time_min: val });
 
-        // 成功提示
         const statusEl = input.parentElement.querySelector('.save-status');
         if (statusEl) {
             statusEl.textContent = '✓已保存';
@@ -1163,7 +1158,6 @@ window.saveTransportTime = async function(input) {
         input.style.background = '#e8f5e9';
         setTimeout(() => { input.style.background = ''; }, 1500);
 
-        // 更新对称行
         updateSymmetricRow(canonFrom, canonTo, val);
 
     } catch (e) {

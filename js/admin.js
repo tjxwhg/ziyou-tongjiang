@@ -1447,4 +1447,159 @@ window.removeRouteNode = function(idx) {
 
 window.openPoiPicker = function() {
     poiPickerSelectedId = document.getElementById('edit-node-poi').value || null;
-   
+    poiPickerCurrentSearch = '';
+    document.getElementById('poi-picker-search').value = '';
+    renderPoiPickerList();
+    new bootstrap.Modal(document.getElementById('poiPickerModal')).show();
+};
+function renderPoiPickerList() {
+    const container = document.getElementById('poi-picker-list');
+    if (!container) return;
+    const keyword = (poiPickerCurrentSearch || '').toLowerCase();
+    const groups = { L1: [], L2: [], L3: [], L4: [], core: [] };
+    allPois.forEach(p => {
+        if (!isValidId(p.id)) return;
+        let key;
+        if (p.is_core_node) key = 'core';
+        else key = p.data_level || 'L2';
+        if (!groups[key]) groups[key] = [];
+        if (keyword && !p.name.toLowerCase().includes(keyword)) return;
+        groups[key].push(p);
+    });
+    const labelMap = {
+        L1: '🏞️ L1 景区', L2: '📍 L2 普通景点', L3: '⭐ L3 连续景点',
+        L4: '🏛️ L4 服务/设施', core: '🗺️ 核心节点'
+    };
+    let html = '';
+    Object.keys(groups).forEach(k => {
+        if (groups[k].length === 0) return;
+        html += `<div class="poi-group"><div class="poi-group-title">${labelMap[k] || k} (${groups[k].length})</div>`;
+        groups[k].forEach(p => {
+            const selected = String(p.id) === String(poiPickerSelectedId) ? 'selected' : '';
+            const facilityTag = (p.type === 'facility' && p.facility_subtype)
+                ? ` [${subtypesToText(p.facility_subtype)}]` : '';
+            html += `<div class="poi-picker-item ${selected}" onclick="window.selectPoiPickerItem('${p.id}', '${p.name.replace(/'/g, "\\'")}')">
+                ${p.name}${facilityTag}</div>`;
+        });
+        html += `</div>`;
+    });
+    container.innerHTML = html || '<p class="text-secondary">无匹配POI</p>';
+}
+window.filterPoiPicker = function(keyword) {
+    poiPickerCurrentSearch = keyword || '';
+    renderPoiPickerList();
+};
+window.selectPoiPickerItem = function(id, name) {
+    poiPickerSelectedId = id;
+    renderPoiPickerList();
+};
+window.clearPoiPicker = function() {
+    poiPickerSelectedId = null;
+    renderPoiPickerList();
+};
+window.confirmPoiPicker = async function() {
+    if (poiPickerSelectedId) {
+        const poi = allPois.find(p => String(p.id) === String(poiPickerSelectedId));
+        if (poi) {
+            document.getElementById('edit-node-poi').value = poi.id;
+            document.getElementById('edit-node-poi-display').innerHTML = `<b style="color:#1b5e20;">${poi.name}</b>`;
+        }
+    } else {
+        document.getElementById('edit-node-poi').value = '';
+        document.getElementById('edit-node-poi-display').innerHTML = '<span class="text-secondary">点击选择 POI...</span>';
+    }
+    await closeModal('poiPickerModal');
+};
+
+export async function saveRouteEdit() {
+    const id = document.getElementById('edit-route-id').value;
+    const name = document.getElementById('edit-route-name').value.trim();
+    if (!name) { alert('请输入路线名称'); return; }
+    if (routeNodesData.length === 0) { alert('请至少添加一个节点'); return; }
+    const totalMin = calculateRouteTotalDuration();
+    const themeTags = getThemeTags();
+    const data = {
+        name: name,
+        route_type: document.getElementById('edit-route-type').value,
+        day_category: document.getElementById('edit-route-daycat').value,
+        sort_order: parseInt(document.getElementById('edit-route-sort').value) || 0,
+        duration_min: totalMin,
+        estimated_cost: parseFloat(document.getElementById('edit-route-cost').value) || null,
+        summary: document.getElementById('edit-route-summary').value.trim(),
+        summary_pois: document.getElementById('edit-route-summary-pois').value.trim(),
+        description: document.getElementById('edit-route-desc').value.trim(),
+        theme_tags: themeTags.length > 0 ? themeTags : null,
+        scenic_poi_id: null, is_default: false, start_time: '08:00',
+        transport: '', days: 1, group_type: 'default'
+    };
+    try {
+        let routeId = id;
+        if (id) await updateRoute(id, data);
+        else { const r = await insertRoute(data); routeId = r.id; }
+        await deleteRouteNodes(routeId);
+        const nodes = routeNodesData.map((n, i) => ({
+            route_id: routeId, order_num: i + 1,
+            node_name: n.node_name, node_type: n.node_type,
+            poi_id: (n.poi_id && isValidId(n.poi_id)) ? toSafeId(n.poi_id) : null,
+            priority_level: n.priority_level || 2,
+            duration_min: n.duration_min || 10,
+            duration_short: n.duration_short || null,
+            duration_long: n.duration_long || null,
+            is_skippable: !!n.is_skippable,
+            meal_suitable: n.meal_suitable || null,
+            nearby_restaurant: n.nearby_restaurant || null,
+            description: n.description, tips: n.tips,
+            transport_mode: '步行', transport_time: 0
+        }));
+        if (nodes.length > 0) await insertRouteNodes(nodes);
+        await closeModal('routeModal');
+        await initAdminUI();
+        alert('保存成功');
+    } catch (e) { alert('保存失败：' + e.message); console.error(e); }
+}
+
+export async function deleteRoute(id) {
+    if (!confirm('确认删除此路线？')) return;
+    try {
+        await deleteRouteNodes(id);
+        await apiDeleteRoute(id);
+        await initAdminUI();
+    } catch (e) { alert('删除失败：' + e.message); }
+}
+
+// ============================================================
+// 商户 / 留言
+// ============================================================
+export function renderMerchantList(merchants) {
+    const container = document.getElementById('merchant-list');
+    if (!container) return;
+    container.innerHTML = merchants.map(m => `
+        <div class="poi-card"><span><b>${m.display_name || m.id}</b> ${m.phone || ''}</span></div>
+    `).join('') || '<p>暂无商户</p>';
+}
+export async function createMerchant() {
+    alert('创建商户功能需后端支持，请使用 Supabase Admin API');
+}
+export function renderFeedbackList(feedbacks) {
+    const container = document.getElementById('feedback-list');
+    if (!container) return;
+    container.innerHTML = feedbacks.map(f => `
+        <div class="poi-card">
+            <p><b>${f.message}</b></p>
+            <small>${new Date(f.created_at).toLocaleString()}</small>
+            ${f.reply ? `<div class="text-success">回复：${f.reply}</div>` : ''}
+            <div class="mt-1"><textarea id="reply-${f.id}" class="form-control form-control-sm" rows="2">${f.reply || ''}</textarea></div>
+            <button class="btn btn-sm btn-primary mt-1" onclick="window.replyFeedback('${f.id}')">回复</button>
+            <button class="btn btn-sm btn-danger mt-1" onclick="window.deleteFeedback('${f.id}')">删除</button>
+        </div>
+    `).join('') || '<p>暂无留言</p>';
+}
+export async function replyFeedback(id) {
+    const reply = document.getElementById(`reply-${id}`).value;
+    try { await updateFeedback(id, { reply }); await initAdminUI(); } catch (e) { alert('回复失败：' + e.message); }
+}
+export async function deleteFeedback(id) {
+    if (!confirm('确认删除？')) return;
+    try { await apiDeleteFeedback(id); await initAdminUI(); } catch (e) { alert('删除失败：' + e.message); }
+}
+export function refreshData() { initAdminUI(); }

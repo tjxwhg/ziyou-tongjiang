@@ -142,8 +142,8 @@
         .merchant-notice { background: #fff8e1; border-left: 4px solid #ff9800; border-radius: 8px; padding: 12px 14px; margin-top: 16px; }
         .merchant-notice h6 { color: #e65100; margin: 0 0 8px; font-weight: 700; font-size: 15px; display: flex; align-items: center; gap: 6px; }
         .merchant-notice p { color: #555; font-size: 14px; line-height: 1.6; margin: 0; white-space: pre-wrap; word-break: break-word; }
-
-        /* 智能规划列表 —— 顶层按分值排序，无分类分组 */
+        .poi-category-section { margin-bottom: 16px; }
+        .poi-category-header { font-weight: 700; font-size: 14px; color: white; background: linear-gradient(135deg, #2e7d32, #1b5e20); padding: 8px 14px; border-radius: 8px 8px 0 0; display: flex; align-items: center; gap: 6px; }
         .scenic-block { border: 1px solid #c8e6c9; background: #f1f8e9; padding: 10px 12px; margin-bottom: 6px; border-radius: 8px; }
         .scenic-block + .scenic-block { margin-top: 0; }
         .scenic-title { font-weight: 600; font-size: 13px; color: #1b5e20; margin-bottom: 6px; display: flex; align-items: center; gap: 6px; }
@@ -154,7 +154,6 @@
         .poi-selectable-row .poi-name { flex: 1; color: #333; }
         .poi-selectable-row .poi-dur { color: #888; font-size: 12px; }
         .type-tag { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 11px; background: #e8f5e9; color: #1b5e20; font-weight: 500; flex-shrink: 0; }
-        .score-tag { display: inline-block; padding: 1px 6px; border-radius: 10px; font-size: 11px; background: #fff3e0; color: #e65100; font-weight: 600; flex-shrink: 0; }
         .l3-inner-list { margin-left: 24px; margin-top: 4px; margin-bottom: 8px; border-left: 2px dotted #ffb74d; padding-left: 10px; }
         .l3-inner-row { display: flex; align-items: center; gap: 8px; padding: 4px 8px; font-size: 13px; color: #666; background: #fffde7; border-radius: 4px; margin-bottom: 2px; }
         .l3-inner-row .l3-order { color: #999; min-width: 18px; }
@@ -398,7 +397,7 @@
 
 <script type="module">
 import {
-    getPois, getMerchantsByPoi, getTransportPresets,
+    getPois, getMerchantsByPoi, getTransportTimes,
     insertReservation, insertFeedback,
     getReservationsByDevice, getFeedbacksByDevice,
     deleteReservation, deleteFeedback,
@@ -409,6 +408,9 @@ import { generateTripPlan } from './js/trip-planner.js';
 import { startNavigation, endNavigation } from './js/trip-executor.js';
 import { COUNTY } from './js/config.js';
 
+// ============================================================
+// 设备标识
+// ============================================================
 function getDeviceId() {
     let id = localStorage.getItem('deviceId');
     if (!id) {
@@ -419,11 +421,17 @@ function getDeviceId() {
 }
 const DEVICE_ID = getDeviceId();
 
+// ============================================================
+// 本地存储工具
+// ============================================================
 function getLocalData(key) {
     try { return JSON.parse(localStorage.getItem(key) || '[]'); } catch { return []; }
 }
 function setLocalData(key, data) { localStorage.setItem(key, JSON.stringify(data)); }
 
+// ============================================================
+// 缓存（带版本号）
+// ============================================================
 const CACHE_TTL = 5 * 60 * 1000;
 const CACHE_PREFIX = 'ztj_cache_';
 const VERSION_KEY = 'ztj_cache_version';
@@ -452,15 +460,18 @@ async function getPoisCached() {
     setCache('pois', data);
     return data;
 }
-async function getTransportPresetsCached() {
+async function getTransportTimesCached() {
     const cached = getCache('transport');
     const currentVersion = localStorage.getItem(VERSION_KEY) || '0';
     if (cached && cached.version === currentVersion) return cached.data;
-    const data = await getTransportPresets();
+    const data = await getTransportTimes();
     setCache('transport', data);
     return data;
 }
 
+// ============================================================
+// 常量
+// ============================================================
 const STATUS_MAP = { pending: '待确认', confirmed: '已确认', rejected: '已拒绝', cancelled: '已取消' };
 function translateStatus(s) { return STATUS_MAP[s] || s || '未知'; }
 
@@ -473,6 +484,11 @@ const NODE_TYPE_ICONS = {
     entrance: '🚪', parking: '🅿️', rest: '☕', core_view: '⭐',
     spot: '📍', entertainment: '🎢', wc: '🚻', exit: '🚪', other: '📌'
 };
+const CATEGORY_ICONS_MAP = {
+    '自然景区': '🏔️', '红色景区': '🔴', '文博场馆': '🏛️',
+    '餐饮住宿': '🍽️', '交通枢纽': '🚌', '游玩娱乐': '🎢',
+    '购物消费': '🛍️', '公共服务': '🏛️'
+};
 
 const LUNCH_START = 11 * 60 + 30;
 const LUNCH_END = 12 * 60 + 30;
@@ -482,6 +498,9 @@ const VISIT_END = 18 * 60;
 const MEAL_DURATION = 60;
 const COUNTY_ID = COUNTY.numericId;
 
+// ============================================================
+// 全局状态
+// ============================================================
 let collapsedL3Ids = new Set();
 let isFullSelectMode = false;
 let allPois = [];
@@ -499,6 +518,9 @@ let currentArrivalTime = 10 * 60;
 let transportPresetsCache = {};
 let currentDetailPoi = null;
 
+// ============================================================
+// 工具函数
+// ============================================================
 function fmtTime(minutes) {
     const h = Math.floor(minutes / 60);
     const m = minutes % 60;
@@ -516,11 +538,14 @@ function calcTravelBetween(prevPoiId, curPoiId) {
         return transportPresetsCache[`${COUNTY_ID}_${curPoiId}`] || transportPresetsCache[`county_${curPoiId}`] || 0;
     }
     if (String(curPoiId) === 'county' || curPoiId === COUNTY_ID) {
-        return transportPresetsCache[`${prevPoiId}_${COUNTY_ID}`] || transportPresetsCache[`prevPoiId}_county`] || 0;
+        return transportPresetsCache[`${prevPoiId}_${COUNTY_ID}`] || transportPresetsCache[`${prevPoiId}_county`] || 0;
     }
     return transportPresetsCache[`${prevPoiId}_${curPoiId}`] || 0;
 }
 
+// ============================================================
+// 时间选择器
+// ============================================================
 function initTimeSelectors() {
     const sel = document.getElementById('planStartTime');
     if (!sel) return;
@@ -581,6 +606,9 @@ function initStartLocationSelect(pois) {
     });
 }
 
+// ============================================================
+// 类型标签
+// ============================================================
 function getTypeTagHtml(p) {
     if (p.data_level === 'L3') return '<span class="type-tag">⭐ 连续景点</span>';
     if (p.data_level === 'L4') {
@@ -599,8 +627,13 @@ function getTypeTagHtml(p) {
 }
 
 // ============================================================
-// ★ 智能规划列表 —— 顶层按分值排（L1 + 无归属），每个 L1 后紧跟其子项
+// 智能规划 POI 列表
 // ============================================================
+const CATEGORY_ORDER = [
+    '自然景区', '红色景区', '文博场馆', '餐饮住宿',
+    '交通枢纽', '游玩娱乐', '购物消费', '公共服务'
+];
+
 function renderPoiSelection(pois) {
     const container = document.getElementById('poiSelectContainer');
     if (!container) return;
@@ -962,9 +995,12 @@ window.generatePlans = async function() {
     loadingEl.classList.remove('hidden');
     await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
     try {
-        const presets = await getTransportPresetsCached();
+        const times = await getTransportTimesCached();
         const travelTimes = {};
-        presets.forEach(p => { travelTimes[`${p.from_poi_id}_${p.to_poi_id}`] = p.time_min; });
+        times.forEach(t => {
+            travelTimes[`${t.poi_a}_${t.poi_b}`] = t.time_min;
+            travelTimes[`${t.poi_b}_${t.poi_a}`] = t.time_min;
+        });
         const accommodationPois = allPois.filter(p => {
             if (p.category && p.category.includes('住宿')) return true;
             if (Array.isArray(p.facility_subtype) && p.facility_subtype.includes('hotel')) return true;
@@ -1311,10 +1347,10 @@ window.openRouteDetail = async function(routeId) {
         }
     } catch (e) { alert('加载路线节点失败'); return; }
     transportPresetsCache = {};
-    const presets = await getTransportPresetsCached();
-    presets.forEach(p => {
-        transportPresetsCache[`${p.from_poi_id}_${p.to_poi_id}`] = p.time_min;
-        transportPresetsCache[`${p.to_poi_id}_${p.from_poi_id}`] = p.time_min;
+    const times = await getTransportTimesCached();
+    times.forEach(t => {
+        transportPresetsCache[`${t.poi_a}_${t.poi_b}`] = t.time_min;
+        transportPresetsCache[`${t.poi_b}_${t.poi_a}`] = t.time_min;
     });
     currentDetailNodes = nodes.map((n, i) => {
         const poiName = n.poi_id ? (allPoisMap[String(n.poi_id)]?.name || '') : '';
@@ -1731,6 +1767,9 @@ window.showPoiDetail = async function(poi) {
     }
 };
 
+// ============================================================
+// 全局函数绑定
+// ============================================================
 window.locateUser = locateUser;
 window.clearFilter = clearFilter;
 window.filterPOI = (category) => { applyFilter(category); };
@@ -1756,6 +1795,9 @@ window.backToPreferences = function() {
 window.startNavigation = startNavigation;
 window.endNavigation = endNavigation;
 
+// ============================================================
+// 顶部导航交互
+// ============================================================
 const brandToggle = document.getElementById('brandToggle');
 const categoryBar = document.getElementById('categoryBar');
 let hideTimer = null;
@@ -1776,6 +1818,9 @@ document.addEventListener('click', function(e) {
     }
 });
 
+// ============================================================
+// 初始化
+// ============================================================
 async function init() {
     try {
         const pois = await getPoisCached();

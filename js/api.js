@@ -157,6 +157,10 @@ export async function deleteRouteNodes(routeId) {
 // 交通耗时（新表 ztj_transport_times，无方向，poi_a < poi_b）
 // ============================================================
 
+/**
+ * 读取所有交通耗时记录
+ * 返回 [{ poi_a, poi_b, time_min, updated_at }, ...]
+ */
 export async function getTransportTimes() {
     const { data, error } = await supabase
         .from('ztj_transport_times')
@@ -167,6 +171,9 @@ export async function getTransportTimes() {
     return data || [];
 }
 
+/**
+ * 写入/更新一对 POI 之间的耗时（无论哪个方向）
+ */
 export async function setTransportTime(poiX, poiY, timeMin) {
     const a = Math.min(Number(poiX), Number(poiY));
     const b = Math.max(Number(poiX), Number(poiY));
@@ -180,6 +187,9 @@ export async function setTransportTime(poiX, poiY, timeMin) {
     bumpCacheVersion();
 }
 
+/**
+ * 删除一对 POI 的耗时
+ */
 export async function deleteTransportTime(poiX, poiY) {
     const a = Math.min(Number(poiX), Number(poiY));
     const b = Math.max(Number(poiX), Number(poiY));
@@ -192,6 +202,9 @@ export async function deleteTransportTime(poiX, poiY) {
     bumpCacheVersion();
 }
 
+/**
+ * 删除涉及某 POI 的所有交通耗时
+ */
 export async function deleteTransportTimesForPoi(poiId) {
     const id = Number(poiId);
     const { error: e1 } = await supabase
@@ -205,6 +218,10 @@ export async function deleteTransportTimesForPoi(poiId) {
 
 /**
  * 应用"基准 + 偏移"：为 poiId 生成完整的耗时数据
+ * - 读取 basePoiId 的所有数据
+ * - 规则：与 basePoiId 那一对用原值；其他项 = 原值 + offset
+ * - 先删 poiId 的旧数据，再批量插入
+ * - 记录 base_poi_id / base_offset 到 ztj_poi
  */
 export async function applyBaseWithOffset(poiId, basePoiId, offset) {
     const poiIdNum = Number(poiId);
@@ -220,12 +237,16 @@ export async function applyBaseWithOffset(poiId, basePoiId, offset) {
 
     // 2. 生成新的行
     const newRows = [];
-    const seen = new Set();
+    const seen = new Set();   // 防止重复 (poi_a, poi_b)
     for (const bt of (baseTimes || [])) {
         const other = Number(bt.poi_a) === baseIdNum ? Number(bt.poi_b) : Number(bt.poi_a);
-        if (other === poiIdNum) continue;
-        if (other === baseIdNum) continue;
-        const newTime = Math.max(0, bt.time_min + offset);
+        if (other === poiIdNum) continue;   // 自身跳过（下面单独处理）
+        let newTime;
+        if (other === baseIdNum) {
+            newTime = bt.time_min;           // 理论上不会到这里
+        } else {
+            newTime = Math.max(0, bt.time_min + offset);
+        }
         const a = Math.min(poiIdNum, other);
         const b = Math.max(poiIdNum, other);
         const key = `${a}_${b}`;
@@ -234,7 +255,8 @@ export async function applyBaseWithOffset(poiId, basePoiId, offset) {
         newRows.push({ poi_a: a, poi_b: b, time_min: newTime });
     }
 
-    // 3. 当前 POI ↔ 基准 POI 这一对：用原值
+    // 3. 特殊处理：当前 POI ↔ 基准 POI 这一对
+    //    从 baseTimes 里找 base ↔ current 的原始值
     let baseCurrentRow = null;
     for (const bt of (baseTimes || [])) {
         const a = Number(bt.poi_a);
@@ -261,7 +283,7 @@ export async function applyBaseWithOffset(poiId, basePoiId, offset) {
         .from('ztj_transport_times').delete().eq('poi_b', poiIdNum);
     if (delB) throw delB;
 
-    // 5. 批量插入
+    // 5. 批量插入新数据
     if (newRows.length > 0) {
         const { error: insertError } = await supabase
             .from('ztj_transport_times')
@@ -279,6 +301,9 @@ export async function applyBaseWithOffset(poiId, basePoiId, offset) {
     bumpCacheVersion();
 }
 
+/**
+ * 清除基准关系（不删数据）
+ */
 export async function clearBaseRelation(poiId) {
     const { error } = await supabase
         .from('ztj_poi')
@@ -288,6 +313,9 @@ export async function clearBaseRelation(poiId) {
     bumpCacheVersion();
 }
 
+/**
+ * 查出参照某 POI 作为基准的所有 POI
+ */
 export async function getDependents(poiId) {
     const { data, error } = await supabase
         .from('ztj_poi')

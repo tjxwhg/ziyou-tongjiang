@@ -1,10 +1,10 @@
-// js/admin.js - 管理后台完整逻辑（新增推荐分值支持）
+// js/admin.js - 管理后台（交通耗时：基准+偏移方案）
 import {
     getPois, getPoi, insertPoi, updatePoi, deletePoi as apiDeletePoi,
     getRoutes, getRoute, insertRoute, updateRoute, deleteRoute as apiDeleteRoute,
     getRouteNodes, insertRouteNodes, deleteRouteNodes,
-    getTransportPresets, upsertTransportPreset, deleteTransportPreset,
-    replaceTransportPreset, deleteTransportPresetsForPoi,
+    getTransportTimes, setTransportTime, deleteTransportTime,
+    deleteTransportTimesForPoi, applyBaseWithOffset, clearBaseRelation, getDependents,
     getMerchantsByPoi, getMerchant, updateMerchant, createMerchantRecord,
     getReservations, updateReservation,
     getFeedbacks, updateFeedback, deleteFeedback as apiDeleteFeedback,
@@ -12,7 +12,7 @@ import {
 } from './api.js';
 import { MAX_POI_DURATION } from './config.js';
 
-let allPois = [], allRoutes = [], allPresets = [], allMerchants = [], allFeedbacks = [];
+let allPois = [], allRoutes = [], allTransportTimes = [], allMerchants = [], allFeedbacks = [];
 let currentEditingPoiId = null;
 let currentEditingPoiObj = null;
 let categoryManuallySet = false;
@@ -77,7 +77,6 @@ function closeModal(modalId) {
 
 const LEVEL_LABELS = { L1: '🏞️ L1 景区', L2: '📍 L2 普通景点', L3: '⭐ L3 连续景点', L4: '🏛️ L4 服务/设施' };
 const LEVEL_CLASSES = { L1: 'quality-L1', L2: 'quality-L2', L3: 'quality-L3', L4: 'quality-L4' };
-
 const FACILITY_SUBTYPE_LABELS = {
     restaurant: '🍽️ 餐厅', hotel: '🏨 住宿', shopping: '🛍️ 购物', service: '🚻 服务设施'
 };
@@ -175,18 +174,21 @@ function setSelectValueSafe(sel, val) {
 export async function initAdminUI() {
     try {
         populateTimeSelects();
-        const [pois, routes, presets, merchants, feedbacks] = await Promise.all([
-            getPois(), getRoutes(), getTransportPresets(),
+        const [pois, routes, times, merchants, feedbacks] = await Promise.all([
+            getPois(), getRoutes(), getTransportTimes(),
             getMerchantsByPoi(null), getFeedbacks(null)
         ]);
-        allPois = pois; allRoutes = routes; allPresets = presets;
-        allMerchants = merchants; allFeedbacks = feedbacks;
+        allPois = pois;
+        allRoutes = routes;
+        allTransportTimes = times;
+        allMerchants = merchants;
+        allFeedbacks = feedbacks;
         renderPoiList(allPois);
         renderRouteList(allRoutes);
-        renderTransportEditor(allPresets);
+        renderTransportEditor(allTransportTimes);
         renderMerchantList(allMerchants);
         renderFeedbackList(allFeedbacks);
-        console.log('[管理后台] 初始化完成');
+        console.log('[管理后台] 初始化完成，交通记录:', allTransportTimes.length);
     } catch (e) {
         console.error('[管理后台] 初始化失败:', e);
         alert('初始化失败：' + e.message);
@@ -204,37 +206,26 @@ const CATEGORY_ORDER = [
 export function renderPoiList(pois) {
     const container = document.getElementById('poi-list');
     if (!container) return;
-
     const l1List = pois.filter(p => p.data_level === 'L1');
     const l4List = pois.filter(p =>
-        p.data_level === 'L4'
-        && !p.parent_id
+        p.data_level === 'L4' && !p.parent_id
         && (p.scenic_id === null || p.scenic_id === undefined)
     );
     const topL2L3 = pois.filter(p =>
-        (p.data_level === 'L2' || p.data_level === 'L3')
-        && !p.parent_id
+        (p.data_level === 'L2' || p.data_level === 'L3') && !p.parent_id
     );
-
     let html = '';
-
     CATEGORY_ORDER.forEach(cat => {
         const catL1 = l1List.filter(p => getMainCategory(p.category) === cat);
         const catOrphans = topL2L3.filter(p => {
             if (p.scenic_id !== null && p.scenic_id !== undefined) return false;
             return getMainCategory(p.category) === cat;
         });
-
         if (catL1.length === 0 && catOrphans.length === 0) return;
-
         const catIcon = CATEGORY_ICONS[cat] || '📍';
         html += `<div class="poi-category-section">`;
         html += `<div class="poi-category-header">${catIcon} ${cat}</div>`;
-
-        catL1.forEach(l1 => {
-            html += renderL1Card(l1, pois);
-        });
-
+        catL1.forEach(l1 => { html += renderL1Card(l1, pois); });
         if (catOrphans.length > 0) {
             html += `<div class="poi-orphan-list">`;
             html += `<div class="poi-orphan-list-title">📌 无归属${cat}（独立景点）</div>`;
@@ -242,24 +233,17 @@ export function renderPoiList(pois) {
                 const order = { L2: 0, L3: 1 };
                 return (order[a.data_level] ?? 9) - (order[b.data_level] ?? 9);
             });
-            catOrphans.forEach(p => {
-                html += renderOrphanCard(p, pois);
-            });
+            catOrphans.forEach(p => { html += renderOrphanCard(p, pois); });
             html += `</div>`;
         }
-
         html += `</div>`;
     });
-
     if (l4List.length > 0) {
         html += `<div class="poi-category-section">`;
         html += `<div class="poi-category-header">🏛️ 服务场所（L4）</div>`;
-        l4List.forEach(l4 => {
-            html += renderL4Card(l4, pois);
-        });
+        l4List.forEach(l4 => { html += renderL4Card(l4, pois); });
         html += `</div>`;
     }
-
     container.innerHTML = html || '<p class="text-secondary">暂无POI</p>';
 }
 
@@ -275,7 +259,6 @@ function renderL1Card(l1, pois) {
         : (l1.open_time && l1.close_time
             ? `<span class="text-secondary small">${normalizeTimeStr(l1.open_time)}-${normalizeTimeStr(l1.close_time)}</span>`
             : '');
-
     const children = pois.filter(p =>
         String(p.scenic_id) === String(l1.id)
         && (p.data_level === 'L2' || p.data_level === 'L3' || p.data_level === 'L4')
@@ -284,7 +267,6 @@ function renderL1Card(l1, pois) {
         const order = { L2: 0, L3: 1, L4: 2 };
         return (order[a.data_level] ?? 9) - (order[b.data_level] ?? 9);
     });
-
     let html = `<div class="poi-l1-card">`;
     html += `<div class="poi-l1-header">`;
     html += `<span class="poi-name-group">${l1Badge} <b>${l1.name}</b> ${catBadge}${voiceBadge}${scoreBadge} ${hoursText}</span>`;
@@ -292,17 +274,13 @@ function renderL1Card(l1, pois) {
     html += `<button class="btn btn-sm btn-secondary" onclick="window.showEditPoiModal('${l1.id}')"><i class="fas fa-edit"></i> 编辑</button>`;
     html += `<button class="btn btn-sm btn-danger ms-1" onclick="window.deletePoi('${l1.id}')"><i class="fas fa-trash"></i> 删除</button>`;
     html += `</div></div>`;
-
     if (children.length > 0) {
         html += `<div class="poi-l1-children">`;
-        children.forEach(child => {
-            html += renderChildCard(child, pois, 0);
-        });
+        children.forEach(child => { html += renderChildCard(child, pois, 0); });
         html += `</div>`;
     } else {
         html += `<div class="poi-empty-hint">（该景区下暂无景点，请点击"编辑"添加子项）</div>`;
     }
-
     html += `</div>`;
     return html;
 }
@@ -323,7 +301,6 @@ function renderChildCard(p, pois, depth) {
             ? `<span class="text-secondary small">${normalizeTimeStr(p.open_time)}-${normalizeTimeStr(p.close_time)}</span>`
             : '');
     const facilityTag = p.type === 'facility' ? ' ' + getFacilitySubtypeBadge(p.facility_subtype) : '';
-
     let html = `<div class="poi-child-card">`;
     html += `<div class="poi-child-header">`;
     html += `<span class="poi-name-group">${badge} <b>${p.name}</b>${facilityTag} ${catBadge}${voiceBadge}${scoreBadge} ${durationInfo} ${hoursText}</span>`;
@@ -331,18 +308,14 @@ function renderChildCard(p, pois, depth) {
     html += `<button class="btn btn-sm btn-secondary" onclick="window.showEditPoiModal('${p.id}')"><i class="fas fa-edit"></i> 编辑</button>`;
     html += `<button class="btn btn-sm btn-danger ms-1" onclick="window.deletePoi('${p.id}')"><i class="fas fa-trash"></i> 删除</button>`;
     html += `</div></div>`;
-
     if (p.data_level === 'L3' && !isCoreNode) {
         const innerNodes = pois.filter(x => String(x.parent_id) === String(p.id));
         if (innerNodes.length > 0) {
             html += `<div class="poi-l3-children">`;
-            innerNodes.forEach(n => {
-                html += renderChildCard(n, pois, depth + 1);
-            });
+            innerNodes.forEach(n => { html += renderChildCard(n, pois, depth + 1); });
             html += `</div>`;
         }
     }
-
     html += `</div>`;
     return html;
 }
@@ -361,7 +334,6 @@ function renderOrphanCard(p, pois) {
         : (p.open_time && p.close_time
             ? `<span class="text-secondary small">${normalizeTimeStr(p.open_time)}-${normalizeTimeStr(p.close_time)}</span>`
             : '');
-
     let html = `<div class="poi-orphan-card">`;
     html += `<div class="poi-child-header">`;
     html += `<span class="poi-name-group">${badge} <b>${p.name}</b> ${catBadge}${voiceBadge}${scoreBadge} ${durationInfo} ${hoursText}</span>`;
@@ -369,18 +341,14 @@ function renderOrphanCard(p, pois) {
     html += `<button class="btn btn-sm btn-secondary" onclick="window.showEditPoiModal('${p.id}')"><i class="fas fa-edit"></i> 编辑</button>`;
     html += `<button class="btn btn-sm btn-danger ms-1" onclick="window.deletePoi('${p.id}')"><i class="fas fa-trash"></i> 删除</button>`;
     html += `</div></div>`;
-
     if (p.data_level === 'L3') {
         const innerNodes = pois.filter(x => String(x.parent_id) === String(p.id));
         if (innerNodes.length > 0) {
             html += `<div class="poi-l3-children">`;
-            innerNodes.forEach(n => {
-                html += renderChildCard(n, pois, 1);
-            });
+            innerNodes.forEach(n => { html += renderChildCard(n, pois, 1); });
             html += `</div>`;
         }
     }
-
     html += `</div>`;
     return html;
 }
@@ -400,7 +368,6 @@ function renderL4Card(l4, pois) {
         : (l4.open_time && l4.close_time
             ? `<span class="text-secondary small">${normalizeTimeStr(l4.open_time)}-${normalizeTimeStr(l4.close_time)}</span>`
             : '');
-
     let html = `<div class="poi-orphan-card">`;
     html += `<div class="poi-child-header">`;
     html += `<span class="poi-name-group">${badge} <b>${l4.name}</b>${facilityTag} ${catBadge}${voiceBadge}${scoreBadge} ${durationInfo} ${hoursText}</span>`;
@@ -508,9 +475,7 @@ function refreshScenicSelect(currentId) {
     scenicSel.innerHTML = '<option value="">-- 无归属（独立景点）--</option>';
     const currentPoi = currentId ? allPois.find(x => String(x.id) === String(currentId)) : null;
     allPois.filter(p =>
-        p.data_level === 'L1' &&
-        isValidId(p.id) &&
-        String(p.id) !== String(currentId)
+        p.data_level === 'L1' && isValidId(p.id) && String(p.id) !== String(currentId)
     ).forEach(p => {
         const hasValidScenic = currentPoi && currentPoi.scenic_id !== null && currentPoi.scenic_id !== undefined;
         const selected = hasValidScenic && String(p.id) === String(currentPoi.scenic_id) ? 'selected' : '';
@@ -632,13 +597,11 @@ function renderSubPoiList() {
     }
     const currentPoi = allPois.find(p => String(p.id) === String(currentEditingPoiId));
     if (!currentPoi) { container.innerHTML = ''; return; }
-
     const subPois = allPois.filter(p => String(p.parent_id) === String(currentEditingPoiId));
     if (subPois.length === 0) {
         container.innerHTML = '<p class="text-secondary small mb-0">暂无核心节点。</p>';
         return;
     }
-
     let sorted = subPois;
     const tr = Array.isArray(currentPoi.tour_route) ? currentPoi.tour_route : [];
     if (tr.length > 0) {
@@ -650,7 +613,6 @@ function renderSubPoiList() {
             return ia - ib;
         });
     }
-
     let html = `<p class="text-secondary small mb-2">当前顺序即游客端的游览顺序，可用 ↑↓ 调整。</p>`;
     sorted.forEach((sub, idx) => {
         const catIcon = CATEGORY_ICONS[getMainCategory(sub.category)] || '';
@@ -673,7 +635,6 @@ window.moveL3SubItem = async function(idx, dir) {
     if (!currentEditingPoiId) return;
     const currentPoi = allPois.find(p => String(p.id) === String(currentEditingPoiId));
     if (!currentPoi) return;
-
     const subPois = allPois.filter(p => String(p.parent_id) === String(currentEditingPoiId));
     let sorted = subPois;
     const tr = Array.isArray(currentPoi.tour_route) ? currentPoi.tour_route : [];
@@ -686,12 +647,9 @@ window.moveL3SubItem = async function(idx, dir) {
             return ia - ib;
         });
     }
-
     const newIdx = idx + dir;
     if (newIdx < 0 || newIdx >= sorted.length) return;
-
     [sorted[idx], sorted[newIdx]] = [sorted[newIdx], sorted[idx]];
-
     const ids = sorted.map(x => x.id);
     try {
         await updatePoi(toSafeId(currentEditingPoiId), { tour_route: ids });
@@ -705,11 +663,7 @@ export function showSelectSubPoiModal() {
     if (!currentEditingPoiId) { alert('请先保存POI'); return; }
     const currentPoi = allPois.find(p => String(p.id) === String(currentEditingPoiId));
     if (!currentPoi) return;
-    if (currentPoi.data_level !== 'L3') {
-        alert('仅 L3 连续景点可添加核心节点');
-        return;
-    }
-
+    if (currentPoi.data_level !== 'L3') { alert('仅 L3 连续景点可添加核心节点'); return; }
     const candidates = allPois.filter(p => {
         if (!isValidId(p.id)) return false;
         if (String(p.id) === String(currentPoi.id)) return false;
@@ -718,14 +672,12 @@ export function showSelectSubPoiModal() {
         if (p.parent_id && String(p.parent_id) !== String(currentPoi.id)) return false;
         return true;
     });
-
     const list = document.getElementById('sub-poi-select-list');
     if (!list) return;
     if (candidates.length === 0) {
         list.innerHTML = '<p class="text-secondary">没有可添加的 L2/L4 景点（或它们已属于其他 L3）</p>';
         return;
     }
-
     let html = `<p class="text-secondary small mb-2">勾选后将自动标记为核心节点，不再出现在游客端规划列表。</p>`;
     candidates.forEach(p => {
         const facilityTag = p.type === 'facility' && p.facility_subtype
@@ -751,20 +703,13 @@ export async function confirmSubPoiSelection() {
         await closeModal('selectSubPoiModal');
         return;
     }
-    if (!isValidId(currentEditingPoiId)) {
-        alert('当前 L3 的 ID 不合法，无法添加子项');
-        return;
-    }
+    if (!isValidId(currentEditingPoiId)) { alert('当前 L3 的 ID 不合法'); return; }
     try {
         const parentIdVal = toSafeId(currentEditingPoiId);
         await Promise.all(selectedIds.filter(id => isValidId(id)).map(id => {
             const idVal = toSafeId(id);
-            return updatePoi(idVal, {
-                parent_id: parentIdVal,
-                is_core_node: true
-            });
+            return updatePoi(idVal, { parent_id: parentIdVal, is_core_node: true });
         }));
-
         const currentPoi = allPois.find(p => String(p.id) === String(currentEditingPoiId));
         if (currentPoi) {
             const existing = Array.isArray(currentPoi.tour_route) ? [...currentPoi.tour_route] : [];
@@ -775,7 +720,6 @@ export async function confirmSubPoiSelection() {
             await updatePoi(parentIdVal, { tour_route: existing });
             currentPoi.tour_route = existing;
         }
-
         await closeModal('selectSubPoiModal');
         await initAdminUI();
         renderSubPoiList();
@@ -784,13 +728,10 @@ export async function confirmSubPoiSelection() {
 }
 
 export async function removeSubPoi(subPoiId) {
-    if (!confirm('确认将该核心节点移出？移出后它会恢复为普通景点，重新出现在游客端规划列表。')) return;
+    if (!confirm('确认将该核心节点移出？')) return;
     try {
         const idVal = toSafeId(subPoiId);
-        await updatePoi(idVal, {
-            parent_id: null,
-            is_core_node: false
-        });
+        await updatePoi(idVal, { parent_id: null, is_core_node: false });
         if (currentEditingPoiId) {
             const currentPoi = allPois.find(p => String(p.id) === String(currentEditingPoiId));
             if (currentPoi && Array.isArray(currentPoi.tour_route)) {
@@ -818,7 +759,6 @@ export async function savePoiEdit() {
     let closeTime = normalizeTimeStr(document.getElementById('edit-poi-close').value) || '18:00';
     if (hoursType === '24h') { openTime = '00:00'; closeTime = '23:59'; }
 
-    // ★ 推荐分值校验
     const scoreRaw = document.getElementById('edit-poi-score').value;
     const score = parseInt(scoreRaw);
     if (isNaN(score) || score < 0 || score > 100) {
@@ -841,7 +781,6 @@ export async function savePoiEdit() {
         visitDuration = parseInt(document.getElementById('edit-poi-visit').value) || 0;
     }
 
-    // 游览时长上限校验（240 小时 = 14400 分钟）
     if (visitDuration > MAX_POI_DURATION) {
         alert(`游览时长不得超过 ${MAX_POI_DURATION / 60} 小时（${MAX_POI_DURATION} 分钟）`);
         return;
@@ -857,9 +796,7 @@ export async function savePoiEdit() {
     let scenicIdVal = null;
     if (level !== 'L1') {
         const raw = document.getElementById('edit-poi-scenic')?.value || '';
-        if (raw && isValidId(raw)) {
-            scenicIdVal = toSafeId(raw);
-        }
+        if (raw && isValidId(raw)) scenicIdVal = toSafeId(raw);
     }
 
     const updates = {
@@ -917,9 +854,20 @@ export async function deletePoi(id) {
     if (!poi) return;
     const subPois = allPois.filter(p => String(p.parent_id) === String(id));
     const affectedL3s = allPois.filter(p =>
-        Array.isArray(p.tour_route) &&
-        p.tour_route.some(x => String(x) === String(id))
+        Array.isArray(p.tour_route) && p.tour_route.some(x => String(x) === String(id))
     );
+
+    // ★ 检查是否有其他 POI 参照此 POI 作为基准
+    let dependents = [];
+    try {
+        dependents = await getDependents(toSafeId(id));
+    } catch (e) { console.warn('查询依赖者失败:', e); }
+
+    if (dependents.length > 0) {
+        const names = dependents.map(d => d.name).join('、');
+        alert(`无法删除：有 ${dependents.length} 个 POI 参照了它作为基准：\n${names}\n\n请先为这些 POI 重新指定基准 POI。`);
+        return;
+    }
 
     let msg = '确认删除此POI？其关联的交通耗时记录也会一并清理。';
     if (subPois.length > 0) {
@@ -933,8 +881,7 @@ export async function deletePoi(id) {
     try {
         if (subPois.length > 0) {
             await Promise.all(subPois.map(p => updatePoi(toSafeId(p.id), {
-                parent_id: null,
-                is_core_node: false
+                parent_id: null, is_core_node: false
             })));
         }
         for (const l3 of affectedL3s) {
@@ -942,9 +889,10 @@ export async function deletePoi(id) {
             const newTr = l3.tour_route.filter(x => String(x) !== String(id));
             await updatePoi(toSafeId(l3.id), { tour_route: newTr });
         }
+        // 清交通耗时
         try {
-            await deleteTransportPresetsForPoi(toSafeId(id));
-        } catch (e) { console.warn('[deletePoi] 清理交通预设失败:', e); }
+            await deleteTransportTimesForPoi(toSafeId(id));
+        } catch (e) { console.warn('[deletePoi] 清理交通失败:', e); }
 
         await apiDeletePoi(toSafeId(id));
         await initAdminUI();
@@ -952,11 +900,12 @@ export async function deletePoi(id) {
 }
 
 // ============================================================
-// 交通耗时编辑器
+// 交通耗时编辑器（基准 + 偏移方案）
 // ============================================================
-export function renderTransportEditor(presets) {
+export function renderTransportEditor(times) {
     const container = document.getElementById('transport-editor');
     if (!container) return;
+
     const poiList = allPois.filter(p =>
         !p.is_core_node &&
         (p.data_level === 'L2' || p.data_level === 'L3' || p.data_level === 'L4') &&
@@ -968,163 +917,200 @@ export function renderTransportEditor(presets) {
     }
     currentTransportPoiList = poiList;
 
-    const orderIndex = { '0': -1 };
-    poiList.forEach((p, i) => { orderIndex[String(p.id)] = i; });
-    function getOrder(id) {
-        const k = String(id);
-        return (k in orderIndex) ? orderIndex[k] : 9999;
+    // 建索引：{ "a_b": time_min }
+    const timeMap = {};
+    times.forEach(t => {
+        timeMap[`${t.poi_a}_${t.poi_b}`] = t.time_min;
+    });
+
+    function getTime(idA, idB) {
+        const a = Math.min(Number(idA), Number(idB));
+        const b = Math.max(Number(idA), Number(idB));
+        const v = timeMap[`${a}_${b}`];
+        return (v === undefined || v === null) ? '' : v;
     }
+
     function getPoiName(id) {
         if (String(id) === '0') return '红军广场（县城）';
         const p = poiList.find(x => String(x.id) === String(id));
-        return p ? p.name : id;
+        return p ? p.name : String(id);
     }
 
-    const seen = new Set();
-    const fixedPresets = [];
-    presets.forEach(p => {
-        const a = String(p.from_poi_id), b = String(p.to_poi_id);
-        const ai = getOrder(a), bi = getOrder(b);
-        const key = ai <= bi ? `${a}_${b}` : `${b}_${a}`;
-        if (seen.has(key)) return;
-        seen.add(key);
-        const canonFrom = ai <= bi ? p.from_poi_id : p.to_poi_id;
-        const canonTo   = ai <= bi ? p.to_poi_id   : p.from_poi_id;
-        fixedPresets.push({ ...p, from_poi_id: canonFrom, to_poi_id: canonTo });
-    });
-    allPresets = fixedPresets;
-
-    function resolveAuthority(fromId, toId) {
-        const fromIdx = getOrder(fromId);
-        const toIdx = getOrder(toId);
-        const earlierId = fromIdx <= toIdx ? fromId : toId;
-        const laterId = fromIdx <= toIdx ? toId : fromId;
-        const authorityRecord = allPresets.find(p =>
-            String(p.from_poi_id) === String(earlierId)
-            && String(p.to_poi_id) === String(laterId)
-        );
-        return {
-            earlierId,
-            laterId,
-            authorityRecord,
-            isEarlierRow: String(fromId) === String(earlierId)
-        };
-    }
-
-    function renderRow(fromId, toId, label) {
-        const { earlierId, authorityRecord, isEarlierRow } = resolveAuthority(fromId, toId);
-        let displayVal = '';
-        let isReadonly = false;
-        let note = '';
-
-        if (authorityRecord) {
-            displayVal = authorityRecord.time_min;
-            if (!isEarlierRow) {
-                isReadonly = true;
-                note = `<span class="text-secondary small ms-2 authority-note">🔒 由「${getPoiName(earlierId)}」定义</span>`;
-            }
-        }
-
-        const inputStyle = isReadonly
-            ? 'background:#e0e0e0;cursor:not-allowed;color:#666;'
-            : (authorityRecord ? '' : 'background:#fff3cd;');
-
-        const inputAttrs = isReadonly
-            ? `readonly data-readonly="1" style="${inputStyle}"`
-            : `oninput="window.markTransportDirty(this)" onchange="window.saveTransportTime(this)" style="${inputStyle}"`;
-
-        return `<div class="transport-item">
-            <span>${label}</span>
-            <div style="display:flex;align-items:center;">
-                <input type="number" value="${displayVal}" placeholder="分钟" 
-                       data-from="${fromId}" data-to="${toId}" 
-                       ${inputAttrs}>
-                ${note}
-                <span class="save-status"></span>
-            </div>
-        </div>`;
+    // 生成基准 POI 下拉选项（id 严格小于当前 POI，且非核心节点）
+    function renderBaseOptions(currentPoiId) {
+        const currentIdNum = Number(currentPoiId);
+        const candidates = poiList
+            .filter(p => Number(p.id) < currentIdNum)
+            .sort((a, b) => Number(a.id) - Number(b.id));
+        let opts = '<option value="">（无）</option>';
+        candidates.forEach(p => {
+            opts += `<option value="${p.id}">${p.name}</option>`;
+        });
+        return opts;
     }
 
     let html = '';
 
+    // 第一块：红军广场（县城）
     html += `<div class="transport-group card mb-2" style="border:2px solid #1b5e20;">
         <div class="card-header" style="cursor:pointer;background:#e8f5e9;" onclick="this.nextElementSibling.classList.toggle('hidden')">
             <b>🏠 红军广场（县城）</b> <span class="text-secondary">→ 各景点耗时（点击展开）</span>
         </div>
         <div class="card-body hidden">`;
+
     poiList.forEach(toPoi => {
-        html += renderRow('0', toPoi.id, `→ ${toPoi.name}`);
+        const val = getTime(0, toPoi.id);
+        html += `<div class="transport-item">
+            <span>→ ${toPoi.name}</span>
+            <div style="display:flex;align-items:center;">
+                <input type="number" value="${val}" placeholder="分钟" 
+                       data-from="0" data-to="${toPoi.id}" 
+                       oninput="window.markTransportDirty(this)"
+                       onchange="window.saveTransportTime(this)"
+                       style="">
+                <span class="save-status"></span>
+            </div>
+        </div>`;
     });
     html += `</div></div>`;
 
+    // 每个 POI 卡片
     poiList.forEach(fromPoi => {
+        const basePoiId = fromPoi.base_poi_id;
+        const baseOffset = fromPoi.base_offset || 0;
+
         html += `<div class="transport-group card mb-2">
             <div class="card-header" style="cursor:pointer;background:#f8f9fa;" onclick="this.nextElementSibling.classList.toggle('hidden')">
                 <b>🚩 ${fromPoi.name}</b> <span class="text-secondary">(点击展开)</span>
             </div>
             <div class="card-body hidden">`;
 
-        html += renderRow(fromPoi.id, '0', '🏠 → 红军广场（县城）');
+        // ★ 新增：基准 + 偏移 行
+        const baseOptions = renderBaseOptions(fromPoi.id);
+        html += `<div class="base-offset-row" style="display:flex;align-items:center;gap:12px;padding:8px 10px;background:#f0f8f0;border-radius:6px;margin-bottom:10px;border:1px solid #c8e6c9;">
+            <label style="margin:0;font-weight:600;color:#1b5e20;font-size:13px;">基准：</label>
+            <select class="form-select form-select-sm" style="width:auto;min-width:140px;"
+                    onchange="window.onBasePoiChange(this, '${fromPoi.id}')">
+                ${baseOptions}
+            </select>
+            <label style="margin:0;font-weight:600;color:#1b5e20;font-size:13px;">偏移：</label>
+            <input type="number" class="form-control form-control-sm" style="width:80px;"
+                   value="${baseOffset}"
+                   onchange="window.onOffsetChange(this, '${fromPoi.id}')"
+                   placeholder="0">
+            <span style="font-size:12px;color:#888;">分钟</span>
+        </div>`;
+
+        // 回显已选基准
+        if (basePoiId) {
+            // 由于 HTML 是字符串，需要用 setTimeout 或 data 属性处理选中
+            // 简单办法：在 html 里用 selected 属性
+            // 但 baseOptions 已经生成了，这里只能通过 JS 在渲染后处理
+            // 我们改用另一种方式：把 selected 标记嵌入 baseOptions 里
+        }
+
+        // 原有的 → 县城 和其他项
+        const valToCounty = getTime(fromPoi.id, 0);
+        html += `<div class="transport-item">
+            <span>→ 红军广场（县城）</span>
+            <div style="display:flex;align-items:center;">
+                <input type="number" value="${valToCounty}" placeholder="分钟" 
+                       data-from="${fromPoi.id}" data-to="0"
+                       oninput="window.markTransportDirty(this)"
+                       onchange="window.saveTransportTime(this)">
+                <span class="save-status"></span>
+            </div>
+        </div>`;
 
         poiList.forEach(toPoi => {
             if (String(fromPoi.id) === String(toPoi.id)) return;
-            html += renderRow(fromPoi.id, toPoi.id, `→ ${toPoi.name}`);
+            const val = getTime(fromPoi.id, toPoi.id);
+            html += `<div class="transport-item">
+                <span>→ ${toPoi.name}</span>
+                <div style="display:flex;align-items:center;">
+                    <input type="number" value="${val}" placeholder="分钟" 
+                           data-from="${fromPoi.id}" data-to="${toPoi.id}"
+                           oninput="window.markTransportDirty(this)"
+                           onchange="window.saveTransportTime(this)">
+                    <span class="save-status"></span>
+                </div>
+            </div>`;
         });
 
         html += `</div></div>`;
     });
 
     container.innerHTML = html;
-}
 
-function findTransportPoiName(id) {
-    if (String(id) === '0') return '红军广场（县城）';
-    const p = currentTransportPoiList.find(x => String(x.id) === String(id));
-    return p ? p.name : String(id);
-}
-
-function getTransportOrderIndex(poiId) {
-    if (String(poiId) === '0') return -1;
-    const idx = currentTransportPoiList.findIndex(
-        p => String(p.id) === String(poiId)
-    );
-    return idx >= 0 ? idx : 9999;
-}
-
-function updateSymmetricRow(fromVal, toVal, val) {
-    const symmetricInputs = document.querySelectorAll(
-        `#transport-editor input[data-from="${toVal}"][data-to="${fromVal}"]`
-    );
-    symmetricInputs.forEach(inp => {
-        inp.value = val;
-        inp.readOnly = true;
-        inp.dataset.readonly = '1';
-        inp.style.background = '#e0e0e0';
-        inp.style.cursor = 'not-allowed';
-        inp.style.color = '#666';
-        inp.removeAttribute('onchange');
-        inp.removeAttribute('oninput');
-
-        const parent = inp.parentElement;
-        let note = parent.querySelector('.authority-note');
-        if (!note) {
-            note = document.createElement('span');
-            note.className = 'text-secondary small ms-2 authority-note';
-            parent.appendChild(note);
-        }
-        note.textContent = `🔒 由「${findTransportPoiName(fromVal)}」定义`;
-
-        const statusEl = parent.querySelector('.save-status');
-        if (statusEl) {
-            statusEl.textContent = '✓已保存';
-            statusEl.style.color = '#2e7d32';
-            setTimeout(() => { statusEl.textContent = ''; statusEl.style.color = ''; }, 1500);
+    // ★ 回显基准选中：渲染后设置 select 值
+    poiList.forEach(fromPoi => {
+        if (fromPoi.base_poi_id) {
+            const selectEl = container.querySelector(`select[onchange*="'${fromPoi.id}'"]`);
+            if (selectEl) {
+                selectEl.value = String(fromPoi.base_poi_id);
+            }
         }
     });
 }
 
+// 基准 POI 下拉改变
+window.onBasePoiChange = async function(selectEl, poiId) {
+    const newBaseId = selectEl.value;
+    if (!newBaseId) {
+        // 清除基准（只清关系，不动数据）
+        if (!confirm('清除基准关系？数据保留。')) {
+            selectEl.value = '';
+            return;
+        }
+        try {
+            await clearBaseRelation(toSafeId(poiId));
+            await initAdminUI();
+        } catch (e) { alert('操作失败：' + e.message); }
+        return;
+    }
+    // 找到偏移输入框的值
+    const parent = selectEl.closest('.base-offset-row');
+    const offsetInput = parent.querySelector('input[type="number"]');
+    const offset = parseInt(offsetInput.value) || 0;
+
+    await applyBaseWithOffsetAndReload(poiId, newBaseId, offset);
+};
+
+// 偏移值改变
+window.onOffsetChange = async function(inputEl, poiId) {
+    const offset = parseInt(inputEl.value) || 0;
+    const parent = inputEl.closest('.base-offset-row');
+    const selectEl = parent.querySelector('select');
+    const basePoiId = selectEl.value;
+    if (!basePoiId) {
+        alert('请先选择基准 POI');
+        inputEl.value = '0';
+        return;
+    }
+    if (offset < 0) {
+        if (!confirm('偏移为负值，确认继续？')) {
+            inputEl.value = '0';
+            return;
+        }
+    }
+    await applyBaseWithOffsetAndReload(poiId, basePoiId, offset);
+};
+
+// 统一的"应用基准 + 偏移"入口
+async function applyBaseWithOffsetAndReload(poiId, basePoiId, offset) {
+    try {
+        await applyBaseWithOffset(toSafeId(poiId), toSafeId(basePoiId), offset);
+        await initAdminUI();
+        alert('已应用基准 + 偏移');
+    } catch (e) {
+        alert('应用失败：' + e.message);
+        console.error(e);
+    }
+}
+
+// 脏标记
 window.markTransportDirty = function(input) {
-    if (input.readOnly || input.dataset.readonly === '1') return;
+    if (input.readOnly) return;
     const statusEl = input.parentElement.querySelector('.save-status');
     if (statusEl) {
         statusEl.textContent = '● 待保存';
@@ -1133,39 +1119,32 @@ window.markTransportDirty = function(input) {
     input.style.background = '#fff3cd';
 };
 
+// 单项保存（手工改某一格）
 window.saveTransportTime = async function(input) {
     if (input.dataset.saving === '1') return;
-    if (input.readOnly || input.dataset.readonly === '1') return;
 
     const from = input.dataset.from;
     const to = input.dataset.to;
     const val = parseInt(input.value);
-    if (isNaN(val) || val < 0) { input.value = ''; return; }
 
-    const fromValid = (from === '0') || isValidId(from);
-    const toValid = (to === '0') || isValidId(to);
-    if (!fromValid || !toValid) {
-        alert('POI ID 非法，无法保存');
+    if (isNaN(val) || val < 0) {
+        if (input.value === '') {
+            // 空值 = 删除
+            try {
+                await deleteTransportTime(toSafeId(from) ?? 0, toSafeId(to) ?? 0);
+                await initAdminUI();
+            } catch (e) { alert('删除失败：' + e.message); }
+        } else {
+            input.value = '';
+        }
         return;
     }
 
     input.dataset.saving = '1';
     try {
-        const fromVal = from === '0' ? 0 : toSafeId(from);
-        const toVal = to === '0' ? 0 : toSafeId(to);
-
-        const fromIdx = getTransportOrderIndex(fromVal);
-        const toIdx = getTransportOrderIndex(toVal);
-        const canonFrom = fromIdx <= toIdx ? fromVal : toVal;
-        const canonTo = fromIdx <= toIdx ? toVal : fromVal;
-
-        await replaceTransportPreset(canonFrom, canonTo, val);
-
-        allPresets = allPresets.filter(p =>
-            !(String(p.from_poi_id) === String(canonFrom) && String(p.to_poi_id) === String(canonTo)) &&
-            !(String(p.from_poi_id) === String(canonTo) && String(p.to_poi_id) === String(canonFrom))
-        );
-        allPresets.push({ from_poi_id: canonFrom, to_poi_id: canonTo, time_min: val });
+        const fromVal = String(from) === '0' ? 0 : toSafeId(from);
+        const toVal = String(to) === '0' ? 0 : toSafeId(to);
+        await setTransportTime(fromVal, toVal, val);
 
         const statusEl = input.parentElement.querySelector('.save-status');
         if (statusEl) {
@@ -1175,24 +1154,16 @@ window.saveTransportTime = async function(input) {
         }
         input.style.background = '#e8f5e9';
         setTimeout(() => { input.style.background = ''; }, 1500);
-
-        updateSymmetricRow(canonFrom, canonTo, val);
-
     } catch (e) {
         alert('保存失败：' + e.message);
         input.style.background = '#ffebee';
-        const statusEl = input.parentElement.querySelector('.save-status');
-        if (statusEl) {
-            statusEl.textContent = '✗ 保存失败';
-            statusEl.style.color = '#c62828';
-        }
     } finally {
         delete input.dataset.saving;
     }
 };
 
 // ============================================================
-// 路线规划
+// 路线规划（保持原有）
 // ============================================================
 export function renderRouteList(routes) {
     const container = document.getElementById('route-list');
@@ -1215,7 +1186,6 @@ export function renderRouteList(routes) {
         const summaryPois = r.summary_pois ? `📍 ${r.summary_pois}` : '';
         const durationText = r.duration_min ? `${r.duration_min}分钟` : '—';
         const costText = r.estimated_cost ? `人均约${r.estimated_cost}元` : '';
-
         html += `<div class="route-card">
             <div class="route-header">
                 <div>
@@ -1313,10 +1283,10 @@ function calculateRouteTotalDuration() {
     let total = 0, prevPoiId = null;
     routeNodesData.forEach(node => {
         if (prevPoiId && node.poi_id && String(prevPoiId) !== String(node.poi_id)) {
-            const preset = allPresets.find(p =>
-                (String(p.from_poi_id) === String(prevPoiId) && String(p.to_poi_id) === String(node.poi_id)) ||
-                (String(p.from_poi_id) === String(node.poi_id) && String(p.to_poi_id) === String(prevPoiId))
-            );
+            // 从 allTransportTimes 查
+            const a = Math.min(Number(prevPoiId), Number(node.poi_id));
+            const b = Math.max(Number(prevPoiId), Number(node.poi_id));
+            const preset = allTransportTimes.find(t => t.poi_a === a && t.poi_b === b);
             if (preset) total += preset.time_min || 0;
         }
         total += node.duration_min || 0;

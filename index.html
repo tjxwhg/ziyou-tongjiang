@@ -142,7 +142,6 @@
         .merchant-notice { background: #fff8e1; border-left: 4px solid #ff9800; border-radius: 8px; padding: 12px 14px; margin-top: 16px; }
         .merchant-notice h6 { color: #e65100; margin: 0 0 8px; font-weight: 700; font-size: 15px; display: flex; align-items: center; gap: 6px; }
         .merchant-notice p { color: #555; font-size: 14px; line-height: 1.6; margin: 0; white-space: pre-wrap; word-break: break-word; }
-        /* 智能规划列表 - 大类/景区/子项 三级布局 */
         .poi-category-section { margin-bottom: 16px; }
         .poi-category-header { font-weight: 700; font-size: 14px; color: white; background: linear-gradient(135deg, #2e7d32, #1b5e20); padding: 8px 14px; border-radius: 8px 8px 0 0; display: flex; align-items: center; gap: 6px; }
         .scenic-block { border: 1px solid #c8e6c9; border-top: none; background: #f1f8e9; padding: 10px 12px; }
@@ -152,6 +151,7 @@
         .scenic-children { margin-left: 16px; border-left: 2px dashed #a5d6a7; padding-left: 10px; }
         .poi-selectable-row { display: flex; align-items: center; gap: 10px; padding: 8px 10px; font-size: 14px; background: white; border: 1px solid #e0e0e0; border-radius: 6px; margin-bottom: 4px; }
         .poi-selectable-row input[type="checkbox"] { width: 18px; height: 18px; cursor: pointer; flex-shrink: 0; }
+        .poi-selectable-row input[type="checkbox"]:disabled { cursor: not-allowed; opacity: 0.5; }
         .poi-selectable-row .poi-name { flex: 1; color: #333; }
         .poi-selectable-row .poi-dur { color: #888; font-size: 12px; }
         .type-tag { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 11px; background: #e8f5e9; color: #1b5e20; font-weight: 500; flex-shrink: 0; }
@@ -439,7 +439,7 @@ function getLocalData(key) {
 function setLocalData(key, data) { localStorage.setItem(key, JSON.stringify(data)); }
 
 // ============================================================
-// 缓存（带版本号，后台改数据后自动失效）
+// 缓存（带版本号）
 // ============================================================
 const CACHE_TTL = 5 * 60 * 1000;
 const CACHE_PREFIX = 'ztj_cache_';
@@ -451,7 +451,7 @@ function getCache(key) {
         if (!raw) return null;
         const parsed = JSON.parse(raw);
         if (Date.now() - parsed.ts > CACHE_TTL) return null;
-        return parsed;   // { data, ts, version }
+        return parsed;
     } catch { return null; }
 }
 function setCache(key, data) {
@@ -505,12 +505,13 @@ const DINNER_START = 18 * 60;
 const DINNER_END = 19 * 60;
 const VISIT_END = 18 * 60;
 const MEAL_DURATION = 60;
-const COUNTY_ID = COUNTY.numericId;   // 0
+const COUNTY_ID = COUNTY.numericId;
 
 // ============================================================
 // 全局状态
 // ============================================================
 let collapsedL3Ids = new Set();
+let isFullSelectMode = false;
 let allPois = [];
 let allPoisMap = {};
 let currentTripData = null;
@@ -635,7 +636,7 @@ function getTypeTagHtml(p) {
 }
 
 // ============================================================
-// 智能规划 POI 列表（大类 → 景区 → 子项）
+// 智能规划 POI 列表
 // ============================================================
 const CATEGORY_ORDER = [
     '自然景区', '红色景区', '文博场馆', '餐饮住宿',
@@ -749,6 +750,8 @@ function renderScenicForSelection(l1, visiblePois, allPois) {
 function renderSelectableRow(p, allPois) {
     const idStr = String(p.id);
     const isChecked = selectedPoiIds.has(idStr);
+    const score = p.recommend_score || 0;
+    const disabled = score < 30;
     const dur = p.visit_duration || 0;
     const typeTag = getTypeTagHtml(p);
     const isL3 = p.data_level === 'L3';
@@ -761,9 +764,13 @@ function renderSelectableRow(p, allPois) {
            </span>`
         : `<span class="poi-name">${p.name}</span>`;
 
+    const checkboxHtml = disabled
+        ? `<input type="checkbox" ${isChecked ? 'checked' : ''} disabled>`
+        : `<input type="checkbox" ${isChecked ? 'checked' : ''}
+               onclick="event.stopPropagation(); window.togglePoiSelection('${p.id}')">`;
+
     let html = `<div class="poi-selectable-row">
-        <input type="checkbox" ${isChecked ? 'checked' : ''}
-               onclick="event.stopPropagation(); window.togglePoiSelection('${p.id}')">
+        ${checkboxHtml}
         ${nameHtml}
         ${typeTag}
         <span class="poi-dur">${dur}分钟</span>
@@ -811,29 +818,65 @@ window.togglePoiSelection = function(poiId) {
     const idStr = String(poiId);
     const poi = allPoisMap[idStr];
     if (!poi) return;
+    const score = poi.recommend_score || 0;
+    if (score < 30) return;
+
     if (selectedPoiIds.has(idStr)) {
         selectedPoiIds.delete(idStr);
         selectedPoiOrder = selectedPoiOrder.filter(x => x !== idStr);
+
+        if (isFullSelectMode && score >= 50) {
+            isFullSelectMode = false;
+        }
     } else {
         selectedPoiIds.add(idStr);
-        if (!selectedPoiOrder.includes(idStr)) selectedPoiOrder.push(idStr);
+        if (!selectedPoiOrder.includes(idStr)) {
+            if (poi.data_level === 'L4' && poi.scenic_id !== null && poi.scenic_id !== undefined) {
+                insertAtScenicEnd(idStr, poi.scenic_id);
+            } else {
+                selectedPoiOrder.push(idStr);
+            }
+        }
     }
     renderPoiSelection(allPois);
     renderSelectedOrder();
     updateSelectedInfo();
 };
 
+function insertAtScenicEnd(poiId, scenicId) {
+    let lastIdx = -1;
+    selectedPoiOrder.forEach((id, idx) => {
+        const p = allPoisMap[String(id)];
+        if (p && String(p.scenic_id) === String(scenicId)) lastIdx = idx;
+    });
+    if (lastIdx >= 0) {
+        selectedPoiOrder.splice(lastIdx + 1, 0, poiId);
+    } else {
+        selectedPoiOrder.push(poiId);
+    }
+}
+
 window.selectAllPois = function(select) {
     if (select) {
-        allPois.forEach(poi => {
-            if ((poi.data_level === 'L2' || poi.data_level === 'L3' || poi.data_level === 'L4')
-                && !poi.is_core_node) {
-                const idStr = String(poi.id);
-                selectedPoiIds.add(idStr);
-                if (!selectedPoiOrder.includes(idStr)) selectedPoiOrder.push(idStr);
-            }
+        isFullSelectMode = true;
+        selectedPoiIds.clear();
+        selectedPoiOrder = [];
+
+        const candidates = allPois.filter(p =>
+            (p.data_level === 'L1' || p.data_level === 'L2'
+             || p.data_level === 'L3' || p.data_level === 'L4')
+            && !p.is_core_node
+            && (p.recommend_score || 0) >= 50
+        );
+
+        const ordered = getScoreOrderedPois(candidates, allPois);
+        ordered.forEach(p => {
+            const idStr = String(p.id);
+            selectedPoiIds.add(idStr);
+            selectedPoiOrder.push(idStr);
         });
     } else {
+        isFullSelectMode = false;
         selectedPoiIds.clear();
         selectedPoiOrder = [];
     }
@@ -841,6 +884,34 @@ window.selectAllPois = function(select) {
     renderSelectedOrder();
     updateSelectedInfo();
 };
+
+function getScoreOrderedPois(candidates, allPois) {
+    const result = [];
+
+    const topLevel = candidates.filter(p => {
+        if (p.data_level === 'L1') return true;
+        return p.scenic_id === null || p.scenic_id === undefined;
+    }).sort(byScoreThenId);
+
+    topLevel.forEach(top => {
+        result.push(top);
+        if (top.data_level === 'L1') {
+            const children = candidates.filter(p =>
+                String(p.scenic_id) === String(top.id)
+            ).sort(byScoreThenId);
+            children.forEach(c => result.push(c));
+        }
+    });
+
+    return result;
+}
+
+function byScoreThenId(a, b) {
+    const sa = a.recommend_score || 0;
+    const sb = b.recommend_score || 0;
+    if (sa !== sb) return sb - sa;
+    return Number(a.id) - Number(b.id);
+}
 
 function updateSelectedInfo() {
     const total = selectedPoiIds.size;
@@ -860,7 +931,18 @@ window.renderSelectedOrder = function() {
         container.innerHTML = '<span class="text-secondary">尚未选择景点</span>';
         return;
     }
+
+    let warnMsg = '';
+    if (isFullSelectMode) {
+        warnMsg = checkDisorder();
+    }
+
     let html = '';
+    if (warnMsg) {
+        html += `<div class="alert alert-warning py-1 px-2 mb-2" style="font-size:12px;">
+                    ⚠️ ${warnMsg}
+                 </div>`;
+    }
     selectedPoiOrder.forEach((id, idx) => {
         const poi = allPoisMap[id];
         if (!poi) return;
@@ -874,6 +956,33 @@ window.renderSelectedOrder = function() {
     });
     container.innerHTML = html;
 };
+
+function checkDisorder() {
+    const scenicPositions = {};
+    selectedPoiOrder.forEach((id, idx) => {
+        const poi = allPoisMap[String(id)];
+        if (!poi) return;
+        if (poi.scenic_id === null || poi.scenic_id === undefined) return;
+        const key = String(poi.scenic_id);
+        if (!scenicPositions[key]) scenicPositions[key] = [];
+        scenicPositions[key].push(idx);
+    });
+
+    const disorderedNames = new Set();
+    Object.keys(scenicPositions).forEach(key => {
+        const positions = scenicPositions[key];
+        const isContinuous = (positions[positions.length - 1] - positions[0] + 1) === positions.length;
+        if (!isContinuous) {
+            const scenic = allPoisMap[key] || allPois.find(p => String(p.id) === key);
+            if (scenic) disorderedNames.add(scenic.name);
+        }
+    });
+
+    if (disorderedNames.size === 0) return '';
+    const names = Array.from(disorderedNames).join('、');
+    return `${names} 景区景点被分隔，存在往返`;
+}
+
 window.movePoiUp = function(id) {
     const idx = selectedPoiOrder.indexOf(id);
     if (idx > 0) {
@@ -901,6 +1010,15 @@ window.generatePlans = async function() {
     const startLocation = document.getElementById('planStartLocation')?.value || 'county';
     if (!startDate) { alert('请选择出发日期'); return; }
     if (selectedPoiOrder.length === 0) { alert('请至少选择一个景点'); return; }
+
+    // 全选模式下检查错乱
+    if (isFullSelectMode) {
+        const warn = checkDisorder();
+        if (warn) {
+            alert('⚠️ 当前顺序存在错乱：' + warn + '\n请调整顺序后再生成。');
+            return;
+        }
+    }
 
     const selectedPois = selectedPoiOrder.map(id => {
         const poi = allPoisMap[String(id)];
@@ -1693,7 +1811,12 @@ window.locateUser = locateUser;
 window.clearFilter = clearFilter;
 window.filterPOI = (category) => { applyFilter(category); };
 window.openPanel = (id) => { document.getElementById(id).classList.add('active'); };
-window.closePanel = (id) => { document.getElementById(id).classList.remove('active'); };
+window.closePanel = (id) => {
+    document.getElementById(id).classList.remove('active');
+    if (id === 'planPanel') {
+        isFullSelectMode = false;
+    }
+};
 window._voiceEnabled = true;
 window.toggleVoice = () => {
     window._voiceEnabled = !window._voiceEnabled;
@@ -1702,6 +1825,7 @@ window.toggleVoice = () => {
     document.querySelector('#voiceToggleBtn i').className = 'fas ' + icon;
 };
 window.backToPreferences = function() {
+    isFullSelectMode = false;
     document.getElementById('stepDetail').classList.add('hidden');
     document.getElementById('stepPreferences').classList.remove('hidden');
 };

@@ -142,11 +142,10 @@
         .merchant-notice { background: #fff8e1; border-left: 4px solid #ff9800; border-radius: 8px; padding: 12px 14px; margin-top: 16px; }
         .merchant-notice h6 { color: #e65100; margin: 0 0 8px; font-weight: 700; font-size: 15px; display: flex; align-items: center; gap: 6px; }
         .merchant-notice p { color: #555; font-size: 14px; line-height: 1.6; margin: 0; white-space: pre-wrap; word-break: break-word; }
-        .poi-category-section { margin-bottom: 16px; }
-        .poi-category-header { font-weight: 700; font-size: 14px; color: white; background: linear-gradient(135deg, #2e7d32, #1b5e20); padding: 8px 14px; border-radius: 8px 8px 0 0; display: flex; align-items: center; gap: 6px; }
-        .scenic-block { border: 1px solid #c8e6c9; border-top: none; background: #f1f8e9; padding: 10px 12px; }
-        .scenic-block:last-child { border-radius: 0 0 8px 8px; }
-        .scenic-block + .scenic-block { border-top: 1px solid #e8f5e9; }
+
+        /* 智能规划列表 —— 顶层按分值排序，无分类分组 */
+        .scenic-block { border: 1px solid #c8e6c9; background: #f1f8e9; padding: 10px 12px; margin-bottom: 6px; border-radius: 8px; }
+        .scenic-block + .scenic-block { margin-top: 0; }
         .scenic-title { font-weight: 600; font-size: 13px; color: #1b5e20; margin-bottom: 6px; display: flex; align-items: center; gap: 6px; }
         .scenic-children { margin-left: 16px; border-left: 2px dashed #a5d6a7; padding-left: 10px; }
         .poi-selectable-row { display: flex; align-items: center; gap: 10px; padding: 8px 10px; font-size: 14px; background: white; border: 1px solid #e0e0e0; border-radius: 6px; margin-bottom: 4px; }
@@ -155,14 +154,13 @@
         .poi-selectable-row .poi-name { flex: 1; color: #333; }
         .poi-selectable-row .poi-dur { color: #888; font-size: 12px; }
         .type-tag { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 11px; background: #e8f5e9; color: #1b5e20; font-weight: 500; flex-shrink: 0; }
+        .score-tag { display: inline-block; padding: 1px 6px; border-radius: 10px; font-size: 11px; background: #fff3e0; color: #e65100; font-weight: 600; flex-shrink: 0; }
         .l3-inner-list { margin-left: 24px; margin-top: 4px; margin-bottom: 8px; border-left: 2px dotted #ffb74d; padding-left: 10px; }
         .l3-inner-row { display: flex; align-items: center; gap: 8px; padding: 4px 8px; font-size: 13px; color: #666; background: #fffde7; border-radius: 4px; margin-bottom: 2px; }
         .l3-inner-row .l3-order { color: #999; min-width: 18px; }
         .l3-inner-row .l3-name { flex: 1; }
-        .poi-orphan-section { border: 1px solid #e0e0e0; border-top: none; background: white; padding: 10px 12px; border-radius: 0 0 8px 8px; }
-        .poi-orphan-title { font-size: 12px; color: #888; margin-bottom: 6px; }
-        .poi-selectable-row .poi-name i.fa-caret-down,
-        .poi-selectable-row .poi-name i.fa-caret-right { font-size: 14px; vertical-align: middle; }
+        .orphan-block { border: 1px dashed #bdbdbd; background: #fafafa; padding: 10px 12px; margin-bottom: 6px; border-radius: 8px; }
+        .orphan-title { font-weight: 500; font-size: 12px; color: #757575; margin-bottom: 6px; display: flex; align-items: center; gap: 4px; }
     </style>
 </head>
 <body>
@@ -194,7 +192,6 @@
 <button class="float-btn locate-btn" onclick="window.locateUser()"><i class="fas fa-crosshairs"></i></button>
 <button class="float-btn voice-btn" id="voiceToggleBtn" onclick="window.toggleVoice()"><i class="fas fa-volume-high"></i></button>
 
-<!-- 智能规划面板 -->
 <div class="panel" id="planPanel">
     <div class="panel-header">
         <h2><i class="fas fa-route text-green"></i> 智能行程规划</h2>
@@ -265,7 +262,6 @@
     </div>
 </div>
 
-<!-- 推荐路线面板 -->
 <div class="panel" id="routePanel">
     <div class="panel-header">
         <h2><i class="fas fa-route text-green"></i> 推荐路线</h2>
@@ -288,7 +284,6 @@
     </div>
 </div>
 
-<!-- 路线详情面板 -->
 <div class="panel" id="routeDetailPanel">
     <div class="panel-header" style="background:#1b5e20; color:white; border-bottom:none; flex-shrink:0;">
         <h2 style="color:white;"><i class="fas fa-route"></i> <span id="routeDetailTitle">路线详情</span></h2>
@@ -349,7 +344,6 @@
     </div>
 </div>
 
-<!-- 我的面板 -->
 <div class="panel" id="myPanel">
     <div class="panel-header"><h2><i class="fas fa-user text-green"></i> 我的</h2><button class="close-btn" onclick="window.closePanel('myPanel')">&times;</button></div>
     <div class="panel-body">
@@ -366,7 +360,6 @@
     </div>
 </div>
 
-<!-- 商户详情面板 -->
 <div class="panel" id="merchantDetailPanel">
     <div class="panel-header">
         <div style="display:flex; align-items:center; flex-wrap:wrap; flex:1;">
@@ -380,7 +373,6 @@
     <div class="panel-body" id="merchantDetailContent"></div>
 </div>
 
-<!-- 实时导航面板 -->
 <div class="panel" id="navPanel">
     <div class="panel-header"><h2><i class="fas fa-compass text-green"></i> 实时导航</h2><button class="close-btn" onclick="window.closePanel('navPanel')">&times;</button></div>
     <div class="panel-body"><div id="navContent"><div class="d-flex justify-content-between align-items-center"><span class="fw-bold">今日进度</span><span id="navProgressText">0%</span></div><div class="progress-bar-custom"><div class="fill" id="navProgressBar" style="width:0%"></div></div><div id="navCurrentNode" class="card-modern"><div class="card-title" id="navPoiName">准备出发</div><div class="card-sub" id="navPoiStatus">等待开始导航...</div></div><div id="navTimeline" class="mt-3"></div><button class="btn btn-danger w-100 mt-3" onclick="window.endNavigation()"><i class="fas fa-stop"></i> 结束导航</button></div></div>
@@ -417,9 +409,6 @@ import { generateTripPlan } from './js/trip-planner.js';
 import { startNavigation, endNavigation } from './js/trip-executor.js';
 import { COUNTY } from './js/config.js';
 
-// ============================================================
-// 设备标识
-// ============================================================
 function getDeviceId() {
     let id = localStorage.getItem('deviceId');
     if (!id) {
@@ -430,17 +419,11 @@ function getDeviceId() {
 }
 const DEVICE_ID = getDeviceId();
 
-// ============================================================
-// 本地存储工具
-// ============================================================
 function getLocalData(key) {
     try { return JSON.parse(localStorage.getItem(key) || '[]'); } catch { return []; }
 }
 function setLocalData(key, data) { localStorage.setItem(key, JSON.stringify(data)); }
 
-// ============================================================
-// 缓存（带版本号）
-// ============================================================
 const CACHE_TTL = 5 * 60 * 1000;
 const CACHE_PREFIX = 'ztj_cache_';
 const VERSION_KEY = 'ztj_cache_version';
@@ -478,9 +461,6 @@ async function getTransportPresetsCached() {
     return data;
 }
 
-// ============================================================
-// 常量
-// ============================================================
 const STATUS_MAP = { pending: '待确认', confirmed: '已确认', rejected: '已拒绝', cancelled: '已取消' };
 function translateStatus(s) { return STATUS_MAP[s] || s || '未知'; }
 
@@ -493,11 +473,6 @@ const NODE_TYPE_ICONS = {
     entrance: '🚪', parking: '🅿️', rest: '☕', core_view: '⭐',
     spot: '📍', entertainment: '🎢', wc: '🚻', exit: '🚪', other: '📌'
 };
-const CATEGORY_ICONS_MAP = {
-    '自然景区': '🏔️', '红色景区': '🔴', '文博场馆': '🏛️',
-    '餐饮住宿': '🍽️', '交通枢纽': '🚌', '游玩娱乐': '🎢',
-    '购物消费': '🛍️', '公共服务': '🏛️'
-};
 
 const LUNCH_START = 11 * 60 + 30;
 const LUNCH_END = 12 * 60 + 30;
@@ -507,9 +482,6 @@ const VISIT_END = 18 * 60;
 const MEAL_DURATION = 60;
 const COUNTY_ID = COUNTY.numericId;
 
-// ============================================================
-// 全局状态
-// ============================================================
 let collapsedL3Ids = new Set();
 let isFullSelectMode = false;
 let allPois = [];
@@ -527,9 +499,6 @@ let currentArrivalTime = 10 * 60;
 let transportPresetsCache = {};
 let currentDetailPoi = null;
 
-// ============================================================
-// 工具函数
-// ============================================================
 function fmtTime(minutes) {
     const h = Math.floor(minutes / 60);
     const m = minutes % 60;
@@ -547,14 +516,11 @@ function calcTravelBetween(prevPoiId, curPoiId) {
         return transportPresetsCache[`${COUNTY_ID}_${curPoiId}`] || transportPresetsCache[`county_${curPoiId}`] || 0;
     }
     if (String(curPoiId) === 'county' || curPoiId === COUNTY_ID) {
-        return transportPresetsCache[`${prevPoiId}_${COUNTY_ID}`] || transportPresetsCache[`${prevPoiId}_county`] || 0;
+        return transportPresetsCache[`${prevPoiId}_${COUNTY_ID}`] || transportPresetsCache[`prevPoiId}_county`] || 0;
     }
     return transportPresetsCache[`${prevPoiId}_${curPoiId}`] || 0;
 }
 
-// ============================================================
-// 时间选择器
-// ============================================================
 function initTimeSelectors() {
     const sel = document.getElementById('planStartTime');
     if (!sel) return;
@@ -615,9 +581,6 @@ function initStartLocationSelect(pois) {
     });
 }
 
-// ============================================================
-// 类型标签
-// ============================================================
 function getTypeTagHtml(p) {
     if (p.data_level === 'L3') return '<span class="type-tag">⭐ 连续景点</span>';
     if (p.data_level === 'L4') {
@@ -636,13 +599,8 @@ function getTypeTagHtml(p) {
 }
 
 // ============================================================
-// 智能规划 POI 列表
+// ★ 智能规划列表 —— 顶层按分值排（L1 + 无归属），每个 L1 后紧跟其子项
 // ============================================================
-const CATEGORY_ORDER = [
-    '自然景区', '红色景区', '文博场馆', '餐饮住宿',
-    '交通枢纽', '游玩娱乐', '购物消费', '公共服务'
-];
-
 function renderPoiSelection(pois) {
     const container = document.getElementById('poiSelectContainer');
     if (!container) return;
@@ -662,77 +620,43 @@ function renderPoiSelection(pois) {
     }
 
     const l1List = pois.filter(p => p.data_level === 'L1');
+    const orphanList = visiblePois.filter(p =>
+        p.scenic_id === null || p.scenic_id === undefined
+    );
 
-    let html = '';
+    const topLevel = [
+        ...l1List.map(p => ({ kind: 'l1', poi: p })),
+        ...orphanList.map(p => ({ kind: 'orphan', poi: p }))
+    ];
 
-    CATEGORY_ORDER.forEach(cat => {
-        const catL1 = l1List.filter(p => (p.category || '').split(',')[0].trim() === cat);
-
-        const catOrphans = visiblePois.filter(p => {
-            if (p.data_level === 'L4') return false;
-            if (p.scenic_id !== null && p.scenic_id !== undefined) return false;
-            const pCat = (p.category || '').split(',')[0].trim();
-            return pCat === cat;
-        });
-
-        const hasAnyScenic = catL1.some(l1 =>
-            visiblePois.some(p =>
-                String(p.scenic_id) === String(l1.id)
-                && (p.data_level === 'L2' || p.data_level === 'L3' || p.data_level === 'L4')
-            )
-        );
-
-        if (!hasAnyScenic && catOrphans.length === 0) return;
-
-        const catIcon = CATEGORY_ICONS_MAP[cat] || '📍';
-        html += `<div class="poi-category-section">`;
-        html += `<div class="poi-category-header">${catIcon} ${cat}</div>`;
-
-        catL1.forEach(l1 => {
-            html += renderScenicForSelection(l1, visiblePois, pois);
-        });
-
-        if (catOrphans.length > 0) {
-            html += `<div class="poi-orphan-section">`;
-            html += `<div class="poi-orphan-title">📌 无归属${cat}（独立景点）</div>`;
-            catOrphans.sort((a, b) => {
-                const order = { L2: 0, L3: 1 };
-                return (order[a.data_level] ?? 9) - (order[b.data_level] ?? 9);
-            });
-            catOrphans.forEach(p => {
-                html += renderSelectableRow(p, pois);
-            });
-            html += `</div>`;
-        }
-
-        html += `</div>`;
+    topLevel.sort((a, b) => {
+        const sa = a.poi.recommend_score || 0;
+        const sb = b.poi.recommend_score || 0;
+        if (sa !== sb) return sb - sa;
+        return Number(a.poi.id) - Number(b.poi.id);
     });
 
-    const orphanL4 = visiblePois.filter(p =>
-        p.data_level === 'L4'
-        && (p.scenic_id === null || p.scenic_id === undefined)
-    );
-    if (orphanL4.length > 0) {
-        html += `<div class="poi-category-section">`;
-        html += `<div class="poi-category-header">🏛️ 服务场所（L4）</div>`;
-        html += `<div class="poi-orphan-section" style="border-radius:0 0 8px 8px;">`;
-        orphanL4.forEach(p => {
-            html += renderSelectableRow(p, pois);
-        });
-        html += `</div></div>`;
-    }
+    let html = '';
+    topLevel.forEach(item => {
+        if (item.kind === 'l1') {
+            html += renderScenicBlock(item.poi, visiblePois, pois);
+        } else {
+            html += renderOrphanBlock(item.poi, pois);
+        }
+    });
 
     container.innerHTML = html || '<div class="text-secondary text-center py-2">暂无可勾选景点</div>';
     updateSelectedInfo();
 }
 
-function renderScenicForSelection(l1, visiblePois, allPois) {
+function renderScenicBlock(l1, visiblePois, allPois) {
     const children = visiblePois.filter(p =>
         String(p.scenic_id) === String(l1.id)
-        && (p.data_level === 'L2' || p.data_level === 'L3' || p.data_level === 'L4')
     ).sort((a, b) => {
-        const order = { L2: 0, L3: 1, L4: 2 };
-        return (order[a.data_level] ?? 9) - (order[b.data_level] ?? 9);
+        const sa = a.recommend_score || 0;
+        const sb = b.recommend_score || 0;
+        if (sa !== sb) return sb - sa;
+        return Number(a.id) - Number(b.id);
     });
 
     if (children.length === 0) return '';
@@ -744,6 +668,14 @@ function renderScenicForSelection(l1, visiblePois, allPois) {
         html += renderSelectableRow(child, allPois);
     });
     html += `</div></div>`;
+    return html;
+}
+
+function renderOrphanBlock(p, allPois) {
+    let html = `<div class="orphan-block">`;
+    html += `<div class="orphan-title">📌 独立景点</div>`;
+    html += renderSelectableRow(p, allPois);
+    html += `</div>`;
     return html;
 }
 
@@ -824,7 +756,6 @@ window.togglePoiSelection = function(poiId) {
     if (selectedPoiIds.has(idStr)) {
         selectedPoiIds.delete(idStr);
         selectedPoiOrder = selectedPoiOrder.filter(x => x !== idStr);
-
         if (isFullSelectMode && score >= 50) {
             isFullSelectMode = false;
         }
@@ -1011,7 +942,6 @@ window.generatePlans = async function() {
     if (!startDate) { alert('请选择出发日期'); return; }
     if (selectedPoiOrder.length === 0) { alert('请至少选择一个景点'); return; }
 
-    // 全选模式下检查错乱
     if (isFullSelectMode) {
         const warn = checkDisorder();
         if (warn) {
@@ -1676,9 +1606,6 @@ window.navigateToCurrentPoi = function() {
     window.open(url, '_blank');
 };
 
-// ============================================================
-// 商户详情页
-// ============================================================
 window.showPoiDetail = async function(poi) {
     currentDetailPoi = poi;
     const navBtn = document.getElementById('merchantNavBtn');
@@ -1804,9 +1731,6 @@ window.showPoiDetail = async function(poi) {
     }
 };
 
-// ============================================================
-// 全局函数绑定
-// ============================================================
 window.locateUser = locateUser;
 window.clearFilter = clearFilter;
 window.filterPOI = (category) => { applyFilter(category); };
@@ -1832,9 +1756,6 @@ window.backToPreferences = function() {
 window.startNavigation = startNavigation;
 window.endNavigation = endNavigation;
 
-// ============================================================
-// 顶部导航交互
-// ============================================================
 const brandToggle = document.getElementById('brandToggle');
 const categoryBar = document.getElementById('categoryBar');
 let hideTimer = null;
@@ -1855,9 +1776,6 @@ document.addEventListener('click', function(e) {
     }
 });
 
-// ============================================================
-// 初始化
-// ============================================================
 async function init() {
     try {
         const pois = await getPoisCached();

@@ -1,4 +1,4 @@
-// js/admin.js - 管理后台（交通耗时：基准+偏移方案）
+// js/admin.js - 管理后台（交通耗时：基准+偏移方案，编辑器仅显示分值≥30的POI）
 import {
     getPois, getPoi, insertPoi, updatePoi, deletePoi as apiDeletePoi,
     getRoutes, getRoute, insertRoute, updateRoute, deleteRoute as apiDeleteRoute,
@@ -899,6 +899,7 @@ export async function deletePoi(id) {
 
 // ============================================================
 // 交通耗时编辑器（基准 + 偏移方案）
+// ★ 过滤：非核心节点 + L2/L3/L4 + 有效 id + 分值 ≥ 30
 // ============================================================
 export function renderTransportEditor(times) {
     const container = document.getElementById('transport-editor');
@@ -907,10 +908,11 @@ export function renderTransportEditor(times) {
     const poiList = allPois.filter(p =>
         !p.is_core_node &&
         (p.data_level === 'L2' || p.data_level === 'L3' || p.data_level === 'L4') &&
-        isValidId(p.id)
+        isValidId(p.id) &&
+        (p.recommend_score || 0) >= 30
     );
     if (poiList.length === 0) {
-        container.innerHTML = '<p class="text-secondary">暂无参与规划的 L2/L3/L4 景点。</p>';
+        container.innerHTML = '<p class="text-secondary">暂无分值 ≥ 30 的 L2/L3/L4 景点。</p>';
         return;
     }
     currentTransportPoiList = poiList;
@@ -975,7 +977,6 @@ export function renderTransportEditor(times) {
             </div>
             <div class="card-body hidden">`;
 
-        // ★ 基准 + 偏移 行
         const baseOptions = renderBaseOptions(fromPoi.id, basePoiId);
         html += `<div class="base-offset-row" style="display:flex;align-items:center;gap:12px;padding:8px 10px;background:#f0f8f0;border-radius:6px;margin-bottom:10px;border:1px solid #c8e6c9;">
             <label style="margin:0;font-weight:600;color:#1b5e20;font-size:13px;">基准：</label>

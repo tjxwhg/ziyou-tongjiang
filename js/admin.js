@@ -857,7 +857,6 @@ export async function deletePoi(id) {
         Array.isArray(p.tour_route) && p.tour_route.some(x => String(x) === String(id))
     );
 
-    // ★ 检查是否有其他 POI 参照此 POI 作为基准
     let dependents = [];
     try {
         dependents = await getDependents(toSafeId(id));
@@ -889,7 +888,6 @@ export async function deletePoi(id) {
             const newTr = l3.tour_route.filter(x => String(x) !== String(id));
             await updatePoi(toSafeId(l3.id), { tour_route: newTr });
         }
-        // 清交通耗时
         try {
             await deleteTransportTimesForPoi(toSafeId(id));
         } catch (e) { console.warn('[deletePoi] 清理交通失败:', e); }
@@ -917,7 +915,6 @@ export function renderTransportEditor(times) {
     }
     currentTransportPoiList = poiList;
 
-    // 建索引：{ "a_b": time_min }
     const timeMap = {};
     times.forEach(t => {
         timeMap[`${t.poi_a}_${t.poi_b}`] = t.time_min;
@@ -930,28 +927,22 @@ export function renderTransportEditor(times) {
         return (v === undefined || v === null) ? '' : v;
     }
 
-    function getPoiName(id) {
-        if (String(id) === '0') return '红军广场（县城）';
-        const p = poiList.find(x => String(x.id) === String(id));
-        return p ? p.name : String(id);
-    }
-
-    // 生成基准 POI 下拉选项（id 严格小于当前 POI，且非核心节点）
-    function renderBaseOptions(currentPoiId) {
+    function renderBaseOptions(currentPoiId, selectedBaseId) {
         const currentIdNum = Number(currentPoiId);
         const candidates = poiList
             .filter(p => Number(p.id) < currentIdNum)
             .sort((a, b) => Number(a.id) - Number(b.id));
         let opts = '<option value="">（无）</option>';
         candidates.forEach(p => {
-            opts += `<option value="${p.id}">${p.name}</option>`;
+            const sel = String(p.id) === String(selectedBaseId) ? 'selected' : '';
+            opts += `<option value="${p.id}" ${sel}>${p.name}</option>`;
         });
         return opts;
     }
 
     let html = '';
 
-    // 第一块：红军广场（县城）
+    // 第一块：红军广场
     html += `<div class="transport-group card mb-2" style="border:2px solid #1b5e20;">
         <div class="card-header" style="cursor:pointer;background:#e8f5e9;" onclick="this.nextElementSibling.classList.toggle('hidden')">
             <b>🏠 红军广场（县城）</b> <span class="text-secondary">→ 各景点耗时（点击展开）</span>
@@ -966,8 +957,7 @@ export function renderTransportEditor(times) {
                 <input type="number" value="${val}" placeholder="分钟" 
                        data-from="0" data-to="${toPoi.id}" 
                        oninput="window.markTransportDirty(this)"
-                       onchange="window.saveTransportTime(this)"
-                       style="">
+                       onchange="window.saveTransportTime(this)">
                 <span class="save-status"></span>
             </div>
         </div>`;
@@ -985,8 +975,8 @@ export function renderTransportEditor(times) {
             </div>
             <div class="card-body hidden">`;
 
-        // ★ 新增：基准 + 偏移 行
-        const baseOptions = renderBaseOptions(fromPoi.id);
+        // ★ 基准 + 偏移 行
+        const baseOptions = renderBaseOptions(fromPoi.id, basePoiId);
         html += `<div class="base-offset-row" style="display:flex;align-items:center;gap:12px;padding:8px 10px;background:#f0f8f0;border-radius:6px;margin-bottom:10px;border:1px solid #c8e6c9;">
             <label style="margin:0;font-weight:600;color:#1b5e20;font-size:13px;">基准：</label>
             <select class="form-select form-select-sm" style="width:auto;min-width:140px;"
@@ -1001,15 +991,6 @@ export function renderTransportEditor(times) {
             <span style="font-size:12px;color:#888;">分钟</span>
         </div>`;
 
-        // 回显已选基准
-        if (basePoiId) {
-            // 由于 HTML 是字符串，需要用 setTimeout 或 data 属性处理选中
-            // 简单办法：在 html 里用 selected 属性
-            // 但 baseOptions 已经生成了，这里只能通过 JS 在渲染后处理
-            // 我们改用另一种方式：把 selected 标记嵌入 baseOptions 里
-        }
-
-        // 原有的 → 县城 和其他项
         const valToCounty = getTime(fromPoi.id, 0);
         html += `<div class="transport-item">
             <span>→ 红军广场（县城）</span>
@@ -1041,23 +1022,12 @@ export function renderTransportEditor(times) {
     });
 
     container.innerHTML = html;
-
-    // ★ 回显基准选中：渲染后设置 select 值
-    poiList.forEach(fromPoi => {
-        if (fromPoi.base_poi_id) {
-            const selectEl = container.querySelector(`select[onchange*="'${fromPoi.id}'"]`);
-            if (selectEl) {
-                selectEl.value = String(fromPoi.base_poi_id);
-            }
-        }
-    });
 }
 
 // 基准 POI 下拉改变
 window.onBasePoiChange = async function(selectEl, poiId) {
     const newBaseId = selectEl.value;
     if (!newBaseId) {
-        // 清除基准（只清关系，不动数据）
         if (!confirm('清除基准关系？数据保留。')) {
             selectEl.value = '';
             return;
@@ -1068,7 +1038,6 @@ window.onBasePoiChange = async function(selectEl, poiId) {
         } catch (e) { alert('操作失败：' + e.message); }
         return;
     }
-    // 找到偏移输入框的值
     const parent = selectEl.closest('.base-offset-row');
     const offsetInput = parent.querySelector('input[type="number"]');
     const offset = parseInt(offsetInput.value) || 0;
@@ -1096,7 +1065,6 @@ window.onOffsetChange = async function(inputEl, poiId) {
     await applyBaseWithOffsetAndReload(poiId, basePoiId, offset);
 };
 
-// 统一的"应用基准 + 偏移"入口
 async function applyBaseWithOffsetAndReload(poiId, basePoiId, offset) {
     try {
         await applyBaseWithOffset(toSafeId(poiId), toSafeId(basePoiId), offset);
@@ -1129,7 +1097,6 @@ window.saveTransportTime = async function(input) {
 
     if (isNaN(val) || val < 0) {
         if (input.value === '') {
-            // 空值 = 删除
             try {
                 await deleteTransportTime(toSafeId(from) ?? 0, toSafeId(to) ?? 0);
                 await initAdminUI();
@@ -1163,7 +1130,7 @@ window.saveTransportTime = async function(input) {
 };
 
 // ============================================================
-// 路线规划（保持原有）
+// 路线规划
 // ============================================================
 export function renderRouteList(routes) {
     const container = document.getElementById('route-list');
@@ -1283,7 +1250,6 @@ function calculateRouteTotalDuration() {
     let total = 0, prevPoiId = null;
     routeNodesData.forEach(node => {
         if (prevPoiId && node.poi_id && String(prevPoiId) !== String(node.poi_id)) {
-            // 从 allTransportTimes 查
             const a = Math.min(Number(prevPoiId), Number(node.poi_id));
             const b = Math.max(Number(prevPoiId), Number(node.poi_id));
             const preset = allTransportTimes.find(t => t.poi_a === a && t.poi_b === b);

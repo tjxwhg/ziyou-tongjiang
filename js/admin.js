@@ -1,4 +1,4 @@
-// js/admin.js - 管理后台（交通耗时：基准+偏移方案，编辑器仅显示分值≥30的POI）
+// js/admin.js - 管理后台（交通耗时：基准+偏移方案 + G001分值过滤 + G002同步提示）
 import {
     getPois, getPoi, insertPoi, updatePoi, deletePoi as apiDeletePoi,
     getRoutes, getRoute, insertRoute, updateRoute, deleteRoute as apiDeleteRoute,
@@ -898,13 +898,13 @@ export async function deletePoi(id) {
 }
 
 // ============================================================
-// 交通耗时编辑器（基准 + 偏移方案）
-// ★ 过滤：非核心节点 + L2/L3/L4 + 有效 id + 分值 ≥ 30
+// 交通耗时编辑器（基准 + 偏移方案 + G001 分值过滤）
 // ============================================================
 export function renderTransportEditor(times) {
     const container = document.getElementById('transport-editor');
     if (!container) return;
 
+    // ★ G001: 只显示分值 ≥ 30 的 POI
     const poiList = allPois.filter(p =>
         !p.is_core_node &&
         (p.data_level === 'L2' || p.data_level === 'L3' || p.data_level === 'L4') &&
@@ -912,7 +912,7 @@ export function renderTransportEditor(times) {
         (p.recommend_score || 0) >= 30
     );
     if (poiList.length === 0) {
-        container.innerHTML = '<p class="text-secondary">暂无分值 ≥ 30 的 L2/L3/L4 景点。</p>';
+        container.innerHTML = '<p class="text-secondary">暂无可配置的 POI（需分值 ≥ 30）。</p>';
         return;
     }
     currentTransportPoiList = poiList;
@@ -1088,7 +1088,7 @@ window.markTransportDirty = function(input) {
     input.style.background = '#fff3cd';
 };
 
-// 单项保存（手工改某一格）
+// 单项保存（G002: 保存后提示参照者）
 window.saveTransportTime = async function(input) {
     if (input.dataset.saving === '1') return;
 
@@ -1122,6 +1122,9 @@ window.saveTransportTime = async function(input) {
         }
         input.style.background = '#e8f5e9';
         setTimeout(() => { input.style.background = ''; }, 1500);
+
+        // ★ G002: 保存后检查参照者，提示同步
+        await checkAndPromptDependents(fromVal, toVal);
     } catch (e) {
         alert('保存失败：' + e.message);
         input.style.background = '#ffebee';
@@ -1130,8 +1133,45 @@ window.saveTransportTime = async function(input) {
     }
 };
 
+// ★ G002: 检查参照者并提示同步
+async function checkAndPromptDependents(poiId1, poiId2) {
+    const idsToCheck = [];
+    if (poiId1 !== 0 && poiId1 !== '0') idsToCheck.push(poiId1);
+    if (poiId2 !== 0 && poiId2 !== '0') idsToCheck.push(poiId2);
+    if (idsToCheck.length === 0) return;
+
+    const allDependents = [];
+    for (const id of idsToCheck) {
+        try {
+            const deps = await getDependents(id);
+            deps.forEach(d => {
+                if (!allDependents.find(x => String(x.id) === String(d.id))) {
+                    allDependents.push(d);
+                }
+            });
+        } catch (e) { console.warn('查询参照者失败:', e); }
+    }
+    if (allDependents.length === 0) return;
+
+    const names = allDependents.map(d => d.name).join('、');
+    const yes = confirm(`已保存。\n\n有 ${allDependents.length} 个 POI 参照了刚修改的 POI 作为基准：\n${names}\n\n是否同步更新它们的数据？`);
+    if (!yes) return;
+
+    for (const dep of allDependents) {
+        const poi = allPois.find(p => String(p.id) === String(dep.id));
+        if (poi && poi.base_poi_id != null && poi.base_offset != null) {
+            try {
+                await applyBaseWithOffset(poi.id, poi.base_poi_id, poi.base_offset);
+            } catch (e) {
+                console.warn(`同步 ${poi.name} 失败:`, e);
+            }
+        }
+    }
+    await initAdminUI();
+}
+
 // ============================================================
-// 路线规划
+// 路线规划（保持原有）
 // ============================================================
 export function renderRouteList(routes) {
     const container = document.getElementById('route-list');
@@ -1452,91 +1492,4 @@ export async function saveRouteEdit() {
     const id = document.getElementById('edit-route-id').value;
     const name = document.getElementById('edit-route-name').value.trim();
     if (!name) { alert('请输入路线名称'); return; }
-    if (routeNodesData.length === 0) { alert('请至少添加一个节点'); return; }
-    const totalMin = calculateRouteTotalDuration();
-    const themeTags = getThemeTags();
-    const data = {
-        name: name,
-        route_type: document.getElementById('edit-route-type').value,
-        day_category: document.getElementById('edit-route-daycat').value,
-        sort_order: parseInt(document.getElementById('edit-route-sort').value) || 0,
-        duration_min: totalMin,
-        estimated_cost: parseFloat(document.getElementById('edit-route-cost').value) || null,
-        summary: document.getElementById('edit-route-summary').value.trim(),
-        summary_pois: document.getElementById('edit-route-summary-pois').value.trim(),
-        description: document.getElementById('edit-route-desc').value.trim(),
-        theme_tags: themeTags.length > 0 ? themeTags : null,
-        scenic_poi_id: null, is_default: false, start_time: '08:00',
-        transport: '', days: 1, group_type: 'default'
-    };
-    try {
-        let routeId = id;
-        if (id) await updateRoute(id, data);
-        else { const r = await insertRoute(data); routeId = r.id; }
-        await deleteRouteNodes(routeId);
-        const nodes = routeNodesData.map((n, i) => ({
-            route_id: routeId, order_num: i + 1,
-            node_name: n.node_name, node_type: n.node_type,
-            poi_id: (n.poi_id && isValidId(n.poi_id)) ? toSafeId(n.poi_id) : null,
-            priority_level: n.priority_level || 2,
-            duration_min: n.duration_min || 10,
-            duration_short: n.duration_short || null,
-            duration_long: n.duration_long || null,
-            is_skippable: !!n.is_skippable,
-            meal_suitable: n.meal_suitable || null,
-            nearby_restaurant: n.nearby_restaurant || null,
-            description: n.description, tips: n.tips,
-            transport_mode: '步行', transport_time: 0
-        }));
-        if (nodes.length > 0) await insertRouteNodes(nodes);
-        await closeModal('routeModal');
-        await initAdminUI();
-        alert('保存成功');
-    } catch (e) { alert('保存失败：' + e.message); console.error(e); }
-}
-
-export async function deleteRoute(id) {
-    if (!confirm('确认删除此路线？')) return;
-    try {
-        await deleteRouteNodes(id);
-        await apiDeleteRoute(id);
-        await initAdminUI();
-    } catch (e) { alert('删除失败：' + e.message); }
-}
-
-// ============================================================
-// 商户 / 留言
-// ============================================================
-export function renderMerchantList(merchants) {
-    const container = document.getElementById('merchant-list');
-    if (!container) return;
-    container.innerHTML = merchants.map(m => `
-        <div class="poi-card"><span><b>${m.display_name || m.id}</b> ${m.phone || ''}</span></div>
-    `).join('') || '<p>暂无商户</p>';
-}
-export async function createMerchant() {
-    alert('创建商户功能需后端支持，请使用 Supabase Admin API');
-}
-export function renderFeedbackList(feedbacks) {
-    const container = document.getElementById('feedback-list');
-    if (!container) return;
-    container.innerHTML = feedbacks.map(f => `
-        <div class="poi-card">
-            <p><b>${f.message}</b></p>
-            <small>${new Date(f.created_at).toLocaleString()}</small>
-            ${f.reply ? `<div class="text-success">回复：${f.reply}</div>` : ''}
-            <div class="mt-1"><textarea id="reply-${f.id}" class="form-control form-control-sm" rows="2">${f.reply || ''}</textarea></div>
-            <button class="btn btn-sm btn-primary mt-1" onclick="window.replyFeedback('${f.id}')">回复</button>
-            <button class="btn btn-sm btn-danger mt-1" onclick="window.deleteFeedback('${f.id}')">删除</button>
-        </div>
-    `).join('') || '<p>暂无留言</p>';
-}
-export async function replyFeedback(id) {
-    const reply = document.getElementById(`reply-${id}`).value;
-    try { await updateFeedback(id, { reply }); await initAdminUI(); } catch (e) { alert('回复失败：' + e.message); }
-}
-export async function deleteFeedback(id) {
-    if (!confirm('确认删除？')) return;
-    try { await apiDeleteFeedback(id); await initAdminUI(); } catch (e) { alert('删除失败：' + e.message); }
-}
-export function refreshData() { initAdminUI(); }
+    if (routeNodesData

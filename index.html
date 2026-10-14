@@ -1045,13 +1045,23 @@ function renderTripNodeHtml(node) {
         return `<div class="trip-node type-${typeClass}"><span class="node-icon icon-${typeClass}">${icon}</span><span class="node-content"><span class="${textClass}">${text}</span></span></div>`;
     }
     let timeDisplay = '';
-    if (node.startTime !== undefined && node.endTime !== undefined) {
-        timeDisplay = `${fmtTime(node.startTime)} - ${fmtTime(node.endTime)}`;
-    } else if (node.startTime !== undefined) {
-        timeDisplay = fmtTime(node.startTime);
+    // ★ G004: noData 节点不显示时间
+    if (!node.noData) {
+        if (node.startTime !== undefined && node.endTime !== undefined) {
+            timeDisplay = `${fmtTime(node.startTime)} - ${fmtTime(node.endTime)}`;
+        } else if (node.startTime !== undefined) {
+            timeDisplay = fmtTime(node.startTime);
+        }
     }
     let content = '';
-    if (node.type === 'transport') content = `${node.name || '交通'} ${node.duration ? `<span class="node-duration">${node.duration}分钟</span>` : ''}`;
+    if (node.type === 'transport') {
+        // ★ G004: 无数据节点只显示名称
+        if (node.noData) {
+            content = node.name || '交通';
+        } else {
+            content = `${node.name || '交通'} ${node.duration ? `<span class="node-duration">${node.duration}分钟</span>` : ''}`;
+        }
+    }
     else if (node.type === 'visit') content = `${node.name || '游览'} ${node.duration ? `<span class="node-duration">${node.duration}分钟</span>` : ''}`;
     else if (node.type === 'meal') content = `${node.name || '就餐'} ${node.duration ? `<span class="node-duration">${node.duration}分钟</span>` : ''}`;
     else if (node.type === 'waiting') content = `${node.name || '等待'} ${node.duration ? `<span class="node-duration">${node.duration}分钟</span>` : ''}`;

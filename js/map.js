@@ -1,99 +1,246 @@
-// js/config.js - 全局配置（三层级架构）
+// js/map.js - 地图核心（电子围栏冷却 + 精度过滤）
+import { getPoiInternal } from './api.js';
+import { wgs84ToGcj02, getDistance, speak, cancelSpeech } from './utils.js';
+import { poiColors } from './config.js';
 
-export const SUPABASE_URL = 'https://aermnnksvhezfykxefla.supabase.co';
-export const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFlcm1ubmtzdmhlemZ5a3hlZmxhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIwNzQ4ODEsImV4cCI6MjA5NzY1MDg4MX0.c2Wemu90PiezEaXn2Hv3tBL-D5YFXYTVxei14CI-Rvk';
+let map = null;
+let userMarker = null;
+let poiMarkers = [];
+let allPois = [];
+let currentGcjPos = null;
+let voiceEnabled = true;
+let lastTriggeredAt = {};    // ★ { poiId: timestamp }
+let watchId = null;
+let currentAudio = null;
+let currentFilterCategory = null;
+let internalPathLayer = null;
 
-// ========== 时间参数 ==========
-export const DAY_START = 480;          // 08:00
-export const PLAN_CUTOFF = 1020;       // 17:00 最后游览开始时间
-export const VISIT_END = 1080;         // 18:00 硬结束
-export const NIGHT_END = 1320;         // 22:00 24h POI 夜间上限
-export const DAY_END = VISIT_END;
-export const NEW_ARRIVAL_CUTOFF = 960;
+const VOICE_COOLDOWN_MS = 30 * 60 * 1000;   // ★ 30 分钟冷却
+const FENCE_RADIUS_M = 40;
+const ACCURACY_LIMIT_M = 100;               // ★ 精度过滤
 
-export const LUNCH_START = 690;        // 11:30
-export const LUNCH_END = 750;          // 12:30
-export const DINNER_START = 1080;      // 18:00
-export const DINNER_END = 1140;        // 19:00
-export const MEAL_DURATION = 60;       // 每餐时长
-export const MAX_RETURN_TIME = 180;
-export const MIN_SEGMENT = 45;
-export const MIN_REST_DURATION = 10;
+export function initMap(containerId) {
+    if (map) return map;
+    map = L.map(containerId, { zoomControl: false }).setView([31.911705, 107.245033], 12);
+    L.tileLayer('https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}', {
+        subdomains: ['1', '2', '3', '4'],
+        maxZoom: 18
+    }).addTo(map);
+    L.control.zoom({ position: 'topleft' }).addTo(map);
+    return map;
+}
 
-// ========== 规划约束 ==========
-export const MAX_WAIT_FOR_MEAL = 59;       // 收尾阶段距下一餐的最大等待分钟
-export const MIN_VISIT_SEGMENT = 45;       // L2 剩余游览 < 45 分钟则丢弃
-export const MAX_POI_DURATION = 14400;     // 单 POI 最大游览时长（240 小时）
-export const MEAL_BREAK_THRESHOLD = 30;    // L2 被就餐中断时，剩余 < 30 分钟则做完再插餐
+export function loadPoisToMap(pois) {
+    allPois = pois;
+    if (typeof window !== 'undefined') {
+        window.__allPois = pois;
+    }
+    poiMarkers.forEach(m => map.removeLayer(m));
+    poiMarkers = [];
+    currentFilterCategory = null;   // ★ 重置筛选
+    pois.forEach(p => {
+        const cat = (p.category || '').split(',')[0] || '其他';
+        const color = poiColors[cat] || '#999';
+        const icon = L.divIcon({
+            html: `<div style="background:${color}; width:24px; height:24px; border-radius:50%; border:3px solid white; box-shadow:0 2px 8px rgba(0,0,0,0.2); display:flex; align-items:center; justify-content:center; font-size:12px; color:white; font-weight:bold;">${p.name.charAt(0)}</div>`,
+            iconSize: [24, 24],
+            className: 'poi-marker'
+        });
+        const marker = L.marker([p.lat, p.lng], { icon }).addTo(map);
+        marker.poiData = p;
+        marker.on('click', function() {
+            if (window.showPoiDetail) {
+                window.showPoiDetail(this.poiData);
+            } else {
+                console.warn('showPoiDetail not defined');
+            }
+        });
+        poiMarkers.push(marker);
+    });
+}
 
-// L3 错过判定阈值（保留兼容，当前代码不再使用）
-export const LUNCH_THRESHOLD = LUNCH_END + 120;    // 14:30
-export const DINNER_THRESHOLD = DINNER_END + 120;  // 21:00
+export async function showPoiInternal(poiId) {
+    if (internalPathLayer) {
+        map.removeLayer(internalPathLayer);
+        internalPathLayer = null;
+    }
+    try {
+        const data = await getPoiInternal(poiId);
+        if (!data || !data.nodes || data.nodes.length === 0) {
+            return;
+        }
+        const nodeLayer = L.layerGroup();
+        data.nodes.forEach(node => {
+            const color = node.node_type === 'entrance' ? '#2E7D32' :
+                          node.node_type === 'exit' ? '#c62828' :
+                          node.node_type === 'core_view' ? '#1565C0' :
+                          node.node_type === 'rest_area' ? '#FF6F00' :
+                          node.node_type === 'wc' ? '#00838F' :
+                          '#999';
+            const icon = L.divIcon({
+                html: `<div style="background:${color}; width:16px; height:16px; border-radius:50%; border:2px solid white; box-shadow:0 2px 4px rgba(0,0,0,0.3);"></div>`,
+                iconSize: [16, 16]
+            });
+            const marker = L.marker([node.lat, node.lng], { icon }).addTo(nodeLayer);
+            marker.bindPopup(`
+                <b>${node.node_name}</b><br>
+                类型: ${node.node_type}<br>
+                建议停留: ${node.suggested_duration_min}-${node.suggested_duration_max}分钟
+                ${node.audio_mp3 ? '<br><audio controls src="'+node.audio_mp3+'"></audio>' : ''}
+            `);
+        });
+        if (data.edges && data.edges.length > 0) {
+            data.edges.forEach(edge => {
+                const fromNode = data.nodes.find(n => n.id === edge.from_node_id);
+                const toNode = data.nodes.find(n => n.id === edge.to_node_id);
+                if (fromNode && toNode) {
+                    const latlngs = [[fromNode.lat, fromNode.lng], [toNode.lat, toNode.lng]];
+                    L.polyline(latlngs, {
+                        color: '#1565C0',
+                        weight: 2,
+                        opacity: 0.5,
+                        dashArray: '5,5'
+                    }).addTo(nodeLayer);
+                }
+            });
+        }
+        internalPathLayer = nodeLayer;
+        map.addLayer(nodeLayer);
+    } catch (error) {
+        console.warn('加载内部路网失败:', error);
+    }
+}
 
-// ========== 等级定义 ==========
-export const LEVEL_LABELS = {
-    L1: '🏞️ 一级 - 景区（容器）',
-    L2: '📍 二级 - 普通景点',
-    L3: '⭐ 三级 - 连续景点（含节点）',
-    L4: '🏛️ 四级 - 服务场所/设施'
-};
+export function applyFilter(category) {
+    currentFilterCategory = category;
+    poiMarkers.forEach(marker => {
+        const poi = marker.poiData;
+        if (!poi) return;
+        const cats = (poi.category || '').split(',').map(c => c.trim());
+        const match = cats.some(c => c === category);
+        if (match) {
+            if (!marker._icon) map.addLayer(marker);
+            const color = poiColors[category] || '#999';
+            marker.setIcon(L.divIcon({
+                html: `<div style="background:${color}; width:32px; height:32px; border-radius:50%; border:3px solid #fff; box-shadow:0 0 16px rgba(0,0,0,0.4); display:flex; align-items:center; justify-content:center; font-size:14px; color:white; font-weight:bold;">${poi.name.charAt(0)}</div>`,
+                iconSize: [32, 32]
+            }));
+        } else {
+            if (marker._icon) map.removeLayer(marker);
+        }
+    });
+}
 
-// ========== POI 类型 ==========
-export const POI_TYPES = {
-    scenic: '🏞️ 景区',
-    spot: '📍 景点',
-    core_node: '⭐ 核心节点',
-    service_place: '🏛️ 服务场所',
-    facility: '🚻 公共设施'
-};
+export function clearFilter() {
+    currentFilterCategory = null;
+    poiMarkers.forEach(marker => {
+        if (!marker._icon) map.addLayer(marker);
+        const poi = marker.poiData;
+        if (poi) {
+            const cat = (poi.category || '').split(',')[0] || '其他';
+            const color = poiColors[cat] || '#999';
+            marker.setIcon(L.divIcon({
+                html: `<div style="background:${color}; width:24px; height:24px; border-radius:50%; border:3px solid white; box-shadow:0 2px 8px rgba(0,0,0,0.2); display:flex; align-items:center; justify-content:center; font-size:12px; color:white; font-weight:bold;">${poi.name.charAt(0)}</div>`,
+                iconSize: [24, 24]
+            }));
+        }
+    });
+}
 
-// ========== POI 分类 ==========
-export const POI_CATEGORIES = [
-    '自然景区', '红色景区', '文博场馆', '餐饮住宿',
-    '交通枢纽', '游玩娱乐', '购物消费', '公共服务'
-];
+export function locateUser() {
+    if (!navigator.geolocation) {
+        alert('您的浏览器不支持定位');
+        return;
+    }
+    navigator.geolocation.getCurrentPosition(
+        (position) => {
+            const raw = { lat: position.coords.latitude, lng: position.coords.longitude };
+            const gcj = wgs84ToGcj02(raw.lat, raw.lng);
+            currentGcjPos = gcj;
+            if (userMarker) map.removeLayer(userMarker);
+            userMarker = L.marker([gcj.lat, gcj.lng], {
+                icon: L.divIcon({
+                    html: '<div style="background:#2196F3; width:20px; height:20px; border-radius:50%; border:3px solid white; box-shadow:0 0 12px rgba(33,150,243,0.5);"></div>',
+                    iconSize: [20, 20]
+                })
+            }).addTo(map).bindPopup('我的位置').openPopup();
+            map.setView([gcj.lat, gcj.lng], 15);
+            startWatching();
+        },
+        (error) => console.warn('定位失败:', error.message),
+        { enableHighAccuracy: true, timeout: 10000 }
+    );
+}
 
-export const poiColors = {
-    '自然景区': '#2E7D32',
-    '红色景区': '#C62828',
-    '文博场馆': '#6A1B9A',
-    '餐饮住宿': '#FF9800',
-    '交通枢纽': '#00BCD4',
-    '游玩娱乐': '#FF5722',
-    '购物消费': '#F9A825',
-    '公共服务': '#607D8B'
-};
+function startWatching() {
+    if (!navigator.geolocation) return;
+    if (watchId) navigator.geolocation.clearWatch(watchId);
+    watchId = navigator.geolocation.watchPosition(
+        (pos) => {
+            const raw = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+            const gcj = wgs84ToGcj02(raw.lat, raw.lng);
+            currentGcjPos = gcj;
+            if (userMarker) map.removeLayer(userMarker);
+            userMarker = L.marker([gcj.lat, gcj.lng], {
+                icon: L.divIcon({
+                    html: '<div style="background:#2196F3; width:20px; height:20px; border-radius:50%; border:3px solid white; box-shadow:0 0 12px rgba(33,150,243,0.5);"></div>',
+                    iconSize: [20, 20]
+                })
+            }).addTo(map);
+            checkVoiceTrigger(gcj.lat, gcj.lng, pos.coords.accuracy);
+        },
+        (err) => console.warn('定位监听错误', err),
+        { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 }
+    );
+}
 
-// ========== 模拟退火参数 ==========
-export const SA_CONFIG = {
-    INIT_TEMP: 1000,
-    COOLING_RATE: 0.98,
-    MAX_ITERATIONS: 3000,
-    EARLY_STOP_THRESHOLD: 0.001
-};
+// ★ 电子围栏触发（冷却 + 精度过滤）
+function checkVoiceTrigger(lat, lng, accuracy) {
+    if (!voiceEnabled || !allPois.length) return;
+    if (accuracy && accuracy > ACCURACY_LIMIT_M) return;
+    const now = Date.now();
+    allPois.forEach(poi => {
+        if (!poi.lat || !poi.lng) return;
+        const dist = getDistance(lat, lng, poi.lat, poi.lng);
+        if (dist <= FENCE_RADIUS_M) {
+            const last = lastTriggeredAt[poi.id] || 0;
+            if (now - last > VOICE_COOLDOWN_MS) {
+                triggerVoice(poi);
+                lastTriggeredAt[poi.id] = now;
+            }
+        }
+    });
+}
 
-export const WEIGHT_TEMPLATES = {
-    compact: { alpha: 0.35, beta: 0.10, gamma: 0.15, delta: 0.25, epsilon: 0.15 },
-    relaxed: { alpha: 0.25, beta: 0.15, gamma: 0.30, delta: 0.15, epsilon: 0.15 },
-    indepth: { alpha: 0.20, beta: 0.20, gamma: 0.20, delta: 0.20, epsilon: 0.20 }
-};
+function triggerVoice(poi) {
+    if (!voiceEnabled) return;
+    cancelSpeech();
+    if (currentAudio) { currentAudio.pause(); currentAudio = null; }
+    if (poi.voice_mp3) {
+        const audio = new Audio(poi.voice_mp3);
+        currentAudio = audio;
+        audio.play().catch(() => speak(poi.voice_cn || poi.description || poi.name));
+        return;
+    }
+    speak(poi.voice_cn || poi.description || poi.name);
+}
 
-// ========== 分类常量 ==========
-export const COUNTY_SPOT_KEYWORDS = [
-    '轿房沟美食街', '银耳博物馆', '红四方面军总指挥部旧址纪念馆',
-    '省委党校旧址纪念馆', '通江花月夜'
-];
-export const LONG_SPOT_NAMES = ['空山天盆', '诺水河溶洞', '王坪烈士陵园', '红军烈士陵园'];
-export const ALLOWED_CATEGORIES = ['自然景区', '红色景区', '文博场馆'];
-export const NON_VISIT_CATEGORIES = ['交通枢纽', '餐饮住宿', '公共服务', '购物消费', '游玩娱乐'];
-export const EXCLUDED_TRANSPORT_CATS = ['公共服务', '游玩娱乐', '购物消费'];
+export function setVoiceEnabled(enabled) {
+    voiceEnabled = enabled;
+    if (!enabled) {
+        cancelSpeech();
+        if (currentAudio) { currentAudio.pause(); currentAudio = null; }
+    }
+}
 
-// ========== 县城统一标识 ==========
-export const COUNTY = {
-    id: 'county',
-    numericId: 0,
-    lat: 31.911705,
-    lng: 107.245033,
-    name: '红军广场',
-    displayName: '红军广场（县城）'
-};
+export function getAllPois() {
+    return allPois;
+}
+
+export function getPoiById(id) {
+    return allPois.find(p => p.id == id);
+}
+
+export function getCurrentPosition() {
+    return currentGcjPos;
+}

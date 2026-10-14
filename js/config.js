@@ -20,12 +20,13 @@ export const MAX_RETURN_TIME = 180;
 export const MIN_SEGMENT = 45;
 export const MIN_REST_DURATION = 10;
 
-// ========== 规划约束（新增） ==========
-export const MAX_WAIT_FOR_MEAL = 59;      // 收尾阶段距下一餐的最大等待分钟
-export const MIN_VISIT_SEGMENT = 45;      // 当天剩余游览 < 45 分钟则丢弃
-export const MAX_POI_DURATION = 14400;    // 单 POI 最大游览时长（240 小时）
+// ========== 规划约束 ==========
+export const MAX_WAIT_FOR_MEAL = 59;       // 收尾阶段距下一餐的最大等待分钟
+export const MIN_VISIT_SEGMENT = 45;       // L2 剩余游览 < 45 分钟则丢弃
+export const MAX_POI_DURATION = 14400;     // 单 POI 最大游览时长（240 小时）
+export const MEAL_BREAK_THRESHOLD = 30;    // ★ L2 被就餐中断时，剩余 < 30 分钟则做完再插餐
 
-// L3 错过判定阈值（就餐窗口结束 + 120 分钟）
+// L3 错过判定阈值（保留兼容，当前代码不再使用）
 export const LUNCH_THRESHOLD = LUNCH_END + 120;    // 14:30
 export const DINNER_THRESHOLD = DINNER_END + 120;  // 21:00
 

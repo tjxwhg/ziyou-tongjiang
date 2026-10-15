@@ -518,6 +518,9 @@ let currentArrivalTime = 10 * 60;
 let transportPresetsCache = {};
 let currentDetailPoi = null;
 
+// ★ D011: 住宿覆盖映射 { scenicId: poiId }
+window.__lodgingOverrideMap = window.__lodgingOverrideMap || {};
+
 // ============================================================
 // 工具函数
 // ============================================================
@@ -1006,9 +1009,11 @@ window.generatePlans = async function() {
             if (Array.isArray(p.facility_subtype) && p.facility_subtype.includes('hotel')) return true;
             return false;
         });
+        // ★ D011: 传入用户住宿覆盖映射
         const result = await generateTripPlan(
             selectedPois, startDate, startTime, mode,
-            travelTimes, allPoisMap, accommodationPois, lodgingMode, startLocation
+            travelTimes, allPoisMap, accommodationPois, lodgingMode, startLocation,
+            window.__lodgingOverrideMap || {}
         );
         if (!result.days || result.days.length === 0) {
             const msg = result.warnings && result.warnings.length > 0 ? result.warnings.join('；') : '请调整选择或检查景点数据';
@@ -1035,17 +1040,25 @@ function renderTripNodeHtml(node) {
     const typeClass = node.type || 'other';
     const iconMap = { transport: '🚗', visit: '📍', meal: '🍽️', accommodation: '🏨', weather: '🌤️', reminder: '⚠️', waiting: '⏳', rest: '☕', trip_end: '🏁' };
     const icon = iconMap[typeClass] || '•';
-    if (typeClass === 'weather' || typeClass === 'reminder' || typeClass === 'accommodation' || typeClass === 'trip_end') {
-        const text = typeClass === 'accommodation' ? (node.name || '住宿休息')
-                   : typeClass === 'trip_end' ? (node.name || '整个行程规划结束')
-                   : (node.message || '');
+
+    // ★ D011: accommodation 节点若有 lodgingPoiId，加"更换"按钮
+    if (typeClass === 'accommodation') {
+        const text = node.name || '住宿休息';
+        let replaceBtn = '';
+        if (node.lodgingPoiId && node.lodgingScenicId) {
+            replaceBtn = `<button class="btn btn-sm btn-outline-secondary ms-2" onclick="window.changeLodging('${node.lodgingScenicId}')" style="font-size:11px;padding:1px 8px;">更换</button>`;
+        }
+        return `<div class="trip-node type-${typeClass}"><span class="node-icon icon-${typeClass}">${icon}</span><span class="node-content">${text}${replaceBtn}</span></div>`;
+    }
+
+    if (typeClass === 'weather' || typeClass === 'reminder' || typeClass === 'trip_end') {
+        const text = typeClass === 'trip_end' ? (node.name || '整个行程规划结束') : (node.message || '');
         const textClass = typeClass === 'weather' ? 'weather-text'
                         : typeClass === 'reminder' ? 'reminder-text'
                         : typeClass === 'trip_end' ? 'trip-end-text' : '';
         return `<div class="trip-node type-${typeClass}"><span class="node-icon icon-${typeClass}">${icon}</span><span class="node-content"><span class="${textClass}">${text}</span></span></div>`;
     }
     let timeDisplay = '';
-    // ★ G004: noData 节点不显示时间
     if (!node.noData) {
         if (node.startTime !== undefined && node.endTime !== undefined) {
             timeDisplay = `${fmtTime(node.startTime)} - ${fmtTime(node.endTime)}`;
@@ -1055,7 +1068,6 @@ function renderTripNodeHtml(node) {
     }
     let content = '';
     if (node.type === 'transport') {
-        // ★ G004: 无数据节点只显示名称
         if (node.noData) {
             content = node.name || '交通';
         } else {
@@ -1085,6 +1097,69 @@ function showTripDetail(data) {
     }
     container.innerHTML = html;
 }
+
+// ★ D011: 更换住宿 POI
+window.changeLodging = function(scenicId) {
+    const sid = String(scenicId);
+    const scenic = allPoisMap[sid];
+    if (!scenic) { alert('未找到该景区'); return; }
+
+    // 筛选该景区下符合条件的 L4 住宿 POI
+    const candidates = allPois.filter(p =>
+        String(p.scenic_id) === sid &&
+        p.data_level === 'L4' &&
+        (p.recommend_score || 0) >= 30 &&
+        p.type === 'facility' &&
+        (Array.isArray(p.facility_subtype)
+            ? p.facility_subtype.includes('hotel')
+            : p.facility_subtype === 'hotel')
+    );
+
+    if (candidates.length === 0) {
+        alert(`"${scenic.name}" 下暂无 L4 住宿 POI`);
+        return;
+    }
+
+    // 动态创建 modal 展示候选
+    const old = document.getElementById('lodgingPickerModal');
+    if (old) old.remove();
+
+    const div = document.createElement('div');
+    div.id = 'lodgingPickerModal';
+    div.className = 'alert-modal-mask';
+    const options = candidates.map(p => `
+        <label style="display:flex;align-items:center;padding:10px 12px;border-bottom:1px solid #f0f0f0;cursor:pointer;">
+            <input type="radio" name="lodging-pick" value="${p.id}" style="margin-right:10px;">
+            <span style="flex:1;">🏨 ${p.name}</span>
+            <span class="text-secondary small">⭐ ${p.recommend_score || 0}</span>
+        </label>
+    `).join('');
+    div.innerHTML = `
+        <div class="alert-modal" style="max-width:420px;">
+            <h6 style="color:#1b5e20;"><i class="fas fa-hotel"></i> 选择住宿 · ${scenic.name}</h6>
+            <p style="font-size:13px;color:#888;">选择后将重新生成行程</p>
+            <div style="max-height:300px;overflow-y:auto;border:1px solid #e0e0e0;border-radius:8px;">${options}</div>
+            <div class="btn-row" style="margin-top:12px;">
+                <button style="background:#eee;color:#333;padding:10px;border-radius:8px;border:none;flex:1;cursor:pointer;"
+                        onclick="document.getElementById('lodgingPickerModal').remove()">取消</button>
+                <button style="background:#1b5e20;color:white;padding:10px;border-radius:8px;border:none;flex:1;cursor:pointer;font-weight:600;"
+                        onclick="window.confirmChangeLodging('${sid}')">确定并重新生成</button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(div);
+};
+
+window.confirmChangeLodging = function(scenicId) {
+    const radios = document.querySelectorAll('#lodgingPickerModal input[name="lodging-pick"]');
+    let selectedId = null;
+    radios.forEach(r => { if (r.checked) selectedId = r.value; });
+    if (!selectedId) { alert('请选择一家住宿'); return; }
+    window.__lodgingOverrideMap[String(scenicId)] = selectedId;
+    document.getElementById('lodgingPickerModal').remove();
+    // 重新生成整个行程
+    window.generatePlans();
+};
 
 window.regenerateTrip = async function() {
     if (!currentTripData) { alert('没有可重新生成的行程'); return; }

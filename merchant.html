@@ -226,8 +226,9 @@
                 </div>
                 <div class="mb-2">
                     <label class="form-label">图片</label>
-                    <input type="file" id="item-image-file" class="form-control" accept="image/*" onchange="window.previewItemImage(event)">
+                    <input type="file" id="item-image-file" class="form-control" accept="image/jpeg,image/png,image/webp" onchange="window.previewItemImage(event)">
                     <input type="hidden" id="item-image-url">
+                    <div class="hint-text">支持 JPG / PNG / WebP，不超过 5MB</div>
                     <div id="item-image-preview" class="mt-2"></div>
                 </div>
             </div>
@@ -262,14 +263,15 @@ import {
 } from './js/merchant.js';
 import { deleteReservation, uploadFile } from './js/api.js';
 
-// ★ 统一使用的 Storage Bucket
-const STORAGE_BUCKET = '0frontend-assets';
-
 const STATUS_MAP = {
     pending: '待确认', confirmed: '已确认',
     rejected: '已拒绝', cancelled: '已取消'
 };
 function translateStatus(s) { return STATUS_MAP[s] || s || '未知'; }
+
+// ★ E3: 图片上传限制
+const IMAGE_MAX_SIZE = 5 * 1024 * 1024;   // 5 MB
+const IMAGE_ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
 
 const loginPage = document.getElementById('login-page');
 const main = document.getElementById('main');
@@ -305,7 +307,7 @@ onAuthStateChange((event) => {
         main.classList.remove('hidden');
         initMerchantUI();
     } else {
-        loginPage.classList.remove('hidden');
+        loginPage.classList.add('hidden');
         main.classList.add('hidden');
     }
 });
@@ -487,9 +489,27 @@ function renderItemCategoryOptions(selected) {
     ).join('');
 }
 
+// ★ E3: 图片预览 + 前置校验
 window.previewItemImage = function(event) {
     const file = event.target.files[0];
     if (!file) return;
+
+    // 类型校验
+    if (!IMAGE_ALLOWED_TYPES.includes(file.type)) {
+        alert('仅支持 JPG / PNG / WebP 格式的图片');
+        event.target.value = '';
+        document.getElementById('item-image-preview').innerHTML = '';
+        return;
+    }
+
+    // 大小校验
+    if (file.size > IMAGE_MAX_SIZE) {
+        alert('图片大小不得超过 5MB');
+        event.target.value = '';
+        document.getElementById('item-image-preview').innerHTML = '';
+        return;
+    }
+
     const reader = new FileReader();
     reader.onload = (e) => {
         document.getElementById('item-image-preview').innerHTML = `<img src="${e.target.result}" class="upload-preview">`;
@@ -518,10 +538,24 @@ window.saveItem = async function() {
         const fileInput = document.getElementById('item-image-file');
         if (fileInput.files && fileInput.files[0]) {
             const file = fileInput.files[0];
+
+            // ★ E3: 保存时二次校验（兜底）
+            if (!IMAGE_ALLOWED_TYPES.includes(file.type)) {
+                alert('仅支持 JPG / PNG / WebP 格式的图片');
+                saveBtn.disabled = false;
+                saveBtn.innerHTML = originalText;
+                return;
+            }
+            if (file.size > IMAGE_MAX_SIZE) {
+                alert('图片大小不得超过 5MB');
+                saveBtn.disabled = false;
+                saveBtn.innerHTML = originalText;
+                return;
+            }
+
             const ext = file.name.split('.').pop() || 'jpg';
-            const path = `merchant-items/${merchant.id}/${Date.now()}.${ext}`;
-            // ★ 使用统一 bucket 0frontend-assets
-            imageUrl = await uploadFile(STORAGE_BUCKET, path, file);
+            const path = `${merchant.id}/${Date.now()}.${ext}`;
+            imageUrl = await uploadFile('merchant-images', path, file);
         }
         const newItem = { category, name, price, duration, description, image: imageUrl };
         if (idx === '') businessItems.push(newItem);

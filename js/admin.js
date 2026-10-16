@@ -1,4 +1,4 @@
-// js/admin.js - 管理后台（交通耗时：基准+偏移方案 + G001分值过滤 + G002同步提示）
+// js/admin.js - 管理后台（交通耗时：基准+偏移方案 + G001分值过滤 + G002同步提示 + H6/H7上限校验）
 import {
     getPois, getPoi, insertPoi, updatePoi, deletePoi as apiDeletePoi,
     getRoutes, getRoute, insertRoute, updateRoute, deleteRoute as apiDeleteRoute,
@@ -10,7 +10,7 @@ import {
     getFeedbacks, updateFeedback, deleteFeedback as apiDeleteFeedback,
     uploadFile
 } from './api.js';
-import { MAX_POI_DURATION } from './config.js';
+import { MAX_POI_DURATION, MAX_TRANSPORT_TIME } from './config.js';
 
 let allPois = [], allRoutes = [], allTransportTimes = [], allMerchants = [], allFeedbacks = [];
 let currentEditingPoiId = null;
@@ -898,13 +898,12 @@ export async function deletePoi(id) {
 }
 
 // ============================================================
-// 交通耗时编辑器（基准 + 偏移方案 + G001 分值过滤）
+// 交通耗时编辑器（基准 + 偏移方案 + G001 分值过滤 + H6 上限）
 // ============================================================
 export function renderTransportEditor(times) {
     const container = document.getElementById('transport-editor');
     if (!container) return;
 
-    // ★ G001: 只显示分值 ≥ 30 的 POI
     const poiList = allPois.filter(p =>
         !p.is_core_node &&
         (p.data_level === 'L2' || p.data_level === 'L3' || p.data_level === 'L4') &&
@@ -956,7 +955,7 @@ export function renderTransportEditor(times) {
         html += `<div class="transport-item">
             <span>→ ${toPoi.name}</span>
             <div style="display:flex;align-items:center;">
-                <input type="number" value="${val}" placeholder="分钟" 
+                <input type="number" value="${val}" placeholder="分钟" min="0" max="${MAX_TRANSPORT_TIME}"
                        data-from="0" data-to="${toPoi.id}" 
                        oninput="window.markTransportDirty(this)"
                        onchange="window.saveTransportTime(this)">
@@ -996,7 +995,7 @@ export function renderTransportEditor(times) {
         html += `<div class="transport-item">
             <span>→ 红军广场（县城）</span>
             <div style="display:flex;align-items:center;">
-                <input type="number" value="${valToCounty}" placeholder="分钟" 
+                <input type="number" value="${valToCounty}" placeholder="分钟" min="0" max="${MAX_TRANSPORT_TIME}"
                        data-from="${fromPoi.id}" data-to="0"
                        oninput="window.markTransportDirty(this)"
                        onchange="window.saveTransportTime(this)">
@@ -1010,7 +1009,7 @@ export function renderTransportEditor(times) {
             html += `<div class="transport-item">
                 <span>→ ${toPoi.name}</span>
                 <div style="display:flex;align-items:center;">
-                    <input type="number" value="${val}" placeholder="分钟" 
+                    <input type="number" value="${val}" placeholder="分钟" min="0" max="${MAX_TRANSPORT_TIME}"
                            data-from="${fromPoi.id}" data-to="${toPoi.id}"
                            oninput="window.markTransportDirty(this)"
                            onchange="window.saveTransportTime(this)">
@@ -1088,7 +1087,7 @@ window.markTransportDirty = function(input) {
     input.style.background = '#fff3cd';
 };
 
-// 单项保存（G002: 保存后提示参照者）
+// 单项保存（含 H6 上限校验 + H7 下限校验 + G002 参照者提示）
 window.saveTransportTime = async function(input) {
     if (input.dataset.saving === '1') return;
 
@@ -1096,15 +1095,26 @@ window.saveTransportTime = async function(input) {
     const to = input.dataset.to;
     const val = parseInt(input.value);
 
+    // 空值 = 删除
+    if (input.value === '') {
+        try {
+            await deleteTransportTime(toSafeId(from) ?? 0, toSafeId(to) ?? 0);
+            await initAdminUI();
+        } catch (e) { alert('删除失败：' + e.message); }
+        return;
+    }
+
+    // H7: 下限校验
     if (isNaN(val) || val < 0) {
-        if (input.value === '') {
-            try {
-                await deleteTransportTime(toSafeId(from) ?? 0, toSafeId(to) ?? 0);
-                await initAdminUI();
-            } catch (e) { alert('删除失败：' + e.message); }
-        } else {
-            input.value = '';
-        }
+        alert('请输入有效的时间（0-1440 分钟）');
+        input.value = '';
+        return;
+    }
+
+    // H6: 上限校验
+    if (val > MAX_TRANSPORT_TIME) {
+        alert(`交通耗时不得超过 ${MAX_TRANSPORT_TIME} 分钟（24 小时）`);
+        input.value = '';
         return;
     }
 
@@ -1123,7 +1133,7 @@ window.saveTransportTime = async function(input) {
         input.style.background = '#e8f5e9';
         setTimeout(() => { input.style.background = ''; }, 1500);
 
-        // ★ G002: 保存后检查参照者，提示同步
+        // G002: 保存后检查参照者
         await checkAndPromptDependents(fromVal, toVal);
     } catch (e) {
         alert('保存失败：' + e.message);
@@ -1133,7 +1143,7 @@ window.saveTransportTime = async function(input) {
     }
 };
 
-// ★ G002: 检查参照者并提示同步
+// G002: 检查参照者并提示同步
 async function checkAndPromptDependents(poiId1, poiId2) {
     const idsToCheck = [];
     if (poiId1 !== 0 && poiId1 !== '0') idsToCheck.push(poiId1);
@@ -1171,7 +1181,7 @@ async function checkAndPromptDependents(poiId1, poiId2) {
 }
 
 // ============================================================
-// 路线规划（保持原有）
+// 路线规划
 // ============================================================
 export function renderRouteList(routes) {
     const container = document.getElementById('route-list');

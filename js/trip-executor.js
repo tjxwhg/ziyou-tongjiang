@@ -1,4 +1,6 @@
-// js/trip-executor.js - 实时导航引擎（偏差/进度真实计算）
+// js/trip-executor.js - 实时导航引擎
+// 注：D3（到达 POI 判定）已禁用（2026-10-16），因导航功能未上线。
+//     待接入真实导航 SDK 后再重新设计。
 import { saveDeviationRecord } from './api.js';
 import { getCurrentUser } from './auth.js';
 import { getDistance, timeToMinutes, speak } from './utils.js';
@@ -11,10 +13,14 @@ let isNavigating = false;
 let deviationCounter = 0;
 let currentPosition = null;
 let watchId = null;
-let navStartTime = null;   // ★ 导航开始时间（分钟）
+let navStartTime = null;
 
 const DEVIATION_THRESHOLD = 15;
 const REPORT_INTERVAL = 60000;
+
+// ⏸️ D3 禁用开关（保留以便未来启用）
+const D3_ARRIVAL_ENABLED = false;
+const D3_ARRIVAL_RADIUS = 50;   // 米
 
 export function initNavigation(tripData) {
     navData = tripData;
@@ -72,7 +78,8 @@ function startGpsTracking() {
                 lng: pos.coords.longitude,
                 accuracy: pos.coords.accuracy
             };
-            checkProximity();
+            // ⏸️ D3 已禁用：不调用 checkProximity()
+            // checkProximity();
             advanceToNextNode();
             updateNavUI(calculateProgress());
         },
@@ -85,9 +92,12 @@ function stopGpsTracking() {
     if (watchId) { navigator.geolocation.clearWatch(watchId); watchId = null; }
 }
 
+// ⏸️ D3 禁用：到达 POI 判定（保留以便未来启用）
+// 启用条件：接入真实导航 SDK 后，重新设计 GPS 定位 + 到达判定逻辑
 function checkProximity() {
+    if (!D3_ARRIVAL_ENABLED) return;   // ★ 禁用开关
     if (!navData || !currentPosition || !isNavigating) return;
-    if (currentPosition.accuracy && currentPosition.accuracy > 100) return;   // ★ 精度过滤
+    if (currentPosition.accuracy && currentPosition.accuracy > 100) return;
     const allPois = getAllPois();
     const days = navData.days || [];
     for (let day of days) {
@@ -97,7 +107,7 @@ function checkProximity() {
                 const poi = allPois.find(p => String(p.id) === String(node.poi_id));
                 if (poi) {
                     const dist = getDistance(currentPosition.lat, currentPosition.lng, poi.lat, poi.lng);
-                    if (dist < 50) {
+                    if (dist < D3_ARRIVAL_RADIUS) {
                         node.completed = true;
                         triggerArrivalAlert(poi, node);
                         break;
@@ -164,7 +174,6 @@ function calculateProgress() {
     return totalNodes > 0 ? (completedNodes / totalNodes) * 100 : 0;
 }
 
-// ★ 真实偏差：当前实际时间 - 计划时间（以第一个未完成节点为准）
 function calculateDeviation() {
     if (!navData || !navStartTime) return 0;
     const days = navData.days || [];
@@ -231,4 +240,10 @@ function updateNavUI(progress) {
     const text = document.getElementById('navProgressText');
     if (bar) bar.style.width = progress + '%';
     if (text) text.textContent = Math.round(progress) + '%';
+}
+
+function formatTime(minutes) {
+    const h = Math.floor(minutes / 60);
+    const m = minutes % 60;
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
 }

@@ -1,13 +1,11 @@
 // js/trip-planner.js - 行程规划引擎
-// 含 G003/D011 就近住宿（含用户更换）、G004 交通无数据节点、G005 30分钟L2就餐中断阈值、
-//     G006 L3前置就餐检查、G007 简化就餐判定、D019 空档期提示、收尾修正
 import { formatTime, timeToMinutes, fetchWeatherForecast } from './utils.js';
 import {
     DAY_START, PLAN_CUTOFF, VISIT_END, NIGHT_END,
     LUNCH_START, LUNCH_END, DINNER_START, DINNER_END,
     MEAL_DURATION, MAX_RETURN_TIME, MIN_REST_DURATION,
     MAX_WAIT_FOR_MEAL, MIN_VISIT_SEGMENT,
-    MEAL_BREAK_THRESHOLD
+    MEAL_BREAK_THRESHOLD, MAX_WAIT_FOR_DINNER_DAY_END
 } from './config.js';
 
 export class TripPlanner {
@@ -23,7 +21,7 @@ export class TripPlanner {
         this.accommodationPois = accommodationPois || [];
         this.lodgingMode = lodgingMode;
         this.startLocation = startLocation;
-        this.lodgingOverrideMap = lodgingOverrideMap || {};  // ★ { scenicId: poiId }
+        this.lodgingOverrideMap = lodgingOverrideMap || {};
 
         this.currentDate = new Date(this.startDate);
         this.currentTime = timeToMinutes(this.startTime);
@@ -121,7 +119,7 @@ export class TripPlanner {
                 this.currentTime = arrivalTime;
                 this.checkAndInsertMealAfterTransport(travelStart, arrivalTime);
             } else {
-                // G004: 无交通数据时加 transport 节点
+                // 交通无数据
                 if (String(this.lastPoiId) !== String(poi.id)
                     && String(this.lastPoiId) !== 'county'
                     && String(poi.id) !== 'county'
@@ -182,21 +180,8 @@ export class TripPlanner {
         // ============================================================
         if (queueIsEmpty) {
             this.handleReturnToCounty();
-            this.tryInsertMealAtTripEnd();
-
-            // D019: 空档期提示
-            if (!this.lunchInserted && !this.dinnerInserted) {
-                this.addNode({
-                    type: 'reminder',
-                    message: '今日较早结束，如需午餐和晚餐请自行安排'
-                });
-            } else if (!this.dinnerInserted) {
-                this.addNode({
-                    type: 'reminder',
-                    message: '今日较早结束，如需晚餐请自行安排'
-                });
-            }
-
+            this.tryInsertMealAtTripEnd(); // 59 阈值
+            // ★ 已移除 D019 提示：直接结束，不再提示“较早结束”
             this.addNode({
                 type: 'trip_end',
                 name: '整个规划行程结束',
@@ -210,7 +195,6 @@ export class TripPlanner {
         // ============================================================
         // 分支 B：当天结束、队列还有剩余
         // ============================================================
-        // 先找当天最后 visit 与次日首景点
         const lastVisitNode = [...this.dayNodes].reverse().find(n => n.type === 'visit' && n.poiId);
         const lastPoi = lastVisitNode ? this.allPoisMap[String(lastVisitNode.poiId)] : null;
         const nextPoi = queue[0]?.poi;
@@ -223,25 +207,26 @@ export class TripPlanner {
         let nextKeepPoiId = null;
 
         if (sameScenic) {
-            // ★ D011: 就近住宿，不返回县城，直接去住宿 POI
             const scenicId = lastPoi.scenic_id;
             const lodgingPoi = this.pickLodgingPoi(scenicId);
 
             if (lodgingPoi) {
-                // 当天最后景点 → 住宿 POI 的交通
                 const travelToLodging = this.calcTravel(lastVisitNode.poiId, lodgingPoi.id);
                 if (travelToLodging > 0) {
+                    const tStart = this.currentTime;
                     this.addNode({
                         type: 'transport',
                         name: `前往住宿：${lodgingPoi.name}`,
-                        startTime: this.currentTime,
-                        endTime: this.currentTime + travelToLodging,
+                        startTime: tStart,
+                        endTime: tStart + travelToLodging,
                         duration: travelToLodging,
                         from: this.getPoiName(lastVisitNode.poiId),
                         to: lodgingPoi.name
                     });
                     this.totalTravelMinutes += travelToLodging;
                     this.currentTime += travelToLodging;
+                    // ★ 修复：交通后检查是否触发就餐（如图1的 17:52+12分钟跨入18:00）
+                    this.checkAndInsertMealAfterTransport(tStart, this.currentTime);
                 }
                 this.lastPoiId = lodgingPoi.id;
                 nextKeepPoiId = lodgingPoi.id;
@@ -255,7 +240,6 @@ export class TripPlanner {
                     lodgingScenicId: String(scenicId)
                 };
             } else {
-                // 该景区下无 L4 住宿 POI → 兜底回县城
                 this.handleReturnToCounty();
                 accommodationNode = {
                     type: 'accommodation',
@@ -265,7 +249,6 @@ export class TripPlanner {
                 };
             }
         } else {
-            // 不同景区 → 返回县城
             this.handleReturnToCounty();
             accommodationNode = {
                 type: 'accommodation',
@@ -275,42 +258,47 @@ export class TripPlanner {
             };
         }
 
-        // D019: 空档期提示（在住宿节点前插入）
-        if (!this.lunchInserted && !this.dinnerInserted) {
-            this.addNode({
-                type: 'reminder',
-                message: '今日较早结束，如需午餐和晚餐请自行安排'
-            });
-        } else if (!this.dinnerInserted) {
-            this.addNode({
-                type: 'reminder',
-                message: '今日较早结束，如需晚餐请自行安排'
-            });
+        // ★ 新增：再次检查就餐（防止前面逻辑遗漏）
+        this.checkAndInsertMealAfterVisit();
+
+        // ★ 新增：100 分钟阈值判断（针对当天结束，距离晚餐有一定空期的情况）
+        if (!this.dinnerInserted) {
+            const gap = DINNER_START - this.currentTime;
+            if (gap > 0 && gap <= MAX_WAIT_FOR_DINNER_DAY_END) {
+                // 距晚餐 ≤ 100 分钟：插入自由时间，等待晚餐
+                this.addRestNode(this.currentTime, DINNER_START, '自由时间，建议在附近游览或休息');
+                this.currentTime = DINNER_START;
+                this.insertMeal('dinner');
+            } else if (gap > MAX_WAIT_FOR_DINNER_DAY_END) {
+                // 距晚餐 > 100 分钟：较早结束，提示自行安排
+                this.addNode({
+                    type: 'reminder',
+                    message: '今日较早结束，请自行安排休息和就餐'
+                });
+                this.dinnerInserted = true;
+            }
         }
 
-        this.addNode(accommodationNode);
+        // 更新住宿节点时间
+        if (accommodationNode) {
+            accommodationNode.startTime = this.currentTime;
+            accommodationNode.endTime = this.currentTime + 1;
+            this.addNode(accommodationNode);
+        }
+
         this.closeDay();
         this.advanceToNextDay(false, nextKeepPoiId);
         return false;
     }
 
-    // ============================================================
-    // D011: 从景区下筛选 L4 住宿 POI
-    // - 优先用用户指定的（lodgingOverrideMap）
-    // - 否则随机选
-    // - 无候选返回 null
-    // ============================================================
     pickLodgingPoi(scenicId) {
         const sid = String(scenicId);
-
-        // 1. 用户指定优先
         const overrideId = this.lodgingOverrideMap?.[sid];
         if (overrideId) {
             const poi = this.allPoisMap[String(overrideId)];
             if (poi) return poi;
         }
 
-        // 2. 随机选
         const candidates = Object.values(this.allPoisMap).filter(p =>
             String(p.scenic_id) === sid &&
             p.data_level === 'L4' &&
@@ -325,9 +313,6 @@ export class TripPlanner {
         return candidates[idx];
     }
 
-    // ============================================================
-    // 收尾阶段就餐判断（59 阈值），仅用于"整个规划行程结束"
-    // ============================================================
     tryInsertMealAtTripEnd() {
         const current = this.currentTime;
 
@@ -364,10 +349,6 @@ export class TripPlanner {
         }
     }
 
-    // ============================================================
-    // L2 / L4 处理（可分段）
-    // 含 G005: 剩余 <30 分钟则做完再插餐
-    // ============================================================
     handleL2(poi, item) {
         const remaining0 = (item.remaining !== null && item.remaining !== undefined)
             ? item.remaining
@@ -433,12 +414,7 @@ export class TripPlanner {
         return { overnight: false };
     }
 
-    // ============================================================
-    // L3 处理（不可分段）
-    // 含 G006: 前置就餐检查
-    // ============================================================
     handleL3(poi, item) {
-        // G006: 进入 L3 前若已过某餐窗口，标记该餐已处理
         if (!this.lunchInserted && this.currentTime >= LUNCH_END) {
             this.lunchInserted = true;
         }
@@ -483,9 +459,6 @@ export class TripPlanner {
         return { overnight: false };
     }
 
-    // ============================================================
-    // L3 结束后只在窗口内插餐
-    // ============================================================
     handleMealAfterL3(endTime) {
         if (!this.dinnerInserted && endTime >= DINNER_START && endTime < DINNER_END) {
             this.insertMeal('dinner');
@@ -496,9 +469,6 @@ export class TripPlanner {
         }
     }
 
-    // ============================================================
-    // 交通 / 就餐辅助
-    // ============================================================
     calcTravel(fromId, toId) {
         if (!fromId || !toId) return 0;
         if (String(fromId) === String(toId)) return 0;
@@ -575,10 +545,14 @@ export class TripPlanner {
         return null;
     }
 
-    addRestNode(startTime, endTime) {
+    addRestNode(startTime, endTime, customName = null) {
         const duration = endTime - startTime;
         if (duration < MIN_REST_DURATION) return;
-        this.addNode({ type: 'rest', name: '休息调整', startTime, endTime, duration });
+        this.addNode({
+            type: 'rest',
+            name: customName || '休息调整',
+            startTime, endTime, duration
+        });
         this.totalWaitingMinutes += duration;
     }
 
@@ -652,7 +626,6 @@ export class TripPlanner {
         this.dinnerInserted = false;
     }
 
-    // ★ 支持 keepPoiId（次日起点为住宿 POI 或县城）
     advanceToNextDay(keepLastPoi = false, keepPoiId = null) {
         this.currentDate.setDate(this.currentDate.getDate() + 1);
         this.currentTime = DAY_START;

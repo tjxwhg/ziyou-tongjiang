@@ -1038,8 +1038,19 @@ window.generatePlans = async function() {
 
 function renderTripNodeHtml(node) {
     const typeClass = node.type || 'other';
-    const iconMap = { transport: '🚗', visit: '📍', meal: '🍽️', accommodation: '🏨', weather: '🌤️', reminder: '⚠️', waiting: '⏳', rest: '☕', trip_end: '🏁' };
+    const iconMap = {
+        transport: '🚗',
+        visit: '🚩',      // ★ 改为红旗 Emoji
+        meal: '🍜',       // ★ 改为拉面 Emoji
+        accommodation: '🏨',
+        weather: '🌤️',
+        reminder: '⚠️',
+        waiting: '⏳',
+        rest: '☕',
+        trip_end: '🏁'
+    };
     const icon = iconMap[typeClass] || '•';
+    // ... 下面代码保持不变
 
     // ★ D011: accommodation 节点若有 lodgingPoiId，加"更换"按钮
     if (typeClass === 'accommodation') {

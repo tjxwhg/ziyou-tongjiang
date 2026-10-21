@@ -84,6 +84,7 @@ export class TripPlanner {
             const level = poi.data_level || 'L2';
             const travel = this.calcTravel(this.lastPoiId, poi.id);
 
+            // 交通超限 → 移次日，当天结束
             if (travel > MAX_RETURN_TIME) {
                 this.warnings.push(`❌ 从 ${this.getPoiName(this.lastPoiId)} 到 ${poi.name} 交通耗时 ${travel} 分钟超限`);
                 queue.unshift(item);
@@ -93,11 +94,13 @@ export class TripPlanner {
             const travelStart = this.currentTime;
             const arrivalTime = travelStart + travel;
 
+            // ★ 动态获取该 POI 的截止时间
+            const dayLimit = this.getPoiDayLimit(poi);
+
             // L3 预判：整块装不下 → 移次日
             if (level === 'L3') {
                 const dur = poi.visit_duration || 0;
                 const plannedEnd = arrivalTime + dur;
-                const dayLimit = poi.hours_type === '24h' ? NIGHT_END : VISIT_END;
                 if (plannedEnd > dayLimit) {
                     queue.unshift(item);
                     break;
@@ -119,7 +122,6 @@ export class TripPlanner {
                 this.currentTime = arrivalTime;
                 this.checkAndInsertMealAfterTransport(travelStart, arrivalTime);
             } else {
-                // 交通无数据
                 if (String(this.lastPoiId) !== String(poi.id)
                     && String(this.lastPoiId) !== 'county'
                     && String(poi.id) !== 'county'
@@ -140,9 +142,9 @@ export class TripPlanner {
             // 游览
             let result;
             if (level === 'L3') {
-                result = this.handleL3(poi, item);
+                result = this.handleL3(poi, item, dayLimit);
             } else {
-                result = this.handleL2(poi, item);
+                result = this.handleL2(poi, item, dayLimit);
             }
 
             if (result.overnight) {
@@ -180,8 +182,7 @@ export class TripPlanner {
         // ============================================================
         if (queueIsEmpty) {
             this.handleReturnToCounty();
-            this.tryInsertMealAtTripEnd(); // 59 阈值
-            // ★ 已移除 D019 提示：直接结束，不再提示“较早结束”
+            this.tryInsertMealAtTripEnd();
             this.addNode({
                 type: 'trip_end',
                 name: '整个规划行程结束',
@@ -225,7 +226,6 @@ export class TripPlanner {
                     });
                     this.totalTravelMinutes += travelToLodging;
                     this.currentTime += travelToLodging;
-                    // ★ 修复：交通后检查是否触发就餐（如图1的 17:52+12分钟跨入18:00）
                     this.checkAndInsertMealAfterTransport(tStart, this.currentTime);
                 }
                 this.lastPoiId = lodgingPoi.id;
@@ -258,19 +258,15 @@ export class TripPlanner {
             };
         }
 
-        // ★ 新增：再次检查就餐（防止前面逻辑遗漏）
         this.checkAndInsertMealAfterVisit();
 
-        // ★ 新增：100 分钟阈值判断（针对当天结束，距离晚餐有一定空期的情况）
         if (!this.dinnerInserted) {
             const gap = DINNER_START - this.currentTime;
             if (gap > 0 && gap <= MAX_WAIT_FOR_DINNER_DAY_END) {
-                // 距晚餐 ≤ 100 分钟：插入自由时间，等待晚餐
                 this.addRestNode(this.currentTime, DINNER_START, '自由时间，建议在附近游览或休息');
                 this.currentTime = DINNER_START;
                 this.insertMeal('dinner');
             } else if (gap > MAX_WAIT_FOR_DINNER_DAY_END) {
-                // 距晚餐 > 100 分钟：较早结束，提示自行安排
                 this.addNode({
                     type: 'reminder',
                     message: '今日较早结束，请自行安排休息和就餐'
@@ -279,7 +275,6 @@ export class TripPlanner {
             }
         }
 
-        // 更新住宿节点时间
         if (accommodationNode) {
             accommodationNode.startTime = this.currentTime;
             accommodationNode.endTime = this.currentTime + 1;
@@ -289,6 +284,23 @@ export class TripPlanner {
         this.closeDay();
         this.advanceToNextDay(false, nextKeepPoiId);
         return false;
+    }
+
+    // ★ 动态获取 POI 的当日截止时间
+    getPoiDayLimit(poi) {
+        if (!poi) return VISIT_END;
+        if (poi.hours_type === '24h') return NIGHT_END;
+        if (poi.close_time) {
+            const parts = poi.close_time.split(':');
+            if (parts.length >= 2) {
+                const h = parseInt(parts[0], 10);
+                const m = parseInt(parts[1], 10);
+                if (!isNaN(h) && !isNaN(m)) {
+                    return h * 60 + m;
+                }
+            }
+        }
+        return VISIT_END;
     }
 
     pickLodgingPoi(scenicId) {
@@ -349,14 +361,14 @@ export class TripPlanner {
         }
     }
 
-    handleL2(poi, item) {
+    handleL2(poi, item, dayLimit) {
         const remaining0 = (item.remaining !== null && item.remaining !== undefined)
             ? item.remaining
             : (poi.visit_duration || 60);
         const totalDuration = remaining0;
         let remaining = remaining0;
 
-        while (remaining > 0 && this.currentTime < VISIT_END) {
+        while (remaining > 0 && this.currentTime < dayLimit) {
             let meal = null;
             if (!this.lunchInserted && this.currentTime >= LUNCH_START && this.currentTime < LUNCH_END) {
                 meal = 'lunch';
@@ -390,8 +402,8 @@ export class TripPlanner {
                 const gap = nextWindowStart - this.currentTime;
                 if (gap < segment) segment = gap;
             }
-            if (this.currentTime + segment > VISIT_END) {
-                segment = VISIT_END - this.currentTime;
+            if (this.currentTime + segment > dayLimit) {
+                segment = dayLimit - this.currentTime;
             }
             if (segment <= 0) break;
 
@@ -414,7 +426,7 @@ export class TripPlanner {
         return { overnight: false };
     }
 
-    handleL3(poi, item) {
+    handleL3(poi, item, dayLimit) {
         if (!this.lunchInserted && this.currentTime >= LUNCH_END) {
             this.lunchInserted = true;
         }

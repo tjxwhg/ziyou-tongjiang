@@ -24,6 +24,7 @@ export const MIN_REST_DURATION = 10;
 
 // ========== 规划约束 ==========
 export const MAX_WAIT_FOR_MEAL = 59;       // 收尾阶段距下一餐的最大等待分钟
+export const MAX_WAIT_FOR_DINNER_DAY_END = 100; // 当天结束（队列还有剩余）距晚餐的最大等待分钟
 export const MIN_VISIT_SEGMENT = 45;       // L2 剩余游览 < 45 分钟则丢弃
 export const MAX_POI_DURATION = 14400;     // 单 POI 最大游览时长（240 小时）
 export const MEAL_BREAK_THRESHOLD = 30;    // L2 被就餐中断时，剩余 < 30 分钟则做完再插餐

@@ -1,6 +1,6 @@
 // js/config.js - 全局配置（三层级架构）
-// 注：SA_CONFIG 和 WEIGHT_TEMPLATES 已移除（2026-10-16），
-//     退火算法待未来接入真实导航后重设计。
+// 注：SA_CONFIG 和 WEIGHT_TEMPLATES 已移除（2026-10-16）。
+//     交通限时调整为 240 分钟（2026-10-21）。
 
 export const SUPABASE_URL = 'https://aermnnksvhezfykxefla.supabase.co';
 export const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFlcm1ubmtzdmhlemZ5a3hlZmxhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIwNzQ4ODEsImV4cCI6MjA5NzY1MDg4MX0.c2Wemu90PiezEaXn2Hv3tBL-D5YFXYTVxei14CI-Rvk';
@@ -8,7 +8,7 @@ export const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiO
 // ========== 时间参数 ==========
 export const DAY_START = 480;          // 08:00
 export const PLAN_CUTOFF = 1020;       // 17:00 最后游览开始时间
-export const VISIT_END = 1080;         // 18:00 硬结束
+export const VISIT_END = 1080;         // 18:00 默认硬结束
 export const NIGHT_END = 1320;         // 22:00 24h POI 夜间上限
 export const DAY_END = VISIT_END;
 export const NEW_ARRIVAL_CUTOFF = 960;
@@ -18,23 +18,17 @@ export const LUNCH_END = 750;          // 12:30
 export const DINNER_START = 1080;      // 18:00
 export const DINNER_END = 1140;        // 19:00
 export const MEAL_DURATION = 60;       // 每餐时长
-export const MAX_RETURN_TIME = 180;
+export const MAX_RETURN_TIME = 240;    // ★ 交通耗时上限，改为 240 分钟（4小时）
 export const MIN_SEGMENT = 45;
 export const MIN_REST_DURATION = 10;
 
 // ========== 规划约束 ==========
-export const MAX_WAIT_FOR_MEAL = 59;       // 收尾阶段距下一餐的最大等待分钟
-export const MAX_WAIT_FOR_DINNER_DAY_END = 100; // 当天结束（队列还有剩余）距晚餐的最大等待分钟
+export const MAX_WAIT_FOR_MEAL = 59;       // 收尾阶段（整个行程结束）距下一餐的最大等待分钟
 export const MIN_VISIT_SEGMENT = 45;       // L2 剩余游览 < 45 分钟则丢弃
 export const MAX_POI_DURATION = 14400;     // 单 POI 最大游览时长（240 小时）
 export const MEAL_BREAK_THRESHOLD = 30;    // L2 被就餐中断时，剩余 < 30 分钟则做完再插餐
-
-// ========== 交通耗时上限 ==========
+export const MAX_WAIT_FOR_DINNER_DAY_END = 100; // 当天结束（队列还有剩余）距晚餐的最大等待分钟
 export const MAX_TRANSPORT_TIME = 1440;    // 单对 POI 交通耗时上限（24 小时）
-
-// L3 错过判定阈值（保留兼容，当前代码不再使用）
-export const LUNCH_THRESHOLD = LUNCH_END + 120;    // 14:30
-export const DINNER_THRESHOLD = DINNER_END + 120;  // 21:00
 
 // ========== 等级定义 ==========
 export const LEVEL_LABELS = {

@@ -978,10 +978,10 @@ window.generatePlans = async function() {
     if (!startDate) { alert('请选择出发日期'); return; }
     if (selectedPoiOrder.length === 0) { alert('请至少选择一个景点'); return; }
 
-    if (isFullSelectMode) {
-        const warn = checkDisorder();
-        if (warn) {
-            alert('⚠️ 当前顺序存在错乱：' + warn + '\n请调整顺序后再生成。');
+    const warn = checkDisorder();
+    if (warn) {
+        const confirmMsg = `⚠️ 当前顺序存在错乱：${warn}\n\n本次景点调整会导致在景点之间存在往返交通的情况。\n是否继续生成？`;
+        if (!confirm(confirmMsg)) {
             return;
         }
     }

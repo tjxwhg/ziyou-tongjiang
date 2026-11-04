@@ -1,5 +1,9 @@
 // js/utils.js - 通用工具函数
-import { COUNTY_SPOT_KEYWORDS } from './config.js';
+// 2026-11-04 v1.4：
+//   - 删除顶部 `import { COUNTY_SPOT_KEYWORDS }`（该常量原本在 utils 内未被使用，
+//     且 v1.4 已从 config.js 移除）。
+//   - 本文件为纯逻辑层，小程序兼容性：坐标转换 / 距离计算 / 时间格式化 / 天气
+//     可直接复用；speak() 依赖 window.speechSynthesis，小程序需替换为微信语音接口。
 
 // ============================================================
 // 坐标转换 WGS84 → GCJ02
@@ -36,7 +40,7 @@ export function wgs84ToGcj02(lat, lon) {
 }
 
 // ============================================================
-// 距离计算
+// 距离计算（米）
 // ============================================================
 export function getDistance(lat1, lng1, lat2, lng2) {
     const R = 6371000;
@@ -154,6 +158,8 @@ export function getDayWeatherTip(weatherObj) {
 
 // ============================================================
 // 语音合成
+// 小程序适配点：window.speechSynthesis / SpeechSynthesisUtterance
+//              → 微信 wx.createInnerAudioContext / 云语音接口
 // ============================================================
 export function speak(text, lang = 'zh-CN') {
     if (!('speechSynthesis' in window)) return;

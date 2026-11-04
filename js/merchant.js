@@ -36,10 +36,7 @@ export async function saveBusinessData(categories, items) {
     const sd = merchant.service_data || {};
     sd.businessCategories = categories;
     sd.businessItems = items;
-    sd.items = items.map(item => ({
-        name: item.name, price: item.price, duration: item.duration,
-        description: item.description, image: item.image
-    }));
+    // ★ 已清理 sd.items（全项目无读取方，纯冗余）
     await updateMerchant(merchant.id, { service_data: sd });
     merchant.service_data = sd;
 }

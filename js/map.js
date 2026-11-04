@@ -1,5 +1,4 @@
 // js/map.js - 地图核心（电子围栏冷却 + 精度过滤）
-import { getPoiInternal } from './api.js';
 import { wgs84ToGcj02, getDistance, speak, cancelSpeech } from './utils.js';
 import { poiColors } from './config.js';
 
@@ -9,15 +8,14 @@ let poiMarkers = [];
 let allPois = [];
 let currentGcjPos = null;
 let voiceEnabled = true;
-let lastTriggeredAt = {};    // ★ { poiId: timestamp }
+let lastTriggeredAt = {};    // { poiId: timestamp }
 let watchId = null;
 let currentAudio = null;
 let currentFilterCategory = null;
-let internalPathLayer = null;
 
-const VOICE_COOLDOWN_MS = 30 * 60 * 1000;   // ★ 30 分钟冷却
+const VOICE_COOLDOWN_MS = 30 * 60 * 1000;   // 30 分钟冷却
 const FENCE_RADIUS_M = 40;
-const ACCURACY_LIMIT_M = 100;               // ★ 精度过滤
+const ACCURACY_LIMIT_M = 100;               // 精度过滤
 
 export function initMap(containerId) {
     if (map) return map;
@@ -37,7 +35,7 @@ export function loadPoisToMap(pois) {
     }
     poiMarkers.forEach(m => map.removeLayer(m));
     poiMarkers = [];
-    currentFilterCategory = null;   // ★ 重置筛选
+    currentFilterCategory = null;   // 重置筛选
     pois.forEach(p => {
         const cat = (p.category || '').split(',')[0] || '其他';
         const color = poiColors[cat] || '#999';
@@ -57,58 +55,6 @@ export function loadPoisToMap(pois) {
         });
         poiMarkers.push(marker);
     });
-}
-
-export async function showPoiInternal(poiId) {
-    if (internalPathLayer) {
-        map.removeLayer(internalPathLayer);
-        internalPathLayer = null;
-    }
-    try {
-        const data = await getPoiInternal(poiId);
-        if (!data || !data.nodes || data.nodes.length === 0) {
-            return;
-        }
-        const nodeLayer = L.layerGroup();
-        data.nodes.forEach(node => {
-            const color = node.node_type === 'entrance' ? '#2E7D32' :
-                          node.node_type === 'exit' ? '#c62828' :
-                          node.node_type === 'core_view' ? '#1565C0' :
-                          node.node_type === 'rest_area' ? '#FF6F00' :
-                          node.node_type === 'wc' ? '#00838F' :
-                          '#999';
-            const icon = L.divIcon({
-                html: `<div style="background:${color}; width:16px; height:16px; border-radius:50%; border:2px solid white; box-shadow:0 2px 4px rgba(0,0,0,0.3);"></div>`,
-                iconSize: [16, 16]
-            });
-            const marker = L.marker([node.lat, node.lng], { icon }).addTo(nodeLayer);
-            marker.bindPopup(`
-                <b>${node.node_name}</b><br>
-                类型: ${node.node_type}<br>
-                建议停留: ${node.suggested_duration_min}-${node.suggested_duration_max}分钟
-                ${node.audio_mp3 ? '<br><audio controls src="'+node.audio_mp3+'"></audio>' : ''}
-            `);
-        });
-        if (data.edges && data.edges.length > 0) {
-            data.edges.forEach(edge => {
-                const fromNode = data.nodes.find(n => n.id === edge.from_node_id);
-                const toNode = data.nodes.find(n => n.id === edge.to_node_id);
-                if (fromNode && toNode) {
-                    const latlngs = [[fromNode.lat, fromNode.lng], [toNode.lat, toNode.lng]];
-                    L.polyline(latlngs, {
-                        color: '#1565C0',
-                        weight: 2,
-                        opacity: 0.5,
-                        dashArray: '5,5'
-                    }).addTo(nodeLayer);
-                }
-            });
-        }
-        internalPathLayer = nodeLayer;
-        map.addLayer(nodeLayer);
-    } catch (error) {
-        console.warn('加载内部路网失败:', error);
-    }
 }
 
 export function applyFilter(category) {
@@ -194,7 +140,7 @@ function startWatching() {
     );
 }
 
-// ★ 电子围栏触发（冷却 + 精度过滤）
+// 电子围栏触发（冷却 + 精度过滤）
 function checkVoiceTrigger(lat, lng, accuracy) {
     if (!voiceEnabled || !allPois.length) return;
     if (accuracy && accuracy > ACCURACY_LIMIT_M) return;

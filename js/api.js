@@ -1,11 +1,25 @@
-// js/api.js - Supabase API 操作（交通耗时改用 ztj_transport_times 无方向表）
+// js/api.js - Supabase API 操作
+// ============================================================
+// 2026-11-04 v1.4 清理记录（P1）
+// 以下函数因"零调用 + 与现有架构不匹配"已删除：
+// - 景区表系列（getScenicList 等 4 个）：景区信息统一用 L1 POI
+// - getMerchantByPoi（单数）：一个 POI 可关联多商户，单数版有隐藏 bug
+// - 用户偏好系列（getUserPreferences 等 2 个）：游客不登录
+// - 云端行程系列（saveTripSolution 等 2 个）：游客用 localStorage
+// - createMerchantRecord：商户由管理员在 Supabase 后台创建
+// 如需恢复，见 v1.4 之前的 git 提交历史。
+//
+// 小程序适配提示（未来迁移时需替换的 API）：
+// - localStorage → wx.getStorageSync / wx.setStorageSync
+// - Supabase JS SDK 在小程序中需用 npm 引入方式
+// ============================================================
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from './config.js';
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // ============================================================
-// 缓存版本号
+// 缓存版本号（小程序适配点：localStorage → wx.storage）
 // ============================================================
 export function bumpCacheVersion() {
     try {
@@ -18,15 +32,30 @@ export function getCacheVersion() {
     catch (e) { return '0'; }
 }
 
+// ============================================================
+// 通用分页拉取（防止 PostgREST 1000 行截断，配合 A003）
+// ============================================================
+async function fetchAll(buildQuery, pageSize = 1000) {
+    const out = [];
+    let from = 0;
+    while (true) {
+        const { data, error } = await buildQuery().range(from, from + pageSize - 1);
+        if (error) throw error;
+        if (!data || data.length === 0) break;
+        out.push(...data);
+        if (data.length < pageSize) break;
+        from += pageSize;
+    }
+    return out;
+}
+
 // ========== POI ==========
 export async function getPois() {
-    const { data, error } = await supabase
+    return fetchAll(() => supabase
         .from('ztj_poi')
         .select('*')
         .eq('status', 'active')
-        .order('id', { ascending: true });
-    if (error) throw error;
-    return data || [];
+        .order('id', { ascending: true }));
 }
 
 export async function getPoi(id) {
@@ -55,65 +84,13 @@ export async function deletePoi(id) {
     bumpCacheVersion();
 }
 
-// ========== 景区 ==========
-export async function getScenicList() {
-    const { data, error } = await supabase.from('ztj_scenic').select('*').order('name');
-    if (error) throw error;
-    return data || [];
-}
-export async function insertScenic(scenic) {
-    const { data, error } = await supabase.from('ztj_scenic').insert(scenic).select();
-    if (error) throw error;
-    return data[0];
-}
-export async function updateScenic(id, updates) {
-    const { error } = await supabase.from('ztj_scenic').update(updates).eq('id', id);
-    if (error) throw error;
-}
-export async function deleteScenic(id) {
-    const { error } = await supabase.from('ztj_scenic').delete().eq('id', id);
-    if (error) throw error;
-}
-
-// ========== POI 内部节点 ==========
-export async function getPoiInternal(poiId) {
-    const { data: nodes, error: nodesError } = await supabase
-        .from('poi_internal_nodes').select('*').eq('poi_id', poiId).order('sort_order');
-    if (nodesError) throw nodesError;
-    const nodeIds = (nodes || []).map(n => n.id);
-    let edges = [];
-    if (nodeIds.length > 0) {
-        const { data: edgesData, error: edgesError } = await supabase
-            .from('poi_internal_edges').select('*').in('from_node_id', nodeIds);
-        if (edgesError) throw edgesError;
-        edges = edgesData || [];
-    }
-    return { nodes: nodes || [], edges: edges || [] };
-}
-export async function insertInternalNode(node) {
-    const { data, error } = await supabase.from('poi_internal_nodes').insert(node).select();
-    if (error) throw error;
-    return data[0];
-}
-export async function insertInternalEdge(edge) {
-    const { data, error } = await supabase.from('poi_internal_edges').insert(edge).select();
-    if (error) throw error;
-    return data[0];
-}
-export async function deleteInternalNodes(poiId) {
-    const { error } = await supabase.from('poi_internal_nodes').delete().eq('poi_id', poiId);
-    if (error) throw error;
-}
-export async function deleteInternalEdges(poiId) {
-    const { error } = await supabase.from('poi_internal_edges').delete().eq('poi_id', poiId);
-    if (error) throw error;
-}
-
 // ========== 路线 ==========
 export async function getRoutes() {
-    const { data, error } = await supabase.from('ztj_routes').select('*').order('sort_order', { ascending: true });
-    if (error) throw error;
-    return data || [];
+    return fetchAll(() => supabase
+        .from('ztj_routes')
+        .select('*')
+        .order('sort_order', { ascending: true })
+        .order('id', { ascending: true }));
 }
 export async function getRoute(id) {
     const { data, error } = await supabase.from('ztj_routes').select('*').eq('id', id).single();
@@ -154,28 +131,14 @@ export async function deleteRouteNodes(routeId) {
 }
 
 // ============================================================
-// 交通耗时（新表 ztj_transport_times，无方向，poi_a < poi_b）
-// ★ 分页读取，避免 Supabase 默认 1000 行截断
+// 交通耗时（ztj_transport_times，无方向，poi_a < poi_b）
 // ============================================================
-
 export async function getTransportTimes() {
-    const PAGE_SIZE = 1000;
-    let allData = [];
-    let from = 0;
-    while (true) {
-        const { data, error } = await supabase
-            .from('ztj_transport_times')
-            .select('*')
-            .order('poi_a', { ascending: true })
-            .order('poi_b', { ascending: true })
-            .range(from, from + PAGE_SIZE - 1);
-        if (error) throw error;
-        if (!data || data.length === 0) break;
-        allData = allData.concat(data);
-        if (data.length < PAGE_SIZE) break;
-        from += PAGE_SIZE;
-    }
-    return allData;
+    return fetchAll(() => supabase
+        .from('ztj_transport_times')
+        .select('*')
+        .order('poi_a', { ascending: true })
+        .order('poi_b', { ascending: true }));
 }
 
 export async function setTransportTime(poiX, poiY, timeMin) {
@@ -215,14 +178,21 @@ export async function deleteTransportTimesForPoi(poiId) {
 }
 
 /**
- * 应用"基准 + 偏移"：为 poiId 生成完整的耗时数据
+ * 应用"基准 + 偏移"：把基准 POI 的耗时行复制为当前 POI 的固定行。
+ * 语义：基准仅作初始模板，复制完即独立，之后改基准不影响已生成数据。
+ *
+ * 返回：{ pairMissing, pairSource, rowCount }
+ *   - pairMissing=true 表示 当前↔基准 这一对没有数据（需管理员手动补填）
  */
 export async function applyBaseWithOffset(poiId, basePoiId, offset) {
     const poiIdNum = Number(poiId);
     const baseIdNum = Number(basePoiId);
+    if (!Number.isFinite(poiIdNum) || !Number.isFinite(baseIdNum)) {
+        throw new Error('无效的 POI 编号');
+    }
     if (poiIdNum === baseIdNum) throw new Error('基准 POI 不能是自己');
 
-    // 1. 读取基准 POI 的所有数据（分页，防止截断）
+    // 1. 读取基准 POI 的所有耗时行（分页）
     const PAGE_SIZE = 1000;
     let baseTimes = [];
     let from = 0;
@@ -239,13 +209,23 @@ export async function applyBaseWithOffset(poiId, basePoiId, offset) {
         from += PAGE_SIZE;
     }
 
-    // 2. 生成新的行
+    // 2. 查"当前 POI ↔ 基准 POI"的现有行（fallback 1）
+    const aPair = Math.min(poiIdNum, baseIdNum);
+    const bPair = Math.max(poiIdNum, baseIdNum);
+    const { data: currentPairData, error: cpErr } = await supabase
+        .from('ztj_transport_times')
+        .select('*')
+        .eq('poi_a', aPair)
+        .eq('poi_b', bPair)
+        .maybeSingle();
+    if (cpErr && cpErr.code !== 'PGRST116') throw cpErr;
+
+    // 3. 生成 当前↔对方 的固定行（基准表 A↔B 的耗时 + 偏移）
     const newRows = [];
     const seen = new Set();
     for (const bt of baseTimes) {
         const other = Number(bt.poi_a) === baseIdNum ? Number(bt.poi_b) : Number(bt.poi_a);
         if (other === poiIdNum) continue;
-        if (other === baseIdNum) continue;
         const newTime = Math.max(0, bt.time_min + offset);
         const a = Math.min(poiIdNum, other);
         const b = Math.max(poiIdNum, other);
@@ -255,26 +235,30 @@ export async function applyBaseWithOffset(poiId, basePoiId, offset) {
         newRows.push({ poi_a: a, poi_b: b, time_min: newTime });
     }
 
-    // 3. 当前 POI ↔ 基准 POI 这一对：用原值
-    let baseCurrentRow = null;
-    for (const bt of baseTimes) {
-        const a = Number(bt.poi_a);
-        const b = Number(bt.poi_b);
-        if ((a === baseIdNum && b === poiIdNum) || (a === poiIdNum && b === baseIdNum)) {
-            baseCurrentRow = bt;
-            break;
+    // 4. 确定"当前↔基准"的值：现有 → 基准表里基准↔当前 → 空
+    let pairTime = null;
+    let pairSource = null;
+    if (currentPairData && currentPairData.time_min !== null && currentPairData.time_min !== undefined) {
+        pairTime = currentPairData.time_min;
+        pairSource = 'existing';
+    } else {
+        const baseHasCurrent = baseTimes.find(bt => {
+            const a = Number(bt.poi_a), b = Number(bt.poi_b);
+            return (a === baseIdNum && b === poiIdNum) || (a === poiIdNum && b === baseIdNum);
+        });
+        if (baseHasCurrent) {
+            pairTime = baseHasCurrent.time_min;
+            pairSource = 'base';
         }
     }
-    if (baseCurrentRow) {
-        const a = Math.min(baseIdNum, poiIdNum);
-        const b = Math.max(baseIdNum, poiIdNum);
-        const key = `${a}_${b}`;
+    if (pairTime !== null) {
+        const key = `${aPair}_${bPair}`;
         if (!seen.has(key)) {
-            newRows.push({ poi_a: a, poi_b: b, time_min: baseCurrentRow.time_min });
+            newRows.push({ poi_a: aPair, poi_b: bPair, time_min: pairTime });
         }
     }
 
-    // 4. 删除当前 POI 的旧数据
+    // 5. 删除当前 POI 的旧数据
     const { error: delA } = await supabase
         .from('ztj_transport_times').delete().eq('poi_a', poiIdNum);
     if (delA) throw delA;
@@ -282,19 +266,18 @@ export async function applyBaseWithOffset(poiId, basePoiId, offset) {
         .from('ztj_transport_times').delete().eq('poi_b', poiIdNum);
     if (delB) throw delB;
 
-    // 5. 批量插入（分批，防止单次请求过大）
+    // 6. 分批插入
     if (newRows.length > 0) {
         const BATCH = 500;
         for (let i = 0; i < newRows.length; i += BATCH) {
-            const batch = newRows.slice(i, i + BATCH);
-            const { error: insertError } = await supabase
+            const { error } = await supabase
                 .from('ztj_transport_times')
-                .insert(batch);
-            if (insertError) throw insertError;
+                .insert(newRows.slice(i, i + BATCH));
+            if (error) throw error;
         }
     }
 
-    // 6. 记录基准关系到 POI 表
+    // 7. 记录基准关系到 POI 表（仅后台展示用，前端不读）
     const { error: poiError } = await supabase
         .from('ztj_poi')
         .update({ base_poi_id: baseIdNum, base_offset: offset })
@@ -302,6 +285,12 @@ export async function applyBaseWithOffset(poiId, basePoiId, offset) {
     if (poiError) throw poiError;
 
     bumpCacheVersion();
+
+    return {
+        pairMissing: pairTime === null,
+        pairSource,
+        rowCount: newRows.length
+    };
 }
 
 export async function clearBaseRelation(poiId) {
@@ -331,42 +320,35 @@ export async function getMerchant(id) {
 export async function updateMerchant(id, updates) {
     const { error } = await supabase.from('ztj_merchants').update(updates).eq('id', id);
     if (error) throw error;
+    bumpCacheVersion();
 }
 export async function getMerchantsByPoi(poiId) {
-    let query = supabase.from('ztj_merchants').select('*');
-    if (poiId !== undefined && poiId !== null) {
-        query = query.eq('poi_id', poiId);
-    } else if (poiId === null) {
-        query = query.is('poi_id', null);
-    }
-    const { data, error } = await query;
-    if (error) throw error;
-    return data || [];
-}
-export async function createMerchantRecord(id, displayName, poiId) {
-    const { error } = await supabase.from('ztj_merchants').insert({ id, display_name: displayName, poi_id: poiId });
-    if (error) throw error;
-}
-export async function getMerchantByPoi(poiId) {
-    const { data, error } = await supabase
-        .from('ztj_merchants').select('*').eq('poi_id', poiId).maybeSingle();
-    if (error) throw error;
-    return data;
+    return fetchAll(() => {
+        let q = supabase.from('ztj_merchants').select('*');
+        if (poiId !== undefined && poiId !== null) {
+            q = q.eq('poi_id', poiId);
+        } else if (poiId === null) {
+            q = q.is('poi_id', null);
+        }
+        return q.order('id', { ascending: true });
+    });
 }
 
 // ========== 预约 ==========
 export async function getReservations(merchantId) {
-    let query = supabase.from('reservations').select('*');
-    if (merchantId) query = query.eq('merchant_id', merchantId);
-    const { data, error } = await query.order('created_at', { ascending: false });
-    if (error) throw error;
-    return data || [];
+    return fetchAll(() => {
+        let q = supabase.from('reservations').select('*');
+        if (merchantId) q = q.eq('merchant_id', merchantId);
+        return q.order('created_at', { ascending: false }).order('id', { ascending: true });
+    });
 }
 export async function getReservationsByDevice(deviceId) {
-    const { data, error } = await supabase
-        .from('reservations').select('*').eq('device_id', deviceId).order('created_at', { ascending: false });
-    if (error) throw error;
-    return data || [];
+    return fetchAll(() => supabase
+        .from('reservations')
+        .select('*')
+        .eq('device_id', deviceId)
+        .order('created_at', { ascending: false })
+        .order('id', { ascending: true }));
 }
 export async function insertReservation(res) {
     const { data, error } = await supabase.from('reservations').insert(res).select();
@@ -384,17 +366,19 @@ export async function deleteReservation(id) {
 
 // ========== 留言 ==========
 export async function getFeedbacks(merchantId) {
-    let query = supabase.from('ztj_feedbacks').select('*');
-    if (merchantId) query = query.eq('merchant_id', merchantId);
-    const { data, error } = await query.order('created_at', { ascending: false });
-    if (error) throw error;
-    return data || [];
+    return fetchAll(() => {
+        let q = supabase.from('ztj_feedbacks').select('*');
+        if (merchantId) q = q.eq('merchant_id', merchantId);
+        return q.order('created_at', { ascending: false }).order('id', { ascending: true });
+    });
 }
 export async function getFeedbacksByDevice(deviceId) {
-    const { data, error } = await supabase
-        .from('ztj_feedbacks').select('*').eq('device_id', deviceId).order('created_at', { ascending: false });
-    if (error) throw error;
-    return data || [];
+    return fetchAll(() => supabase
+        .from('ztj_feedbacks')
+        .select('*')
+        .eq('device_id', deviceId)
+        .order('created_at', { ascending: false })
+        .order('id', { ascending: true }));
 }
 export async function insertFeedback(fb) {
     const { data, error } = await supabase.from('ztj_feedbacks').insert(fb).select();
@@ -418,38 +402,7 @@ export async function uploadFile(bucket, path, file) {
     return publicUrl;
 }
 
-// ========== 用户偏好 ==========
-export async function getUserPreferences(userId) {
-    const { data, error } = await supabase.from('user_preferences').select('*').eq('user_id', userId).single();
-    if (error && error.code === 'PGRST116') return null;
-    if (error) throw error;
-    return data;
-}
-export async function saveUserPreferences(prefs) {
-    const { error } = await supabase.from('user_preferences').upsert(prefs);
-    if (error) throw error;
-}
-
-// ========== 行程方案 ==========
-export async function saveTripSolution(userId, solutionData, style, score) {
-    const { data, error } = await supabase.from('trip_solutions').insert({
-        user_id: userId,
-        solution_data: solutionData,
-        style: style,
-        score: score
-    }).select();
-    if (error) throw error;
-    return data[0];
-}
-export async function getUserTripSolutions(userId) {
-    if (!userId) return [];
-    const { data, error } = await supabase.from('trip_solutions')
-        .select('*').eq('user_id', userId).order('created_at', { ascending: false });
-    if (error) throw error;
-    return data || [];
-}
-
-// ========== 偏差记录 ==========
+// ========== 偏差记录（被 trip-executor.js 引用，保留） ==========
 export async function saveDeviationRecord(solutionId, deviationMinutes, reason, adjustedSolution) {
     const { error } = await supabase.from('real_time_deviation').insert({
         trip_solution_id: solutionId,

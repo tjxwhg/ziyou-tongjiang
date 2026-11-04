@@ -27,16 +27,11 @@ const STORAGE_BUCKET = '0frontend-assets';
 
 function isValidId(val) {
     if (val === null || val === undefined || val === '') return false;
-    const s = String(val).trim();
-    if (/^\d+$/.test(s)) return true;
-    if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s)) return true;
-    return false;
+    return /^\d+$/.test(String(val).trim());
 }
 function toSafeId(val) {
     if (!isValidId(val)) return null;
-    const s = String(val).trim();
-    if (/^\d+$/.test(s)) return parseInt(s, 10);
-    return s;
+    return parseInt(String(val).trim(), 10);
 }
 function getMainCategory(cat) {
     return (cat || '').split(',')[0].trim();
@@ -98,6 +93,11 @@ const NODE_TYPE_LABELS = {
 };
 const PRIORITY_LABELS = { 1: '⭐ 一级', 2: '⭐⭐ 二级', 3: '⭐⭐⭐ 三级' };
 
+const MERCHANT_STATUS_LABELS = {
+    open: '🟢 营业中', opening: '🟢 开放中', running: '🟢 运行中',
+    working: '🟢 工作中', closed: '⚪ 休息'
+};
+
 function getLevelBadge(level) {
     const cls = LEVEL_CLASSES[level] || 'quality-L4';
     const label = LEVEL_LABELS[level] || level;
@@ -122,6 +122,27 @@ function getFacilitySubtypeBadge(subtypes) {
 function subtypesToText(subtypes) {
     if (!Array.isArray(subtypes) || subtypes.length === 0) return '';
     return subtypes.map(s => (FACILITY_SUBTYPE_LABELS[s] || s).replace(/^[^\s]+\s/, '')).join('/');
+}
+
+// ★ P6：L4 归属标记
+function getBelongingBadge(p, allPois) {
+    if (p.data_level !== 'L4') return '';
+    // 有 parent_id：属于某个 L3 核心节点
+    if (p.parent_id) {
+        const parent = allPois.find(x => String(x.id) === String(p.parent_id));
+        if (parent) {
+            return `<span class="belonging-badge" style="background:#fff9c4;color:#f57f17;">⭐ 属于 ${parent.name}</span>`;
+        }
+    }
+    // 有 scenic_id：属于某个 L1 景区
+    if (p.scenic_id !== null && p.scenic_id !== undefined) {
+        const scenic = allPois.find(x => String(x.id) === String(p.scenic_id));
+        if (scenic) {
+            return `<span class="belonging-badge" style="background:#e3f2fd;color:#1565c0;">🏞️ 属于 ${scenic.name}</span>`;
+        }
+    }
+    // 都没有：独立
+    return `<span class="belonging-badge" style="background:#e0e0e0;color:#616161;">📍 独立服务</span>`;
 }
 
 function buildTimeOptions() {
@@ -170,7 +191,7 @@ export async function initAdminUI() {
         populateTimeSelects();
         const [pois, routes, times, merchants, feedbacks] = await Promise.all([
             getPois(), getRoutes(), getTransportTimes(),
-            getMerchantsByPoi(null), getFeedbacks(null)
+            getMerchantsByPoi(), getFeedbacks()
         ]);
         allPois = pois;
         allRoutes = routes;
@@ -182,7 +203,7 @@ export async function initAdminUI() {
         renderTransportEditor(allTransportTimes);
         renderMerchantList(allMerchants);
         renderFeedbackList(allFeedbacks);
-        console.log('[管理后台] 初始化完成，交通记录:', allTransportTimes.length);
+        console.log('[管理后台] 初始化完成，POI:', allPois.length, '交通记录:', allTransportTimes.length, '商户:', allMerchants.length);
     } catch (e) {
         console.error('[管理后台] 初始化失败:', e);
         alert('初始化失败：' + e.message);
@@ -284,6 +305,7 @@ function renderChildCard(p, pois, depth) {
     const catBadge = p.category ? `<span class="category-badge">${catIcon} ${p.category}</span>` : '';
     const voiceBadge = p.voice_mp3 ? `<span class="voice-badge">🔊 语音</span>` : '';
     const scoreBadge = getScoreBadge(p.recommend_score);
+    const belongingBadge = getBelongingBadge(p, pois);
     const durationInfo = (p.visit_duration)
         ? `<span class="text-secondary small">${p.visit_duration}分钟</span>` : '';
     const hoursText = p.hours_type === '24h'
@@ -294,7 +316,7 @@ function renderChildCard(p, pois, depth) {
     const facilityTag = p.type === 'facility' ? ' ' + getFacilitySubtypeBadge(p.facility_subtype) : '';
     let html = `<div class="poi-child-card">`;
     html += `<div class="poi-child-header">`;
-    html += `<span class="poi-name-group">${badge} <b>${p.name}</b>${facilityTag} ${catBadge}${voiceBadge}${scoreBadge} ${durationInfo} ${hoursText}</span>`;
+    html += `<span class="poi-name-group">${badge} <b>${p.name}</b>${facilityTag} ${catBadge}${belongingBadge}${voiceBadge}${scoreBadge} ${durationInfo} ${hoursText}</span>`;
     html += `<div>`;
     html += `<button class="btn btn-sm btn-secondary" onclick="window.showEditPoiModal('${p.id}')"><i class="fas fa-edit"></i> 编辑</button>`;
     html += `<button class="btn btn-sm btn-danger ms-1" onclick="window.deletePoi('${p.id}')"><i class="fas fa-trash"></i> 删除</button>`;
@@ -350,6 +372,7 @@ function renderL4Card(l4, pois) {
     const catIcon = CATEGORY_ICONS[mainCat] || '';
     const catBadge = l4.category ? `<span class="category-badge">${catIcon} ${l4.category}</span>` : '';
     const facilityTag = l4.type === 'facility' ? ' ' + getFacilitySubtypeBadge(l4.facility_subtype) : '';
+    const belongingBadge = getBelongingBadge(l4, pois);
     const voiceBadge = l4.voice_mp3 ? `<span class="voice-badge">🔊 语音</span>` : '';
     const scoreBadge = getScoreBadge(l4.recommend_score);
     const durationInfo = (l4.visit_duration)
@@ -361,7 +384,7 @@ function renderL4Card(l4, pois) {
             : '');
     let html = `<div class="poi-orphan-card">`;
     html += `<div class="poi-child-header">`;
-    html += `<span class="poi-name-group">${badge} <b>${l4.name}</b>${facilityTag} ${catBadge}${voiceBadge}${scoreBadge} ${durationInfo} ${hoursText}</span>`;
+    html += `<span class="poi-name-group">${badge} <b>${l4.name}</b>${facilityTag} ${catBadge}${belongingBadge}${voiceBadge}${scoreBadge} ${durationInfo} ${hoursText}</span>`;
     html += `<div>`;
     html += `<button class="btn btn-sm btn-secondary" onclick="window.showEditPoiModal('${l4.id}')"><i class="fas fa-edit"></i> 编辑</button>`;
     html += `<button class="btn btn-sm btn-danger ms-1" onclick="window.deletePoi('${l4.id}')"><i class="fas fa-trash"></i> 删除</button>`;
@@ -387,10 +410,9 @@ export function showAddPoiModal() {
     setSelectValueSafe(document.getElementById('edit-poi-close'), '18:00');
     document.getElementById('edit-poi-visit').value = '';
     document.getElementById('edit-poi-desc').value = '';
-    // ★ 清空提示字段
     document.getElementById('edit-poi-pre-tip').value = '';
     document.getElementById('edit-poi-post-tip').value = '';
-    
+
     document.getElementById('edit-poi-core-node').checked = false;
     document.getElementById('edit-poi-core-node').disabled = false;
     document.getElementById('edit-poi-voice-file').value = '';
@@ -431,7 +453,6 @@ export async function showEditPoiModal(poiId) {
 
     document.getElementById('edit-poi-visit').value = poi.visit_duration || '';
     document.getElementById('edit-poi-desc').value = poi.description || '';
-    // ★ 读取提示字段
     document.getElementById('edit-poi-pre-tip').value = poi.pre_visit_tip || '';
     document.getElementById('edit-poi-post-tip').value = poi.post_visit_tip || '';
 
@@ -800,10 +821,8 @@ export async function savePoiEdit() {
         close_time: closeTime,
         visit_duration: visitDuration,
         description: document.getElementById('edit-poi-desc').value,
-        // ★ 提示字段保存
         pre_visit_tip: document.getElementById('edit-poi-pre-tip').value.trim() || null,
         post_visit_tip: document.getElementById('edit-poi-post-tip').value.trim() || null,
-        
         is_core_node: isCoreNode,
         scenic_id: scenicIdVal,
         voice_mp3: document.getElementById('edit-poi-voice-mp3').value || null,
@@ -855,18 +874,16 @@ export async function deletePoi(id) {
         dependents = await getDependents(toSafeId(id));
     } catch (e) { console.warn('查询依赖者失败:', e); }
 
-    if (dependents.length > 0) {
-        const names = dependents.map(d => d.name).join('、');
-        alert(`无法删除：有 ${dependents.length} 个 POI 参照了它作为基准：\n${names}\n\n请先为这些 POI 重新指定基准 POI。`);
-        return;
-    }
-
     let msg = '确认删除此POI？其关联的交通耗时记录也会一并清理。';
     if (subPois.length > 0) {
         msg = `该 L3 下有 ${subPois.length} 个核心节点，删除后将自动解除关联，它们会恢复为普通景点。是否继续？`;
     }
     if (affectedL3s.length > 0 && subPois.length === 0) {
         msg = `有 ${affectedL3s.length} 个 L3 的 tour_route 引用了此 POI，将同步移除。是否继续？`;
+    }
+    if (dependents.length > 0) {
+        const names = dependents.map(d => d.name).join('、');
+        msg += `\n\n（提示：有 ${dependents.length} 个 POI 曾以它为基准生成数据：${names}。数据已独立，不影响其规划结果。）`;
     }
     if (!confirm(msg)) return;
 
@@ -1053,9 +1070,15 @@ window.onOffsetChange = async function(inputEl, poiId) {
 
 async function applyBaseWithOffsetAndReload(poiId, basePoiId, offset) {
     try {
-        await applyBaseWithOffset(toSafeId(poiId), toSafeId(basePoiId), offset);
+        const result = await applyBaseWithOffset(toSafeId(poiId), toSafeId(basePoiId), offset);
         await initAdminUI();
-        alert('已应用基准 + 偏移');
+        if (result && result.pairMissing) {
+            const poi = allPois.find(p => String(p.id) === String(poiId));
+            const base = allPois.find(p => String(p.id) === String(basePoiId));
+            alert(`已应用基准 + 偏移（共 ${result.rowCount} 条）。\n\n⚠️ 当前景点与基准景点之间（${poi ? poi.name : poiId} ↔ ${base ? base.name : basePoiId}）没有可用的耗时数据，请手动补填，否则游客端规划会显示"交通无数据"。`);
+        } else {
+            alert(`已应用基准 + 偏移${result ? `（共 ${result.rowCount} 条）` : ''}`);
+        }
     } catch (e) {
         alert('应用失败：' + e.message);
         console.error(e);
@@ -1113,8 +1136,6 @@ window.saveTransportTime = async function(input) {
         }
         input.style.background = '#e8f5e9';
         setTimeout(() => { input.style.background = ''; }, 1500);
-
-        await checkAndPromptDependents(fromVal, toVal);
     } catch (e) {
         alert('保存失败：' + e.message);
         input.style.background = '#ffebee';
@@ -1122,42 +1143,6 @@ window.saveTransportTime = async function(input) {
         delete input.dataset.saving;
     }
 };
-
-async function checkAndPromptDependents(poiId1, poiId2) {
-    const idsToCheck = [];
-    if (poiId1 !== 0 && poiId1 !== '0') idsToCheck.push(poiId1);
-    if (poiId2 !== 0 && poiId2 !== '0') idsToCheck.push(poiId2);
-    if (idsToCheck.length === 0) return;
-
-    const allDependents = [];
-    for (const id of idsToCheck) {
-        try {
-            const deps = await getDependents(id);
-            deps.forEach(d => {
-                if (!allDependents.find(x => String(x.id) === String(d.id))) {
-                    allDependents.push(d);
-                }
-            });
-        } catch (e) { console.warn('查询参照者失败:', e); }
-    }
-    if (allDependents.length === 0) return;
-
-    const names = allDependents.map(d => d.name).join('、');
-    const yes = confirm(`已保存。\n\n有 ${allDependents.length} 个 POI 参照了刚修改的 POI 作为基准：\n${names}\n\n是否同步更新它们的数据？`);
-    if (!yes) return;
-
-    for (const dep of allDependents) {
-        const poi = allPois.find(p => String(p.id) === String(dep.id));
-        if (poi && poi.base_poi_id != null && poi.base_offset != null) {
-            try {
-                await applyBaseWithOffset(poi.id, poi.base_poi_id, poi.base_offset);
-            } catch (e) {
-                console.warn(`同步 ${poi.name} 失败:`, e);
-            }
-        }
-    }
-    await initAdminUI();
-}
 
 export function renderRouteList(routes) {
     const container = document.getElementById('route-list');
@@ -1530,13 +1515,113 @@ export async function deleteRoute(id) {
     } catch (e) { alert('删除失败：' + e.message); }
 }
 
+// ============================================================
+// ★ P3：商户管理（新增编辑功能）
+// ============================================================
 export function renderMerchantList(merchants) {
     const container = document.getElementById('merchant-list');
     if (!container) return;
-    container.innerHTML = merchants.map(m => `
-        <div class="poi-card"><span><b>${m.display_name || m.id}</b> ${m.phone || ''}</span></div>
-    `).join('') || '<p>暂无商户</p>';
+    if (!merchants || merchants.length === 0) {
+        container.innerHTML = '<p class="text-secondary">暂无商户</p>';
+        return;
+    }
+    let html = '';
+    merchants.forEach(m => {
+        const displayName = m.display_name || m.id;
+        const poiName = m.poi_id
+            ? (allPois.find(p => String(p.id) === String(m.poi_id))?.name || `POI #${m.poi_id}`)
+            : '（未绑定景点）';
+        const statusKey = m.status || 'open';
+        const statusLabel = MERCHANT_STATUS_LABELS[statusKey] || statusKey;
+        const statusClass = statusKey === 'closed' ? 'merchant-status-closed' : 'merchant-status-open';
+        const noticePreview = m.notice
+            ? (m.notice.length > 40 ? m.notice.slice(0, 40) + '…' : m.notice)
+            : '';
+        html += `<div class="merchant-item">
+            <div class="merchant-info">
+                <div class="merchant-name">
+                    ${displayName}
+                    <span class="merchant-status ${statusClass}">${statusLabel}</span>
+                </div>
+                <div class="merchant-meta">
+                    📍 绑定：${poiName}
+                    ${m.phone ? ` · 📞 ${m.phone}` : ''}
+                    ${m.parking_spots !== undefined && m.parking_spots !== null ? ` · 🅿️ ${m.parking_spots} 车位` : ''}
+                </div>
+                ${noticePreview ? `<div class="merchant-meta" style="color:#e65100;">📢 ${noticePreview}</div>` : ''}
+            </div>
+            <div>
+                <button class="btn btn-sm btn-secondary" onclick="window.showEditMerchantModal('${m.id}')">
+                    <i class="fas fa-edit"></i> 编辑
+                </button>
+            </div>
+        </div>`;
+    });
+    container.innerHTML = html;
 }
+
+window.showEditMerchantModal = function(merchantId) {
+    const merchant = allMerchants.find(m => String(m.id) === String(merchantId));
+    if (!merchant) { alert('未找到该商户'); return; }
+
+    document.getElementById('edit-merchant-id').value = merchant.id;
+    document.getElementById('edit-merchant-uid').value = merchant.id;
+    const poiName = merchant.poi_id
+        ? (allPois.find(p => String(p.id) === String(merchant.poi_id))?.name || `POI #${merchant.poi_id}`)
+        : '（未绑定景点，后续专题处理）';
+    document.getElementById('edit-merchant-poi').value = poiName;
+    document.getElementById('edit-merchant-name').value = merchant.display_name || '';
+    document.getElementById('edit-merchant-status').value = merchant.status || 'open';
+    document.getElementById('edit-merchant-parking').value = merchant.parking_spots ?? 0;
+    document.getElementById('edit-merchant-phone').value = merchant.phone || '';
+    document.getElementById('edit-merchant-address').value = merchant.address || '';
+    document.getElementById('edit-merchant-notice').value = merchant.notice || '';
+    updateMerchantNoticeCounter();
+
+    document.getElementById('merchantModalTitle').textContent = `编辑商户 - ${merchant.display_name || merchant.id}`;
+    new bootstrap.Modal(document.getElementById('merchantModal')).show();
+};
+
+function updateMerchantNoticeCounter() {
+    const ta = document.getElementById('edit-merchant-notice');
+    const counter = document.getElementById('merchant-notice-counter');
+    if (ta && counter) counter.textContent = (ta.value || '').length;
+}
+// 实时更新通知栏字数
+document.addEventListener('input', (e) => {
+    if (e.target && e.target.id === 'edit-merchant-notice') {
+        updateMerchantNoticeCounter();
+    }
+});
+
+window.saveMerchantEdit = async function() {
+    const id = document.getElementById('edit-merchant-id').value;
+    if (!id) { alert('商户 ID 缺失'); return; }
+    const name = document.getElementById('edit-merchant-name').value.trim();
+    if (!name) { alert('请填写商户名称'); return; }
+    const noticeVal = document.getElementById('edit-merchant-notice').value.trim();
+    if (noticeVal.length > 200) { alert('通知内容不得超过 200 字'); return; }
+
+    const updates = {
+        display_name: name,
+        status: document.getElementById('edit-merchant-status').value,
+        parking_spots: parseInt(document.getElementById('edit-merchant-parking').value) || 0,
+        phone: document.getElementById('edit-merchant-phone').value.trim() || null,
+        address: document.getElementById('edit-merchant-address').value.trim() || null,
+        notice: noticeVal || null
+    };
+
+    try {
+        await updateMerchant(id, updates);
+        await closeModal('merchantModal');
+        await initAdminUI();
+        alert('保存成功');
+    } catch (e) {
+        alert('保存失败：' + e.message);
+        console.error(e);
+    }
+};
+
 export async function createMerchant() {
     alert('创建商户功能需后端支持，请使用 Supabase Admin API');
 }

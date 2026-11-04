@@ -191,11 +191,6 @@
                         <div class="hint-text">L2/L3/L4 参与规划；L1 仅作分类标签</div>
                     </div>
                     <div class="col-6">
-                        <label class="form-label">推荐分值（0-100）</label>
-                        <input type="number" id="edit-poi-score" class="form-control" min="0" max="100" value="0">
-                        <div class="hint-text">0-30 不可勾选；30-50 手动可选；50-100 自动推荐</div>
-                    </div>
-                    <div class="col-6">
                         <label class="form-label">分类 <span class="text-danger">*</span></label>
                         <select id="edit-poi-category" class="form-select" onchange="window.onCategoryChange()">
                             <option value="自然景区">🏔️ 自然景区</option>
@@ -208,6 +203,11 @@
                             <option value="公共服务">🏛️ 公共服务</option>
                         </select>
                         <div class="hint-text">用于游客端筛选展示</div>
+                    </div>
+                    <div class="col-6">
+                        <label class="form-label">推荐分值（0-100）</label>
+                        <input type="number" id="edit-poi-score" class="form-control" min="0" max="100" value="0">
+                        <div class="hint-text">0-30 不可勾选；30-50 手动可选；50-100 自动推荐</div>
                     </div>
                     <div class="col-6 hidden" id="field-scenic">
                         <label class="form-label">归属景区 <span class="text-secondary small">（可选）</span></label>
@@ -267,6 +267,19 @@
                         <div class="hint-text">勾选后该 POI 不出现在游客端智能规划列表中，但地图继续显示，电子围栏继续触发语音。加入 L3 时自动勾选并锁定。</div>
                     </div>
                     <div class="col-12"><label class="form-label">简介</label><textarea id="edit-poi-desc" class="form-control" rows="2"></textarea></div>
+                    
+                    <!-- ★ 新增的提示字段 -->
+                    <div class="col-12">
+                        <label class="form-label">游览前规范提示</label>
+                        <input id="edit-poi-pre-tip" class="form-control" placeholder="如：整理着装，不得嬉戏、喧闹（留空则不触发）">
+                        <div class="hint-text">游客在每天出发前，或到达该景点时，系统会展示此提示。</div>
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label">游后休整提示</label>
+                        <input id="edit-poi-post-tip" class="form-control" placeholder="如：建议在广场稍作休息，饮水（留空则不触发）">
+                        <div class="hint-text">长耗时景点（≥90分钟）游览结束后，系统会插入休整时间并展示此提示。</div>
+                    </div>
+                    
                     <div class="col-12">
                         <label class="form-label"><i class="fas fa-volume-high text-success"></i> 简介语音（MP3）</label>
                         <div class="d-flex align-items-center gap-2">
@@ -526,7 +539,7 @@ onAuthStateChange((event) => {
     }
 })();
 
-// 未保存数据离开警告
+// ★ 未保存数据离开警告
 window.addEventListener('beforeunload', (e) => {
     const hasDirty = Array.from(
         document.querySelectorAll('#transport-editor .save-status')

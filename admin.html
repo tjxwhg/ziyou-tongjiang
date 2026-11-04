@@ -33,6 +33,7 @@
         .type-badge-service { background: #fff8e1; color: #ef6c00; }
         .featured-badge { background: #ffeb3b; color: #f57f17; padding: 1px 6px; border-radius: 8px; font-size: 10px; font-weight: 600; }
         .category-badge { display: inline-block; padding: 1px 8px; border-radius: 8px; font-size: 11px; background: #f5f5f5; color: #555; margin-left: 4px; }
+        .belonging-badge { display: inline-block; padding: 1px 8px; border-radius: 8px; font-size: 10px; margin-left: 4px; font-weight: 600; }
         .voice-badge { display: inline-block; padding: 1px 6px; border-radius: 8px; font-size: 10px; background: #e3f2fd; color: #1565c0; margin-left: 4px; }
         .score-badge { display: inline-block; padding: 1px 6px; border-radius: 8px; font-size: 10px; background: #fff3e0; color: #e65100; margin-left: 4px; }
         .poi-card { border: 1px solid #e0e0e0; border-radius: 8px; padding: 12px; margin-bottom: 10px; background: #fafafa; }
@@ -100,6 +101,13 @@
         .poi-orphan-list { padding: 12px 0 4px 0; }
         .poi-orphan-list-title { font-size: 12px; color: #888; margin-left: 12px; margin-bottom: 6px; }
         .poi-empty-hint { color: #999; font-size: 12px; margin-left: 12px; }
+        .merchant-item { border: 1px solid #e0e0e0; border-radius: 8px; padding: 12px; margin-bottom: 10px; background: #fafafa; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; }
+        .merchant-item .merchant-info { flex: 1; min-width: 200px; }
+        .merchant-item .merchant-name { font-weight: 600; color: #1b5e20; font-size: 15px; }
+        .merchant-item .merchant-meta { color: #666; font-size: 12px; margin-top: 4px; }
+        .merchant-item .merchant-status { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; margin-left: 6px; }
+        .merchant-status-open { background: #c8e6c9; color: #1b5e20; }
+        .merchant-status-closed { background: #e0e0e0; color: #616161; }
         @media (max-width: 768px) { .header { flex-direction: column; gap: 8px; } }
     </style>
 </head>
@@ -268,7 +276,6 @@
                     </div>
                     <div class="col-12"><label class="form-label">简介</label><textarea id="edit-poi-desc" class="form-control" rows="2"></textarea></div>
                     
-                    <!-- ★ 新增的提示字段 -->
                     <div class="col-12">
                         <label class="form-label">游览前规范提示</label>
                         <input id="edit-poi-pre-tip" class="form-control" placeholder="如：整理着装，不得嬉戏、喧闹（留空则不触发）">
@@ -488,6 +495,69 @@
     </div>
 </div>
 
+<!-- ★ 新增：商户编辑模态框 -->
+<div class="modal fade" id="merchantModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="merchantModalTitle">编辑商户</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" style="max-height:70vh; overflow-y:auto;">
+                <input type="hidden" id="edit-merchant-id">
+                <div class="row g-2">
+                    <div class="col-12">
+                        <label class="form-label">商户 ID <span class="text-secondary small">（只读）</span></label>
+                        <input id="edit-merchant-uid" class="form-control" readonly>
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label">绑定景点 <span class="text-secondary small">（只读，后续专题处理）</span></label>
+                        <input id="edit-merchant-poi" class="form-control" readonly>
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label">商户名称 <span class="text-danger">*</span></label>
+                        <input id="edit-merchant-name" class="form-control">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">营业状态</label>
+                        <select id="edit-merchant-status" class="form-select">
+                            <option value="open">🟢 营业中</option>
+                            <option value="opening">🟢 开放中</option>
+                            <option value="running">🟢 运行中</option>
+                            <option value="working">🟢 工作中</option>
+                            <option value="closed">⚪ 休息</option>
+                        </select>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">停车位</label>
+                        <input type="number" id="edit-merchant-parking" class="form-control" min="0" value="0">
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label">电话</label>
+                        <input id="edit-merchant-phone" class="form-control">
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label">地址</label>
+                        <input id="edit-merchant-address" class="form-control">
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label">
+                            <i class="fas fa-bullhorn text-success"></i> 通知栏
+                            <span class="text-secondary small">（限 200 字）</span>
+                        </label>
+                        <textarea id="edit-merchant-notice" class="form-control" rows="3" maxlength="200"></textarea>
+                        <div class="hint-text"><span id="merchant-notice-counter">0</span>/200</div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button class="btn btn-success" onclick="window.saveMerchantEdit()"><i class="fas fa-save"></i> 保存</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
@@ -539,7 +609,7 @@ onAuthStateChange((event) => {
     }
 })();
 
-// ★ 未保存数据离开警告
+// 未保存数据离开警告
 window.addEventListener('beforeunload', (e) => {
     const hasDirty = Array.from(
         document.querySelectorAll('#transport-editor .save-status')

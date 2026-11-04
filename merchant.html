@@ -26,10 +26,23 @@
         .status-pending { background: #fff3cd; color: #856404; }
         .status-confirmed { background: #d4edda; color: #155724; }
         .status-rejected { background: #f8d7da; color: #721c24; }
+        .status-cancelled { background: #e0e0e0; color: #616161; }
         .reservation-card { border: 1px solid #e0e0e0; border-radius: 8px; padding: 12px; margin-bottom: 10px; background: #fafafa; }
         .reservation-card .row-line { font-size: 13px; margin: 2px 0; }
         .reservation-card .row-line b { display: inline-block; min-width: 70px; color: #555; }
+        .source-badge { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; margin-left: 6px; }
+        .source-visitor { background: #e3f2fd; color: #1565c0; }
+        .source-merchant { background: #f3e5f5; color: #6a1b9a; }
+        .filter-bar { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+        .filter-btn { padding: 6px 14px; border-radius: 20px; border: 1px solid #e0e0e0; background: white; font-size: 13px; cursor: pointer; color: #555; }
+        .filter-btn.active { background: #1b5e20; color: white; border-color: #1b5e20; }
         .hint-text { color: #888; font-size: 12px; margin-top: 2px; }
+        .merchant-poi-info { background: #e8f5e9; border-left: 4px solid #1b5e20; border-radius: 8px; padding: 12px 14px; margin-bottom: 16px; }
+        .merchant-poi-info .poi-label { font-size: 12px; color: #666; margin-bottom: 4px; }
+        .merchant-poi-info .poi-name { font-size: 16px; font-weight: 700; color: #1b5e20; }
+        .merchant-poi-info .poi-hint { font-size: 12px; color: #666; margin-top: 4px; }
+        .merchant-poi-info.no-binding { background: #fafafa; border-left-color: #bbb; }
+        .merchant-poi-info.no-binding .poi-name { color: #888; font-weight: 500; }
         @media (max-width: 768px) { .header { flex-direction: column; gap: 8px; } }
     </style>
 </head>
@@ -101,13 +114,24 @@
 
             <!-- ==================== 预约列表 ==================== -->
             <div class="tab-pane" id="tab-reservations">
-                <div class="d-flex justify-content-between mb-3">
-                    <button class="btn btn-success" onclick="window.toggleNewReservationForm()">
-                        <i class="fas fa-plus"></i> 新增预约
-                    </button>
-                    <button class="btn btn-warning" onclick="window.exportReservations()">
-                        <i class="fas fa-file-export"></i> 导出 Excel
-                    </button>
+                <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+                    <div>
+                        <button class="btn btn-success" onclick="window.toggleNewReservationForm()">
+                            <i class="fas fa-plus"></i> 新增预约
+                        </button>
+                        <button class="btn btn-warning ms-2" onclick="window.exportReservations()">
+                            <i class="fas fa-file-excel"></i> 导出 Excel
+                        </button>
+                    </div>
+                </div>
+
+                <!-- ★ 筛选栏 -->
+                <div class="filter-bar" id="reservation-filter-bar">
+                    <button class="filter-btn active" data-filter="all" onclick="window.filterReservations('all')">全部</button>
+                    <button class="filter-btn" data-filter="pending" onclick="window.filterReservations('pending')">🟡 待确认</button>
+                    <button class="filter-btn" data-filter="confirmed" onclick="window.filterReservations('confirmed')">🟢 已确认</button>
+                    <button class="filter-btn" data-filter="rejected" onclick="window.filterReservations('rejected')">🔴 已拒绝</button>
+                    <button class="filter-btn" data-filter="cancelled" onclick="window.filterReservations('cancelled')">⚪ 已取消</button>
                 </div>
 
                 <div id="new-reservation-form" class="card p-3 mb-3 hidden">
@@ -152,6 +176,13 @@
 
             <!-- ==================== 基本信息 ==================== -->
             <div class="tab-pane" id="tab-info">
+                <!-- ★ 绑定景点只读展示 -->
+                <div class="merchant-poi-info" id="merchant-poi-info">
+                    <div class="poi-label">📍 您的商户挂载于</div>
+                    <div class="poi-name" id="merchant-poi-name">加载中...</div>
+                    <div class="poi-hint" id="merchant-poi-hint">游客在该景点详情页可看到您的信息</div>
+                </div>
+
                 <div class="row g-2">
                     <div class="col-md-6"><label class="form-label">业务类型</label>
                         <select id="business_type" class="form-select">
@@ -240,6 +271,8 @@
     </div>
 </div>
 
+<!-- ★ SheetJS（导出真 .xlsx） -->
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 
@@ -269,8 +302,13 @@ const STATUS_MAP = {
 };
 function translateStatus(s) { return STATUS_MAP[s] || s || '未知'; }
 
+// ★ 来源判断
+function isFromVisitor(r) {
+    return r.device_id && String(r.device_id).startsWith('dev_');
+}
+
 // ★ E3: 图片上传限制
-const IMAGE_MAX_SIZE = 5 * 1024 * 1024;   // 5 MB
+const IMAGE_MAX_SIZE = 5 * 1024 * 1024;
 const IMAGE_ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
 
 const loginPage = document.getElementById('login-page');
@@ -284,6 +322,7 @@ let merchant = null;
 let businessCategories = [];
 let businessItems = [];
 let reservationsCache = [];
+let currentReservationFilter = 'all';   // ★ 预约筛选状态
 
 // 登录
 loginBtn.addEventListener('click', async () => {
@@ -343,9 +382,45 @@ async function initMerchantUI() {
         renderReservations();
 
         renderInfo();
+
+        // ★ 加载并显示绑定景点
+        await loadAndShowBoundPoi();
     } catch (e) {
         console.error('初始化商户端失败:', e);
         alert('加载失败：' + e.message);
+    }
+}
+
+// ★ 显示绑定景点
+async function loadAndShowBoundPoi() {
+    const infoBox = document.getElementById('merchant-poi-info');
+    const nameEl = document.getElementById('merchant-poi-name');
+    const hintEl = document.getElementById('merchant-poi-hint');
+    if (!infoBox || !nameEl) return;
+
+    if (!merchant.poi_id) {
+        nameEl.textContent = '（未绑定景点）';
+        hintEl.textContent = '如需绑定，请联系平台管理员';
+        infoBox.classList.add('no-binding');
+        return;
+    }
+
+    try {
+        const pois = await loadPoiList();
+        const poi = pois.find(p => String(p.id) === String(merchant.poi_id));
+        if (poi) {
+            nameEl.textContent = poi.name;
+            hintEl.textContent = '游客在该景点详情页可看到您的信息';
+            infoBox.classList.remove('no-binding');
+        } else {
+            nameEl.textContent = `POI #${merchant.poi_id}`;
+            hintEl.textContent = '（景点已删除或不可见）';
+            infoBox.classList.add('no-binding');
+        }
+    } catch (e) {
+        console.warn('加载绑定景点失败:', e);
+        nameEl.textContent = `POI #${merchant.poi_id}`;
+        hintEl.textContent = '（无法加载景点信息）';
     }
 }
 
@@ -426,8 +501,10 @@ function renderBusiness() {
             </div>
             <div class="hidden p-2">
                 ${catItems.length === 0 ? '<p class="text-secondary small mb-0">该分类下暂无项目</p>' :
-                    catItems.map((item) => {
+                    catItems.map((item, posInCat) => {
                         const globalIdx = businessItems.indexOf(item);
+                        const isFirst = posInCat === 0;
+                        const isLast = posInCat === catItems.length - 1;
                         return `<div class="d-flex justify-content-between align-items-center py-1 border-bottom">
                             <div>
                                 <span>${item.name || '未命名'}</span>
@@ -435,8 +512,10 @@ function renderBusiness() {
                                 ${item.duration ? `<span class="text-secondary ms-2 small">${item.duration}</span>` : ''}
                             </div>
                             <div>
-                                <button class="btn btn-sm btn-secondary" onclick="window.editItem(${globalIdx})">编辑</button>
-                                <button class="btn btn-sm btn-danger" onclick="window.deleteItem(${globalIdx})">删除</button>
+                                <button class="btn btn-sm btn-outline-secondary" onclick="window.moveBusinessItem(${globalIdx}, -1)" ${isFirst ? 'disabled' : ''} title="上移">↑</button>
+                                <button class="btn btn-sm btn-outline-secondary" onclick="window.moveBusinessItem(${globalIdx}, 1)" ${isLast ? 'disabled' : ''} title="下移">↓</button>
+                                <button class="btn btn-sm btn-secondary ms-1" onclick="window.editItem(${globalIdx})">编辑</button>
+                                <button class="btn btn-sm btn-danger ms-1" onclick="window.deleteItem(${globalIdx})">删除</button>
                             </div>
                         </div>
                         ${item.description ? `<div class="text-secondary small ms-2">${item.description}</div>` : ''}
@@ -448,6 +527,32 @@ function renderBusiness() {
     });
     container.innerHTML = html || '<p class="text-secondary">暂无业务项目</p>';
 }
+
+// ★ 项目排序（同分类内上下移动）
+window.moveBusinessItem = function(globalIdx, dir) {
+    const item = businessItems[globalIdx];
+    if (!item) return;
+    const cat = item.category;
+
+    // 当前分类下所有项目的全局索引（保持原数组顺序）
+    const catIndices = [];
+    businessItems.forEach((it, i) => {
+        if (it.category === cat) catIndices.push(i);
+    });
+
+    const posInCat = catIndices.indexOf(globalIdx);
+    if (posInCat < 0) return;
+    const newPos = posInCat + dir;
+    if (newPos < 0 || newPos >= catIndices.length) return;
+
+    const targetGlobalIdx = catIndices[newPos];
+    [businessItems[globalIdx], businessItems[targetGlobalIdx]] =
+        [businessItems[targetGlobalIdx], businessItems[globalIdx]];
+
+    saveBusinessData(businessCategories, businessItems)
+        .then(() => { renderBusiness(); })
+        .catch(e => alert('保存失败：' + e.message));
+};
 
 window.showAddItemForm = function() {
     if (businessCategories.length === 0) { alert('请先添加分类'); return; }
@@ -493,23 +598,18 @@ function renderItemCategoryOptions(selected) {
 window.previewItemImage = function(event) {
     const file = event.target.files[0];
     if (!file) return;
-
-    // 类型校验
     if (!IMAGE_ALLOWED_TYPES.includes(file.type)) {
         alert('仅支持 JPG / PNG / WebP 格式的图片');
         event.target.value = '';
         document.getElementById('item-image-preview').innerHTML = '';
         return;
     }
-
-    // 大小校验
     if (file.size > IMAGE_MAX_SIZE) {
         alert('图片大小不得超过 5MB');
         event.target.value = '';
         document.getElementById('item-image-preview').innerHTML = '';
         return;
     }
-
     const reader = new FileReader();
     reader.onload = (e) => {
         document.getElementById('item-image-preview').innerHTML = `<img src="${e.target.result}" class="upload-preview">`;
@@ -538,8 +638,6 @@ window.saveItem = async function() {
         const fileInput = document.getElementById('item-image-file');
         if (fileInput.files && fileInput.files[0]) {
             const file = fileInput.files[0];
-
-            // ★ E3: 保存时二次校验（兜底）
             if (!IMAGE_ALLOWED_TYPES.includes(file.type)) {
                 alert('仅支持 JPG / PNG / WebP 格式的图片');
                 saveBtn.disabled = false;
@@ -552,7 +650,6 @@ window.saveItem = async function() {
                 saveBtn.innerHTML = originalText;
                 return;
             }
-
             const ext = file.name.split('.').pop() || 'jpg';
             const path = `${merchant.id}/${Date.now()}.${ext}`;
             imageUrl = await uploadFile('merchant-images', path, file);
@@ -610,23 +707,49 @@ window.updateNewResContent = function() {
         catItems.map(i => `<option value="${i.name}">${i.name}${i.price ? ' ' + i.price : ''}</option>`).join('');
 };
 
+// ★ 筛选切换
+window.filterReservations = function(status) {
+    currentReservationFilter = status;
+    document.querySelectorAll('#reservation-filter-bar .filter-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.filter === status);
+    });
+    renderReservations();
+};
+
 function renderReservations() {
     const container = document.getElementById('reservation-list');
     if (!container) return;
-    if (!reservationsCache || reservationsCache.length === 0) {
-        container.innerHTML = '<p class="text-secondary">暂无预约</p>';
+    let list = reservationsCache || [];
+    if (currentReservationFilter !== 'all') {
+        list = list.filter(r => r.status === currentReservationFilter);
+    }
+    if (list.length === 0) {
+        const msg = currentReservationFilter === 'all'
+            ? '暂无预约'
+            : `暂无「${translateStatus(currentReservationFilter)}」的预约`;
+        container.innerHTML = `<p class="text-secondary">${msg}</p>`;
         return;
     }
-    const sorted = [...reservationsCache].sort((a, b) =>
+    const sorted = [...list].sort((a, b) =>
         new Date(b.reservation_date || b.created_at) - new Date(a.reservation_date || a.created_at));
-    container.innerHTML = sorted.map((r, idx) => `
+    container.innerHTML = sorted.map((r, idx) => {
+        const fromVisitor = isFromVisitor(r);
+        const sourceBadge = fromVisitor
+            ? '<span class="source-badge source-visitor">📱 游客提交</span>'
+            : '<span class="source-badge source-merchant">🏪 商户录入</span>';
+        const statusKey = r.status || 'pending';
+        const canConfirm = statusKey === 'pending';
+        const canCancel = statusKey === 'confirmed';
+        const canDelete = statusKey !== 'pending' || true;
+        return `
         <div class="reservation-card">
             <div class="d-flex justify-content-between align-items-center" style="cursor:pointer;" onclick="window.toggleReservationCard(${idx})">
                 <div>
                     <b>📅 ${r.reservation_date || ''} ${r.time_slot_start || ''}-${r.time_slot_end || ''}</b>
+                    ${sourceBadge}
                     <div class="text-secondary small mt-1">${r.reservation_content || '未选择预约内容'}</div>
                 </div>
-                <span class="status-badge status-${r.status || 'pending'}">${translateStatus(r.status)}</span>
+                <span class="status-badge status-${statusKey}">${translateStatus(statusKey)}</span>
             </div>
             <div id="res-card-detail-${idx}" class="hidden mt-2 pt-2" style="border-top: 1px dashed #ddd;">
                 <div class="row-line"><b>联系人：</b>${r.name || ''} ${r.phone || ''}</div>
@@ -636,16 +759,19 @@ function renderReservations() {
                 <div class="row-line"><b>地点：</b>${r.room || '—'}</div>
                 <div class="row-line"><b>备注：</b>${r.remark || '—'}</div>
                 <div class="row-line"><b>提交时间：</b>${r.created_at ? new Date(r.created_at).toLocaleString() : '—'}</div>
-                <div class="mt-2 d-flex gap-2">
-                    ${r.status === 'pending' ? `
+                <div class="mt-2 d-flex gap-2 flex-wrap">
+                    ${canConfirm ? `
                         <button class="btn btn-sm btn-success" onclick="event.stopPropagation(); window.confirmReservation('${r.id}')">确认</button>
                         <button class="btn btn-sm btn-warning" onclick="event.stopPropagation(); window.rejectReservation('${r.id}')">拒绝</button>
+                    ` : ''}
+                    ${canCancel ? `
+                        <button class="btn btn-sm btn-outline-secondary" onclick="event.stopPropagation(); window.cancelReservation('${r.id}')">取消</button>
                     ` : ''}
                     <button class="btn btn-sm btn-danger" onclick="event.stopPropagation(); window.deleteReservationHandler('${r.id}')">删除</button>
                 </div>
             </div>
         </div>
-    `).join('');
+    `; }).join('');
 }
 
 window.toggleReservationCard = function(idx) {
@@ -665,6 +791,16 @@ window.rejectReservation = async function(id) {
         await updateReservationStatus(id, 'rejected');
         const item = reservationsCache.find(r => String(r.id) === String(id));
         if (item) item.status = 'rejected';
+        renderReservations();
+    } catch (e) { alert('操作失败：' + e.message); }
+};
+// ★ 取消已确认的预约
+window.cancelReservation = async function(id) {
+    if (!confirm('确认取消此预约？')) return;
+    try {
+        await updateReservationStatus(id, 'cancelled');
+        const item = reservationsCache.find(r => String(r.id) === String(id));
+        if (item) item.status = 'cancelled';
         renderReservations();
     } catch (e) { alert('操作失败：' + e.message); }
 };
@@ -708,24 +844,37 @@ window.saveNewReservation = async function() {
     } catch (e) { alert('保存失败：' + e.message); }
 };
 
-// 导出 Excel
+// ★ 导出真 .xlsx（SheetJS）
 window.exportReservations = function() {
     if (!reservationsCache || reservationsCache.length === 0) { alert('暂无预约可导出'); return; }
-    const headers = ['预约日期', '时段', '单位', '联系人', '电话', '人数', '预约内容', '地点', '备注', '状态', '提交时间'];
-    const rows = reservationsCache.map(r => [
-        r.reservation_date || '', `${r.time_slot_start || ''}-${r.time_slot_end || ''}`,
-        r.unit || '', r.name || '', r.phone || '', r.visitor_count || 1,
-        r.reservation_content || '', r.room || '', r.remark || '',
-        translateStatus(r.status), r.created_at ? new Date(r.created_at).toLocaleString() : ''
-    ]);
-    const csv = [headers, ...rows].map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n');
-    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `预约列表_${new Date().toISOString().slice(0, 10)}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+    if (typeof XLSX === 'undefined') {
+        alert('导出组件加载失败，请刷新页面后重试');
+        return;
+    }
+    const rows = reservationsCache.map(r => ({
+        '预约日期': r.reservation_date || '',
+        '时段': `${r.time_slot_start || ''}-${r.time_slot_end || ''}`,
+        '单位': r.unit || '',
+        '联系人': r.name || '',
+        '电话': r.phone || '',
+        '人数': r.visitor_count || 1,
+        '预约内容': r.reservation_content || '',
+        '地点': r.room || '',
+        '备注': r.remark || '',
+        '状态': translateStatus(r.status),
+        '来源': isFromVisitor(r) ? '游客提交' : '商户录入',
+        '提交时间': r.created_at ? new Date(r.created_at).toLocaleString() : ''
+    }));
+    const ws = XLSX.utils.json_to_sheet(rows);
+    ws['!cols'] = [
+        { wch: 12 }, { wch: 14 }, { wch: 15 }, { wch: 10 },
+        { wch: 14 }, { wch: 6 }, { wch: 24 }, { wch: 10 },
+        { wch: 24 }, { wch: 8 }, { wch: 12 }, { wch: 20 }
+    ];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, '预约列表');
+    const fileName = `预约列表_${new Date().toISOString().slice(0, 10)}.xlsx`;
+    XLSX.writeFile(wb, fileName);
 };
 
 // ========== 基本信息 ==========

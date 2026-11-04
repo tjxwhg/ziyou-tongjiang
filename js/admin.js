@@ -1,4 +1,4 @@
-// js/admin.js - 管理后台（交通耗时：基准+偏移方案 + G001分值过滤 + G002同步提示 + H6/H7上限校验）
+// js/admin.js - 管理后台完整逻辑
 import {
     getPois, getPoi, insertPoi, updatePoi, deletePoi as apiDeletePoi,
     getRoutes, getRoute, insertRoute, updateRoute, deleteRoute as apiDeleteRoute,
@@ -25,9 +25,6 @@ let currentTransportPoiList = [];
 
 const STORAGE_BUCKET = '0frontend-assets';
 
-// ============================================================
-// 通用工具
-// ============================================================
 function isValidId(val) {
     if (val === null || val === undefined || val === '') return false;
     const s = String(val).trim();
@@ -168,9 +165,6 @@ function setSelectValueSafe(sel, val) {
     sel.value = val;
 }
 
-// ============================================================
-// 初始化
-// ============================================================
 export async function initAdminUI() {
     try {
         populateTimeSelects();
@@ -195,9 +189,6 @@ export async function initAdminUI() {
     }
 }
 
-// ============================================================
-// POI 列表
-// ============================================================
 const CATEGORY_ORDER = [
     '自然景区', '红色景区', '文博场馆', '餐饮住宿',
     '交通枢纽', '游玩娱乐', '购物消费', '公共服务'
@@ -378,9 +369,6 @@ function renderL4Card(l4, pois) {
     return html;
 }
 
-// ============================================================
-// 新增 / 编辑 POI
-// ============================================================
 export function showAddPoiModal() {
     currentEditingPoiId = null;
     currentEditingPoiObj = null;
@@ -399,6 +387,10 @@ export function showAddPoiModal() {
     setSelectValueSafe(document.getElementById('edit-poi-close'), '18:00');
     document.getElementById('edit-poi-visit').value = '';
     document.getElementById('edit-poi-desc').value = '';
+    // ★ 清空提示字段
+    document.getElementById('edit-poi-pre-tip').value = '';
+    document.getElementById('edit-poi-post-tip').value = '';
+    
     document.getElementById('edit-poi-core-node').checked = false;
     document.getElementById('edit-poi-core-node').disabled = false;
     document.getElementById('edit-poi-voice-file').value = '';
@@ -439,6 +431,9 @@ export async function showEditPoiModal(poiId) {
 
     document.getElementById('edit-poi-visit').value = poi.visit_duration || '';
     document.getElementById('edit-poi-desc').value = poi.description || '';
+    // ★ 读取提示字段
+    document.getElementById('edit-poi-pre-tip').value = poi.pre_visit_tip || '';
+    document.getElementById('edit-poi-post-tip').value = poi.post_visit_tip || '';
 
     const coreCb = document.getElementById('edit-poi-core-node');
     coreCb.checked = !!poi.is_core_node;
@@ -585,9 +580,6 @@ export function togglePoiLevelUI() {
     }
 }
 
-// ============================================================
-// L3 子项管理
-// ============================================================
 function renderSubPoiList() {
     const container = document.getElementById('sub-poi-list');
     if (!container) return;
@@ -745,9 +737,6 @@ export async function removeSubPoi(subPoiId) {
     } catch (e) { alert('移出失败：' + e.message); }
 }
 
-// ============================================================
-// 保存 POI
-// ============================================================
 export async function savePoiEdit() {
     const poiId = document.getElementById('edit-poi-id').value;
     const isNew = !poiId;
@@ -811,6 +800,10 @@ export async function savePoiEdit() {
         close_time: closeTime,
         visit_duration: visitDuration,
         description: document.getElementById('edit-poi-desc').value,
+        // ★ 提示字段保存
+        pre_visit_tip: document.getElementById('edit-poi-pre-tip').value.trim() || null,
+        post_visit_tip: document.getElementById('edit-poi-post-tip').value.trim() || null,
+        
         is_core_node: isCoreNode,
         scenic_id: scenicIdVal,
         voice_mp3: document.getElementById('edit-poi-voice-mp3').value || null,
@@ -897,9 +890,6 @@ export async function deletePoi(id) {
     } catch (e) { alert('删除失败：' + e.message); }
 }
 
-// ============================================================
-// 交通耗时编辑器（基准 + 偏移方案 + G001 分值过滤 + H6 上限）
-// ============================================================
 export function renderTransportEditor(times) {
     const container = document.getElementById('transport-editor');
     if (!container) return;
@@ -943,7 +933,6 @@ export function renderTransportEditor(times) {
 
     let html = '';
 
-    // 第一块：红军广场
     html += `<div class="transport-group card mb-2" style="border:2px solid #1b5e20;">
         <div class="card-header" style="cursor:pointer;background:#e8f5e9;" onclick="this.nextElementSibling.classList.toggle('hidden')">
             <b>🏠 红军广场（县城）</b> <span class="text-secondary">→ 各景点耗时（点击展开）</span>
@@ -965,7 +954,6 @@ export function renderTransportEditor(times) {
     });
     html += `</div></div>`;
 
-    // 每个 POI 卡片
     poiList.forEach(fromPoi => {
         const basePoiId = fromPoi.base_poi_id;
         const baseOffset = fromPoi.base_offset || 0;
@@ -1024,7 +1012,6 @@ export function renderTransportEditor(times) {
     container.innerHTML = html;
 }
 
-// 基准 POI 下拉改变
 window.onBasePoiChange = async function(selectEl, poiId) {
     const newBaseId = selectEl.value;
     if (!newBaseId) {
@@ -1045,7 +1032,6 @@ window.onBasePoiChange = async function(selectEl, poiId) {
     await applyBaseWithOffsetAndReload(poiId, newBaseId, offset);
 };
 
-// 偏移值改变
 window.onOffsetChange = async function(inputEl, poiId) {
     const offset = parseInt(inputEl.value) || 0;
     const parent = inputEl.closest('.base-offset-row');
@@ -1076,7 +1062,6 @@ async function applyBaseWithOffsetAndReload(poiId, basePoiId, offset) {
     }
 }
 
-// 脏标记
 window.markTransportDirty = function(input) {
     if (input.readOnly) return;
     const statusEl = input.parentElement.querySelector('.save-status');
@@ -1087,7 +1072,6 @@ window.markTransportDirty = function(input) {
     input.style.background = '#fff3cd';
 };
 
-// 单项保存（含 H6 上限校验 + H7 下限校验 + G002 参照者提示）
 window.saveTransportTime = async function(input) {
     if (input.dataset.saving === '1') return;
 
@@ -1095,7 +1079,6 @@ window.saveTransportTime = async function(input) {
     const to = input.dataset.to;
     const val = parseInt(input.value);
 
-    // 空值 = 删除
     if (input.value === '') {
         try {
             await deleteTransportTime(toSafeId(from) ?? 0, toSafeId(to) ?? 0);
@@ -1104,14 +1087,12 @@ window.saveTransportTime = async function(input) {
         return;
     }
 
-    // H7: 下限校验
     if (isNaN(val) || val < 0) {
         alert('请输入有效的时间（0-1440 分钟）');
         input.value = '';
         return;
     }
 
-    // H6: 上限校验
     if (val > MAX_TRANSPORT_TIME) {
         alert(`交通耗时不得超过 ${MAX_TRANSPORT_TIME} 分钟（24 小时）`);
         input.value = '';
@@ -1133,7 +1114,6 @@ window.saveTransportTime = async function(input) {
         input.style.background = '#e8f5e9';
         setTimeout(() => { input.style.background = ''; }, 1500);
 
-        // G002: 保存后检查参照者
         await checkAndPromptDependents(fromVal, toVal);
     } catch (e) {
         alert('保存失败：' + e.message);
@@ -1143,7 +1123,6 @@ window.saveTransportTime = async function(input) {
     }
 };
 
-// G002: 检查参照者并提示同步
 async function checkAndPromptDependents(poiId1, poiId2) {
     const idsToCheck = [];
     if (poiId1 !== 0 && poiId1 !== '0') idsToCheck.push(poiId1);
@@ -1180,9 +1159,6 @@ async function checkAndPromptDependents(poiId1, poiId2) {
     await initAdminUI();
 }
 
-// ============================================================
-// 路线规划
-// ============================================================
 export function renderRouteList(routes) {
     const container = document.getElementById('route-list');
     if (!container) return;
@@ -1554,9 +1530,6 @@ export async function deleteRoute(id) {
     } catch (e) { alert('删除失败：' + e.message); }
 }
 
-// ============================================================
-// 商户 / 留言
-// ============================================================
 export function renderMerchantList(merchants) {
     const container = document.getElementById('merchant-list');
     if (!container) return;

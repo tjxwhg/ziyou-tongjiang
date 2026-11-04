@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>智游通江 - 智能行程规划</title>
+    <title>畅游通江 - 行程规划</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
@@ -167,7 +167,7 @@
 <div id="map"></div>
 
 <div class="top-bar" id="topBar">
-    <span class="brand" id="brandToggle"><i class="fas fa-leaf"></i> 智游通江</span>
+    <span class="brand" id="brandToggle"><i class="fas fa-leaf"></i> 畅游通江</span>
 </div>
 
 <div class="category-bar" id="categoryBar">
@@ -183,7 +183,7 @@
 </div>
 
 <div class="bottom-nav" id="bottomNav">
-    <button class="nav-btn primary" onclick="window.openPanel('planPanel')"><i class="fas fa-wand-magic-sparkles"></i> 智能规划</button>
+    <button class="nav-btn primary" onclick="window.openPanel('planPanel')"><i class="fas fa-wand-magic-sparkles"></i> 行程规划</button>
     <button class="nav-btn" onclick="window.openPanel('routePanel')"><i class="fas fa-route"></i> 推荐路线</button>
     <button class="nav-btn" onclick="window.openPanel('myPanel')"><i class="fas fa-user"></i> 我的</button>
 </div>
@@ -193,7 +193,7 @@
 
 <div class="panel" id="planPanel">
     <div class="panel-header">
-        <h2><i class="fas fa-route text-green"></i> 智能行程规划</h2>
+        <h2><i class="fas fa-route text-green"></i> 行程规划</h2>
         <button class="close-btn" onclick="window.closePanel('planPanel')">&times;</button>
     </div>
     <div class="panel-body">
@@ -213,7 +213,7 @@
                     </select>
                 </div>
                 <div class="col-12">
-                    <label class="form-label fw-semibold">行程风格</label>
+                    <label class="form-label fw-semibold" title="紧凑型：不安排缓冲；舒适型：出发前5分，长景点后10分；深度游：出发前10分，长景点后20分">行程风格 (悬停查看说明)</label>
                     <select id="planStyle" class="form-select">
                         <option value="compact">🚀 紧凑型</option>
                         <option value="relaxed" selected>🌿 舒适型</option>
@@ -243,7 +243,7 @@
             <button class="btn btn-primary-custom w-100 mt-3" id="generatePlanBtn"><i class="fas fa-wand-magic-sparkles"></i> 生成行程方案</button>
             <div id="planLoading" class="text-center mt-3 hidden">
                 <div class="spinner-border text-success"></div>
-                <p class="mt-2 text-secondary">正在为您规划最优行程...</p>
+                <p class="mt-2 text-secondary">正在为您规划行程...</p>
             </div>
         </div>
         <div id="stepDetail" class="hidden">
@@ -630,7 +630,7 @@ function getTypeTagHtml(p) {
 }
 
 // ============================================================
-// 智能规划 POI 列表
+// 行程规划 POI 列表
 // ============================================================
 const CATEGORY_ORDER = [
     '自然景区', '红色景区', '文博场馆', '餐饮住宿',
@@ -1009,7 +1009,6 @@ window.generatePlans = async function() {
             if (Array.isArray(p.facility_subtype) && p.facility_subtype.includes('hotel')) return true;
             return false;
         });
-        // ★ D011: 传入用户住宿覆盖映射
         const result = await generateTripPlan(
             selectedPois, startDate, startTime, mode,
             travelTimes, allPoisMap, accommodationPois, lodgingMode, startLocation,
@@ -1038,21 +1037,21 @@ window.generatePlans = async function() {
 
 function renderTripNodeHtml(node) {
     const typeClass = node.type || 'other';
+    // ★ 图标定义
     const iconMap = {
         transport: '🚗',
-        visit: '🚩',      // ★ 改为红旗 Emoji
-        meal: '🍜',       // ★ 改为拉面 Emoji
+        visit: '🚩',
+        meal: '🍜',
         accommodation: '🏨',
         weather: '🌤️',
         reminder: '⚠️',
         waiting: '⏳',
         rest: '☕',
+        buffer: '☕',      // 新增的缓冲类型
         trip_end: '🏁'
     };
     const icon = iconMap[typeClass] || '•';
-    // ... 下面代码保持不变
 
-    // ★ D011: accommodation 节点若有 lodgingPoiId，加"更换"按钮
     if (typeClass === 'accommodation') {
         const text = node.name || '住宿休息';
         let replaceBtn = '';
@@ -1069,6 +1068,7 @@ function renderTripNodeHtml(node) {
                         : typeClass === 'trip_end' ? 'trip-end-text' : '';
         return `<div class="trip-node type-${typeClass}"><span class="node-icon icon-${typeClass}">${icon}</span><span class="node-content"><span class="${textClass}">${text}</span></span></div>`;
     }
+    
     let timeDisplay = '';
     if (!node.noData) {
         if (node.startTime !== undefined && node.endTime !== undefined) {
@@ -1077,6 +1077,7 @@ function renderTripNodeHtml(node) {
             timeDisplay = fmtTime(node.startTime);
         }
     }
+    
     let content = '';
     if (node.type === 'transport') {
         if (node.noData) {
@@ -1085,11 +1086,18 @@ function renderTripNodeHtml(node) {
             content = `${node.name || '交通'} ${node.duration ? `<span class="node-duration">${node.duration}分钟</span>` : ''}`;
         }
     }
-    else if (node.type === 'visit') content = `${node.name || '游览'} ${node.duration ? `<span class="node-duration">${node.duration}分钟</span>` : ''}`;
+    else if (node.type === 'visit') {
+        content = `${node.name || '游览'} ${node.duration ? `<span class="node-duration">${node.duration}分钟</span>` : ''}`;
+        // ★ 渲染游览节点下方的提示
+        if (node.tips) {
+            content += `<div class="node-tips" style="color: #f57f17; font-size: 12px; margin-top: 4px;"><i class="fas fa-lightbulb"></i> 提示：${node.tips}</div>`;
+        }
+    }
     else if (node.type === 'meal') content = `${node.name || '就餐'} ${node.duration ? `<span class="node-duration">${node.duration}分钟</span>` : ''}`;
     else if (node.type === 'waiting') content = `${node.name || '等待'} ${node.duration ? `<span class="node-duration">${node.duration}分钟</span>` : ''}`;
-    else if (node.type === 'rest') content = `${node.name || '休息调整'} ${node.duration ? `<span class="node-duration">${node.duration}分钟</span>` : ''}`;
+    else if (node.type === 'rest' || node.type === 'buffer') content = `${node.name || '休息调整'} ${node.duration ? `<span class="node-duration">${node.duration}分钟</span>` : ''}`;
     else content = node.name || '未知节点';
+    
     return `<div class="trip-node type-${typeClass}"><span class="node-time">${timeDisplay}</span><span class="node-icon icon-${typeClass}">${icon}</span><span class="node-content">${content}</span></div>`;
 }
 
@@ -1109,13 +1117,11 @@ function showTripDetail(data) {
     container.innerHTML = html;
 }
 
-// ★ D011: 更换住宿 POI
 window.changeLodging = function(scenicId) {
     const sid = String(scenicId);
     const scenic = allPoisMap[sid];
     if (!scenic) { alert('未找到该景区'); return; }
 
-    // 筛选该景区下符合条件的 L4 住宿 POI
     const candidates = allPois.filter(p =>
         String(p.scenic_id) === sid &&
         p.data_level === 'L4' &&
@@ -1131,7 +1137,6 @@ window.changeLodging = function(scenicId) {
         return;
     }
 
-    // 动态创建 modal 展示候选
     const old = document.getElementById('lodgingPickerModal');
     if (old) old.remove();
 
@@ -1168,7 +1173,6 @@ window.confirmChangeLodging = function(scenicId) {
     if (!selectedId) { alert('请选择一家住宿'); return; }
     window.__lodgingOverrideMap[String(scenicId)] = selectedId;
     document.getElementById('lodgingPickerModal').remove();
-    // 重新生成整个行程
     window.generatePlans();
 };
 
@@ -1618,7 +1622,7 @@ function renderRouteDetailNodes() {
             if (item.type === 'transport') {
                 html += `<div class="timeline-node type-transport"><span class="node-icon">🚗</span><div class="node-main"><span class="node-name">${item.name}</span></div><div class="node-time">${fmtTime(item.startTime)}-${fmtTime(item.endTime)} ${item.duration}分钟</div></div>`;
             } else if (item.type === 'meal') {
-                html += `<div class="timeline-node type-meal"><span class="node-icon">🍽️</span><div class="node-main"><span class="node-name">${item.name}</span></div><div class="node-time">${fmtTime(item.startTime)}-${fmtTime(item.endTime)} ${item.duration}分钟</div></div>`;
+                html += `<div class="timeline-node type-meal"><span class="node-icon">🍜</span><div class="node-main"><span class="node-name">${item.name}</span></div><div class="node-time">${fmtTime(item.startTime)}-${fmtTime(item.endTime)} ${item.duration}分钟</div></div>`;
             } else if (item.type === 'visit') {
                 const icon = NODE_TYPE_ICONS[item.nodeType] || '📍';
                 html += `<div class="timeline-node type-visit"><span class="node-icon">${icon}</span><div class="node-main"><div class="node-titlerow"><span class="node-name">${item.name}</span></div>${item.description ? `<div class="node-desc">${item.description}</div>` : ''}${item.tips ? `<div class="node-tips">💡 ${item.tips}</div>` : ''}</div><div class="node-time">${fmtTime(item.startTime)}-${fmtTime(item.endTime)} ${item.duration}分钟</div><span class="node-remove" onclick="window.toggleDetailNode(${item._idx})" title="移除">✕</span></div>`;

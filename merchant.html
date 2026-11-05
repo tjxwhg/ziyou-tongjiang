@@ -49,7 +49,7 @@
 <body>
 
 <!-- 登录 -->
-<div id="login-page">
+<div id="login-page" class="hidden">
     <div class="card">
         <h2 class="text-center text-success"><i class="fas fa-store"></i> 商户登录</h2>
         <div class="mb-3">
@@ -296,18 +296,10 @@ import {
 } from './js/merchant.js';
 import { deleteReservation, uploadFile } from './js/api.js';
 
-const STATUS_MAP = {
-    pending: '待确认', confirmed: '已确认',
-    rejected: '已拒绝', cancelled: '已取消'
-};
+const STATUS_MAP = { pending: '待确认', confirmed: '已确认', rejected: '已拒绝', cancelled: '已取消' };
 function translateStatus(s) { return STATUS_MAP[s] || s || '未知'; }
+function isFromVisitor(r) { return r.device_id && String(r.device_id).startsWith('dev_'); }
 
-// ★ 来源判断
-function isFromVisitor(r) {
-    return r.device_id && String(r.device_id).startsWith('dev_');
-}
-
-// ★ E3: 图片上传限制
 const IMAGE_MAX_SIZE = 5 * 1024 * 1024;
 const IMAGE_ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
 
@@ -322,44 +314,59 @@ let merchant = null;
 let businessCategories = [];
 let businessItems = [];
 let reservationsCache = [];
-let currentReservationFilter = 'all';   // ★ 预约筛选状态
+let currentReservationFilter = 'all';
+let hasInit = false;
 
-// 登录
+// ★ 强制退回登录页
+function showLogin() {
+    hasInit = false;
+    loginPage.classList.remove('hidden');
+    main.classList.add('hidden');
+    loginBtn.disabled = false;
+    loginMsg.textContent = '';
+}
+
+// ★ 强制进入主界面
+async function enterMain() {
+    if (hasInit) return;
+    hasInit = true;
+    loginPage.classList.add('hidden');
+    main.classList.remove('hidden');
+    await initMerchantUI();
+}
+
+// 登录按钮
 loginBtn.addEventListener('click', async () => {
     const email = document.getElementById('account').value.trim();
     const pwd = document.getElementById('password').value;
     if (!email || !pwd) { loginMsg.textContent = '请输入邮箱和密码'; return; }
+    
+    loginBtn.disabled = true;
+    loginMsg.textContent = '正在登录...';
+
     try {
         await signIn(email, pwd);
         loginMsg.textContent = '';
+        enterMain();
     } catch (e) {
         loginMsg.textContent = '登录失败：' + e.message;
-        console.error(e);
+        loginBtn.disabled = false;
     }
 });
 
-logoutBtn.addEventListener('click', async () => { await signOut(); });
+// 退出按钮
+logoutBtn.addEventListener('click', async () => { 
+    await signOut(); 
+    showLogin();
+});
 
 onAuthStateChange((event) => {
-    if (event === 'SIGNED_IN') {
-        loginPage.classList.add('hidden');
-        main.classList.remove('hidden');
-        initMerchantUI();
-    } else {
-        loginPage.classList.add('hidden');
-        main.classList.add('hidden');
+    if (event === 'SIGNED_OUT') {
+        showLogin();
     }
 });
 
-(async () => {
-    const user = await getCurrentUser();
-    if (user) {
-        loginPage.classList.add('hidden');
-        main.classList.remove('hidden');
-        initMerchantUI();
-    }
-})();
-
+// 初始化商户面板数据
 async function initMerchantUI() {
     try {
         merchant = await initMerchant();
@@ -382,16 +389,18 @@ async function initMerchantUI() {
         renderReservations();
 
         renderInfo();
-
-        // ★ 加载并显示绑定景点
         await loadAndShowBoundPoi();
     } catch (e) {
         console.error('初始化商户端失败:', e);
-        alert('加载失败：' + e.message);
+        
+        // ★ 关键拦截：如果查到不是商户（比如是管理员串号进来的），立刻踢出并刷新
+        alert('加载失败：' + e.message + '\n\n提示：如果您是管理员账号，请使用管理后台。商户端需要绑定商户的专属账号登录。');
+        await signOut();
+        window.location.reload(); 
     }
 }
 
-// ★ 显示绑定景点
+// 加载绑定景点信息
 async function loadAndShowBoundPoi() {
     const infoBox = document.getElementById('merchant-poi-info');
     const nameEl = document.getElementById('merchant-poi-name');
@@ -424,19 +433,31 @@ async function loadAndShowBoundPoi() {
     }
 }
 
-// 通知栏字数计数
+// 启动时检查登录态
+(async () => {
+    // 给一个小延时，确保 DOM 渲染完毕
+    setTimeout(async () => {
+        try {
+            const user = await getCurrentUser();
+            if (user) {
+                enterMain();
+            } else {
+                showLogin();
+            }
+        } catch (e) {
+            showLogin();
+        }
+    }, 100);
+})();
+
+// ======== 以下为原有的业务逻辑代码 ========
 const noticeEl = document.getElementById('notice');
 const noticeCounter = document.getElementById('notice-counter');
 if (noticeEl && noticeCounter) {
-    noticeEl.addEventListener('input', () => {
-        noticeCounter.textContent = noticeEl.value.length;
-    });
+    noticeEl.addEventListener('input', () => { noticeCounter.textContent = noticeEl.value.length; });
 }
 
-// ========== 分类 ==========
-window.toggleCategoryPanel = function() {
-    document.getElementById('category-panel').classList.toggle('hidden');
-};
+window.toggleCategoryPanel = function() { document.getElementById('category-panel').classList.toggle('hidden'); };
 
 window.addCategory = function() {
     const input = document.getElementById('new-category-input');
@@ -454,9 +475,7 @@ window.addCategory = function() {
 
 window.deleteCategory = async function(name) {
     const catItems = businessItems.filter(i => i.category === name);
-    const msg = catItems.length > 0
-        ? `该分类下有 ${catItems.length} 个项目，删除后将一并删除，是否继续？`
-        : '确认删除该分类？';
+    const msg = catItems.length > 0 ? `该分类下有 ${catItems.length} 个项目，删除后将一并删除，是否继续？` : '确认删除该分类？';
     if (!confirm(msg)) return;
     businessCategories = businessCategories.filter(c => c !== name);
     businessItems = businessItems.filter(i => i.category !== name);
@@ -484,7 +503,6 @@ function renderCategoryList() {
     `).join('');
 }
 
-// ========== 业务项目 ==========
 function renderBusiness() {
     const container = document.getElementById('business-container');
     if (!container) return;
@@ -528,27 +546,18 @@ function renderBusiness() {
     container.innerHTML = html || '<p class="text-secondary">暂无业务项目</p>';
 }
 
-// ★ 项目排序（同分类内上下移动）
 window.moveBusinessItem = function(globalIdx, dir) {
     const item = businessItems[globalIdx];
     if (!item) return;
     const cat = item.category;
-
-    // 当前分类下所有项目的全局索引（保持原数组顺序）
     const catIndices = [];
-    businessItems.forEach((it, i) => {
-        if (it.category === cat) catIndices.push(i);
-    });
-
+    businessItems.forEach((it, i) => { if (it.category === cat) catIndices.push(i); });
     const posInCat = catIndices.indexOf(globalIdx);
     if (posInCat < 0) return;
     const newPos = posInCat + dir;
     if (newPos < 0 || newPos >= catIndices.length) return;
-
     const targetGlobalIdx = catIndices[newPos];
-    [businessItems[globalIdx], businessItems[targetGlobalIdx]] =
-        [businessItems[targetGlobalIdx], businessItems[globalIdx]];
-
+    [businessItems[globalIdx], businessItems[targetGlobalIdx]] = [businessItems[targetGlobalIdx], businessItems[globalIdx]];
     saveBusinessData(businessCategories, businessItems)
         .then(() => { renderBusiness(); })
         .catch(e => alert('保存失败：' + e.message));
@@ -579,8 +588,7 @@ window.editItem = function(idx) {
     document.getElementById('item-description').value = item.description || '';
     document.getElementById('item-image-url').value = item.image || '';
     document.getElementById('item-image-file').value = '';
-    document.getElementById('item-image-preview').innerHTML = item.image
-        ? `<img src="${item.image}" class="upload-preview">` : '';
+    document.getElementById('item-image-preview').innerHTML = item.image ? `<img src="${item.image}" class="upload-preview">` : '';
     renderItemCategoryOptions(item.category);
     document.getElementById('itemModalTitle').textContent = '编辑项目';
     new bootstrap.Modal(document.getElementById('itemModal')).show();
@@ -589,12 +597,9 @@ window.editItem = function(idx) {
 function renderItemCategoryOptions(selected) {
     const sel = document.getElementById('item-category');
     if (!sel) return;
-    sel.innerHTML = businessCategories.map(c =>
-        `<option value="${c}" ${c === selected ? 'selected' : ''}>${c}</option>`
-    ).join('');
+    sel.innerHTML = businessCategories.map(c => `<option value="${c}" ${c === selected ? 'selected' : ''}>${c}</option>`).join('');
 }
 
-// ★ E3: 图片预览 + 前置校验
 window.previewItemImage = function(event) {
     const file = event.target.files[0];
     if (!file) return;
@@ -611,9 +616,7 @@ window.previewItemImage = function(event) {
         return;
     }
     const reader = new FileReader();
-    reader.onload = (e) => {
-        document.getElementById('item-image-preview').innerHTML = `<img src="${e.target.result}" class="upload-preview">`;
-    };
+    reader.onload = (e) => { document.getElementById('item-image-preview').innerHTML = `<img src="${e.target.result}" class="upload-preview">`; };
     reader.readAsDataURL(file);
 };
 
@@ -639,16 +642,10 @@ window.saveItem = async function() {
         if (fileInput.files && fileInput.files[0]) {
             const file = fileInput.files[0];
             if (!IMAGE_ALLOWED_TYPES.includes(file.type)) {
-                alert('仅支持 JPG / PNG / WebP 格式的图片');
-                saveBtn.disabled = false;
-                saveBtn.innerHTML = originalText;
-                return;
+                alert('仅支持 JPG / PNG / WebP 格式的图片'); saveBtn.disabled = false; saveBtn.innerHTML = originalText; return;
             }
             if (file.size > IMAGE_MAX_SIZE) {
-                alert('图片大小不得超过 5MB');
-                saveBtn.disabled = false;
-                saveBtn.innerHTML = originalText;
-                return;
+                alert('图片大小不得超过 5MB'); saveBtn.disabled = false; saveBtn.innerHTML = originalText; return;
             }
             const ext = file.name.split('.').pop() || 'jpg';
             const path = `${merchant.id}/${Date.now()}.${ext}`;
@@ -682,32 +679,23 @@ window.deleteItem = async function(idx) {
     } catch (e) { alert('删除失败：' + e.message); }
 };
 
-// ========== 预约列表 ==========
-window.toggleNewReservationForm = function() {
-    document.getElementById('new-reservation-form').classList.toggle('hidden');
-};
+window.toggleNewReservationForm = function() { document.getElementById('new-reservation-form').classList.toggle('hidden'); };
 
 function renderNewResCategoryOptions() {
     const sel = document.getElementById('new-res-cat');
     if (!sel) return;
-    sel.innerHTML = '<option value="">请选择大类</option>' +
-        businessCategories.map(c => `<option value="${c}">${c}</option>`).join('');
+    sel.innerHTML = '<option value="">请选择大类</option>' + businessCategories.map(c => `<option value="${c}">${c}</option>`).join('');
     document.getElementById('new-res-content').innerHTML = '<option value="">请选择具体项目</option>';
 }
 
 window.updateNewResContent = function() {
     const cat = document.getElementById('new-res-cat').value;
     const contentSel = document.getElementById('new-res-content');
-    if (!cat) {
-        contentSel.innerHTML = '<option value="">请选择具体项目</option>';
-        return;
-    }
+    if (!cat) { contentSel.innerHTML = '<option value="">请选择具体项目</option>'; return; }
     const catItems = businessItems.filter(i => i.category === cat);
-    contentSel.innerHTML = '<option value="">请选择具体项目</option>' +
-        catItems.map(i => `<option value="${i.name}">${i.name}${i.price ? ' ' + i.price : ''}</option>`).join('');
+    contentSel.innerHTML = '<option value="">请选择具体项目</option>' + catItems.map(i => `<option value="${i.name}">${i.name}${i.price ? ' ' + i.price : ''}</option>`).join('');
 };
 
-// ★ 筛选切换
 window.filterReservations = function(status) {
     currentReservationFilter = status;
     document.querySelectorAll('#reservation-filter-bar .filter-btn').forEach(btn => {
@@ -724,23 +712,17 @@ function renderReservations() {
         list = list.filter(r => r.status === currentReservationFilter);
     }
     if (list.length === 0) {
-        const msg = currentReservationFilter === 'all'
-            ? '暂无预约'
-            : `暂无「${translateStatus(currentReservationFilter)}」的预约`;
+        const msg = currentReservationFilter === 'all' ? '暂无预约' : `暂无「${translateStatus(currentReservationFilter)}」的预约`;
         container.innerHTML = `<p class="text-secondary">${msg}</p>`;
         return;
     }
-    const sorted = [...list].sort((a, b) =>
-        new Date(b.reservation_date || b.created_at) - new Date(a.reservation_date || a.created_at));
+    const sorted = [...list].sort((a, b) => new Date(b.reservation_date || b.created_at) - new Date(a.reservation_date || a.created_at));
     container.innerHTML = sorted.map((r, idx) => {
         const fromVisitor = isFromVisitor(r);
-        const sourceBadge = fromVisitor
-            ? '<span class="source-badge source-visitor">📱 游客提交</span>'
-            : '<span class="source-badge source-merchant">🏪 商户录入</span>';
+        const sourceBadge = fromVisitor ? '<span class="source-badge source-visitor">📱 游客提交</span>' : '<span class="source-badge source-merchant">🏪 商户录入</span>';
         const statusKey = r.status || 'pending';
         const canConfirm = statusKey === 'pending';
         const canCancel = statusKey === 'confirmed';
-        const canDelete = statusKey !== 'pending' || true;
         return `
         <div class="reservation-card">
             <div class="d-flex justify-content-between align-items-center" style="cursor:pointer;" onclick="window.toggleReservationCard(${idx})">
@@ -794,7 +776,6 @@ window.rejectReservation = async function(id) {
         renderReservations();
     } catch (e) { alert('操作失败：' + e.message); }
 };
-// ★ 取消已确认的预约
 window.cancelReservation = async function(id) {
     if (!confirm('确认取消此预约？')) return;
     try {
@@ -832,9 +813,7 @@ window.saveNewReservation = async function() {
             reservation_content: content, room, remark, status: 'confirmed'
         });
         alert('预约已保存');
-        ['new-res-date', 'new-res-unit', 'new-res-name', 'new-res-phone', 'new-res-room', 'new-res-remark'].forEach(id => {
-            document.getElementById(id).value = '';
-        });
+        ['new-res-date', 'new-res-unit', 'new-res-name', 'new-res-phone', 'new-res-room', 'new-res-remark'].forEach(id => { document.getElementById(id).value = ''; });
         document.getElementById('new-res-count').value = '1';
         document.getElementById('new-res-cat').value = '';
         document.getElementById('new-res-content').innerHTML = '<option value="">请选择具体项目</option>';
@@ -844,40 +823,23 @@ window.saveNewReservation = async function() {
     } catch (e) { alert('保存失败：' + e.message); }
 };
 
-// ★ 导出真 .xlsx（SheetJS）
 window.exportReservations = function() {
     if (!reservationsCache || reservationsCache.length === 0) { alert('暂无预约可导出'); return; }
-    if (typeof XLSX === 'undefined') {
-        alert('导出组件加载失败，请刷新页面后重试');
-        return;
-    }
+    if (typeof XLSX === 'undefined') { alert('导出组件加载失败，请刷新页面后重试'); return; }
     const rows = reservationsCache.map(r => ({
-        '预约日期': r.reservation_date || '',
-        '时段': `${r.time_slot_start || ''}-${r.time_slot_end || ''}`,
-        '单位': r.unit || '',
-        '联系人': r.name || '',
-        '电话': r.phone || '',
-        '人数': r.visitor_count || 1,
-        '预约内容': r.reservation_content || '',
-        '地点': r.room || '',
-        '备注': r.remark || '',
-        '状态': translateStatus(r.status),
-        '来源': isFromVisitor(r) ? '游客提交' : '商户录入',
-        '提交时间': r.created_at ? new Date(r.created_at).toLocaleString() : ''
+        '预约日期': r.reservation_date || '', '时段': `${r.time_slot_start || ''}-${r.time_slot_end || ''}`,
+        '单位': r.unit || '', '联系人': r.name || '', '电话': r.phone || '',
+        '人数': r.visitor_count || 1, '预约内容': r.reservation_content || '',
+        '地点': r.room || '', '备注': r.remark || '', '状态': translateStatus(r.status),
+        '来源': isFromVisitor(r) ? '游客提交' : '商户录入', '提交时间': r.created_at ? new Date(r.created_at).toLocaleString() : ''
     }));
     const ws = XLSX.utils.json_to_sheet(rows);
-    ws['!cols'] = [
-        { wch: 12 }, { wch: 14 }, { wch: 15 }, { wch: 10 },
-        { wch: 14 }, { wch: 6 }, { wch: 24 }, { wch: 10 },
-        { wch: 24 }, { wch: 8 }, { wch: 12 }, { wch: 20 }
-    ];
+    ws['!cols'] = [{ wch: 12 }, { wch: 14 }, { wch: 15 }, { wch: 10 }, { wch: 14 }, { wch: 6 }, { wch: 24 }, { wch: 10 }, { wch: 24 }, { wch: 8 }, { wch: 12 }, { wch: 20 }];
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, '预约列表');
-    const fileName = `预约列表_${new Date().toISOString().slice(0, 10)}.xlsx`;
-    XLSX.writeFile(wb, fileName);
+    XLSX.writeFile(wb, `预约列表_${new Date().toISOString().slice(0, 10)}.xlsx`);
 };
 
-// ========== 基本信息 ==========
 function renderInfo() {
     if (!merchant) return;
     document.getElementById('business_type').value = merchant.business_type || 'other';

@@ -13,10 +13,14 @@
 // - localStorage → wx.getStorageSync / wx.setStorageSync
 // - Supabase JS SDK 在小程序中需用 npm 引入方式
 // ============================================================
+// js/api.js - Supabase API 操作
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from './config.js';
 
-const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+// ★ 改为导出，供 auth.js 共用，解决 Multiple GoTrueClient 警告
+export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+// ... 下面的代码完全保持原样，直到文件末尾 ...
 
 // ============================================================
 // 缓存版本号（小程序适配点：localStorage → wx.storage）

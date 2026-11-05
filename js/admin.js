@@ -1,16 +1,19 @@
 // js/admin.js - 管理后台完整逻辑
+// js/admin.js - 管理后台完整逻辑（已修复导入报错）
 import {
     getPois, getPoi, insertPoi, updatePoi, deletePoi as apiDeletePoi,
     getRoutes, getRoute, insertRoute, updateRoute, deleteRoute as apiDeleteRoute,
     getRouteNodes, insertRouteNodes, deleteRouteNodes,
     getTransportTimes, setTransportTime, deleteTransportTime,
     deleteTransportTimesForPoi, applyBaseWithOffset, clearBaseRelation, getDependents,
-    getMerchantsByPoi, getMerchant, updateMerchant, createMerchantRecord,
+    getMerchantsByPoi, getMerchant, updateMerchant, // ★ 移除了已废弃的 createMerchantRecord
     getReservations, updateReservation,
     getFeedbacks, updateFeedback, deleteFeedback as apiDeleteFeedback,
     uploadFile
 } from './api.js';
 import { MAX_POI_DURATION, MAX_TRANSPORT_TIME } from './config.js';
+
+// ... 下面保持原样（或使用上一轮我提供的完整代码）...
 
 let allPois = [], allRoutes = [], allTransportTimes = [], allMerchants = [], allFeedbacks = [];
 let currentEditingPoiId = null;

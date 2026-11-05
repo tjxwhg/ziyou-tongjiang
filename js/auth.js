@@ -1,8 +1,6 @@
 // js/auth.js - 用户认证
-import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
-import { SUPABASE_URL, SUPABASE_ANON_KEY } from './config.js';
-
-const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+// ★ 引入 api.js 的 supabase 实例，避免多次实例化导致登录状态不统一
+import { supabase } from './api.js';
 
 export async function getCurrentUser() {
     const { data } = await supabase.auth.getSession();

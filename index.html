@@ -33,42 +33,51 @@
         .card-modern .card-title { font-weight: 600; font-size: 16px; margin-bottom: 6px; color: #1b5e20; }
         .card-modern .card-sub { font-size: 13px; color: #888; }
         
-        /* ================= 方案五：时间悬浮 + 紧凑大字流 ================= */
+        /* ================= 方案五优化版：时间悬浮 + 紧凑大字流 + 缩进错位 ================= */
         .trip-day-container { background: white; border-radius: 12px; padding: 12px 16px; margin-bottom: 16px; border-left: 4px solid #1b5e20; box-shadow: 0 2px 8px rgba(0,0,0,0.04); }
         .trip-day-title { font-weight: 700; font-size: 16px; color: #1b5e20; margin-bottom: 12px; border-bottom: 2px solid #e8f5e9; padding-bottom: 8px; }
         
         .trip-timeline { position: relative; padding-left: 16px; }
         .trip-timeline::before { 
-            content: ''; position: absolute; left: 6px; top: 8px; bottom: 8px; 
+            content: ''; position: absolute; left: 6px; top: 10px; bottom: 10px; 
             width: 2px; background: #e0e0e0; border-radius: 2px; 
         }
         
         .trip-node { 
             position: relative; 
-            padding: 8px 0; /* ★ 核心：大幅压缩上下间距 */
+            padding: 8px 0; 
             display: flex; 
             flex-direction: column; 
-            gap: 3px; /* 时间和内容之间微小的间距 */
-            border-bottom: 1px dashed #f5f5f5; /* 极淡的分割线，防止错行 */
+            gap: 4px; 
+            border-bottom: 1px dashed #f0f0f0; 
         }
         .trip-node:last-child { border-bottom: none; }
         
         .trip-node::before { 
-            content: ''; position: absolute; left: -14px; top: 12px; /* 对齐时间行 */
+            content: ''; position: absolute; left: -14px; top: 13px; /* 圆点与放大的时间居中对齐 */
             width: 8px; height: 8px; border-radius: 50%; 
             border: 2px solid #1b5e20; background: white; z-index: 1;
         }
 
-        /* 悬浮小字时间 */
+        /* 第一行：放大加深的时间 */
         .trip-node .node-time { 
-            font-size: 12px; color: #888; font-family: monospace; 
-            line-height: 1; font-weight: 500;
+            font-size: 14px; 
+            color: #555; 
+            font-family: monospace; 
+            line-height: 1.2; 
+            font-weight: 600;
         }
         
-        /* 大字流内容 */
+        /* 第二行：向右缩进20px的内容大字 */
         .trip-node .node-content { 
-            font-size: 15px; color: #333; line-height: 1.4; 
-            word-break: break-all; display: flex; align-items: center; flex-wrap: wrap;
+            font-size: 15px; 
+            color: #333; 
+            line-height: 1.4; 
+            word-break: break-all; 
+            display: flex; 
+            align-items: center; 
+            flex-wrap: wrap;
+            padding-left: 20px; /* ★ 核心：内容向右缩进，形成错位 */
         }
         
         .trip-node .node-content .node-duration { 
@@ -91,7 +100,7 @@
         .trip-node.type-meal .node-content { color: #E65100; }
         .trip-node.type-trip_end .node-content { color: #2E7D32; font-weight: 700; }
         .trip-node.type-weather .node-content { color: #0D47A1; font-weight: 500; }
-        .trip-node.type-reminder .node-content { color: #C62828; font-weight: 500; background: #ffebee; padding: 6px 10px; border-radius: 6px; display: inline-block; }
+        .trip-node.type-reminder .node-content { color: #C62828; font-weight: 500; background: #ffebee; padding: 6px 10px 6px 20px; border-radius: 6px; }
         
         /* 缓冲休息的提示文字 */
         .node-tips { color: #f57f17; font-size: 12px; margin-top: 4px; width: 100%; }
@@ -1074,7 +1083,7 @@ window.generatePlans = async function() {
     }
 };
 
-// ★ 核心：方案五渲染逻辑
+// ★ 核心：方案五渲染逻辑 + 右侧缩进20px
 function renderTripNodeHtml(node) {
     const typeClass = node.type || 'other';
     const iconMap = {

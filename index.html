@@ -32,16 +32,52 @@
         .card-modern { background: white; border-radius: 12px; padding: 16px; margin-bottom: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); border: 1px solid #f0f0f0; }
         .card-modern .card-title { font-weight: 600; font-size: 16px; margin-bottom: 6px; color: #1b5e20; }
         .card-modern .card-sub { font-size: 13px; color: #888; }
-        .trip-day-container { background: white; border-radius: 16px; padding: 16px 20px; margin-bottom: 16px; border-left: 5px solid #1b5e20; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
-        .trip-day-title { font-weight: 700; font-size: 17px; color: #1b5e20; margin-bottom: 12px; border-bottom: 2px solid #e8f5e9; padding-bottom: 8px; }
-        .trip-timeline { position: relative; padding-left: 24px; }
-        .trip-timeline::before { content: ''; position: absolute; left: 6px; top: 4px; bottom: 4px; width: 3px; background: #e0e0e0; border-radius: 2px; }
-        .trip-node { position: relative; padding: 6px 0 6px 16px; margin-bottom: 2px; display: flex; align-items: flex-start; gap: 12px; }
-        .trip-node::before { content: ''; position: absolute; left: -18px; top: 12px; width: 12px; height: 12px; border-radius: 50%; border: 3px solid #1b5e20; background: white; }
-        .trip-node .node-time { min-width: 110px; font-weight: 500; color: #333; font-size: 14px; font-family: monospace; flex-shrink: 0; }
-        .trip-node .node-icon { width: 28px; text-align: center; flex-shrink: 0; font-size: 16px; }
-        .trip-node .node-content { flex: 1; font-size: 14px; color: #333; padding: 2px 0; line-height: 1.5; }
-        .trip-node .node-content .node-duration { color: #666; font-size: 12px; background: #f0f0f0; padding: 1px 8px; border-radius: 12px; margin-left: 6px; }
+        
+        /* ================= 方案五：时间悬浮 + 紧凑大字流 ================= */
+        .trip-day-container { background: white; border-radius: 12px; padding: 12px 16px; margin-bottom: 16px; border-left: 4px solid #1b5e20; box-shadow: 0 2px 8px rgba(0,0,0,0.04); }
+        .trip-day-title { font-weight: 700; font-size: 16px; color: #1b5e20; margin-bottom: 12px; border-bottom: 2px solid #e8f5e9; padding-bottom: 8px; }
+        
+        .trip-timeline { position: relative; padding-left: 16px; }
+        .trip-timeline::before { 
+            content: ''; position: absolute; left: 6px; top: 8px; bottom: 8px; 
+            width: 2px; background: #e0e0e0; border-radius: 2px; 
+        }
+        
+        .trip-node { 
+            position: relative; 
+            padding: 8px 0; /* ★ 核心：大幅压缩上下间距 */
+            display: flex; 
+            flex-direction: column; 
+            gap: 3px; /* 时间和内容之间微小的间距 */
+            border-bottom: 1px dashed #f5f5f5; /* 极淡的分割线，防止错行 */
+        }
+        .trip-node:last-child { border-bottom: none; }
+        
+        .trip-node::before { 
+            content: ''; position: absolute; left: -14px; top: 12px; /* 对齐时间行 */
+            width: 8px; height: 8px; border-radius: 50%; 
+            border: 2px solid #1b5e20; background: white; z-index: 1;
+        }
+
+        /* 悬浮小字时间 */
+        .trip-node .node-time { 
+            font-size: 12px; color: #888; font-family: monospace; 
+            line-height: 1; font-weight: 500;
+        }
+        
+        /* 大字流内容 */
+        .trip-node .node-content { 
+            font-size: 15px; color: #333; line-height: 1.4; 
+            word-break: break-all; display: flex; align-items: center; flex-wrap: wrap;
+        }
+        
+        .trip-node .node-content .node-duration { 
+            color: #666; font-size: 11px; background: #f0f0f0; 
+            padding: 2px 6px; border-radius: 12px; margin-left: 6px;
+            white-space: nowrap; font-weight: normal;
+        }
+        
+        /* 针对不同节点的圆点颜色微调 */
         .trip-node.type-transport::before { border-color: #1565C0; background: #1565C0; }
         .trip-node.type-visit::before { border-color: #2E7D32; background: #2E7D32; }
         .trip-node.type-meal::before { border-color: #E65100; background: #E65100; }
@@ -49,13 +85,18 @@
         .trip-node.type-weather::before { border-color: #00BCD4; background: #00BCD4; }
         .trip-node.type-reminder::before { border-color: #C62828; background: #C62828; }
         .trip-node.type-trip_end::before { border-color: #2E7D32; background: #2E7D32; }
-        .trip-node .icon-transport { color: #1565C0; }
-        .trip-node .icon-visit { color: #2E7D32; }
-        .trip-node .icon-meal { color: #E65100; }
-        .trip-node .icon-trip_end { color: #2E7D32; }
-        .trip-node .weather-text { color: #0D47A1; font-weight: 500; }
-        .trip-node .reminder-text { color: #C62828; font-weight: 500; background: #ffebee; padding: 2px 10px; border-radius: 12px; }
-        .trip-node .trip-end-text { color: #2E7D32; font-weight: 700; font-size: 15px; }
+
+        /* 特殊类型的文字颜色 */
+        .trip-node.type-transport .node-content { color: #1565C0; }
+        .trip-node.type-meal .node-content { color: #E65100; }
+        .trip-node.type-trip_end .node-content { color: #2E7D32; font-weight: 700; }
+        .trip-node.type-weather .node-content { color: #0D47A1; font-weight: 500; }
+        .trip-node.type-reminder .node-content { color: #C62828; font-weight: 500; background: #ffebee; padding: 6px 10px; border-radius: 6px; display: inline-block; }
+        
+        /* 缓冲休息的提示文字 */
+        .node-tips { color: #f57f17; font-size: 12px; margin-top: 4px; width: 100%; }
+        
+        /* ================= 其他公共样式 ================= */
         .total-duration { font-weight: 600; color: #1b5e20; background: #e8f5e9; padding: 6px 12px; border-radius: 6px; text-align: center; margin-top: 10px; }
         .poi-select-list { max-height: 480px; overflow-y: auto; border: 1px solid #e0e0e0; border-radius: 8px; padding: 10px; background: #fafafa; }
         .reservation-form { background: #f8f9fa; border-radius: 8px; padding: 12px; margin-top: 10px; }
@@ -160,6 +201,8 @@
         .l3-inner-row .l3-name { flex: 1; }
         .orphan-block { border: 1px dashed #bdbdbd; background: #fafafa; padding: 10px 12px; margin-bottom: 6px; border-radius: 8px; }
         .orphan-title { font-weight: 500; font-size: 12px; color: #757575; margin-bottom: 6px; display: flex; align-items: center; gap: 4px; }
+        .progress-bar-custom { width: 100%; height: 8px; background: #e0e0e0; border-radius: 4px; margin: 8px 0; overflow: hidden; }
+        .progress-bar-custom .fill { height: 100%; background: #2e7d32; transition: width 0.3s ease; }
     </style>
 </head>
 <body>
@@ -518,7 +561,7 @@ let currentArrivalTime = 10 * 60;
 let transportPresetsCache = {};
 let currentDetailPoi = null;
 
-// ★ D011: 住宿覆盖映射 { scenicId: poiId }
+// D011: 住宿覆盖映射 { scenicId: poiId }
 window.__lodgingOverrideMap = window.__lodgingOverrideMap || {};
 
 // ============================================================
@@ -588,10 +631,6 @@ function initStartLocationSelect(pois) {
     if (!startSel || !lodgingSel) return;
 
     startSel.innerHTML = '<option value="county">红军广场（县城）</option>';
-    const l1List = pois.filter(p => p.data_level === 'L1');
-    l1List.forEach(p => {
-        startSel.innerHTML += `<option value="${p.id}">🏞️ ${p.name}</option>`;
-    });
 
     lodgingSel.innerHTML = `
         <option value="all" selected>全部（智能决定）</option>
@@ -830,8 +869,7 @@ window.selectAllPois = function(select) {
         selectedPoiOrder = [];
 
         const candidates = allPois.filter(p =>
-            (p.data_level === 'L1' || p.data_level === 'L2'
-             || p.data_level === 'L3' || p.data_level === 'L4')
+            (p.data_level === 'L2' || p.data_level === 'L3' || p.data_level === 'L4')
             && !p.is_core_node
             && (p.recommend_score || 0) >= 50
         );
@@ -856,18 +894,19 @@ function getScoreOrderedPois(candidates, allPois) {
     const result = [];
 
     const topLevel = candidates.filter(p => {
-        if (p.data_level === 'L1') return true;
         return p.scenic_id === null || p.scenic_id === undefined;
     }).sort(byScoreThenId);
 
     topLevel.forEach(top => {
         result.push(top);
-        if (top.data_level === 'L1') {
-            const children = candidates.filter(p =>
-                String(p.scenic_id) === String(top.id)
-            ).sort(byScoreThenId);
-            children.forEach(c => result.push(c));
-        }
+    });
+
+    const l1List = allPois.filter(p => p.data_level === 'L1').sort(byScoreThenId);
+    l1List.forEach(l1 => {
+        const children = candidates.filter(p =>
+            String(p.scenic_id) === String(l1.id)
+        ).sort(byScoreThenId);
+        children.forEach(c => result.push(c));
     });
 
     return result;
@@ -1035,70 +1074,75 @@ window.generatePlans = async function() {
     }
 };
 
+// ★ 核心：方案五渲染逻辑
 function renderTripNodeHtml(node) {
     const typeClass = node.type || 'other';
-    // ★ 图标定义
     const iconMap = {
-        transport: '🚗',
-        visit: '🚩',
-        meal: '🍜',
-        accommodation: '🏨',
-        weather: '🌤️',
-        reminder: '⚠️',
-        waiting: '⏳',
-        rest: '☕',
-        buffer: '☕',      // 新增的缓冲类型
-        trip_end: '🏁'
+        transport: '🚗', visit: '🚩', meal: '🍜',
+        accommodation: '🏨', weather: '🌤️', reminder: '⚠️',
+        waiting: '⏳', rest: '☕', buffer: '☕', trip_end: '🏁'
     };
     const icon = iconMap[typeClass] || '•';
 
+    // 格式化时间
+    let timeStr = '';
+    if (node.startTime !== undefined && node.endTime !== undefined) {
+        timeStr = `${fmtTime(node.startTime)} - ${fmtTime(node.endTime)}`;
+    } else if (node.startTime !== undefined) {
+        timeStr = `${fmtTime(node.startTime)}`;
+    }
+
+    // 天气、提醒、行程结束
+    if (typeClass === 'weather' || typeClass === 'reminder' || typeClass === 'trip_end') {
+        const text = typeClass === 'trip_end' ? (node.name || '整个行程规划结束') : (node.message || '');
+        return `<div class="trip-node type-${typeClass}">
+            ${timeStr ? `<div class="node-time">${timeStr}</div>` : ''}
+            <div class="node-content">${icon} ${text}</div>
+        </div>`;
+    }
+
+    // 住宿节点
     if (typeClass === 'accommodation') {
         const text = node.name || '住宿休息';
         let replaceBtn = '';
         if (node.lodgingPoiId && node.lodgingScenicId) {
-            replaceBtn = `<button class="btn btn-sm btn-outline-secondary ms-2" onclick="window.changeLodging('${node.lodgingScenicId}')" style="font-size:11px;padding:1px 8px;">更换</button>`;
+            replaceBtn = `<button class="btn btn-sm btn-outline-secondary ms-2" onclick="window.changeLodging('${node.lodgingScenicId}')" style="font-size:11px;padding:2px 8px; border-radius:12px;">更换</button>`;
         }
-        return `<div class="trip-node type-${typeClass}"><span class="node-icon icon-${typeClass}">${icon}</span><span class="node-content">${text}${replaceBtn}</span></div>`;
+        return `<div class="trip-node type-${typeClass}">
+            ${timeStr ? `<div class="node-time">${timeStr}</div>` : ''}
+            <div class="node-content">${icon} ${text} ${replaceBtn}</div>
+        </div>`;
     }
 
-    if (typeClass === 'weather' || typeClass === 'reminder' || typeClass === 'trip_end') {
-        const text = typeClass === 'trip_end' ? (node.name || '整个行程规划结束') : (node.message || '');
-        const textClass = typeClass === 'weather' ? 'weather-text'
-                        : typeClass === 'reminder' ? 'reminder-text'
-                        : typeClass === 'trip_end' ? 'trip-end-text' : '';
-        return `<div class="trip-node type-${typeClass}"><span class="node-icon icon-${typeClass}">${icon}</span><span class="node-content"><span class="${textClass}">${text}</span></span></div>`;
-    }
-    
-    let timeDisplay = '';
-    if (!node.noData) {
-        if (node.startTime !== undefined && node.endTime !== undefined) {
-            timeDisplay = `${fmtTime(node.startTime)} - ${fmtTime(node.endTime)}`;
-        } else if (node.startTime !== undefined) {
-            timeDisplay = fmtTime(node.startTime);
-        }
-    }
-    
-    let content = '';
+    // 普通节点
+    let content = `${icon} `;
     if (node.type === 'transport') {
         if (node.noData) {
-            content = node.name || '交通';
+            content += node.name || '交通';
         } else {
-            content = `${node.name || '交通'} ${node.duration ? `<span class="node-duration">${node.duration}分钟</span>` : ''}`;
+            content += `${node.name || '交通'} ${node.duration ? `<span class="node-duration">${node.duration}分钟</span>` : ''}`;
         }
     }
     else if (node.type === 'visit') {
-        content = `${node.name || '游览'} ${node.duration ? `<span class="node-duration">${node.duration}分钟</span>` : ''}`;
-        // ★ 渲染游览节点下方的提示
+        content += `${node.name || '游览'} ${node.duration ? `<span class="node-duration">${node.duration}分钟</span>` : ''}`;
         if (node.tips) {
-            content += `<div class="node-tips" style="color: #f57f17; font-size: 12px; margin-top: 4px;"><i class="fas fa-lightbulb"></i> 提示：${node.tips}</div>`;
+            content += `<div class="node-tips"><i class="fas fa-lightbulb"></i> 提示：${node.tips}</div>`;
         }
     }
-    else if (node.type === 'meal') content = `${node.name || '就餐'} ${node.duration ? `<span class="node-duration">${node.duration}分钟</span>` : ''}`;
-    else if (node.type === 'waiting') content = `${node.name || '等待'} ${node.duration ? `<span class="node-duration">${node.duration}分钟</span>` : ''}`;
-    else if (node.type === 'rest' || node.type === 'buffer') content = `${node.name || '休息调整'} ${node.duration ? `<span class="node-duration">${node.duration}分钟</span>` : ''}`;
-    else content = node.name || '未知节点';
+    else if (node.type === 'meal') {
+        content += `${node.name || '就餐'} ${node.duration ? `<span class="node-duration">${node.duration}分钟</span>` : ''}`;
+    }
+    else if (node.type === 'waiting' || node.type === 'rest' || node.type === 'buffer') {
+        content += `${node.name || '休息调整'} ${node.duration ? `<span class="node-duration">${node.duration}分钟</span>` : ''}`;
+    }
+    else {
+        content += node.name || '未知节点';
+    }
     
-    return `<div class="trip-node type-${typeClass}"><span class="node-time">${timeDisplay}</span><span class="node-icon icon-${typeClass}">${icon}</span><span class="node-content">${content}</span></div>`;
+    return `<div class="trip-node type-${typeClass}">
+        ${timeStr ? `<div class="node-time">${timeStr}</div>` : ''}
+        <div class="node-content">${content}</div>
+    </div>`;
 }
 
 function showTripDetail(data) {
@@ -1892,7 +1936,16 @@ window.backToPreferences = function() {
     document.getElementById('stepDetail').classList.add('hidden');
     document.getElementById('stepPreferences').classList.remove('hidden');
 };
-window.startNavigation = startNavigation;
+
+window.startNavigation = function() {
+    if (!currentTripData) {
+        alert('请先生成或采用一条行程');
+        return;
+    }
+    startNavigation(currentTripData);
+    window.openPanel('navPanel');
+};
+
 window.endNavigation = endNavigation;
 
 // ============================================================

@@ -66,3 +66,5 @@ export const COUNTY = {
     name: '红军广场',
     displayName: '红军广场（县城）'
 };
+// ========== 意向点规划约束（v1.5 新增） ==========
+export const MAX_INTENT_DISTANCE = 30; // 住宿/餐饮意向点与当前位置距离 <= 30 分钟，触发接管

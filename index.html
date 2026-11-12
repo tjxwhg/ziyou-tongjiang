@@ -797,9 +797,12 @@ window.renderSelectedOrder = function() {
         if (!poi) return;
         
         // 是否为住宿/餐饮（意向点）
-        const isIntent = poi.category?.includes('住宿') || poi.category?.includes('餐饮') || 
-                         (Array.isArray(poi.facility_subtype) && (poi.facility_subtype.includes('hotel') || poi.facility_subtype.includes('restaurant')));
-        const tagHtml = isIntent ? ' <span style="color:#e65100;font-size:11px;border:1px solid #e65100;border-radius:8px;padding:1px 4px;margin-left:4px;">意向点</span>' : '';
+        const isDining = poi.category?.includes('餐饮') || (Array.isArray(poi.facility_subtype) ? poi.facility_subtype.includes('restaurant') : poi.facility_subtype === 'restaurant');
+        const isLodging = poi.category?.includes('住宿') || (Array.isArray(poi.facility_subtype) ? poi.facility_subtype.includes('hotel') : poi.facility_subtype === 'hotel');
+        let tagHtml = '';
+        if (isDining && isLodging) tagHtml = ' <span style="color:#e65100;font-size:11px;border:1px solid #e65100;border-radius:8px;padding:1px 4px;margin-left:4px;">餐饮/住宿</span>';
+        else if (isDining) tagHtml = ' <span style="color:#e65100;font-size:11px;border:1px solid #e65100;border-radius:8px;padding:1px 4px;margin-left:4px;">餐饮</span>';
+        else if (isLodging) tagHtml = ' <span style="color:#e65100;font-size:11px;border:1px solid #e65100;border-radius:8px;padding:1px 4px;margin-left:4px;">住宿</span>';
 
         // 是否为重复点
         const isDup = selectedPoiInstances.filter(x => x.poiId === inst.poiId).length > 1;
@@ -890,31 +893,45 @@ window.generatePlans = async function() {
         if (!confirm(`⚠️ 当前顺序存在错乱：${warn}\n\n本次景点调整会导致在景点之间存在往返交通的情况。\n是否继续生成？`)) return;
     }
 
-    // ★ 分离游览池（可重复）和意向池（去重）
+    // ★ 分离游览池、餐饮池、住宿池
     const selectedPois = [];
-    const intentPois = [];
-    const seenIntentIds = new Set();
+    const intentDiningPois = [];
+    const intentLodgingPois = [];
+    const seenDining = new Set();
+    const seenLodging = new Set();
 
     selectedPoiInstances.forEach(inst => {
         const poi = allPoisMap[inst.poiId];
         if (!poi) return;
         if (poi.data_level !== 'L2' && poi.data_level !== 'L3' && poi.data_level !== 'L4') return;
 
-        // 判断是否住宿/餐饮意向点
-        const isIntent = poi.category?.includes('住宿') || poi.category?.includes('餐饮') || 
-                         (Array.isArray(poi.facility_subtype) && (poi.facility_subtype.includes('hotel') || poi.facility_subtype.includes('restaurant')));
+        // 纯标签判定
+        const isDining = poi.category?.includes('餐饮') || (Array.isArray(poi.facility_subtype) ? poi.facility_subtype.includes('restaurant') : poi.facility_subtype === 'restaurant');
+        const isLodging = poi.category?.includes('住宿') || (Array.isArray(poi.facility_subtype) ? poi.facility_subtype.includes('hotel') : poi.facility_subtype === 'hotel');
         
-        if (isIntent) {
-            if (!seenIntentIds.has(String(poi.id))) {
-                intentPois.push({ ...poi });
-                seenIntentIds.add(String(poi.id));
-            }
-        } else {
+        let isIntent = false;
+        
+        if (isDining && !seenDining.has(String(poi.id))) {
+            intentDiningPois.push({ ...poi });
+            seenDining.add(String(poi.id));
+            isIntent = true;
+        }
+        if (isLodging && !seenLodging.has(String(poi.id))) {
+            intentLodgingPois.push({ ...poi });
+            seenLodging.add(String(poi.id));
+            isIntent = true;
+        }
+
+        // 如果不是意向点，放入普通游览池
+        if (!isIntent) {
             selectedPois.push({ ...poi });
         }
     });
 
-    if (selectedPois.length === 0 && intentPois.length === 0) { alert('未找到有效的景点数据'); return; }
+    if (selectedPois.length === 0 && intentDiningPois.length === 0 && intentLodgingPois.length === 0) { 
+        alert('未找到有效的景点数据'); 
+        return; 
+    }
 
     generateBtn.disabled = true;
     loadingEl.classList.remove('hidden');
@@ -928,10 +945,13 @@ window.generatePlans = async function() {
         });
         const accommodationPois = allPois.filter(p => p.category?.includes('住宿') || (Array.isArray(p.facility_subtype) && p.facility_subtype.includes('hotel')));
         
+        // 调用引擎，传入分离后的双池
         const result = await generateTripPlan(
             selectedPois, startDate, startTime, mode,
             travelTimes, allPoisMap, accommodationPois, lodgingMode, startLocation,
-            window.__lodgingOverrideMap || {}, intentPois
+            window.__lodgingOverrideMap || {}, 
+            intentDiningPois, 
+            intentLodgingPois
         );
         
         if (!result.days || result.days.length === 0) {

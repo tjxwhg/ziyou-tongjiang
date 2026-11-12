@@ -33,7 +33,7 @@
         .card-modern .card-title { font-weight: 600; font-size: 16px; margin-bottom: 6px; color: #1b5e20; }
         .card-modern .card-sub { font-size: 13px; color: #888; }
         
-        /* ================= 方案五优化版：时间悬浮 + 紧凑大字流 + 缩进错位 ================= */
+        /* ================= 方案五：时间悬浮 + 紧凑大字流 + 缩进错位 ================= */
         .trip-day-container { background: white; border-radius: 12px; padding: 12px 16px; margin-bottom: 16px; border-left: 4px solid #1b5e20; box-shadow: 0 2px 8px rgba(0,0,0,0.04); }
         .trip-day-title { font-weight: 700; font-size: 16px; color: #1b5e20; margin-bottom: 12px; border-bottom: 2px solid #e8f5e9; padding-bottom: 8px; }
         
@@ -684,7 +684,13 @@ function renderSelectableRow(p, allPois) {
         ? `<input type="checkbox" ${isChecked ? 'checked' : ''} disabled>`
         : `<input type="checkbox" ${isChecked ? 'checked' : ''} onclick="event.stopPropagation(); window.togglePoiSelection('${p.id}')">`;
 
-    let html = `<div class="poi-selectable-row">${checkboxHtml}${nameHtml}${typeTag}<span class="poi-dur">${dur}分钟</span></div>`;
+    // ★ 核心修改：如果在已选列表中，直接给出“再次添加”按钮
+    let addBtnHtml = '';
+    if (isChecked && !disabled) {
+        addBtnHtml = `<button class="btn btn-sm btn-outline-success ms-2" style="padding:2px 6px; font-size:12px;" onclick="event.stopPropagation(); window.addDuplicatePoiInstance('${p.id}')" title="再次前往该景点"><i class="fas fa-plus"></i> 再次添加</button>`;
+    }
+
+    let html = `<div class="poi-selectable-row">${checkboxHtml}${nameHtml}${typeTag}<span class="poi-dur">${dur}分钟</span>${addBtnHtml}</div>`;
 
     if (isL3 && hasChildren && !isCollapsed) {
         const innerNodes = allPois.filter(x => String(x.parent_id) === idStr);
@@ -795,10 +801,14 @@ window.renderSelectedOrder = function() {
                          (Array.isArray(poi.facility_subtype) && (poi.facility_subtype.includes('hotel') || poi.facility_subtype.includes('restaurant')));
         const tagHtml = isIntent ? ' <span style="color:#e65100;font-size:11px;border:1px solid #e65100;border-radius:8px;padding:1px 4px;margin-left:4px;">意向点</span>' : '';
 
+        // 是否为重复点
+        const isDup = selectedPoiInstances.filter(x => x.poiId === inst.poiId).length > 1;
+        const dupHtml = isDup ? ' <span style="color:#1565c0;font-size:11px;margin-left:4px;">(重复前往)</span>' : '';
+
         html += `<div class="order-item">
-            <span class="order-name"><b>${idx + 1}.</b> ${poi.name}${tagHtml}</span>
+            <span class="order-name"><b>${idx + 1}.</b> ${poi.name}${tagHtml}${dupHtml}</span>
             <div class="order-actions">
-                <button class="btn btn-sm btn-outline-success" onclick="window.addDuplicatePoiInstance('${inst.poiId}')" title="再次去该景点">+</button>
+                <button class="btn btn-sm btn-outline-success" onclick="window.addDuplicatePoiInstance('${inst.poiId}')" title="复制该行程">+ 复制</button>
                 <button class="btn btn-sm btn-outline-secondary ms-1" onclick="window.movePoiUp(${idx})" ${idx === 0 ? 'disabled' : ''}>↑</button>
                 <button class="btn btn-sm btn-outline-secondary ms-1" onclick="window.movePoiDown(${idx})" ${idx === selectedPoiInstances.length - 1 ? 'disabled' : ''}>↓</button>
                 <button class="btn btn-sm btn-outline-danger ms-1" onclick="window.removePoiInstance(${idx})">×</button>
@@ -808,7 +818,6 @@ window.renderSelectedOrder = function() {
     container.innerHTML = html;
 };
 
-// ★ 新增：复制一个实例追加到末尾（支持多次去同一景点）
 window.addDuplicatePoiInstance = function(poiId) {
     selectedPoiInstances.push({ instanceId: 'inst_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4), poiId });
     renderSelectedOrder();
@@ -919,7 +928,6 @@ window.generatePlans = async function() {
         });
         const accommodationPois = allPois.filter(p => p.category?.includes('住宿') || (Array.isArray(p.facility_subtype) && p.facility_subtype.includes('hotel')));
         
-        // 调用更新后的规划引擎，传入 intentPois
         const result = await generateTripPlan(
             selectedPois, startDate, startTime, mode,
             travelTimes, allPoisMap, accommodationPois, lodgingMode, startLocation,
@@ -946,7 +954,7 @@ window.generatePlans = async function() {
     }
 };
 
-// 渲染时间轴（应用方案五 UI）
+// ★ 渲染时间轴（方案五：时间悬浮+缩进20px）
 function renderTripNodeHtml(node) {
     const typeClass = node.type || 'other';
     const iconMap = {
@@ -1355,10 +1363,14 @@ function buildRenderedTimeline(selectedIndices, arrivalTime) {
         lastPoiId = n.poi_id || lastPoiId;
     }
     if (lastPoiId && String(lastPoiId) !== 'county') {
-        const returnTravel = calcTravelBetween(lastPoiId, 'county');
-        if (returnTravel > 10) {
-            timeline.push({ type: 'transport', name: '返回县城', duration: returnTravel, startTime: currentTime, endTime: currentTime + returnTravel });
-            currentTime += returnTravel;
+        const lastPoi = allPoisMap[String(lastPoiId)];
+        const isHub = lastPoi && (lastPoi.category?.includes('交通枢纽') || lastPoi.name?.includes('车站') || lastPoi.name?.includes('高铁'));
+        if (!isHub) {
+            const returnTravel = calcTravelBetween(lastPoiId, 'county');
+            if (returnTravel > 10) {
+                timeline.push({ type: 'transport', name: '返回县城', duration: returnTravel, startTime: currentTime, endTime: currentTime + returnTravel });
+                currentTime += returnTravel;
+            }
         }
     }
     if (!dinnerInserted && currentTime >= 17 * 60 && currentTime < DINNER_END) {

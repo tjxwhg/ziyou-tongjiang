@@ -185,7 +185,7 @@
         .btn-outline-custom { background: transparent; color: #1b5e20; border: 2px solid #1b5e20; padding: 8px 16px; border-radius: 8px; font-weight: 600; cursor: pointer; }
         .btn-warning-custom { background: #ff9800; color: white; border: none; padding: 8px 16px; border-radius: 8px; font-weight: 600; cursor: pointer; }
         .order-item { display: flex; align-items: center; justify-content: space-between; padding: 6px 8px; border-bottom: 1px solid #f0f0f0; }
-        .order-item .order-actions button { padding: 2px 8px; font-size: 12px; margin-left: 4px; }
+        .order-item .order-actions button { padding: 2px 6px; font-size: 12px; margin-left: 2px; }
         .required-mark { color: #c62828; }
         .merchant-status-row { display: flex; flex-wrap: wrap; gap: 12px; padding: 10px 0; border-bottom: 1px solid #f0f0f0; font-size: 14px; color: #555; }
         .merchant-status-row span { display: inline-flex; align-items: center; gap: 4px; }
@@ -286,11 +286,11 @@
                 </div>
             </div>
             <div class="mt-2">
-                <label class="form-label fw-semibold">景点顺序（可上下调整）</label>
+                <label class="form-label fw-semibold">景点顺序（可上下调整，支持多次添加）</label>
                 <div id="selectedOrderContainer" class="border rounded p-2" style="min-height:40px;background:#fafafa;">
                     <span class="text-secondary">尚未选择景点</span>
                 </div>
-                <div class="hint-text" style="color:#888;font-size:12px;margin-top:4px;">※ 连续景点的总时长由后台预设，包含内部所有点位</div>
+                <div class="hint-text" style="color:#888;font-size:12px;margin-top:4px;">※ 连续景点的总时长由后台预设；勾选住宿/餐饮将作为意向点，在饭点/晚间就近安排。</div>
             </div>
             <button class="btn btn-primary-custom w-100 mt-3" id="generatePlanBtn"><i class="fas fa-wand-magic-sparkles"></i> 生成行程方案</button>
             <div id="planLoading" class="text-center mt-3 hidden">
@@ -461,7 +461,7 @@ import { startNavigation, endNavigation } from './js/trip-executor.js';
 import { COUNTY } from './js/config.js';
 
 // ============================================================
-// 设备标识
+// 设备标识与缓存
 // ============================================================
 function getDeviceId() {
     let id = localStorage.getItem('deviceId');
@@ -473,17 +473,9 @@ function getDeviceId() {
 }
 const DEVICE_ID = getDeviceId();
 
-// ============================================================
-// 本地存储工具
-// ============================================================
-function getLocalData(key) {
-    try { return JSON.parse(localStorage.getItem(key) || '[]'); } catch { return []; }
-}
+function getLocalData(key) { try { return JSON.parse(localStorage.getItem(key) || '[]'); } catch { return []; } }
 function setLocalData(key, data) { localStorage.setItem(key, JSON.stringify(data)); }
 
-// ============================================================
-// 缓存（带版本号）
-// ============================================================
 const CACHE_TTL = 5 * 60 * 1000;
 const CACHE_PREFIX = 'ztj_cache_';
 const VERSION_KEY = 'ztj_cache_version';
@@ -500,8 +492,7 @@ function getCache(key) {
 function setCache(key, data) {
     try {
         const version = localStorage.getItem(VERSION_KEY) || '0';
-        localStorage.setItem(CACHE_PREFIX + key,
-            JSON.stringify({ data, ts: Date.now(), version }));
+        localStorage.setItem(CACHE_PREFIX + key, JSON.stringify({ data, ts: Date.now(), version }));
     } catch {}
 }
 async function getPoisCached() {
@@ -522,35 +513,6 @@ async function getTransportTimesCached() {
 }
 
 // ============================================================
-// 常量
-// ============================================================
-const STATUS_MAP = { pending: '待确认', confirmed: '已确认', rejected: '已拒绝', cancelled: '已取消' };
-function translateStatus(s) { return STATUS_MAP[s] || s || '未知'; }
-
-const ROUTE_TYPE_LABELS = {
-    scenic_internal: '🏞️ 景区内部', city_day: '🏙️ 城市一日游',
-    area_multi: '🗺️ 区域联合', custom: '✨ 自定义'
-};
-const DAY_CATEGORY_LABELS = { half_day: '🌤️ 半日游', one_day: '☀️ 一日游', multi_day: '📅 多日游' };
-const NODE_TYPE_ICONS = {
-    entrance: '🚪', parking: '🅿️', rest: '☕', core_view: '⭐',
-    spot: '📍', entertainment: '🎢', wc: '🚻', exit: '🚪', other: '📌'
-};
-const CATEGORY_ICONS_MAP = {
-    '自然景区': '🏔️', '红色景区': '🔴', '文博场馆': '🏛️',
-    '餐饮住宿': '🍽️', '交通枢纽': '🚌', '游玩娱乐': '🎢',
-    '购物消费': '🛍️', '公共服务': '🏛️'
-};
-
-const LUNCH_START = 11 * 60 + 30;
-const LUNCH_END = 12 * 60 + 30;
-const DINNER_START = 18 * 60;
-const DINNER_END = 19 * 60;
-const VISIT_END = 18 * 60;
-const MEAL_DURATION = 60;
-const COUNTY_ID = COUNTY.numericId;
-
-// ============================================================
 // 全局状态
 // ============================================================
 let collapsedL3Ids = new Set();
@@ -558,8 +520,10 @@ let isFullSelectMode = false;
 let allPois = [];
 let allPoisMap = {};
 let currentTripData = null;
-let selectedPoiIds = new Set();
-let selectedPoiOrder = [];
+
+// ★ 核心：多实例支持，替代旧的去重集合
+let selectedPoiInstances = []; 
+
 let allRoutesCache = [];
 let allRouteNodesCache = {};
 let currentRouteFilter = 'all';
@@ -569,8 +533,6 @@ let currentSelectedNodeIndices = new Set();
 let currentArrivalTime = 10 * 60;
 let transportPresetsCache = {};
 let currentDetailPoi = null;
-
-// D011: 住宿覆盖映射 { scenicId: poiId }
 window.__lodgingOverrideMap = window.__lodgingOverrideMap || {};
 
 // ============================================================
@@ -585,21 +547,20 @@ function timeStrToMinutes(str) {
     const [h, m] = str.split(':').map(Number);
     return h * 60 + m;
 }
-
 function calcTravelBetween(prevPoiId, curPoiId) {
     if (!prevPoiId || !curPoiId) return 0;
     if (String(prevPoiId) === String(curPoiId)) return 0;
-    if (String(prevPoiId) === 'county' || prevPoiId === COUNTY_ID) {
-        return transportPresetsCache[`${COUNTY_ID}_${curPoiId}`] || transportPresetsCache[`county_${curPoiId}`] || 0;
+    if (String(prevPoiId) === 'county' || prevPoiId === COUNTY.numericId) {
+        return transportPresetsCache[`${COUNTY.numericId}_${curPoiId}`] || transportPresetsCache[`county_${curPoiId}`] || 0;
     }
-    if (String(curPoiId) === 'county' || curPoiId === COUNTY_ID) {
-        return transportPresetsCache[`${prevPoiId}_${COUNTY_ID}`] || transportPresetsCache[`${prevPoiId}_county`] || 0;
+    if (String(curPoiId) === 'county' || curPoiId === COUNTY.numericId) {
+        return transportPresetsCache[`${prevPoiId}_${COUNTY.numericId}`] || transportPresetsCache[`${prevPoiId}_county`] || 0;
     }
     return transportPresetsCache[`${prevPoiId}_${curPoiId}`] || 0;
 }
 
 // ============================================================
-// 时间选择器
+// 初始化选择器
 // ============================================================
 function initTimeSelectors() {
     const sel = document.getElementById('planStartTime');
@@ -638,27 +599,14 @@ function initStartLocationSelect(pois) {
     const startSel = document.getElementById('planStartLocation');
     const lodgingSel = document.getElementById('planLodging');
     if (!startSel || !lodgingSel) return;
-
     startSel.innerHTML = '<option value="county">红军广场（县城）</option>';
-
-    lodgingSel.innerHTML = `
-        <option value="all" selected>全部（智能决定）</option>
-        <option value="county">县城（每天返回县城）</option>
-    `;
-
-    const lodgingPois = pois.filter(p => {
-        if (p.category && p.category.includes('住宿')) return true;
-        if (Array.isArray(p.facility_subtype) && p.facility_subtype.includes('hotel')) return true;
-        if (typeof p.facility_subtype === 'string' && p.facility_subtype === 'hotel') return true;
-        return false;
-    });
-    lodgingPois.forEach(p => {
-        lodgingSel.innerHTML += `<option value="${p.id}">🏨 ${p.name}</option>`;
-    });
+    lodgingSel.innerHTML = `<option value="all" selected>全部（智能决定）</option><option value="county">县城（每天返回县城）</option>`;
+    const lodgingPois = pois.filter(p => p.category?.includes('住宿') || (Array.isArray(p.facility_subtype) && p.facility_subtype.includes('hotel')));
+    lodgingPois.forEach(p => { lodgingSel.innerHTML += `<option value="${p.id}">🏨 ${p.name}</option>`; });
 }
 
 // ============================================================
-// 类型标签
+// 类型标签与渲染
 // ============================================================
 function getTypeTagHtml(p) {
     if (p.data_level === 'L3') return '<span class="type-tag">⭐ 连续景点</span>';
@@ -669,50 +617,22 @@ function getTypeTagHtml(p) {
         return '<span class="type-tag">🏛️ 服务</span>';
     }
     const cat = (p.category || '').split(',')[0].trim();
-    const L2_MAP = {
-        '自然景区': '🏔️ 景点', '红色景区': '🔴 景点', '文博场馆': '📚 文博',
-        '餐饮住宿': '🍽️ 食宿', '游玩娱乐': '🎢 娱乐', '购物消费': '🛍️ 购物',
-        '交通枢纽': '🚌 交通', '公共服务': '🏛️ 服务'
-    };
+    const L2_MAP = { '自然景区': '🏔️ 景点', '红色景区': '🔴 景点', '文博场馆': '📚 文博', '餐饮住宿': '🍽️ 食宿', '游玩娱乐': '🎢 娱乐', '购物消费': '🛍️ 购物', '交通枢纽': '🚌 交通', '公共服务': '🏛️ 服务' };
     return `<span class="type-tag">${L2_MAP[cat] || cat}</span>`;
 }
-
-// ============================================================
-// 行程规划 POI 列表
-// ============================================================
-const CATEGORY_ORDER = [
-    '自然景区', '红色景区', '文博场馆', '餐饮住宿',
-    '交通枢纽', '游玩娱乐', '购物消费', '公共服务'
-];
 
 function renderPoiSelection(pois) {
     const container = document.getElementById('poiSelectContainer');
     if (!container) return;
-    if (!pois || pois.length === 0) {
-        container.innerHTML = '<div class="text-secondary text-center py-2">暂无景点数据</div>';
-        return;
-    }
+    if (!pois || pois.length === 0) { container.innerHTML = '<div class="text-secondary text-center py-2">暂无景点数据</div>'; return; }
 
-    const visiblePois = pois.filter(p =>
-        (p.data_level === 'L2' || p.data_level === 'L3' || p.data_level === 'L4')
-        && !p.is_core_node
-    );
-
-    if (visiblePois.length === 0) {
-        container.innerHTML = '<div class="text-secondary text-center py-2">暂无可勾选景点</div>';
-        return;
-    }
+    const visiblePois = pois.filter(p => (p.data_level === 'L2' || p.data_level === 'L3' || p.data_level === 'L4') && !p.is_core_node);
+    if (visiblePois.length === 0) { container.innerHTML = '<div class="text-secondary text-center py-2">暂无可勾选景点</div>'; return; }
 
     const l1List = pois.filter(p => p.data_level === 'L1');
-    const orphanList = visiblePois.filter(p =>
-        p.scenic_id === null || p.scenic_id === undefined
-    );
+    const orphanList = visiblePois.filter(p => p.scenic_id === null || p.scenic_id === undefined);
 
-    const topLevel = [
-        ...l1List.map(p => ({ kind: 'l1', poi: p })),
-        ...orphanList.map(p => ({ kind: 'orphan', poi: p }))
-    ];
-
+    const topLevel = [ ...l1List.map(p => ({ kind: 'l1', poi: p })), ...orphanList.map(p => ({ kind: 'orphan', poi: p })) ];
     topLevel.sort((a, b) => {
         const sa = a.poi.recommend_score || 0;
         const sb = b.poi.recommend_score || 0;
@@ -722,50 +642,32 @@ function renderPoiSelection(pois) {
 
     let html = '';
     topLevel.forEach(item => {
-        if (item.kind === 'l1') {
-            html += renderScenicBlock(item.poi, visiblePois, pois);
-        } else {
-            html += renderOrphanBlock(item.poi, pois);
-        }
+        if (item.kind === 'l1') html += renderScenicBlock(item.poi, visiblePois, pois);
+        else html += renderOrphanBlock(item.poi, pois);
     });
-
     container.innerHTML = html || '<div class="text-secondary text-center py-2">暂无可勾选景点</div>';
     updateSelectedInfo();
 }
 
 function renderScenicBlock(l1, visiblePois, allPois) {
-    const children = visiblePois.filter(p =>
-        String(p.scenic_id) === String(l1.id)
-    ).sort((a, b) => {
-        const sa = a.recommend_score || 0;
-        const sb = b.recommend_score || 0;
+    const children = visiblePois.filter(p => String(p.scenic_id) === String(l1.id)).sort((a, b) => {
+        const sa = a.recommend_score || 0; const sb = b.recommend_score || 0;
         if (sa !== sb) return sb - sa;
         return Number(a.id) - Number(b.id);
     });
-
     if (children.length === 0) return '';
-
-    let html = `<div class="scenic-block">`;
-    html += `<div class="scenic-title">🏞️ ${l1.name}</div>`;
-    html += `<div class="scenic-children">`;
-    children.forEach(child => {
-        html += renderSelectableRow(child, allPois);
-    });
+    let html = `<div class="scenic-block"><div class="scenic-title">🏞️ ${l1.name}</div><div class="scenic-children">`;
+    children.forEach(child => { html += renderSelectableRow(child, allPois); });
     html += `</div></div>`;
     return html;
 }
-
 function renderOrphanBlock(p, allPois) {
-    let html = `<div class="orphan-block">`;
-    html += `<div class="orphan-title">📌 独立景点</div>`;
-    html += renderSelectableRow(p, allPois);
-    html += `</div>`;
-    return html;
+    return `<div class="orphan-block"><div class="orphan-title">📌 独立景点</div>${renderSelectableRow(p, allPois)}</div>`;
 }
 
 function renderSelectableRow(p, allPois) {
     const idStr = String(p.id);
-    const isChecked = selectedPoiIds.has(idStr);
+    const isChecked = selectedPoiInstances.some(inst => inst.poiId === idStr);
     const score = p.recommend_score || 0;
     const disabled = score < 30;
     const dur = p.visit_duration || 0;
@@ -775,165 +677,102 @@ function renderSelectableRow(p, allPois) {
     const hasChildren = isL3 && allPois.some(x => String(x.parent_id) === idStr);
 
     const nameHtml = (isL3 && hasChildren)
-        ? `<span class="poi-name" style="cursor:pointer;user-select:none;" onclick="window.toggleL3Collapse('${p.id}')" title="点击折叠/展开">
-             <i class="fas ${isCollapsed ? 'fa-caret-right' : 'fa-caret-down'} text-success me-1"></i>${p.name}
-           </span>`
+        ? `<span class="poi-name" style="cursor:pointer;user-select:none;" onclick="window.toggleL3Collapse('${p.id}')"><i class="fas ${isCollapsed ? 'fa-caret-right' : 'fa-caret-down'} text-success me-1"></i>${p.name}</span>`
         : `<span class="poi-name">${p.name}</span>`;
 
     const checkboxHtml = disabled
         ? `<input type="checkbox" ${isChecked ? 'checked' : ''} disabled>`
-        : `<input type="checkbox" ${isChecked ? 'checked' : ''}
-               onclick="event.stopPropagation(); window.togglePoiSelection('${p.id}')">`;
+        : `<input type="checkbox" ${isChecked ? 'checked' : ''} onclick="event.stopPropagation(); window.togglePoiSelection('${p.id}')">`;
 
-    let html = `<div class="poi-selectable-row">
-        ${checkboxHtml}
-        ${nameHtml}
-        ${typeTag}
-        <span class="poi-dur">${dur}分钟</span>
-    </div>`;
+    let html = `<div class="poi-selectable-row">${checkboxHtml}${nameHtml}${typeTag}<span class="poi-dur">${dur}分钟</span></div>`;
 
     if (isL3 && hasChildren && !isCollapsed) {
         const innerNodes = allPois.filter(x => String(x.parent_id) === idStr);
         let sorted = innerNodes;
         const tr = Array.isArray(p.tour_route) ? p.tour_route : [];
         if (tr.length > 0) {
-            const idxMap = {};
-            tr.forEach((id, i) => { idxMap[String(id)] = i; });
-            sorted = [...innerNodes].sort((a, b) => {
-                const ia = idxMap[String(a.id)] ?? 999;
-                const ib = idxMap[String(b.id)] ?? 999;
-                return ia - ib;
-            });
+            const idxMap = {}; tr.forEach((id, i) => { idxMap[String(id)] = i; });
+            sorted = [...innerNodes].sort((a, b) => (idxMap[String(a.id)] ?? 999) - (idxMap[String(b.id)] ?? 999));
         }
-
         html += `<div class="l3-inner-list">`;
         sorted.forEach((n, idx) => {
-            html += `<div class="l3-inner-row">
-                <span class="l3-order">${idx + 1}.</span>
-                <span class="l3-name">⭐ ${n.name}</span>
-                <span class="poi-dur">${n.visit_duration || 0}分钟</span>
-            </div>`;
+            html += `<div class="l3-inner-row"><span class="l3-order">${idx + 1}.</span><span class="l3-name">⭐ ${n.name}</span><span class="poi-dur">${n.visit_duration || 0}分钟</span></div>`;
         });
         html += `</div>`;
     }
-
     return html;
 }
 
 window.toggleL3Collapse = function(poiId) {
     const idStr = String(poiId);
-    if (collapsedL3Ids.has(idStr)) {
-        collapsedL3Ids.delete(idStr);
-    } else {
-        collapsedL3Ids.add(idStr);
-    }
+    if (collapsedL3Ids.has(idStr)) collapsedL3Ids.delete(idStr);
+    else collapsedL3Ids.add(idStr);
     renderPoiSelection(allPois);
 };
 
 window.togglePoiSelection = function(poiId) {
     const idStr = String(poiId);
     const poi = allPoisMap[idStr];
-    if (!poi) return;
-    const score = poi.recommend_score || 0;
-    if (score < 30) return;
+    if (!poi || (poi.recommend_score || 0) < 30) return;
 
-    if (selectedPoiIds.has(idStr)) {
-        selectedPoiIds.delete(idStr);
-        selectedPoiOrder = selectedPoiOrder.filter(x => x !== idStr);
-        if (isFullSelectMode && score >= 50) {
-            isFullSelectMode = false;
-        }
+    const existingIndex = selectedPoiInstances.findIndex(inst => inst.poiId === idStr);
+    if (existingIndex >= 0) {
+        // 取消勾选（删除所有该 POI 的实例）
+        selectedPoiInstances = selectedPoiInstances.filter(inst => inst.poiId !== idStr);
     } else {
-        selectedPoiIds.add(idStr);
-        if (!selectedPoiOrder.includes(idStr)) {
-            if (poi.data_level === 'L4' && poi.scenic_id !== null && poi.scenic_id !== undefined) {
-                insertAtScenicEnd(idStr, poi.scenic_id);
-            } else {
-                selectedPoiOrder.push(idStr);
-            }
+        // 新增
+        const inst = { instanceId: 'inst_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4), poiId: idStr };
+        if (poi.data_level === 'L4' && poi.scenic_id !== null && poi.scenic_id !== undefined) {
+            let lastIdx = -1;
+            selectedPoiInstances.forEach((it, idx) => {
+                const p = allPoisMap[String(it.poiId)];
+                if (p && String(p.scenic_id) === String(poi.scenic_id)) lastIdx = idx;
+            });
+            if (lastIdx >= 0) selectedPoiInstances.splice(lastIdx + 1, 0, inst);
+            else selectedPoiInstances.push(inst);
+        } else {
+            selectedPoiInstances.push(inst);
         }
     }
     renderPoiSelection(allPois);
     renderSelectedOrder();
     updateSelectedInfo();
 };
-
-function insertAtScenicEnd(poiId, scenicId) {
-    let lastIdx = -1;
-    selectedPoiOrder.forEach((id, idx) => {
-        const p = allPoisMap[String(id)];
-        if (p && String(p.scenic_id) === String(scenicId)) lastIdx = idx;
-    });
-    if (lastIdx >= 0) {
-        selectedPoiOrder.splice(lastIdx + 1, 0, poiId);
-    } else {
-        selectedPoiOrder.push(poiId);
-    }
-}
 
 window.selectAllPois = function(select) {
     if (select) {
         isFullSelectMode = true;
-        selectedPoiIds.clear();
-        selectedPoiOrder = [];
+        selectedPoiInstances = [];
+        const candidates = allPois.filter(p => (p.data_level === 'L2' || p.data_level === 'L3' || p.data_level === 'L4') && !p.is_core_node && (p.recommend_score || 0) >= 50);
+        
+        // 全选不包含意向点（住宿/餐饮），防止乱序
+        const topLevel = candidates.filter(p => (p.scenic_id === null || p.scenic_id === undefined) && !p.category?.includes('住宿') && !p.category?.includes('餐饮')).sort((a,b) => (b.recommend_score||0) - (a.recommend_score||0));
+        const l1List = allPois.filter(p => p.data_level === 'L1').sort((a,b) => (b.recommend_score||0) - (a.recommend_score||0));
+        
+        const ordered = [...topLevel];
+        l1List.forEach(l1 => {
+            const children = candidates.filter(p => String(p.scenic_id) === String(l1.id) && !p.category?.includes('住宿') && !p.category?.includes('餐饮')).sort((a,b) => (b.recommend_score||0) - (a.recommend_score||0));
+            ordered.push(...children);
+        });
 
-        const candidates = allPois.filter(p =>
-            (p.data_level === 'L2' || p.data_level === 'L3' || p.data_level === 'L4')
-            && !p.is_core_node
-            && (p.recommend_score || 0) >= 50
-        );
-
-        const ordered = getScoreOrderedPois(candidates, allPois);
         ordered.forEach(p => {
-            const idStr = String(p.id);
-            selectedPoiIds.add(idStr);
-            selectedPoiOrder.push(idStr);
+            selectedPoiInstances.push({ instanceId: 'inst_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4), poiId: String(p.id) });
         });
     } else {
         isFullSelectMode = false;
-        selectedPoiIds.clear();
-        selectedPoiOrder = [];
+        selectedPoiInstances = [];
     }
     renderPoiSelection(allPois);
     renderSelectedOrder();
     updateSelectedInfo();
 };
 
-function getScoreOrderedPois(candidates, allPois) {
-    const result = [];
-
-    const topLevel = candidates.filter(p => {
-        return p.scenic_id === null || p.scenic_id === undefined;
-    }).sort(byScoreThenId);
-
-    topLevel.forEach(top => {
-        result.push(top);
-    });
-
-    const l1List = allPois.filter(p => p.data_level === 'L1').sort(byScoreThenId);
-    l1List.forEach(l1 => {
-        const children = candidates.filter(p =>
-            String(p.scenic_id) === String(l1.id)
-        ).sort(byScoreThenId);
-        children.forEach(c => result.push(c));
-    });
-
-    return result;
-}
-
-function byScoreThenId(a, b) {
-    const sa = a.recommend_score || 0;
-    const sb = b.recommend_score || 0;
-    if (sa !== sb) return sb - sa;
-    return Number(a.id) - Number(b.id);
-}
-
 function updateSelectedInfo() {
-    const total = selectedPoiIds.size;
-    document.getElementById('selectedPoiCount').textContent = `已选 ${total} 个`;
+    const uniqueCount = new Set(selectedPoiInstances.map(i => i.poiId)).size;
+    document.getElementById('selectedPoiCount').textContent = `已选 ${uniqueCount} 个（共计 ${selectedPoiInstances.length} 个安排）`;
     let totalDuration = 0;
-    selectedPoiIds.forEach(id => {
-        const poi = allPoisMap[id];
+    selectedPoiInstances.forEach(inst => {
+        const poi = allPoisMap[inst.poiId];
         if (poi) totalDuration += poi.visit_duration || 0;
     });
     document.getElementById('selectedDurationDisplay').textContent = `已选景点总游览时长：${totalDuration} 分钟`;
@@ -942,42 +781,68 @@ function updateSelectedInfo() {
 window.renderSelectedOrder = function() {
     const container = document.getElementById('selectedOrderContainer');
     if (!container) return;
-    if (selectedPoiOrder.length === 0) {
+    if (selectedPoiInstances.length === 0) {
         container.innerHTML = '<span class="text-secondary">尚未选择景点</span>';
         return;
     }
-
-    let warnMsg = '';
-    if (isFullSelectMode) {
-        warnMsg = checkDisorder();
-    }
-
     let html = '';
-    if (warnMsg) {
-        html += `<div class="alert alert-warning py-1 px-2 mb-2" style="font-size:12px;">
-                    ⚠️ ${warnMsg}
-                 </div>`;
-    }
-    selectedPoiOrder.forEach((id, idx) => {
-        const poi = allPoisMap[id];
+    selectedPoiInstances.forEach((inst, idx) => {
+        const poi = allPoisMap[inst.poiId];
         if (!poi) return;
+        
+        // 是否为住宿/餐饮（意向点）
+        const isIntent = poi.category?.includes('住宿') || poi.category?.includes('餐饮') || 
+                         (Array.isArray(poi.facility_subtype) && (poi.facility_subtype.includes('hotel') || poi.facility_subtype.includes('restaurant')));
+        const tagHtml = isIntent ? ' <span style="color:#e65100;font-size:11px;border:1px solid #e65100;border-radius:8px;padding:1px 4px;margin-left:4px;">意向点</span>' : '';
+
         html += `<div class="order-item">
-            <span class="order-name"><b>${idx + 1}.</b> ${poi.name}</span>
+            <span class="order-name"><b>${idx + 1}.</b> ${poi.name}${tagHtml}</span>
             <div class="order-actions">
-                <button class="btn btn-sm btn-outline-secondary" onclick="window.movePoiUp('${id}')" ${idx === 0 ? 'disabled' : ''}>↑</button>
-                <button class="btn btn-sm btn-outline-secondary" onclick="window.movePoiDown('${id}')" ${idx === selectedPoiOrder.length - 1 ? 'disabled' : ''}>↓</button>
+                <button class="btn btn-sm btn-outline-success" onclick="window.addDuplicatePoiInstance('${inst.poiId}')" title="再次去该景点">+</button>
+                <button class="btn btn-sm btn-outline-secondary ms-1" onclick="window.movePoiUp(${idx})" ${idx === 0 ? 'disabled' : ''}>↑</button>
+                <button class="btn btn-sm btn-outline-secondary ms-1" onclick="window.movePoiDown(${idx})" ${idx === selectedPoiInstances.length - 1 ? 'disabled' : ''}>↓</button>
+                <button class="btn btn-sm btn-outline-danger ms-1" onclick="window.removePoiInstance(${idx})">×</button>
             </div>
         </div>`;
     });
     container.innerHTML = html;
 };
 
+// ★ 新增：复制一个实例追加到末尾（支持多次去同一景点）
+window.addDuplicatePoiInstance = function(poiId) {
+    selectedPoiInstances.push({ instanceId: 'inst_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4), poiId });
+    renderSelectedOrder();
+    updateSelectedInfo();
+};
+
+window.removePoiInstance = function(idx) {
+    const removed = selectedPoiInstances.splice(idx, 1)[0];
+    // 如果已经没有该 poiId 的任何实例了，取消左侧勾选
+    if (!selectedPoiInstances.some(i => i.poiId === removed.poiId)) {
+        renderPoiSelection(allPois);
+    }
+    renderSelectedOrder();
+    updateSelectedInfo();
+};
+
+window.movePoiUp = function(idx) {
+    if (idx > 0) {
+        [selectedPoiInstances[idx - 1], selectedPoiInstances[idx]] = [selectedPoiInstances[idx], selectedPoiInstances[idx - 1]];
+        renderSelectedOrder();
+    }
+};
+window.movePoiDown = function(idx) {
+    if (idx >= 0 && idx < selectedPoiInstances.length - 1) {
+        [selectedPoiInstances[idx + 1], selectedPoiInstances[idx]] = [selectedPoiInstances[idx], selectedPoiInstances[idx + 1]];
+        renderSelectedOrder();
+    }
+};
+
 function checkDisorder() {
     const scenicPositions = {};
-    selectedPoiOrder.forEach((id, idx) => {
-        const poi = allPoisMap[String(id)];
-        if (!poi) return;
-        if (poi.scenic_id === null || poi.scenic_id === undefined) return;
+    selectedPoiInstances.forEach((inst, idx) => {
+        const poi = allPoisMap[String(inst.poiId)];
+        if (!poi || poi.scenic_id == null) return;
         const key = String(poi.scenic_id);
         if (!scenicPositions[key]) scenicPositions[key] = [];
         scenicPositions[key].push(idx);
@@ -994,24 +859,8 @@ function checkDisorder() {
     });
 
     if (disorderedNames.size === 0) return '';
-    const names = Array.from(disorderedNames).join('、');
-    return `${names} 景区景点被分隔，存在往返`;
+    return `${Array.from(disorderedNames).join('、')} 景区景点被分隔，存在往返`;
 }
-
-window.movePoiUp = function(id) {
-    const idx = selectedPoiOrder.indexOf(id);
-    if (idx > 0) {
-        [selectedPoiOrder[idx - 1], selectedPoiOrder[idx]] = [selectedPoiOrder[idx], selectedPoiOrder[idx - 1]];
-        renderSelectedOrder();
-    }
-};
-window.movePoiDown = function(id) {
-    const idx = selectedPoiOrder.indexOf(id);
-    if (idx >= 0 && idx < selectedPoiOrder.length - 1) {
-        [selectedPoiOrder[idx + 1], selectedPoiOrder[idx]] = [selectedPoiOrder[idx], selectedPoiOrder[idx + 1]];
-        renderSelectedOrder();
-    }
-};
 
 window.generatePlans = async function() {
     const loadingEl = document.getElementById('planLoading');
@@ -1023,24 +872,40 @@ window.generatePlans = async function() {
     const mode = document.getElementById('planStyle').value;
     const lodgingMode = document.getElementById('planLodging')?.value || 'all';
     const startLocation = document.getElementById('planStartLocation')?.value || 'county';
+
     if (!startDate) { alert('请选择出发日期'); return; }
-    if (selectedPoiOrder.length === 0) { alert('请至少选择一个景点'); return; }
+    if (selectedPoiInstances.length === 0) { alert('请至少选择一个景点'); return; }
 
     const warn = checkDisorder();
     if (warn) {
-        const confirmMsg = `⚠️ 当前顺序存在错乱：${warn}\n\n本次景点调整会导致在景点之间存在往返交通的情况。\n是否继续生成？`;
-        if (!confirm(confirmMsg)) {
-            return;
-        }
+        if (!confirm(`⚠️ 当前顺序存在错乱：${warn}\n\n本次景点调整会导致在景点之间存在往返交通的情况。\n是否继续生成？`)) return;
     }
 
-    const selectedPois = selectedPoiOrder.map(id => {
-        const poi = allPoisMap[String(id)];
-        if (!poi) return null;
-        if (poi.data_level !== 'L2' && poi.data_level !== 'L3' && poi.data_level !== 'L4') return null;
-        return { ...poi };
-    }).filter(Boolean);
-    if (selectedPois.length === 0) { alert('未找到有效的景点数据'); return; }
+    // ★ 分离游览池（可重复）和意向池（去重）
+    const selectedPois = [];
+    const intentPois = [];
+    const seenIntentIds = new Set();
+
+    selectedPoiInstances.forEach(inst => {
+        const poi = allPoisMap[inst.poiId];
+        if (!poi) return;
+        if (poi.data_level !== 'L2' && poi.data_level !== 'L3' && poi.data_level !== 'L4') return;
+
+        // 判断是否住宿/餐饮意向点
+        const isIntent = poi.category?.includes('住宿') || poi.category?.includes('餐饮') || 
+                         (Array.isArray(poi.facility_subtype) && (poi.facility_subtype.includes('hotel') || poi.facility_subtype.includes('restaurant')));
+        
+        if (isIntent) {
+            if (!seenIntentIds.has(String(poi.id))) {
+                intentPois.push({ ...poi });
+                seenIntentIds.add(String(poi.id));
+            }
+        } else {
+            selectedPois.push({ ...poi });
+        }
+    });
+
+    if (selectedPois.length === 0 && intentPois.length === 0) { alert('未找到有效的景点数据'); return; }
 
     generateBtn.disabled = true;
     loadingEl.classList.remove('hidden');
@@ -1052,19 +917,17 @@ window.generatePlans = async function() {
             travelTimes[`${t.poi_a}_${t.poi_b}`] = t.time_min;
             travelTimes[`${t.poi_b}_${t.poi_a}`] = t.time_min;
         });
-        const accommodationPois = allPois.filter(p => {
-            if (p.category && p.category.includes('住宿')) return true;
-            if (Array.isArray(p.facility_subtype) && p.facility_subtype.includes('hotel')) return true;
-            return false;
-        });
+        const accommodationPois = allPois.filter(p => p.category?.includes('住宿') || (Array.isArray(p.facility_subtype) && p.facility_subtype.includes('hotel')));
+        
+        // 调用更新后的规划引擎，传入 intentPois
         const result = await generateTripPlan(
             selectedPois, startDate, startTime, mode,
             travelTimes, allPoisMap, accommodationPois, lodgingMode, startLocation,
-            window.__lodgingOverrideMap || {}
+            window.__lodgingOverrideMap || {}, intentPois
         );
+        
         if (!result.days || result.days.length === 0) {
-            const msg = result.warnings && result.warnings.length > 0 ? result.warnings.join('；') : '请调整选择或检查景点数据';
-            alert('无法生成有效的行程方案：' + msg);
+            alert('无法生成有效的行程方案：' + (result.warnings?.join('；') || '请调整选择'));
             loadingEl.classList.add('hidden');
             stepPrefs.classList.remove('hidden');
             return;
@@ -1083,7 +946,7 @@ window.generatePlans = async function() {
     }
 };
 
-// ★ 核心：方案五渲染逻辑 + 右侧缩进20px
+// 渲染时间轴（应用方案五 UI）
 function renderTripNodeHtml(node) {
     const typeClass = node.type || 'other';
     const iconMap = {
@@ -1092,66 +955,35 @@ function renderTripNodeHtml(node) {
         waiting: '⏳', rest: '☕', buffer: '☕', trip_end: '🏁'
     };
     const icon = iconMap[typeClass] || '•';
-
-    // 格式化时间
     let timeStr = '';
-    if (node.startTime !== undefined && node.endTime !== undefined) {
-        timeStr = `${fmtTime(node.startTime)} - ${fmtTime(node.endTime)}`;
-    } else if (node.startTime !== undefined) {
-        timeStr = `${fmtTime(node.startTime)}`;
-    }
+    if (node.startTime !== undefined && node.endTime !== undefined) timeStr = `${fmtTime(node.startTime)} - ${fmtTime(node.endTime)}`;
+    else if (node.startTime !== undefined) timeStr = `${fmtTime(node.startTime)}`;
 
-    // 天气、提醒、行程结束
     if (typeClass === 'weather' || typeClass === 'reminder' || typeClass === 'trip_end') {
         const text = typeClass === 'trip_end' ? (node.name || '整个行程规划结束') : (node.message || '');
-        return `<div class="trip-node type-${typeClass}">
-            ${timeStr ? `<div class="node-time">${timeStr}</div>` : ''}
-            <div class="node-content">${icon} ${text}</div>
-        </div>`;
+        return `<div class="trip-node type-${typeClass}">${timeStr ? `<div class="node-time">${timeStr}</div>` : ''}<div class="node-content">${icon} ${text}</div></div>`;
     }
-
-    // 住宿节点
     if (typeClass === 'accommodation') {
         const text = node.name || '住宿休息';
         let replaceBtn = '';
-        if (node.lodgingPoiId && node.lodgingScenicId) {
-            replaceBtn = `<button class="btn btn-sm btn-outline-secondary ms-2" onclick="window.changeLodging('${node.lodgingScenicId}')" style="font-size:11px;padding:2px 8px; border-radius:12px;">更换</button>`;
-        }
-        return `<div class="trip-node type-${typeClass}">
-            ${timeStr ? `<div class="node-time">${timeStr}</div>` : ''}
-            <div class="node-content">${icon} ${text} ${replaceBtn}</div>
-        </div>`;
+        if (node.lodgingPoiId && node.lodgingScenicId) replaceBtn = `<button class="btn btn-sm btn-outline-secondary ms-2" onclick="window.changeLodging('${node.lodgingScenicId}')" style="font-size:11px;padding:2px 8px; border-radius:12px;">更换</button>`;
+        return `<div class="trip-node type-${typeClass}">${timeStr ? `<div class="node-time">${timeStr}</div>` : ''}<div class="node-content">${icon} ${text} ${replaceBtn}</div></div>`;
     }
 
-    // 普通节点
     let content = `${icon} `;
     if (node.type === 'transport') {
-        if (node.noData) {
-            content += node.name || '交通';
-        } else {
-            content += `${node.name || '交通'} ${node.duration ? `<span class="node-duration">${node.duration}分钟</span>` : ''}`;
-        }
-    }
-    else if (node.type === 'visit') {
+        content += node.noData ? (node.name || '交通') : `${node.name || '交通'} ${node.duration ? `<span class="node-duration">${node.duration}分钟</span>` : ''}`;
+    } else if (node.type === 'visit') {
         content += `${node.name || '游览'} ${node.duration ? `<span class="node-duration">${node.duration}分钟</span>` : ''}`;
-        if (node.tips) {
-            content += `<div class="node-tips"><i class="fas fa-lightbulb"></i> 提示：${node.tips}</div>`;
-        }
-    }
-    else if (node.type === 'meal') {
+        if (node.tips) content += `<div class="node-tips"><i class="fas fa-lightbulb"></i> 提示：${node.tips}</div>`;
+    } else if (node.type === 'meal') {
         content += `${node.name || '就餐'} ${node.duration ? `<span class="node-duration">${node.duration}分钟</span>` : ''}`;
-    }
-    else if (node.type === 'waiting' || node.type === 'rest' || node.type === 'buffer') {
+    } else if (node.type === 'waiting' || node.type === 'rest' || node.type === 'buffer') {
         content += `${node.name || '休息调整'} ${node.duration ? `<span class="node-duration">${node.duration}分钟</span>` : ''}`;
-    }
-    else {
+    } else {
         content += node.name || '未知节点';
     }
-    
-    return `<div class="trip-node type-${typeClass}">
-        ${timeStr ? `<div class="node-time">${timeStr}</div>` : ''}
-        <div class="node-content">${content}</div>
-    </div>`;
+    return `<div class="trip-node type-${typeClass}">${timeStr ? `<div class="node-time">${timeStr}</div>` : ''}<div class="node-content">${content}</div></div>`;
 }
 
 function showTripDetail(data) {
@@ -1160,9 +992,7 @@ function showTripDetail(data) {
     let html = '';
     if (data.days) {
         data.days.forEach((day, dayIdx) => {
-            html += `<div class="trip-day-container">`;
-            html += `<div class="trip-day-title"><span>📅 第${dayIdx + 1}天 (${day.date})</span></div>`;
-            html += `<div class="trip-timeline">`;
+            html += `<div class="trip-day-container"><div class="trip-day-title"><span>📅 第${dayIdx + 1}天 (${day.date})</span></div><div class="trip-timeline">`;
             if (day.nodes) day.nodes.forEach(node => { html += renderTripNodeHtml(node); });
             html += `</div></div>`;
         });
@@ -1174,55 +1004,19 @@ window.changeLodging = function(scenicId) {
     const sid = String(scenicId);
     const scenic = allPoisMap[sid];
     if (!scenic) { alert('未找到该景区'); return; }
-
-    const candidates = allPois.filter(p =>
-        String(p.scenic_id) === sid &&
-        p.data_level === 'L4' &&
-        (p.recommend_score || 0) >= 30 &&
-        p.type === 'facility' &&
-        (Array.isArray(p.facility_subtype)
-            ? p.facility_subtype.includes('hotel')
-            : p.facility_subtype === 'hotel')
-    );
-
-    if (candidates.length === 0) {
-        alert(`"${scenic.name}" 下暂无 L4 住宿 POI`);
-        return;
-    }
-
+    const candidates = allPois.filter(p => String(p.scenic_id) === sid && p.data_level === 'L4' && (p.recommend_score || 0) >= 30 && p.type === 'facility' && (Array.isArray(p.facility_subtype) ? p.facility_subtype.includes('hotel') : p.facility_subtype === 'hotel'));
+    if (candidates.length === 0) { alert(`"${scenic.name}" 下暂无 L4 住宿 POI`); return; }
     const old = document.getElementById('lodgingPickerModal');
     if (old) old.remove();
-
     const div = document.createElement('div');
-    div.id = 'lodgingPickerModal';
-    div.className = 'alert-modal-mask';
-    const options = candidates.map(p => `
-        <label style="display:flex;align-items:center;padding:10px 12px;border-bottom:1px solid #f0f0f0;cursor:pointer;">
-            <input type="radio" name="lodging-pick" value="${p.id}" style="margin-right:10px;">
-            <span style="flex:1;">🏨 ${p.name}</span>
-            <span class="text-secondary small">⭐ ${p.recommend_score || 0}</span>
-        </label>
-    `).join('');
-    div.innerHTML = `
-        <div class="alert-modal" style="max-width:420px;">
-            <h6 style="color:#1b5e20;"><i class="fas fa-hotel"></i> 选择住宿 · ${scenic.name}</h6>
-            <p style="font-size:13px;color:#888;">选择后将重新生成行程</p>
-            <div style="max-height:300px;overflow-y:auto;border:1px solid #e0e0e0;border-radius:8px;">${options}</div>
-            <div class="btn-row" style="margin-top:12px;">
-                <button style="background:#eee;color:#333;padding:10px;border-radius:8px;border:none;flex:1;cursor:pointer;"
-                        onclick="document.getElementById('lodgingPickerModal').remove()">取消</button>
-                <button style="background:#1b5e20;color:white;padding:10px;border-radius:8px;border:none;flex:1;cursor:pointer;font-weight:600;"
-                        onclick="window.confirmChangeLodging('${sid}')">确定并重新生成</button>
-            </div>
-        </div>
-    `;
+    div.id = 'lodgingPickerModal'; div.className = 'alert-modal-mask';
+    const options = candidates.map(p => `<label style="display:flex;align-items:center;padding:10px 12px;border-bottom:1px solid #f0f0f0;cursor:pointer;"><input type="radio" name="lodging-pick" value="${p.id}" style="margin-right:10px;"><span style="flex:1;">🏨 ${p.name}</span><span class="text-secondary small">⭐ ${p.recommend_score || 0}</span></label>`).join('');
+    div.innerHTML = `<div class="alert-modal" style="max-width:420px;"><h6 style="color:#1b5e20;"><i class="fas fa-hotel"></i> 选择住宿 · ${scenic.name}</h6><p style="font-size:13px;color:#888;">选择后将重新生成行程</p><div style="max-height:300px;overflow-y:auto;border:1px solid #e0e0e0;border-radius:8px;">${options}</div><div class="btn-row" style="margin-top:12px;"><button style="background:#eee;color:#333;padding:10px;border-radius:8px;border:none;flex:1;cursor:pointer;" onclick="document.getElementById('lodgingPickerModal').remove()">取消</button><button style="background:#1b5e20;color:white;padding:10px;border-radius:8px;border:none;flex:1;cursor:pointer;font-weight:600;" onclick="window.confirmChangeLodging('${sid}')">确定并重新生成</button></div></div>`;
     document.body.appendChild(div);
 };
-
 window.confirmChangeLodging = function(scenicId) {
-    const radios = document.querySelectorAll('#lodgingPickerModal input[name="lodging-pick"]');
     let selectedId = null;
-    radios.forEach(r => { if (r.checked) selectedId = r.value; });
+    document.querySelectorAll('#lodgingPickerModal input[name="lodging-pick"]').forEach(r => { if (r.checked) selectedId = r.value; });
     if (!selectedId) { alert('请选择一家住宿'); return; }
     window.__lodgingOverrideMap[String(scenicId)] = selectedId;
     document.getElementById('lodgingPickerModal').remove();
@@ -1240,9 +1034,8 @@ window.saveTripSolution = function() {
     const defaultName = `行程_${new Date().toISOString().slice(0, 10)}`;
     const name = prompt('请输入行程名称：', defaultName);
     if (name === null) return;
-    const tripName = name.trim() || defaultName;
     const trips = getLocalData('trips');
-    trips.push({ id: 'trip_' + Date.now(), deviceId: DEVICE_ID, name: tripName, data: currentTripData, savedAt: new Date().toISOString() });
+    trips.push({ id: 'trip_' + Date.now(), deviceId: DEVICE_ID, name: name.trim() || defaultName, data: currentTripData, savedAt: new Date().toISOString() });
     setLocalData('trips', trips);
     alert('行程已保存');
     window.renderMyTrips();

@@ -16,7 +16,7 @@ export class TripPlanner {
                 accommodationPois, lodgingMode = 'all', startLocation = 'county',
                 lodgingOverrideMap = null, intentPois = []) {
         this.pois = selectedPois || [];
-        this.intentPois = intentPois || []; // 意向池（餐饮、住宿）
+        this.intentPois = intentPois || []; // 意向池（包含餐饮、住宿，允许反复被选中）
         this.allPoisMap = allPoisMap || {};
         this.startDate = startDate || new Date().toISOString().slice(0, 10);
         this.startTime = startTime || '08:00';
@@ -207,19 +207,41 @@ export class TripPlanner {
         }
 
         // ============================================================
-        // 收尾判断
+        // 分支 A：整个规划行程结束（队列清空）
         // ============================================================
         if (queueIsEmpty) {
-            // 整个行程结束
             this.handleReturnToCounty();
             this.tryInsertMealAtTripEnd();
-            this.handleIntentLodging(); // 检查意向住宿（内部严格判断30分钟）
+            
+            // ★ 上午防呆设计：时间 >= 15:00 才触发意向住宿
+            if (this.currentTime >= 15 * 60) {
+                const intentLodging = this.pickClosestIntent('lodging');
+                if (intentLodging) {
+                    const travel = this.calcTravel(this.lastPoiId, intentLodging.id);
+                    const tStart = this.currentTime;
+                    this.addNode({ type: 'transport', name: `前往住宿：${intentLodging.name}`, startTime: tStart, endTime: tStart + travel, duration: travel });
+                    this.currentTime += travel;
+                    this.addNode({ 
+                        type: 'accommodation', 
+                        name: `今日行程结束，住宿：${intentLodging.name}`, 
+                        startTime: this.currentTime, 
+                        endTime: this.currentTime + 1,
+                        lodgingPoiId: intentLodging.id
+                    });
+                    this.lastPoiId = intentLodging.id;
+                } else {
+                    this.addNode({ type: 'accommodation', name: '今日行程结束，住宿休息', startTime: this.currentTime, endTime: this.currentTime + 1 });
+                }
+            }
+
             this.addNode({ type: 'trip_end', name: '整个规划行程结束', startTime: this.currentTime, endTime: this.currentTime + 1 });
             this.closeDay();
             return true;
         }
 
-        // 当天结束，队列还有剩余
+        // ============================================================
+        // 分支 B：当天结束、队列还有剩余
+        // ============================================================
         const lastVisitNode = [...this.dayNodes].reverse().find(n => n.type === 'visit' && n.poiId);
         const lastPoi = lastVisitNode ? this.allPoisMap[String(lastVisitNode.poiId)] : null;
         const nextPoi = queue[0]?.poi;
@@ -231,34 +253,29 @@ export class TripPlanner {
         let accommodationNode = null;
         let nextKeepPoiId = null;
 
-        // ★ 检查意向住宿（严格限制 30 分钟）
-        const intentLodging = this.pickIntentLodging();
+        // 检查意向住宿（只有 >= 15:00 才会触发）
+        const intentLodging = this.pickClosestIntent('lodging');
         if (intentLodging && this.currentTime >= 15 * 60) {
             const travelToLodging = this.calcTravel(this.lastPoiId, intentLodging.id);
-            if (travelToLodging <= MAX_INTENT_DISTANCE) {
-                const tStart = this.currentTime;
-                this.addNode({
-                    type: 'transport',
-                    name: `前往住宿：${intentLodging.name}`,
-                    startTime: tStart, endTime: tStart + travelToLodging,
-                    duration: travelToLodging,
-                    from: this.getPoiName(this.lastPoiId), to: intentLodging.name
-                });
-                this.totalTravelMinutes += travelToLodging;
-                this.currentTime += travelToLodging;
-                this.checkAndInsertMealAfterTransport(tStart, this.currentTime);
+            const tStart = this.currentTime;
+            this.addNode({
+                type: 'transport', name: `前往住宿：${intentLodging.name}`,
+                startTime: tStart, endTime: tStart + travelToLodging,
+                duration: travelToLodging,
+                from: this.getPoiName(this.lastPoiId), to: intentLodging.name
+            });
+            this.totalTravelMinutes += travelToLodging;
+            this.currentTime += travelToLodging;
+            this.checkAndInsertMealAfterTransport(tStart, this.currentTime);
 
-                this.lastPoiId = intentLodging.id;
-                nextKeepPoiId = intentLodging.id;
+            this.lastPoiId = intentLodging.id;
+            nextKeepPoiId = intentLodging.id;
 
-                accommodationNode = {
-                    type: 'accommodation',
-                    name: `今日行程结束，住宿：${intentLodging.name}`,
-                    startTime: this.currentTime, endTime: this.currentTime + 1,
-                    lodgingPoiId: intentLodging.id
-                };
-                this.intentPois = this.intentPois.filter(p => String(p.id) !== String(intentLodging.id));
-            }
+            accommodationNode = {
+                type: 'accommodation', name: `今日行程结束，住宿：${intentLodging.name}`,
+                startTime: this.currentTime, endTime: this.currentTime + 1,
+                lodgingPoiId: intentLodging.id
+            };
         }
 
         // 如果意向住宿未接管，走默认就近住宿或回县城
@@ -320,37 +337,30 @@ export class TripPlanner {
         return false;
     }
 
-    pickIntentLodging() {
-        return this.intentPois.find(p => 
-            p.category?.includes('住宿') || 
-            (Array.isArray(p.facility_subtype) && p.facility_subtype.includes('hotel'))
-        );
-    }
-
-    pickIntentDining() {
-        return this.intentPois.find(p => 
-            p.category?.includes('餐饮') || 
-            (Array.isArray(p.facility_subtype) && p.facility_subtype.includes('restaurant'))
-        );
-    }
-
-    // 整个行程结束时的住宿检查（严格限制30分钟）
-    handleIntentLodging() {
-        const intentLodging = this.pickIntentLodging();
-        if (intentLodging) {
-            const travel = this.calcTravel(this.lastPoiId, intentLodging.id);
-            if (travel <= MAX_INTENT_DISTANCE) {
-                const tStart = this.currentTime;
-                this.addNode({ type: 'transport', name: `前往住宿：${intentLodging.name}`, startTime: tStart, endTime: tStart + travel, duration: travel });
-                this.currentTime += travel;
-                this.addNode({ type: 'accommodation', name: `今日行程结束，住宿：${intentLodging.name}`, startTime: this.currentTime, endTime: this.currentTime + 1 });
-                this.lastPoiId = intentLodging.id;
-                this.intentPois = this.intentPois.filter(p => String(p.id) !== String(intentLodging.id));
-                return;
+    // ★ 核心：遍历池子，按 30 分钟以内的距离找最近的点，不删除、不标记
+    pickClosestIntent(type) {
+        let closest = null;
+        let minTravel = Infinity;
+        
+        for (const p of this.intentPois) {
+            const isDining = type === 'dining' && (
+                p.category?.includes('餐饮') || 
+                (Array.isArray(p.facility_subtype) && p.facility_subtype.includes('restaurant'))
+            );
+            const isLodging = type === 'lodging' && (
+                p.category?.includes('住宿') || 
+                (Array.isArray(p.facility_subtype) && p.facility_subtype.includes('hotel'))
+            );
+            
+            if (!isDining && !isLodging) continue;
+            
+            const travel = this.calcTravel(this.lastPoiId, p.id);
+            if (travel <= MAX_INTENT_DISTANCE && travel < minTravel) {
+                minTravel = travel;
+                closest = p;
             }
         }
-        // 如果没选中，或超出30分钟，走默认
-        this.addNode({ type: 'accommodation', name: '今日行程结束，住宿休息', startTime: this.currentTime, endTime: this.currentTime + 1 });
+        return closest;
     }
 
     getPoiDayLimit(poi) {
@@ -544,26 +554,23 @@ export class TripPlanner {
     }
 
     insertMeal(type) {
-        const intentDining = this.pickIntentDining();
         let mealNode = null;
+        const intentDining = this.pickClosestIntent('dining');
 
         if (intentDining) {
             const travel = this.calcTravel(this.lastPoiId, intentDining.id);
-            if (travel <= MAX_INTENT_DISTANCE) {
-                const tStart = this.currentTime;
-                this.addNode({ type: 'transport', name: `前往就餐：${intentDining.name}`, startTime: tStart, endTime: tStart + travel, duration: travel });
-                this.currentTime += travel;
-                this.lastPoiId = intentDining.id;
-                
-                mealNode = {
-                    type: 'meal',
-                    name: `就餐：${intentDining.name}`,
-                    startTime: this.currentTime,
-                    endTime: this.currentTime + MEAL_DURATION,
-                    duration: MEAL_DURATION
-                };
-                this.intentPois = this.intentPois.filter(p => String(p.id) !== String(intentDining.id));
-            }
+            const tStart = this.currentTime;
+            this.addNode({ type: 'transport', name: `前往就餐：${intentDining.name}`, startTime: tStart, endTime: tStart + travel, duration: travel });
+            this.currentTime += travel;
+            this.lastPoiId = intentDining.id;
+            
+            mealNode = {
+                type: 'meal',
+                name: `就餐：${intentDining.name}`,
+                startTime: this.currentTime,
+                endTime: this.currentTime + MEAL_DURATION,
+                duration: MEAL_DURATION
+            };
         }
 
         if (!mealNode) {
@@ -629,7 +636,7 @@ export class TripPlanner {
     handleReturnToCounty() {
         if (this.lastPoiId === 'county' || !this.lastPoiId) return;
         
-        // ★ 交通枢纽免返城
+        // 交通枢纽免返城
         const lastPoi = this.allPoisMap[String(this.lastPoiId)];
         if (lastPoi && (lastPoi.category?.includes('交通枢纽') || lastPoi.name?.includes('车站') || lastPoi.name?.includes('高铁'))) {
             return;

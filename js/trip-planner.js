@@ -57,11 +57,10 @@ export class TripPlanner {
 
     async plan() {
         this.weatherData = await fetchWeatherForecast();
-        // 将队列转为实例化结构
         const queue = this.pois.map((p, idx) => ({
             poi: p,
             remaining: null,
-            instanceId: `inst_${idx}_${Date.now()}` // 用于区分多次游览
+            instanceId: `inst_${idx}_${Date.now()}`
         }));
 
         while (queue.length > 0 && this.currentDay <= this.maxDays) {
@@ -90,9 +89,7 @@ export class TripPlanner {
         let processedCount = 0;
         const MAX_PER_DAY = 15;
 
-        while (queue.length > 0
-               && this.currentTime < PLAN_CUTOFF
-               && processedCount < MAX_PER_DAY) {
+        while (queue.length > 0 && this.currentTime < PLAN_CUTOFF && processedCount < MAX_PER_DAY) {
             processedCount++;
             const item = queue.shift();
             const poi = item.poi;
@@ -151,10 +148,7 @@ export class TripPlanner {
                 }
             }
 
-            // 行前缓冲（不再限制每天首个，只限制每天首次触发，避免频繁打断）
             if (poi.pre_visit_tip && this.bufferCfg.pre > 0) {
-                // 如果当天还没触发过行前缓冲，或者用户希望每个景点都提示，可取消 isFirstVisitOfDay 限制
-                // 这里采用：每个景点都提示
                 const dur = this.bufferCfg.pre;
                 this.addNode({
                     type: 'buffer',
@@ -219,7 +213,7 @@ export class TripPlanner {
             // 整个行程结束
             this.handleReturnToCounty();
             this.tryInsertMealAtTripEnd();
-            this.handleIntentLodging(); // 检查意向住宿
+            this.handleIntentLodging(); // 检查意向住宿（内部严格判断30分钟）
             this.addNode({ type: 'trip_end', name: '整个规划行程结束', startTime: this.currentTime, endTime: this.currentTime + 1 });
             this.closeDay();
             return true;
@@ -237,9 +231,9 @@ export class TripPlanner {
         let accommodationNode = null;
         let nextKeepPoiId = null;
 
-        // ★ 优先检查是否有选定的意向住宿点
+        // ★ 检查意向住宿（严格限制 30 分钟）
         const intentLodging = this.pickIntentLodging();
-        if (intentLodging && this.currentTime >= 15 * 60) { // 下午 15:00 后开始检查
+        if (intentLodging && this.currentTime >= 15 * 60) {
             const travelToLodging = this.calcTravel(this.lastPoiId, intentLodging.id);
             if (travelToLodging <= MAX_INTENT_DISTANCE) {
                 const tStart = this.currentTime;
@@ -263,12 +257,11 @@ export class TripPlanner {
                     startTime: this.currentTime, endTime: this.currentTime + 1,
                     lodgingPoiId: intentLodging.id
                 };
-                // 从意向池中移除
                 this.intentPois = this.intentPois.filter(p => String(p.id) !== String(intentLodging.id));
             }
         }
 
-        // 如果没有意向住宿，使用默认逻辑
+        // 如果意向住宿未接管，走默认就近住宿或回县城
         if (!accommodationNode) {
             if (sameScenic) {
                 const scenicId = lastPoi.scenic_id;
@@ -327,7 +320,6 @@ export class TripPlanner {
         return false;
     }
 
-    // ★ 辅助：寻找意向住宿
     pickIntentLodging() {
         return this.intentPois.find(p => 
             p.category?.includes('住宿') || 
@@ -335,7 +327,6 @@ export class TripPlanner {
         );
     }
 
-    // ★ 辅助：寻找意向餐饮
     pickIntentDining() {
         return this.intentPois.find(p => 
             p.category?.includes('餐饮') || 
@@ -343,7 +334,7 @@ export class TripPlanner {
         );
     }
 
-    // 针对整个行程结束时的住宿检查
+    // 整个行程结束时的住宿检查（严格限制30分钟）
     handleIntentLodging() {
         const intentLodging = this.pickIntentLodging();
         if (intentLodging) {
@@ -358,7 +349,7 @@ export class TripPlanner {
                 return;
             }
         }
-        // 默认
+        // 如果没选中，或超出30分钟，走默认
         this.addNode({ type: 'accommodation', name: '今日行程结束，住宿休息', startTime: this.currentTime, endTime: this.currentTime + 1 });
     }
 
@@ -553,13 +544,11 @@ export class TripPlanner {
     }
 
     insertMeal(type) {
-        // ★ 检查意向餐饮点
         const intentDining = this.pickIntentDining();
         let mealNode = null;
 
         if (intentDining) {
             const travel = this.calcTravel(this.lastPoiId, intentDining.id);
-            // 距离 <= 30 分钟，接管就餐
             if (travel <= MAX_INTENT_DISTANCE) {
                 const tStart = this.currentTime;
                 this.addNode({ type: 'transport', name: `前往就餐：${intentDining.name}`, startTime: tStart, endTime: tStart + travel, duration: travel });
@@ -573,12 +562,10 @@ export class TripPlanner {
                     endTime: this.currentTime + MEAL_DURATION,
                     duration: MEAL_DURATION
                 };
-                // 消费后移除
                 this.intentPois = this.intentPois.filter(p => String(p.id) !== String(intentDining.id));
             }
         }
 
-        // 默认逻辑
         if (!mealNode) {
             mealNode = this.createMealNode(type, this.currentTime);
         }
@@ -615,7 +602,6 @@ export class TripPlanner {
         if (!node) return;
         if (node.type === 'visit') {
             const last = this.dayNodes[this.dayNodes.length - 1];
-            // ★ 只有当 instanceId 相同或未传时才合并，防止重复游览同一景点被抹除
             if (last && last.type === 'visit' && last.poiId === node.poiId && last.instanceId === node.instanceId) {
                 last.endTime = node.endTime;
                 last.duration += node.duration;
@@ -642,6 +628,13 @@ export class TripPlanner {
 
     handleReturnToCounty() {
         if (this.lastPoiId === 'county' || !this.lastPoiId) return;
+        
+        // ★ 交通枢纽免返城
+        const lastPoi = this.allPoisMap[String(this.lastPoiId)];
+        if (lastPoi && (lastPoi.category?.includes('交通枢纽') || lastPoi.name?.includes('车站') || lastPoi.name?.includes('高铁'))) {
+            return;
+        }
+
         const returnTravel = this.calcTravel(this.lastPoiId, 'county');
         if (returnTravel <= 0 || returnTravel > MAX_RETURN_TIME) {
             this.lastPoiId = 'county';
